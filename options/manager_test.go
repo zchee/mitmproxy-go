@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -564,6 +565,9 @@ func TestSubscribersReceiveCallerContext(t *testing.T) {
 		return nil
 	})
 	ctx := context.WithValue(t.Context(), ctxKey{}, "caller")
+	confdir := t.TempDir()
+	conf := filepath.Join(confdir, "config.yaml")
+	writeFile(t, conf, "one: 8\n")
 	if err := m.SetDeferred(t.Context(), "late=true"); err != nil {
 		t.Fatal(err)
 	}
@@ -577,6 +581,9 @@ func TestSubscribersReceiveCallerContext(t *testing.T) {
 		"SetDeferred":     func() error { return m.SetDeferred(ctx, "one=5") },
 		"ProcessDeferred": func() error { return m.ProcessDeferred(ctx) },
 		"Reset":           func() error { return m.Reset(ctx) },
+		"Load":            func() error { return m.Load(ctx, "one: 6\n") },
+		"LoadPaths":       func() error { return m.LoadPaths(ctx, conf) },
+		"LoadAll":         func() error { return m.LoadAll(ctx, []string{"two=7"}, confdir, nil) },
 	}
 	for name, call := range calls {
 		seen = nil

@@ -1,0 +1,142 @@
+
+# Add all certificates of the upstream server to the certificate chain
+# that will be served to the proxy client, as extras. Type bool.
+add_upstream_certs_to_client_chain: false
+
+# Opposite of --ignore-hosts. Type sequence of str.
+allow_hosts: []
+
+# Passphrase for decrypting the private key provided in the --cert
+# option.  Note that passing cert_passphrase on the command line makes
+# your passphrase visible in your system's process list. Specify it in
+# config.yaml to avoid this. Type optional str.
+cert_passphrase:
+
+# SSL certificates of the form "[domain=]path". The domain may include a
+# wildcard, and is equal to "*" if not specified. The file at path is a
+# certificate in PEM format. If a private key is included in the PEM, it
+# is used, else the default key in the conf dir is used. The PEM file
+# should contain the full certificate chain, with the leaf certificate
+# as the first entry. Type sequence of str.
+certs: []
+
+# Client certificate file or directory. Type optional str.
+client_certs:
+
+# Location of the default mitmproxy configuration files. Type str.
+confdir: ~/.mitmproxy
+
+# Flow content view lines limit. Limit is enabled by default to speedup
+# flows browsing. Type int.
+content_view_lines_cutoff: 512
+
+# Enable/disable HTTP/2 support. HTTP/2 support is enabled by default.
+# Type bool.
+http2: true
+
+# Send a PING frame if an HTTP/2 connection is idle for more than the
+# specified number of seconds to prevent the remote site from closing
+# it. Set to 0 to disable this feature. Type int.
+http2_ping_keepalive: 58
+
+# Enable/disable support for QUIC and HTTP/3. Enabled by default. Type
+# bool.
+http3: true
+
+# Include host header with CONNECT requests. Enabled by default. Type
+# bool.
+http_connect_send_host_header: true
+
+# Ignore host and forward all traffic without processing it. In
+# transparent mode, it is recommended to use an IP address (range), not
+# the hostname. In regular mode, only SSL traffic is ignored and the
+# hostname should be used. The supplied value is interpreted as a
+# regular expression and matched on the ip or the hostname. Type
+# sequence of str.
+ignore_hosts: []
+
+# TLS key size for certificates and CA. Type int.
+key_size: 2048
+
+# Address to bind proxy server(s) to (may be overridden for individual
+# modes, see `mode`). Type str.
+listen_host: ''
+
+# Port to bind proxy server(s) to (may be overridden for individual
+# modes, see `mode`). By default, the port is mode-specific. The default
+# regular HTTP proxy spawns on port 8080. Type optional int.
+listen_port:
+
+# The proxy server type(s) to spawn. Can be passed multiple times.
+# Mitmproxy supports "regular" (HTTP), "local", "transparent", "socks5",
+# "reverse:SPEC", "upstream:SPEC", and "wireguard[:PATH]" proxy servers.
+# For reverse and upstream proxy modes, SPEC is host specification in
+# the form of "http[s]://host[:port]". For WireGuard mode, PATH may
+# point to a file containing key material. If no such file exists, it
+# will be created on startup.  You may append `@listen_port` or
+# `@listen_host:listen_port` to override `listen_host` or `listen_port`
+# for a specific proxy mode. Features such as client playback will use
+# the first mode to determine which upstream server to use. Type
+# sequence of str.
+mode:
+- regular
+
+# Path to a .proto file that's used to resolve Protobuf field names when
+# pretty-printing. Type optional str.
+protobuf_definitions:
+
+# Enable/disable raw TCP connections. TCP connections are enabled by
+# default. Type bool.
+rawtcp: true
+
+# Start a proxy server. Enabled by default. Type bool.
+server: true
+
+# Record ignored flows in the UI even if we do not perform TLS
+# interception. This option will keep ignored flows' contents in memory,
+# which can greatly increase memory usage. A future release will fix
+# this issue, record ignored flows by default, and remove this option.
+# Type bool.
+show_ignored_hosts: false
+
+# Use the Host header to construct URLs for display.              This
+# option is disabled by default because malicious apps may send
+# misleading host headers to evade             your analysis. If this is
+# not a concern, enable this options for better flow display. Type bool.
+showhost: false
+
+# Do not verify upstream server SSL/TLS certificates.              If
+# this option is enabled, certificate validation is skipped and
+# mitmproxy itself will be vulnerable to             TLS interception.
+# Type bool.
+ssl_insecure: false
+
+# Path to a PEM formatted trusted CA certificate. Type optional str.
+ssl_verify_upstream_trusted_ca:
+
+# Path to a directory of trusted CA certificates for upstream server
+# verification prepared using the c_rehash tool. Type optional str.
+ssl_verify_upstream_trusted_confdir:
+
+# Generic TCP SSL proxy mode for all hosts that match the pattern.
+# Similar to --ignore-hosts, but SSL connections are intercepted. The
+# communication contents are printed to the log in verbose mode. Type
+# sequence of str.
+tcp_hosts: []
+
+# Timeout in seconds for inactive TCP connections. Connections will be
+# closed after this period of inactivity. Type int.
+tcp_timeout: 600
+
+# Generic UDP SSL proxy mode for all hosts that match the pattern.
+# Similar to --ignore-hosts, but SSL connections are intercepted. The
+# communication contents are printed to the log in verbose mode. Type
+# sequence of str.
+udp_hosts: []
+
+# Connect to upstream server to look up certificate details. Type bool.
+upstream_cert: true
+
+# Enable/disable WebSocket support. WebSocket support is enabled by
+# default. Type bool.
+websocket: true

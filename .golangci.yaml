@@ -1,0 +1,72 @@
+# golangci-lint v2 configuration.
+# https://golangci-lint.run/docs/configuration/file/
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - godot
+    - goheader
+    - gosec
+    - govet
+    - misspell
+    - revive
+    - staticcheck
+    - unused
+  settings:
+    godot:
+      # Godoc comments on declarations end with a period; revive has no rule
+      # for that, so godot checks it.
+      scope: declarations
+    goheader:
+      # Every Go file opens with the copyright and SPDX lines.
+      template: |-
+        Copyright 2026 The mitmproxy-go Authors.
+        SPDX-License-Identifier: MIT
+    gosec:
+      # G105 is not listed because gosec retired it.
+      includes:
+        - G101
+        - G102
+        - G103
+        - G104
+        - G106
+        - G107
+        - G201
+        - G202
+        - G203
+        - G204
+        - G301
+        - G302
+        - G303
+        - G304
+        - G305
+        - G306
+        - G401
+        - G402
+        - G403
+        - G404
+        - G501
+        - G502
+        - G503
+        - G504
+        - G505
+    revive:
+      rules:
+        - name: comment-spacings
+        - name: exported
+        - name: package-comments
+
+formatters:
+  enable:
+    - gofumpt
+  settings:
+    gofumpt:
+      module-path: github.com/zchee/mitmproxy-go
+      # The same rules as "gofumpt -extra" in hack/fmt.sh, which enables all
+      # three.
+      extra:
+        group-params: true
+        clothe-returns: true
+        balance-calls: true

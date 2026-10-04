@@ -73,7 +73,11 @@ type Manager struct {
 	// well, so that hooks see a consistent set of addons; mu lets Get and
 	// Len be called without the dispatch lock. Addon code never runs with
 	// mu held.
-	mu     sync.RWMutex
+	mu sync.RWMutex
+	// chain is copy-on-write: a change publishes a new slice and never
+	// writes to the elements of the old one, so a hook chain iterates the
+	// slice it read without copying it, even after [Concurrent] released
+	// the lock and the chain changed.
 	chain  []any
 	lookup map[string]any
 	// commands lists, per addon passed to Register, the commands it added
@@ -168,7 +172,7 @@ func (m *Manager) Add(ctx context.Context, addons ...any) error {
 				return err
 			}
 			m.mu.Lock()
-			m.chain = append(m.chain, a)
+			m.chain = append(slices.Clip(m.chain), a)
 			m.mu.Unlock()
 		}
 		return nil
@@ -275,7 +279,7 @@ func (m *Manager) Remove(ctx context.Context, addon any) error {
 			_, ok := m.lookup[name]
 			if ok {
 				if reflect.ValueOf(a).Comparable() {
-					m.chain = slices.DeleteFunc(m.chain, func(c any) bool { return c == a })
+					m.chain = slices.DeleteFunc(slices.Clone(m.chain), func(c any) bool { return c == a })
 				}
 				delete(m.lookup, name)
 			}
@@ -375,7 +379,10 @@ func (m *Manager) Trigger(ctx context.Context, hook Hook) error {
 // so that handlers of a hook dispatched at the outermost level may call
 // [Concurrent].
 func (m *Manager) trigger(ctx context.Context, hook Hook) error {
-	for _, a := range m.Chain() {
+	m.mu.RLock()
+	chain := m.chain
+	m.mu.RUnlock()
+	for _, a := range chain {
 		err := m.safeInvokeTree(ctx, a, hook)
 		if err == nil {
 			continue

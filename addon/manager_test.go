@@ -1200,3 +1200,33 @@ func TestSubAddonCommandsFollowTheSubAddon(t *testing.T) {
 		}
 	})
 }
+
+// TestChainChangeDuringConcurrent removes an addon while a hook chain has
+// released the lock with Concurrent. The chain in flight goes on over the
+// addons it started with, as mitmproxy's trigger_event iterates the list
+// that remove replaces rather than changes.
+func TestChainChangeDuringConcurrent(t *testing.T) {
+	e := newEnv(t)
+	j := &journal{}
+	a := &hooker{name: "a", j: j}
+	b := &hooker{name: "b", j: j}
+	d := &hooker{name: "d", j: j}
+	c := &concurrentAddon{name: "c", j: j, body: func(ctx context.Context) error {
+		return e.m.Remove(ctx, b)
+	}}
+	if err := e.m.Add(t.Context(), a, c, b, d); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	within(t, "Trigger", func() {
+		if err := e.m.Trigger(t.Context(), RunningHook{}); err != nil {
+			t.Errorf("Trigger: %v", err)
+		}
+	})
+	want := []string{"running a", "done b", "running c err=<nil>", "running b", "running d"}
+	if diff := cmp.Diff(want, j.got()); diff != "" {
+		t.Errorf("calls (-want +got):\n%s", diff)
+	}
+	if got := e.m.Chain(); len(got) != 3 || got[0] != a || got[1] != c || got[2] != d {
+		t.Errorf("chain after Remove = %v, want [a c d]", got)
+	}
+}

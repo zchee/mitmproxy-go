@@ -57,6 +57,14 @@ linters:
         - name: comment-spacings
         - name: exported
         - name: package-comments
+  exclusions:
+    rules:
+      # Tests read fixtures by computed path and use seeded generators so that
+      # failures reproduce; gosec's file-inclusion and weak-random checks are
+      # about production input, not test input.
+      - path: _test\.go
+        linters:
+          - gosec
 
 formatters:
   enable:

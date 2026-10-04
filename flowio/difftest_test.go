@@ -69,3 +69,40 @@ func TestDifferentialMigrate(t *testing.T) {
 		})
 	}
 }
+
+// rewriteScript reads every flow on stdin with mitmproxy's FlowReader and
+// writes them with its FlowWriter.
+const rewriteScript = `
+import io, sys
+from mitmproxy.io import FlowReader, FlowWriter
+src = io.BytesIO(sys.stdin.buffer.read())
+out = io.BytesIO()
+w = FlowWriter(out)
+for f in FlowReader(src).stream():
+    w.add(f)
+sys.stdout.buffer.write(out.getvalue())
+`
+
+// TestDifferentialWrite compares Write(Read(file)) with what mitmproxy's
+// FlowWriter(FlowReader(file)) writes, for every readable fixture, and
+// checks that mitmproxy reads the file mitmproxy-go wrote back into the
+// same bytes.
+func TestDifferentialWrite(t *testing.T) {
+	for _, rel := range readableFixtures(t) {
+		t.Run(rel, func(t *testing.T) {
+			src := testutil.Fixture(t, rel)
+			flows, err := readAll(t, src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := writeAll(t, flows)
+			want := runPython(t, rewriteScript, src)
+			if !bytes.Equal(want, got) {
+				t.Errorf("Write(Read(file)) differs from mitmproxy's FlowWriter(FlowReader(file)) (Go %d bytes, Python %d bytes)", len(got), len(want))
+			}
+			if back := runPython(t, rewriteScript, got); !bytes.Equal(back, got) {
+				t.Errorf("mitmproxy re-wrote the file mitmproxy-go wrote differently (Go %d bytes, Python %d bytes)", len(got), len(back))
+			}
+		})
+	}
+}

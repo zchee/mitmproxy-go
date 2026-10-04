@@ -201,24 +201,22 @@ func (m *Manager) register(ctx context.Context, addon any) error {
 	if addon == nil {
 		return fmt.Errorf("%w: cannot register a nil addon", ErrAddonManager)
 	}
-	m.mu.RLock()
-	var err error
+	// Name, Addons and the logger are addon code, so mu is taken only
+	// around the lookups, never across those calls.
 	for a := range traverse(addon) {
-		if err = checkAddon(a); err != nil {
-			break
+		if err := checkAddon(a); err != nil {
+			return err
 		}
 		name := addonName(a)
-		if _, taken := m.lookup[name]; taken {
-			err = fmt.Errorf("%w: An addon called '%s' already exists.", ErrAddonManager, name) //nolint:staticcheck // mitmproxy's message, shown to users verbatim.
-			break
+		m.mu.RLock()
+		_, taken := m.lookup[name]
+		m.mu.RUnlock()
+		if taken {
+			return fmt.Errorf("%w: An addon called '%s' already exists.", ErrAddonManager, name) //nolint:staticcheck // mitmproxy's message, shown to users verbatim.
 		}
 		if _, ok := a.(AddLogHandler); ok {
 			m.log().WarnContext(ctx, "The add_log event has been deprecated, use log/slog instead.", "addon", name)
 		}
-	}
-	m.mu.RUnlock()
-	if err != nil {
-		return err
 	}
 
 	load := LoadHook{Loader: &Loader{m: m, addon: addon}}
@@ -229,9 +227,19 @@ func (m *Manager) register(ctx context.Context, addon any) error {
 		return err
 	}
 
-	m.mu.Lock()
+	// Traverse again: load may have changed the sub-addons, as it does in
+	// mitmproxy.
+	var (
+		tree  []any
+		names []string
+	)
 	for a := range traverse(addon) {
-		m.lookup[addonName(a)] = a
+		tree = append(tree, a)
+		names = append(names, addonName(a))
+	}
+	m.mu.Lock()
+	for i, a := range tree {
+		m.lookup[names[i]] = a
 	}
 	m.mu.Unlock()
 

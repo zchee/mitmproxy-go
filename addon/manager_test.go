@@ -1068,3 +1068,42 @@ func TestRemoveUncomparableValue(t *testing.T) {
 		t.Errorf("Get(holder) = %v, Len = %d; want the registered value kept", got, e.m.Len())
 	}
 }
+
+// introspective consults the manager from its Name and Addons methods,
+// which the manager calls while it registers the addon.
+type introspective struct {
+	m        *Manager
+	children []any
+}
+
+func (a *introspective) Name() string {
+	_ = a.m.Get("child")
+	return "introspective"
+}
+
+func (a *introspective) Addons() []any {
+	_ = a.m.Len()
+	return a.children
+}
+
+// TestRegisterCallsAddonCodeUnlocked registers an addon whose Name and
+// Addons methods read the manager. The manager must not hold its own lock
+// while it calls them, or they deadlock.
+func TestRegisterCallsAddonCodeUnlocked(t *testing.T) {
+	e := newEnv(t)
+	child := &hooker{name: "child", j: &journal{}}
+	a := &introspective{m: e.m, children: []any{child}}
+	within(t, "Add", func() {
+		if err := e.m.Add(t.Context(), a); err != nil {
+			t.Errorf("Add: %v", err)
+		}
+	})
+	if e.m.Get("introspective") != a || e.m.Get("child") != child {
+		t.Errorf("Get(introspective) = %v, Get(child) = %v; want both registered", e.m.Get("introspective"), e.m.Get("child"))
+	}
+	within(t, "Remove", func() {
+		if err := e.m.Remove(t.Context(), a); err != nil {
+			t.Errorf("Remove: %v", err)
+		}
+	})
+}

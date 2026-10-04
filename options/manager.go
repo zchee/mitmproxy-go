@@ -28,7 +28,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/zchee/mitmproxy-go/internal/omap"
+	"github.com/zchee/mitmproxy-go/omap"
 )
 
 // option is one registered option.

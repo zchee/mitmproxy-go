@@ -18,7 +18,7 @@ import (
 
 	yaml "go.yaml.in/yaml/v4"
 
-	"github.com/zchee/mitmproxy-go/internal/omap"
+	"github.com/zchee/mitmproxy-go/omap"
 )
 
 // parse is mitmproxy's optmanager.parse: it decodes a YAML configuration

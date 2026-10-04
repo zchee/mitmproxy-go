@@ -24,7 +24,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/zchee/mitmproxy-go/internal/omap"
+	"github.com/zchee/mitmproxy-go/omap"
 )
 
 // Param describes one parameter of a command.

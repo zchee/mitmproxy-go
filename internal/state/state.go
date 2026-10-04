@@ -24,7 +24,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/zchee/mitmproxy-go/internal/omap"
+	"github.com/zchee/mitmproxy-go/omap"
 )
 
 // Map is a serialised state dictionary.

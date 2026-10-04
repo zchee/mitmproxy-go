@@ -3,15 +3,24 @@
 
 // Package omap provides an insertion-ordered map with string keys.
 //
-// The flow state codec needs Python dict semantics: keys keep the order in
-// which they were first inserted, overwriting a key keeps its position, and
-// deleting a key removes it from the order. Go maps iterate in random order,
-// so serialising a state dictionary with them would not reproduce the key
-// order mitmproxy writes into flow files.
+// A [Map] follows Python dict semantics, which the flow state codec needs to
+// reproduce the key order mitmproxy writes into flow files; Go maps iterate
+// in random order and cannot. The guarantees are:
 //
-// A key also records whether it is text or a byte string, the two key kinds
-// a flow file can hold, so that a key read as Python bytes is written back
-// as bytes. A key is identified by its bytes alone, whatever its kind.
+//   - Keys iterate in the order in which they were first inserted, in
+//     [Map.All], [Map.Keys], [Map.String] and the JSON encoding.
+//   - Overwriting a key keeps its position; deleting a key removes it from
+//     the order, and inserting it again appends it at the end.
+//   - A key records whether it is text or a byte string, the two key kinds a
+//     flow file can hold, so that a key read as Python bytes is written back
+//     as bytes. [Map.Set] adds a text key and [Map.SetBytesKey] a byte-string
+//     key, which need not be valid UTF-8. A key is identified by its bytes
+//     alone, whatever its kind, so one map never holds the same bytes twice.
+//   - The zero value is an empty map ready to use, and every read-only
+//     method accepts a nil *Map and treats it as empty.
+//   - A Map is not safe for concurrent use. Concurrent reads are fine, but a
+//     mutation concurrent with any other access must be synchronised by the
+//     caller.
 package omap
 
 import (

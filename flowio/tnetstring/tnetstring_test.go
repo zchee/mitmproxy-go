@@ -12,13 +12,14 @@ import (
 	"math"
 	"math/big"
 	rand "math/rand/v2"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"testing/iotest"
 
 	gocmp "github.com/google/go-cmp/cmp"
+
+	"github.com/zchee/mitmproxy-go/internal/testutil"
 )
 
 // entry is an exported mirror of a Dict entry, so go-cmp can diff decoded
@@ -237,20 +238,21 @@ func TestDictOrder(t *testing.T) {
 // the reverse of get_state's order; the other files hold other orders.
 // Decoding keeps file order and encoding reverses every dictionary, so two
 // round trips must reproduce mitmproxy's bytes exactly, floats included.
+//
+// Every .mitm file in the fixture directory is checked, so a fixture added
+// later is covered without editing this test.
 func TestFlowFiles(t *testing.T) {
-	files, err := filepath.Glob("../../testdata/mitmproxy/flows/*.mitm")
+	const dir = "mitmproxy/flows"
+	files, err := filepath.Glob(filepath.Join(testutil.FixturePath(t, dir), "*.mitm"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(files) == 0 {
-		t.Skip("testdata/mitmproxy/flows is not checked out")
+		t.Fatalf("no .mitm fixtures in testdata/%s", dir)
 	}
 	for _, file := range files {
 		t.Run(filepath.Base(file), func(t *testing.T) {
-			b, err := os.ReadFile(file)
-			if err != nil {
-				t.Fatal(err)
-			}
+			b := testutil.Fixture(t, dir+"/"+filepath.Base(file))
 			var out []byte
 			flows := 0
 			for rest := b; len(rest) > 0; flows++ {

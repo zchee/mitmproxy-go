@@ -369,6 +369,12 @@ func (m *Manager) Unregister(name string) bool {
 // ctx is passed to a command that declares a leading context.Context
 // parameter. The Manager's lock is not held while the command runs, so a
 // command may call other commands.
+//
+// Call does not take the addon dispatch lock, and commands run addon code,
+// so Call must run under that lock: from a hook or from another command,
+// with their context, or else through
+// [github.com/zchee/mitmproxy-go/addon.Manager.Call] or
+// [github.com/zchee/mitmproxy-go/master.Master.Call], which take it.
 func (m *Manager) Call(ctx context.Context, name string, args ...any) (any, error) {
 	m.mu.RLock()
 	c, ok := m.commands.Get(name)

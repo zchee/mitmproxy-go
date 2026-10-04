@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -1229,4 +1230,84 @@ func TestChainChangeDuringConcurrent(t *testing.T) {
 	if got := e.m.Chain(); len(got) != 3 || got[0] != a || got[1] != c || got[2] != d {
 		t.Errorf("chain after Remove = %v, want [a c d]", got)
 	}
+}
+
+// dispatchProbe tracks whether the dispatch lock is held through the
+// watchdog callbacks the manager calls when it takes and releases it.
+type dispatchProbe struct {
+	held   atomic.Bool
+	starts atomic.Int32
+}
+
+func (p *dispatchProbe) config() Config {
+	return Config{
+		Logger:          slog.New(slog.DiscardHandler),
+		OnDispatchStart: func() { p.held.Store(true); p.starts.Add(1) },
+		OnDispatchEnd:   func() { p.held.Store(false) },
+	}
+}
+
+// caller calls a command through the manager from its running hook.
+type caller struct {
+	m   *Manager
+	got any
+	err error
+}
+
+func (c *caller) Running(ctx context.Context) error {
+	c.got, c.err = c.m.Call(ctx, "probe.held")
+	return nil
+}
+
+// TestCallRunsUnderTheDispatchLock calls a command through the manager
+// from outside the hooks, where Call takes the dispatch lock, and from
+// inside a hook, where it re-enters the hold of the hook.
+func TestCallRunsUnderTheDispatchLock(t *testing.T) {
+	p := &dispatchProbe{}
+	cmds := command.NewManager()
+	m := NewManager(options.NewManager(), cmds, p.config())
+	t.Cleanup(m.Close)
+	if err := cmds.Register("probe.held", func() bool { return p.held.Load() }); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	t.Run("success: outside a hook", func(t *testing.T) {
+		before := p.starts.Load()
+		var (
+			got any
+			err error
+		)
+		within(t, "Call", func() { got, err = m.Call(t.Context(), "probe.held") })
+		if err != nil || got != true {
+			t.Errorf("Call = %v, %v; want true (run under the dispatch lock)", got, err)
+		}
+		if n := p.starts.Load() - before; n != 1 {
+			t.Errorf("Call took the dispatch lock %d times, want 1", n)
+		}
+	})
+
+	t.Run("success: from inside a hook", func(t *testing.T) {
+		c := &caller{m: m}
+		if err := m.Add(t.Context(), c); err != nil {
+			t.Fatalf("Add: %v", err)
+		}
+		before := p.starts.Load()
+		within(t, "Call inside a hook", func() {
+			if err := m.Trigger(t.Context(), RunningHook{}); err != nil {
+				t.Errorf("Trigger: %v", err)
+			}
+		})
+		if c.err != nil || c.got != true {
+			t.Errorf("Call in the hook = %v, %v; want true", c.got, c.err)
+		}
+		if n := p.starts.Load() - before; n != 1 {
+			t.Errorf("Trigger and the Call in its hook took the dispatch lock %d times, want 1 (re-entry)", n)
+		}
+	})
+
+	t.Run("error: unknown command", func(t *testing.T) {
+		if _, err := m.Call(t.Context(), "no.such.command"); !errors.Is(err, command.ErrUnknownCommand) {
+			t.Errorf("Call error = %v, want ErrUnknownCommand", err)
+		}
+	})
 }

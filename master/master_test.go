@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -241,5 +242,62 @@ func TestNewDefaultsToCoreOptions(t *testing.T) {
 		if !m.Options.Has(name) {
 			t.Errorf("core option %q is missing", name)
 		}
+	}
+}
+
+// commandCaller calls a command through the master from its running hook.
+type commandCaller struct {
+	m   *master.Master
+	got any
+	err error
+}
+
+func (c *commandCaller) Running(ctx context.Context) error {
+	c.got, c.err = c.m.Call(ctx, "probe.held")
+	return nil
+}
+
+// TestCall runs a command through the master from a goroutine outside the
+// hooks and from inside a hook. Both run it under the dispatch lock; the
+// call from the hook re-enters the hook's hold instead of deadlocking.
+func TestCall(t *testing.T) {
+	var held atomic.Bool
+	m := master.New(master.Config{
+		Options:         options.NewManager(),
+		Logger:          discard,
+		OnDispatchStart: func() { held.Store(true) },
+		OnDispatchEnd:   func() { held.Store(false) },
+	})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), deadlockTimeout)
+		defer cancel()
+		if err := m.Close(ctx); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+	if err := m.Commands.Register("probe.held", func() bool { return held.Load() }); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	var (
+		got any
+		err error
+	)
+	within(t, "master.Call", func() { got, err = m.Call(t.Context(), "probe.held") })
+	if err != nil || got != true {
+		t.Errorf("Call = %v, %v; want true (run under the dispatch lock)", got, err)
+	}
+
+	c := &commandCaller{m: m}
+	if err := m.Addons.Add(t.Context(), c); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	within(t, "master.Call inside a hook", func() {
+		if err := m.Addons.Trigger(t.Context(), addon.RunningHook{}); err != nil {
+			t.Errorf("Trigger: %v", err)
+		}
+	})
+	if c.err != nil || c.got != true {
+		t.Errorf("Call in the hook = %v, %v; want true", c.got, c.err)
 	}
 }

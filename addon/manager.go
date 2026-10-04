@@ -136,6 +136,23 @@ func (m *Manager) Do(ctx context.Context, fn func(ctx context.Context) error) er
 	return m.d.do(ctx, fn)
 }
 
+// Call runs the command registered under name with args under the
+// dispatch lock, the way [Manager.Do] runs a function, and returns its
+// result (see [command.Manager.Call]). A ctx that carries a valid dispatch
+// frame, such as the context of a hook or of a command calling another
+// command, re-enters the hold of the lock instead of taking it again.
+// Frontends and other goroutines outside the hooks call commands through
+// Call.
+func (m *Manager) Call(ctx context.Context, name string, args ...any) (any, error) {
+	var res any
+	err := m.d.do(ctx, func(ctx context.Context) error {
+		var err error
+		res, err = m.cmds.Call(ctx, name, args...)
+		return err
+	})
+	return res, err
+}
+
 // Get returns the registered addon named name, or nil.
 func (m *Manager) Get(name string) any {
 	m.mu.RLock()

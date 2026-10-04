@@ -114,7 +114,8 @@ Reproduced on purpose (compatibility, not differences):
 ## master
 
 No behavioural differences. `Master.Do` is the Go entry point for goroutines that are not running a hook (frontends,
-timers, script reloaders); upstream reaches the same state by scheduling work on its event loop.
+timers, script reloaders), and `Master.Call` runs a command the same way; upstream reaches the same state by scheduling
+work on its event loop.
 
 ## internal/human
 

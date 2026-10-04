@@ -91,6 +91,14 @@ func (m *Master) Do(ctx context.Context, fn func(ctx context.Context) error) err
 	return m.Addons.Do(ctx, fn)
 }
 
+// Call runs the command registered under name with args under the
+// dispatch lock and returns its result; see [addon.Manager.Call]. It is
+// the entry point for frontends and other goroutines outside the hooks,
+// and may also be called with the context of a hook.
+func (m *Master) Call(ctx context.Context, name string, args ...any) (any, error) {
+	return m.Addons.Call(ctx, name, args...)
+}
+
 // Run fires the running hook, waits until ctx is done or [Master.Shutdown]
 // is called, fires the done hook and then closes the master (see
 // [Master.Close]). The done hook runs even when the running hook returned

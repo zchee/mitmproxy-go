@@ -1,0 +1,6 @@
+# Upstream fixtures are byte-exact copies. Some contain CR bytes (the
+# servercert PEM files), so line-ending normalisation must not touch them.
+UPSTREAM_LICENSE  -text
+mitmproxy/**      -text linguist-vendored
+mitmproxy-rs/**   -text linguist-vendored
+wg-test-client/** binary linguist-vendored

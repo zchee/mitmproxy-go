@@ -1,0 +1,125 @@
+# testdata
+
+Fixtures copied from upstream mitmproxy for the tests of the Go port.
+
+Every file listed in [`SHA256SUMS`](SHA256SUMS) is a byte-exact copy of an
+upstream file: same git blob id and same file mode as in the upstream index.
+The upstream layout is kept, so a citation of an upstream fixture maps to a
+path here by prefix:
+
+| Here | Upstream path |
+| --- | --- |
+| `mitmproxy/` | `test/mitmproxy/data/` in mitmproxy |
+| `wg-test-client/` | `test/wg-test-client/` in mitmproxy |
+| `mitmproxy-rs/contentviews/` | `mitmproxy-contentviews/testdata/` in mitmproxy_rs |
+| `mitmproxy-rs/network_tests.rs` | `src/network/tests.rs` in mitmproxy_rs |
+| `UPSTREAM_LICENSE` | `LICENSE` in mitmproxy |
+| `mitmproxy-rs/UPSTREAM_LICENSE` | `LICENSE` in mitmproxy_rs |
+
+## Sources and licences
+
+| Upstream | Commit | Commit date (`git log`) | Licence |
+| --- | --- | --- | --- |
+| [mitmproxy](https://github.com/mitmproxy/mitmproxy) (Python) | `3368a0a06ae6195aad817a1ece1aaeb6fe0353a1` | 2026-10-03 14:44:57 +0000 | MIT, Copyright (c) 2013 Aldo Cortesi; text in `UPSTREAM_LICENSE` |
+| [mitmproxy_rs](https://github.com/mitmproxy/mitmproxy_rs) (Rust) | `51fe2b7c5aa8439c162abb665db61c6669d146d6` | 2026-10-01 23:27:13 +0200 | MIT, Copyright (c) 2022 Fabio Valentini and Maximilian Hils; text in `mitmproxy-rs/UPSTREAM_LICENSE` |
+
+The WireGuard test client binaries were built upstream from
+[mitmproxy_wireguard](https://github.com/decathorpe/mitmproxy_wireguard)
+v0.1.6; their licence (MIT) is `wg-test-client/LICENSE`.
+
+## Contents
+
+| Path | What it holds |
+| --- | --- |
+| `mitmproxy/flows/` | Flow dumps (`*.mitm`) and the HAR files upstream exports from them (`test/mitmproxy/addons/test_savehar.py`); `compressed.zhar` is a zlib-compressed HAR that no upstream test reads at the pinned commit. |
+| `mitmproxy/har_files/` | HAR files from Charles, Chrome, Firefox, Insomnia and Safari, a HEAD request, POST data and a file with a UTF-8 BOM, each next to the flow JSON upstream produces from it (`test/mitmproxy/io/test_har.py`). |
+| `mitmproxy/corrupted_har/` | Malformed HAR input for the HAR import tests (`test/mitmproxy/io/test_har.py`). |
+| `mitmproxy/confdir/` | A complete mitmproxy CA directory (`mitmproxy-ca.pem`, `mitmproxy-ca-cert.{pem,cer,p12}`, `mitmproxy-dhparam.pem`) and a Magisk module (`mitmproxy-magisk-module.zip`) holding that CA. |
+| `mitmproxy/servercert/` | Server certificate chains (self-signed, trusted root and leaf) and the hashed root `9da13359.0`; `generate.py` is upstream's generator. The four certificate files have CRLF line endings. |
+| `mitmproxy/clientcert/` | Client certificates (`client.pem`, `127.0.0.1.pem`) and the OpenSSL recipe (`make`, `client.cnf`) that produced them. |
+| `mitmproxy/addonscripts/` | Python addon scripts loaded by upstream's script tests; reference for the Starlark scripting tests. |
+| `mitmproxy/image_parser/` | PNG, GIF and JPEG samples for the image contentview parser; sources in `mitmproxy/image_parser/README.md`. |
+| `mitmproxy/mitmproxy.pem` | Encrypted private key and certificate used by `test/mitmproxy/test_certs.py`. |
+| `mitmproxy/testkey.pem` | RSA private key and certificate used by `test/mitmproxy/test_certs.py` and `test/mitmproxy/test_proxy.py`. |
+| `mitmproxy/invalid-subject.pem` | Certificate with an invalid subject and no basic constraints (`test_certs.py`, `test_tlsconfig.py`). |
+| `mitmproxy/no_common_name.pem` | RSA private key and a certificate without a common name (`test_certs.py`). |
+| `mitmproxy/dercert` | DER-encoded certificate; not read by any upstream test at the pinned commit. |
+| `mitmproxy/htpasswd` | bcrypt htpasswd file for the proxy authentication tests. |
+| `mitmproxy/test_config.yml` | Options file for the option manager tests (`test/mitmproxy/test_optmanager.py`); the upstream name is kept. |
+| `mitmproxy/pf01` | `pfctl -s state` output for the macOS transparent-mode lookup (`test/mitmproxy/platform/test_pf.py`). |
+| `mitmproxy/pf02` | Second `pfctl -s state` sample for the same test. |
+| `mitmproxy/image.gif` | Image samples for the image contentview (`test/mitmproxy/contentviews/_view_image/`). |
+| `mitmproxy/image.ico` | As above. |
+| `mitmproxy/image.jpg` | As above. |
+| `mitmproxy/image.png` | As above. |
+| `mitmproxy/all.jpeg` | JPEG sample for the image contentview (`test/mitmproxy/contentviews/_view_image/test_view.py`). |
+| `mitmproxy/1.css` | Minified CSS; not read by any upstream test at the pinned commit. |
+| `mitmproxy/har_extractor.har` | HAR file; not read by any upstream test at the pinned commit. |
+| `mitmproxy/replace` | One-line text file (`replacecontents`); not read by any upstream test at the pinned commit. |
+| `wg-test-client/` | WireGuard test client binaries (`linux-x86_64`, `macos-aarch64`, `macos-x86_64`, `windows-x86_64.exe`) and the key pair `test.conf` they use for the WireGuard end-to-end test. |
+| `mitmproxy-rs/contentviews/protobuf/` | `.proto` definitions for the protobuf and gRPC contentviews. |
+| `mitmproxy-rs/network_tests.rs` | Upstream's Rust network-stack tests, kept as a text reference for the userspace TCP/UDP stack tests (mode 0755 as upstream). |
+
+## Flow format versions
+
+Each flow in a `.mitm` file carries a `version` key. The values below were
+read from the files with a byte scan for the tnetstring fragment
+`7:version;`; `internal/testutil/fixtures_test.go` checks the integer ones.
+
+| File | Version | Note |
+| --- | --- | --- |
+| `mitmproxy/flows/corrupted_gzip_body.mitm` | 21 | current format; HTTP flow with a corrupted gzip body |
+| `mitmproxy/flows/event_stream.mitm` | 20 | server-sent events |
+| `mitmproxy/flows/websocket.mitm` | 20 | WebSocket flow |
+| `mitmproxy/flows/error_log.mitm` | 18 | |
+| `mitmproxy/flows/incomplete_log.mitm` | 18 | |
+| `mitmproxy/flows/successful_log.mitm` | 18 | |
+| `mitmproxy/dumpfile-19.mitm` | 20 | readable after migration to 21 |
+| `mitmproxy/dumpfile-7.mitm` | 11 | rejected (older than 18) |
+| `mitmproxy/dumpfile-10.mitm` | 10 | rejected |
+| `mitmproxy/dumpfile-7-websocket.mitm` | 7 | rejected |
+| `mitmproxy/dumpfile-019.mitm` | 7 | rejected |
+| `mitmproxy/dumpfile-018.mitm` | tuple `(0, 18, 2)` | rejected; upstream compares `tuple(version)[:2]`, so the message shows `(0, 18)` |
+| `mitmproxy/dumpfile-011.mitm` | tuple `(0, 11, 3)`, bytes keys | rejected as `(0, 11)` |
+| `mitmproxy/dumpfile-010.mitm` | tuple `(0, 10, 1)`, bytes keys | rejected as `(0, 10)` |
+
+The rejection rule is upstream's `migrate_flow` in `mitmproxy/io/compat.py`.
+
+## Keeping the copies exact
+
+- `testdata/.gitattributes` turns off line-ending normalisation (`-text`)
+  for the imported directories; the four `servercert/` certificate files
+  contain CR bytes and the repository default `* text=auto eol=lf` would
+  rewrite them.
+- The WireGuard client binaries are marked `binary`; all imported paths are
+  `linguist-vendored`. `testdata/.gitignore` re-includes
+  `windows-x86_64.exe`, which the repository's `*.exe` rule would ignore.
+- A global git ignore that excludes `*.pem`, `*.png`, `*.zip` and the like
+  hides some of these files from `git add`; add them with `git add -f`.
+
+To refresh from a newer upstream commit, copy from the upstream index (not the
+working tree) and compare blob ids, for example:
+
+```sh
+(cd "$UPSTREAM/test/mitmproxy/data" && git ls-files -z . | tar --null -T - -cf -) | tar -xpf - -C testdata/mitmproxy
+git ls-files -s testdata/mitmproxy   # blob ids must equal `git -C "$UPSTREAM" ls-files -s test/mitmproxy/data`
+```
+
+Then update the commit table above and regenerate the manifest from the
+repository root:
+
+```sh
+git ls-files -z testdata/UPSTREAM_LICENSE testdata/mitmproxy testdata/mitmproxy-rs testdata/wg-test-client \
+  | LC_ALL=C sort -z | xargs -0 shasum -a 256 | sed 's#  testdata/#  #' >| testdata/SHA256SUMS
+```
+
+## Manifest
+
+[`SHA256SUMS`](SHA256SUMS) lists every imported file, relative to
+`testdata/`, with its SHA-256 digest; `shasum -a 256 -c SHA256SUMS` run in
+this directory verifies the copies. `internal/testutil/fixtures_test.go`
+checks that the files under `UPSTREAM_LICENSE`, `mitmproxy/`,
+`mitmproxy-rs/` and `wg-test-client/` are exactly the listed ones with the
+listed digests, and that every path in the first column of a table in this
+file exists. Tests read fixtures through `testutil.FixturePath` and
+`testutil.Fixture`, which take a path relative to `testdata/`.

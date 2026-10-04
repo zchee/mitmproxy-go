@@ -1,0 +1,2 @@
+# The repository ignores *.exe; the WireGuard test client is a fixture.
+!**/windows-x86_64.exe

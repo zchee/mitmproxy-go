@@ -1311,3 +1311,64 @@ func TestCallRunsUnderTheDispatchLock(t *testing.T) {
 		}
 	})
 }
+
+// releasingCaller calls the command "probe.release" through the manager
+// from its running hook.
+type releasingCaller struct {
+	m   *Manager
+	err error
+}
+
+func (c *releasingCaller) Running(ctx context.Context) error {
+	_, c.err = c.m.Call(ctx, "probe.release")
+	return nil
+}
+
+// TestConcurrentRefusedInCommand calls Concurrent from a command. A
+// mitmproxy command is a synchronous call that cannot yield, so the frame
+// a command runs under refuses Concurrent, whether Call took the lock or
+// re-entered the hold of a hook.
+func TestConcurrentRefusedInCommand(t *testing.T) {
+	tests := map[string]struct {
+		call func(t *testing.T, m *Manager) error
+	}{
+		"error: Call from outside the hooks": {
+			call: func(t *testing.T, m *Manager) error {
+				_, err := m.Call(t.Context(), "probe.release")
+				return err
+			},
+		},
+		"error: Call re-entered from a hook": {
+			call: func(t *testing.T, m *Manager) error {
+				c := &releasingCaller{m: m}
+				if err := m.Add(t.Context(), c); err != nil {
+					return err
+				}
+				if err := m.Trigger(t.Context(), RunningHook{}); err != nil {
+					return err
+				}
+				return c.err
+			},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t)
+			ran := false
+			err := e.cmds.Register("probe.release", func(ctx context.Context) error {
+				_, err := Concurrent(ctx, func(context.Context) error { ran = true; return nil })
+				return err
+			})
+			if err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+			within(t, "Call", func() { err = tt.call(t, e.m) })
+			if ran {
+				t.Error("the body of Concurrent ran inside a command")
+			}
+			if !errors.Is(err, ErrSyncContext) || !strings.Contains(err.Error(), "command probe.release") {
+				t.Errorf("command error = %v, want ErrSyncContext naming the command", err)
+			}
+		})
+	}
+}

@@ -101,7 +101,7 @@ func NewManager(opts *options.Manager, cmds *command.Manager, cfg Config) *Manag
 	m.unsubscribe = opts.Subscribe(func(ctx context.Context, updated map[string]struct{}) error {
 		hook := ConfigureHook{Updated: updated}
 		return m.d.do(ctx, func(ctx context.Context) error {
-			return m.trigger(inSync(ctx, hook.Name()), hook)
+			return m.trigger(inSync(ctx, hook.Name()+" hook"), hook)
 		})
 	})
 	return m
@@ -143,11 +143,15 @@ func (m *Manager) Do(ctx context.Context, fn func(ctx context.Context) error) er
 // command, re-enters the hold of the lock instead of taking it again.
 // Frontends and other goroutines outside the hooks call commands through
 // Call.
+//
+// The command runs as a synchronous call, as a mitmproxy command does: it
+// cannot release the lock, and [Concurrent] called with its context
+// returns an error wrapping [ErrSyncContext].
 func (m *Manager) Call(ctx context.Context, name string, args ...any) (any, error) {
 	var res any
 	err := m.d.do(ctx, func(ctx context.Context) error {
 		var err error
-		res, err = m.cmds.Call(ctx, name, args...)
+		res, err = m.cmds.Call(inSync(ctx, "command "+name), name, args...)
 		return err
 	})
 	return res, err
@@ -244,7 +248,7 @@ func (m *Manager) register(ctx context.Context, addon any) error {
 	// commands it adds belong to it and leave with it when it alone is
 	// removed. The frame of a synchronous dispatch is never replaced, so
 	// every handler can be called with it.
-	ctx = inSync(ctx, LoadHook{}.Name())
+	ctx = inSync(ctx, LoadHook{}.Name()+" hook")
 	for a := range traverse(addon) {
 		if _, err := (LoadHook{Loader: &Loader{m: m, addon: a}}).invoke(ctx, a); err != nil {
 			// The addon is not registered, so nothing could remove it
@@ -310,7 +314,7 @@ func (m *Manager) Remove(ctx context.Context, addon any) error {
 				m.unregisterCommands(a)
 			}
 		}()
-		return m.invokeTree(inSync(ctx, DoneHook{}.Name()), addon, DoneHook{})
+		return m.invokeTree(inSync(ctx, DoneHook{}.Name()+" hook"), addon, DoneHook{})
 	})
 }
 
@@ -320,7 +324,7 @@ func (m *Manager) Remove(ctx context.Context, addon any) error {
 func (m *Manager) Clear(ctx context.Context) error {
 	return m.d.do(ctx, func(ctx context.Context) error {
 		for _, a := range m.Chain() {
-			if err := m.invokeTree(inSync(ctx, DoneHook{}.Name()), a, DoneHook{}); err != nil {
+			if err := m.invokeTree(inSync(ctx, DoneHook{}.Name()+" hook"), a, DoneHook{}); err != nil {
 				return err
 			}
 		}

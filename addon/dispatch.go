@@ -40,10 +40,10 @@ var (
 	// the dispatch lock was last released.
 	ErrStaleFrame = errors.New("addon: dispatch frame used after the dispatch lock was released")
 
-	// ErrSyncContext reports a call to [Concurrent] from a nested dispatch
-	// or from a hook mitmproxy dispatches synchronously (load, configure,
-	// and the done of a removal), where releasing the lock would let other
-	// hooks run in the middle of the outer one.
+	// ErrSyncContext reports a call to [Concurrent] from a nested dispatch,
+	// from a hook mitmproxy dispatches synchronously (load, configure, and
+	// the done of a removal) or from a command, where releasing the lock
+	// would let other hooks run in the middle of the outer one.
 	ErrSyncContext = errors.New("cannot be called from sync context")
 
 	// ErrNoDispatch reports a call to [Concurrent] with a context that does
@@ -62,9 +62,10 @@ type frame struct {
 	d     *dispatcher
 	epoch uint64
 	depth int // 1 for the hold of the lock, plus one per re-entry
-	// sync names the hook of the synchronous dispatch the frame was issued
-	// for, and is inherited by the frames re-entered from it; it is empty
-	// for an ordinary dispatch. [Concurrent] refuses a frame that has it.
+	// sync describes the synchronous dispatch the frame was issued for,
+	// such as "load hook" or "command view.flows.add", and is inherited by
+	// the frames re-entered from it; it is empty for an ordinary dispatch.
+	// [Concurrent] refuses a frame that has it.
 	sync string
 }
 
@@ -156,11 +157,11 @@ func (d *dispatcher) enter(ctx context.Context) (*frame, func(), error) {
 }
 
 // inSync returns ctx with its frame replaced by one that marks a
-// synchronous dispatch of hook, in which [Concurrent] is refused. ctx must
-// carry a valid frame.
-func inSync(ctx context.Context, hook string) context.Context {
+// synchronous dispatch, described by what, in which [Concurrent] is
+// refused. ctx must carry a valid frame.
+func inSync(ctx context.Context, what string) context.Context {
 	f := frameFrom(ctx)
-	return withFrame(ctx, &frame{d: f.d, epoch: f.epoch, depth: f.depth, sync: hook})
+	return withFrame(ctx, &frame{d: f.d, epoch: f.epoch, depth: f.depth, sync: what})
 }
 
 // current returns the frame to call the next addon of a chain with: the
@@ -199,7 +200,8 @@ func (d *dispatcher) do(ctx context.Context, fn func(context.Context) error) err
 // [Manager.Remove] or [Manager.Clear]. Releasing the lock there would let
 // another registration, removal or option change run in the middle of this
 // one. The done hook fired through [Manager.Trigger] at shutdown may call
-// Concurrent.
+// Concurrent. A command run through [Manager.Call] refuses it too, because
+// a mitmproxy command is a synchronous call that cannot yield.
 //
 // fn gets a context without a dispatch frame; it must not touch addon state
 // except through calls that take the lock themselves. Releasing the lock
@@ -222,11 +224,11 @@ func Concurrent(ctx context.Context, fn func(context.Context) error) (context.Co
 	if !d.valid(f) {
 		return ctx, stale(f)
 	}
+	if f.sync != "" {
+		return ctx, fmt.Errorf("addon.Concurrent %w (%s)", ErrSyncContext, f.sync)
+	}
 	if f.depth > 1 {
 		return ctx, fmt.Errorf("addon.Concurrent %w (dispatch depth %d)", ErrSyncContext, f.depth)
-	}
-	if f.sync != "" {
-		return ctx, fmt.Errorf("addon.Concurrent %w (%s hook)", ErrSyncContext, f.sync)
 	}
 
 	var (

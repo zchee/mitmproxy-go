@@ -24,6 +24,7 @@ type Unparsed []string
 // types and an empty sequence for [TypeSeq]; "name=toggle" flips a bool.
 // Set returns an [*OptionsError] when a value does not parse or when a name
 // is not registered; nothing is applied in either case.
+// Changes must be serialised by the caller; see [Manager].
 func (m *Manager) Set(ctx context.Context, specs ...string) error { return m.set(ctx, false, specs) }
 
 // SetDeferred is [Manager.Set], except that specifications naming options

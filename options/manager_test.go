@@ -472,18 +472,140 @@ func TestReentrantUpdateFromSubscriber(t *testing.T) {
 	}
 }
 
-func TestConcurrentAccess(t *testing.T) {
+// TestNestedUpdateRollback pins how a rejected update interacts with an
+// update a subscriber made from inside the notification. The expectations
+// were produced by running the same subscribers against mitmproxy's
+// OptManager (mitmproxy/optmanager.py, update_known and rollback): a
+// rollback restores the snapshot taken when the rejected update started, so
+// it also reverts a nested update that had succeeded, and it re-announces
+// only the names of the rejected update.
+func TestNestedUpdateRollback(t *testing.T) {
+	type event struct {
+		Sub     string
+		Updated []string
+		A, B    int
+	}
+	type subscriberFunc func(ctx context.Context, m *Manager, updated map[string]struct{}, log *[]event) error
+	record := func(name string, m *Manager, updated map[string]struct{}, log *[]event) {
+		*log = append(*log, event{Sub: name, Updated: slices.Sorted(maps.Keys(updated)), A: m.Int("a"), B: m.Int("b")})
+	}
+	tests := map[string]struct {
+		first, second subscriberFunc
+		wantErr       bool
+		wantA, wantB  int
+		wantLog       []event
+	}{
+		"error: rejecting the outer update reverts a nested update that succeeded": {
+			first: func(ctx context.Context, m *Manager, updated map[string]struct{}, log *[]event) error {
+				record("first", m, updated, log)
+				if _, ok := updated["a"]; ok && m.Int("a") == 1 {
+					return m.Update(ctx, map[string]any{"b": 2})
+				}
+				return nil
+			},
+			second: func(_ context.Context, m *Manager, updated map[string]struct{}, log *[]event) error {
+				record("second", m, updated, log)
+				if _, ok := updated["a"]; ok && m.Int("a") == 1 && m.Int("b") == 2 {
+					return Errorf("reject")
+				}
+				return nil
+			},
+			wantErr: true,
+			wantA:   0,
+			wantB:   0,
+			wantLog: []event{
+				{Sub: "first", Updated: []string{"a"}, A: 1, B: 0},
+				{Sub: "first", Updated: []string{"b"}, A: 1, B: 2},
+				{Sub: "second", Updated: []string{"b"}, A: 1, B: 2},
+				{Sub: "second", Updated: []string{"a"}, A: 1, B: 2},
+				// The rollback restores b as well but announces only a.
+				{Sub: "first", Updated: []string{"a"}, A: 0, B: 0},
+				{Sub: "second", Updated: []string{"a"}, A: 0, B: 0},
+			},
+		},
+		"success: a rejected nested update rolls back to its own snapshot": {
+			first: func(ctx context.Context, m *Manager, updated map[string]struct{}, log *[]event) error {
+				record("first", m, updated, log)
+				if _, ok := updated["a"]; ok && m.Int("a") == 1 {
+					// The subscriber handles the rejection itself, so the
+					// outer update goes on.
+					var oe *OptionsError
+					if err := m.Update(ctx, map[string]any{"b": 2}); !errors.As(err, &oe) {
+						return err
+					}
+				}
+				return nil
+			},
+			second: func(_ context.Context, m *Manager, updated map[string]struct{}, log *[]event) error {
+				record("second", m, updated, log)
+				if m.Int("b") == 2 {
+					return Errorf("reject b")
+				}
+				return nil
+			},
+			wantA: 1,
+			wantB: 0,
+			wantLog: []event{
+				{Sub: "first", Updated: []string{"a"}, A: 1, B: 0},
+				{Sub: "first", Updated: []string{"b"}, A: 1, B: 2},
+				{Sub: "second", Updated: []string{"b"}, A: 1, B: 2},
+				// The nested rollback keeps a, which the outer update set
+				// before the nested one started.
+				{Sub: "first", Updated: []string{"b"}, A: 1, B: 0},
+				{Sub: "second", Updated: []string{"b"}, A: 1, B: 0},
+				{Sub: "second", Updated: []string{"a"}, A: 1, B: 0},
+			},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			mustAdd(t, m, "a", TypeInt, 0, "help")
+			mustAdd(t, m, "b", TypeInt, 0, "help")
+			var log []event
+			m.Subscribe(func(ctx context.Context, u map[string]struct{}) error { return tt.first(ctx, m, u, &log) })
+			m.Subscribe(func(ctx context.Context, u map[string]struct{}) error { return tt.second(ctx, m, u, &log) })
+
+			err := m.Update(t.Context(), map[string]any{"a": 1})
+			var oe *OptionsError
+			switch {
+			case tt.wantErr && !errors.As(err, &oe):
+				t.Fatalf("Update(a=1) = %v, want *OptionsError", err)
+			case !tt.wantErr && err != nil:
+				t.Fatalf("Update(a=1) = %v, want nil", err)
+			}
+			if got := m.Int("a"); got != tt.wantA {
+				t.Errorf("a = %d, want %d", got, tt.wantA)
+			}
+			if got := m.Int("b"); got != tt.wantB {
+				t.Errorf("b = %d, want %d", got, tt.wantB)
+			}
+			if diff := gocmp.Diff(tt.wantLog, log); diff != "" {
+				t.Errorf("subscriber calls (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestConcurrentReads checks the documented concurrency contract: reads may
+// run on any goroutine while a single goroutine makes the changes.
+func TestConcurrentReads(t *testing.T) {
 	m := newTO(t)
 	var wg sync.WaitGroup
-	for i := range 8 {
+	wg.Go(func() {
+		for j := range 1000 {
+			if err := m.Update(t.Context(), map[string]any{"required_int": j}); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	})
+	for range 8 {
 		wg.Go(func() {
-			for j := range 200 {
-				if err := m.Update(t.Context(), map[string]any{"required_int": i*1000 + j}); err != nil {
-					t.Error(err)
-					return
-				}
+			for range 200 {
 				_ = m.Int("required_int")
 				_ = m.Items()
+				_ = m.HasChanged("required_int")
 			}
 		})
 	}

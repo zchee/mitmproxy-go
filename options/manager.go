@@ -117,12 +117,27 @@ type errorSubscriber struct {
 	fn func(error)
 }
 
-// Manager is a registry of typed options. It is safe for concurrent use.
+// Manager is a registry of typed options.
+//
+// Reads (the getters, [Manager.Items], [Manager.Lookup] and the like) are
+// safe for concurrent use with each other and with a change. Changes
+// ([Manager.Add], [Manager.Update], [Manager.Set], [Manager.Reset], the
+// deferred variants and the loaders) must be serialised by the caller: the
+// master runs them through Master.Do. Two changes running at the same time
+// do not corrupt the Manager, but a rollback of one can silently revert the
+// other.
 //
 // Subscribers run on the goroutine that made the change, with the context
 // that change was made with, after the change has been applied and without
 // any Manager lock held, so a subscriber may read options and may itself
-// call [Manager.Update].
+// call [Manager.Update]. Such a nested change runs on the same goroutine, so
+// it is serialised with the change that announced it.
+//
+// When a subscriber rejects a change, every option is restored to the value
+// it had when the rejected change started, as mitmproxy's
+// OptManager.rollback does. This also reverts any nested change a
+// subscriber made while the rejected change was being announced, and only
+// the names of the rejected change are announced again.
 type Manager struct {
 	mu       sync.Mutex
 	opts     *omap.Map[*option]
@@ -344,6 +359,7 @@ func (m *Manager) OptInt(name string) *int { return Get[*int](m, name) }
 // unknown. Unlike mitmproxy, every value is type-checked before any is
 // applied, so a [*TypeError] leaves all options unchanged instead of
 // applying the values that preceded the bad one.
+// Changes must be serialised by the caller; see [Manager].
 func (m *Manager) Update(ctx context.Context, values map[string]any) error {
 	unknown, err := m.UpdateKnown(ctx, values)
 	if err != nil {
@@ -360,8 +376,9 @@ func (m *Manager) Update(ctx context.Context, values map[string]any) error {
 //
 // Subscribers are called once with the names of all updated options. If one
 // returns an [*OptionsError], every option is restored to the value it had
-// before the call, subscribers are notified again, and the error is
-// returned.
+// before the call, including options a subscriber changed in the meantime,
+// subscribers are notified again with the same names, and the error is
+// returned. Calls must be serialised by the caller; see [Manager].
 func (m *Manager) UpdateKnown(ctx context.Context, values map[string]any) (unknown map[string]any, err error) {
 	unknown = make(map[string]any)
 	known := make(map[string]any, len(values))

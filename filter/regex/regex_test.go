@@ -329,13 +329,22 @@ func TestSetLoggerNilDiscards(t *testing.T) {
 
 func BenchmarkMatch(b *testing.B) {
 	headers := []byte(strings.Repeat("x-padding: 0123456789abcdef\r\n", 20) + "content-type: application/json\r\n")
-	benchmarks := map[string]string{
-		"re2":     "^content-type: application/json",
-		"regexp2": "^content-type: (?=application)",
+	benchmarks := map[string]struct {
+		pattern string
+		flags   Flags
+	}{
+		"re2":     {pattern: "^content-type: application/json"},
+		"regexp2": {pattern: "^content-type: (?=application)"},
+		// Class escapes: on RE2 in both modes, on regexp2, and \b in a str
+		// pattern, which runs on regexp2.
+		"re2 bytes class":   {pattern: `^content-type: \w+/json`},
+		"re2 str class":     {pattern: `^content-type: \w+/json`, flags: Unicode},
+		"regexp2 class":     {pattern: `^content-type: \w+(?=/json)`, flags: Unicode},
+		"str word boundary": {pattern: `\bjson\b`, flags: Unicode},
 	}
-	for name, pattern := range benchmarks {
+	for name, bm := range benchmarks {
 		b.Run(name, func(b *testing.B) {
-			m, err := Compile(pattern, IgnoreCase|Multiline)
+			m, err := Compile(bm.pattern, bm.flags|IgnoreCase|Multiline)
 			if err != nil {
 				b.Fatal(err)
 			}

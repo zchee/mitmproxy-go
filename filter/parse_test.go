@@ -291,7 +291,8 @@ func TestCaseSensitiveEnv(t *testing.T) {
 func TestRegexFlagsPerToken(t *testing.T) {
 	want := map[Token]regex.Flags{
 		TokenHeader: regex.Multiline, TokenHeaderRequest: regex.Multiline, TokenHeaderResponse: regex.Multiline,
-		TokenMeta: regex.Multiline, TokenComment: regex.Multiline,
+		TokenMeta: regex.Multiline | regex.Unicode, TokenComment: regex.Multiline | regex.Unicode,
+		TokenDomain: regex.Unicode, TokenDst: regex.Unicode, TokenSrc: regex.Unicode, TokenURL: regex.Unicode, TokenMarker: regex.Unicode,
 		TokenBody: regex.DotAll, TokenBodyRequest: regex.DotAll, TokenBodyResponse: regex.DotAll,
 	}
 	for _, tok := range Tokens() {

@@ -97,17 +97,17 @@ var tokens = [tokenEnd]tokenInfo{
 	TokenContentType:         {code: "t", class: "FContentType", help: "Content-type header", arity: ArityRegex, describe: "content type matches %s"},
 	TokenContentTypeRequest:  {code: "tq", class: "FContentTypeRequest", help: "Request Content-Type header", arity: ArityRegex, describe: "req. content type matches %s"},
 	TokenContentTypeResponse: {code: "ts", class: "FContentTypeResponse", help: "Response Content-Type header", arity: ArityRegex, describe: "resp. content type matches %s"},
-	TokenDomain:              {code: "d", class: "FDomain", help: "Domain", arity: ArityRegex, describe: "domain matches %s"},
-	TokenDst:                 {code: "dst", class: "FDst", help: "Match destination address", arity: ArityRegex, describe: "destination address matches %s"},
+	TokenDomain:              {code: "d", class: "FDomain", help: "Domain", arity: ArityRegex, flags: regex.Unicode, describe: "domain matches %s"},
+	TokenDst:                 {code: "dst", class: "FDst", help: "Match destination address", arity: ArityRegex, flags: regex.Unicode, describe: "destination address matches %s"},
 	TokenHeader:              {code: "h", class: "FHead", help: "Header", arity: ArityRegex, flags: regex.Multiline, describe: "header matches %s"},
 	TokenHeaderRequest:       {code: "hq", class: "FHeadRequest", help: "Request header", arity: ArityRegex, flags: regex.Multiline, describe: "req. header matches %s"},
 	TokenHeaderResponse:      {code: "hs", class: "FHeadResponse", help: "Response header", arity: ArityRegex, flags: regex.Multiline, describe: "resp. header matches %s"},
 	TokenMethod:              {code: "m", class: "FMethod", help: "Method", arity: ArityRegex, describe: "method matches %s"},
-	TokenSrc:                 {code: "src", class: "FSrc", help: "Match source address", arity: ArityRegex, describe: "source address matches %s"},
-	TokenURL:                 {code: "u", class: "FUrl", help: "URL", arity: ArityRegex, describe: "url matches %s"},
-	TokenMeta:                {code: "meta", class: "FMeta", help: "Flow metadata", arity: ArityRegex, flags: regex.Multiline, describe: "flow metadata matches %s"},
-	TokenMarker:              {code: "marker", class: "FMarker", help: "Match marked flows with specified marker", arity: ArityRegex, describe: "marker matches %s"},
-	TokenComment:             {code: "comment", class: "FComment", help: "Flow comment", arity: ArityRegex, flags: regex.Multiline, describe: "comment matches %s"},
+	TokenSrc:                 {code: "src", class: "FSrc", help: "Match source address", arity: ArityRegex, flags: regex.Unicode, describe: "source address matches %s"},
+	TokenURL:                 {code: "u", class: "FUrl", help: "URL", arity: ArityRegex, flags: regex.Unicode, describe: "url matches %s"},
+	TokenMeta:                {code: "meta", class: "FMeta", help: "Flow metadata", arity: ArityRegex, flags: regex.Multiline | regex.Unicode, describe: "flow metadata matches %s"},
+	TokenMarker:              {code: "marker", class: "FMarker", help: "Match marked flows with specified marker", arity: ArityRegex, flags: regex.Unicode, describe: "marker matches %s"},
+	TokenComment:             {code: "comment", class: "FComment", help: "Flow comment", arity: ArityRegex, flags: regex.Multiline | regex.Unicode, describe: "comment matches %s"},
 	TokenCode:                {code: "c", class: "FCode", help: "HTTP response code", arity: ArityInt, describe: "response code is %s"},
 }
 
@@ -166,7 +166,9 @@ func (t Token) Help() string {
 // RegexFlags returns the flags the operator compiles its pattern with,
 // apart from the case-insensitivity that applies to every operator unless
 // MITMPROXY_CASE_SENSITIVE_FILTERS=1: Multiline for ~h, ~hq, ~hs, ~meta and
-// ~comment, DotAll for ~b, ~bq and ~bs.
+// ~comment, DotAll for ~b, ~bq and ~bs, and Unicode for the operators whose
+// upstream pattern is a str rather than bytes: ~d, ~dst, ~src, ~u, ~meta,
+// ~marker and ~comment.
 func (t Token) RegexFlags() regex.Flags {
 	if !t.valid() {
 		return 0

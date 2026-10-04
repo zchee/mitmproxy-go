@@ -20,8 +20,18 @@
 //     or (?im), become Flags. Python records them in the compiled pattern's
 //     flags, and the filter layer prints those flags, so Matcher.Flags
 //     reports them as well. The Python-only flags a, u and L, which only
-//     change what \w, \b and similar classes match, are dropped; x (verbose)
-//     is honoured by compiling with regexp2.
+//     change what \w, \b and similar classes match, are ignored: the
+//     Unicode flag passed to Compile alone decides that. x (verbose) is
+//     honoured by compiling with regexp2.
+//   - \d, \D, \w, \W, \s and \S, also inside character classes, become
+//     explicit classes that match what Python matches: Unicode categories
+//     for a str pattern (Unicode), ASCII for a bytes pattern, and never
+//     folded for case. Neither Go engine agrees with Python on its own: RE2
+//     is ASCII-only, and regexp2 uses the .NET definitions.
+//   - \b keeps RE2's ASCII meaning in a bytes pattern. In a str pattern, and
+//     \B in any pattern, the pattern goes to regexp2, where they become
+//     lookarounds on Python's word characters. Python's \B does not match
+//     in an empty input.
 //   - \Z, which Python defines as the absolute end of the input, becomes
 //     \z. RE2 rejects \Z and regexp2 gives it the .NET meaning "end or
 //     before a final newline".
@@ -34,7 +44,8 @@
 //
 // A known difference that is not translated: Python's bytes patterns treat
 // input as Latin-1 bytes and fold case for ASCII only, while both Go engines
-// decode UTF-8 and fold case for all of Unicode.
+// decode UTF-8 and fold case for all of Unicode. The Unicode classes follow
+// the Unicode version of Go's unicode package rather than Python's.
 package regex
 
 import (
@@ -42,6 +53,7 @@ import (
 	"log/slog"
 	"regexp"
 	"regexp/syntax"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -62,10 +74,15 @@ const (
 	Multiline
 	// DotAll makes . match a newline as well (re.DOTALL).
 	DotAll
+	// Unicode gives \d, \w, \s and \b their meaning in a Python str
+	// pattern (re.UNICODE), which Python also reports in the flags of a
+	// str pattern. Without it they have their meaning in a bytes pattern,
+	// which is ASCII-only.
+	Unicode
 )
 
 // String returns the flags as Python's regex_str spells them: a subset of
-// "ims" in that order.
+// "ims" in that order. Unicode is not spelled, as in regex_str.
 func (f Flags) String() string {
 	var b strings.Builder
 	if f&IgnoreCase != 0 {
@@ -136,9 +153,13 @@ func Compile(pattern string, flags Flags) (Matcher, error) {
 	}
 	body = translateEscapes(body)
 	eff := flags | inline
+	re2Body, re2OK, body, err := translateClasses(body, eff, verbose)
+	if err != nil {
+		return nil, fmt.Errorf("regex: cannot compile %q: %w", pattern, err)
+	}
 
-	if !verbose {
-		if re := compileRE2(re2Prefix(eff) + body); re != nil {
+	if !verbose && re2OK {
+		if re := compileRE2(re2Prefix(eff)+re2Body, eff&Unicode != 0); re != nil {
 			return &re2Matcher{re: re, pattern: pattern, flags: eff}, nil
 		}
 	}
@@ -165,11 +186,16 @@ func Compile(pattern string, flags Flags) (Matcher, error) {
 }
 
 // compileRE2 compiles src with the standard regexp package, giving $ its
-// Python meaning. It returns nil when RE2 rejects src or when a $ is not in
-// tail position, so that the caller falls back to regexp2.
-func compileRE2(src string) *regexp.Regexp {
+// Python meaning. It returns nil when RE2 rejects src, when a $ is not in
+// tail position, or when src has a word boundary RE2 cannot give Python's
+// meaning, so that the caller falls back to regexp2. uni says whether src
+// is a str pattern.
+func compileRE2(src string, uni bool) *regexp.Regexp {
 	tree, err := syntax.Parse(src, syntax.Perl)
 	if err != nil {
+		return nil
+	}
+	if foreignBoundary(tree, uni) {
 		return nil
 	}
 	found, tail := pythonDollars(tree, true)
@@ -190,6 +216,20 @@ func compileRE2(src string) *regexp.Regexp {
 		return nil
 	}
 	return re
+}
+
+// foreignBoundary reports whether re has a \B, or a \b in a str pattern.
+// RE2's \b is an ASCII word boundary, which is Python's \b for a bytes
+// pattern only, and RE2's \B matches in an empty input, where Python's does
+// not.
+func foreignBoundary(re *syntax.Regexp, uni bool) bool {
+	switch re.Op {
+	case syntax.OpNoWordBoundary:
+		return true
+	case syntax.OpWordBoundary:
+		return uni
+	}
+	return slices.ContainsFunc(re.Sub, func(sub *syntax.Regexp) bool { return foreignBoundary(sub, uni) })
 }
 
 // isPythonDollar reports whether re is a $ outside Multiline, which RE2

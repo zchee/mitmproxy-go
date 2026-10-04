@@ -11,11 +11,11 @@ package connection
 import (
 	"errors"
 	"fmt"
-	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/zchee/mitmproxy-go/internal/human"
 	"github.com/zchee/mitmproxy-go/internal/state"
 )
 
@@ -94,20 +94,7 @@ type Address struct {
 // bracketed, IPv4-mapped IPv6 hosts print as IPv4, and an unspecified host
 // prints as "*".
 func (a Address) String() string {
-	port := strconv.Itoa(a.Port)
-	ip, err := netip.ParseAddr(a.Host)
-	if err != nil {
-		return a.Host + ":" + port
-	}
-	switch {
-	case ip.IsUnspecified():
-		return "*:" + port
-	case ip.Is4():
-		return ip.String() + ":" + port
-	case ip.Is4In6():
-		return ip.Unmap().String() + ":" + port
-	}
-	return "[" + ip.String() + "]:" + port
+	return human.FormatAddress(a.Host, a.Port)
 }
 
 func formatAddress(a *Address) string {

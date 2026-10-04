@@ -397,6 +397,22 @@ func TestString(t *testing.T) {
 			got:  func() string { return Address{Host: "0.0.0.0", Port: 8080}.String() },
 			want: "*:8080",
 		},
+		"success: unspecified ipv4-mapped address": {
+			got:  func() string { return Address{Host: "::ffff:0.0.0.0", Port: 8080}.String() },
+			want: "*:8080",
+		},
+		"success: unspecified ipv6 address with zone": {
+			got:  func() string { return Address{Host: "::%eth0", Port: 8080}.String() },
+			want: "*:8080",
+		},
+		"success: ipv6 zone containing percent printed raw": {
+			got:  func() string { return Address{Host: "fe80::1%a%b", Port: 443}.String() },
+			want: "fe80::1%a%b:443",
+		},
+		"success: domain name": {
+			got:  func() string { return Address{Host: "example.com", Port: 443}.String() },
+			want: "example.com:443",
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

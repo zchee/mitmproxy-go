@@ -342,11 +342,17 @@ func TestLoaderAddOptionAgain(t *testing.T) {
 	}
 }
 
-// badSig has a Configure method without the context parameter, which would
-// never be called.
+// badSig has a Configure method that takes a context but the wrong
+// options argument: a near miss of the handler, which would never be
+// called.
 type badSig struct{}
 
-func (badSig) Configure(map[string]struct{}) error { return nil }
+func (badSig) Configure(context.Context, []string) error { return nil }
+
+// noErrDone has a Done handler without the error result.
+type noErrDone struct{}
+
+func (noErrDone) Done(context.Context) {}
 
 // uncomparable cannot be removed by identity: a slice makes the struct
 // type uncomparable.
@@ -369,7 +375,11 @@ func TestRegisterRefused(t *testing.T) {
 		},
 		"error: handler with the wrong signature": {
 			addons:  func() []any { return []any{&badSig{}} },
-			wantMsg: "handler Configure for the configure hook has type func(map[string]struct {}) error",
+			wantMsg: "handler Configure for the configure hook has type func(context.Context, []string) error",
+		},
+		"error: handler without the error result": {
+			addons:  func() []any { return []any{&noErrDone{}} },
+			wantMsg: "handler Done for the done hook has type func(context.Context)",
 		},
 		"error: uncomparable addon": {
 			addons:  func() []any { return []any{uncomparable{}} },
@@ -945,5 +955,88 @@ func TestNoSecondAddonDuringLoad(t *testing.T) {
 	}
 	if got := e.m.Get("dup"); got != first || e.m.Len() != 1 {
 		t.Errorf("Get(dup) = %p, Len = %d; want the first addon alone", got, e.m.Len())
+	}
+}
+
+// withWaitGroup embeds a sync.WaitGroup, whose Done method shares the name
+// of the done handler.
+type withWaitGroup struct {
+	sync.WaitGroup
+	j *journal
+}
+
+func (a *withWaitGroup) Running(context.Context) error {
+	a.j.add("running waitgroup")
+	return nil
+}
+
+// withContext embeds a context.Context, whose Done method shares the name
+// of the done handler.
+type withContext struct {
+	context.Context //nolint:containedctx // The embedding is what the test is about.
+	j               *journal
+}
+
+func (a *withContext) Running(context.Context) error {
+	a.j.add("running context")
+	return nil
+}
+
+// withError implements error, whose Error method shares the name of the
+// error handler.
+type withError struct{ j *journal }
+
+func (*withError) Error() string { return "an addon that is an error" }
+
+func (a *withError) Running(context.Context) error {
+	a.j.add("running error")
+	return nil
+}
+
+// TestHookNamedMethodsThatAreNotHandlers registers addons whose ordinary
+// Go methods share a name with a hook handler. A method whose first
+// parameter is not a context.Context is not a handler: the addon
+// registers, receives the hooks it does handle, and the method is never
+// called. sync.WaitGroup.Done would panic on a negative counter if the
+// done hook reached it.
+func TestHookNamedMethodsThatAreNotHandlers(t *testing.T) {
+	tests := map[string]struct {
+		addon func(j *journal) any
+		want  string
+	}{
+		"success: embeds sync.WaitGroup": {
+			addon: func(j *journal) any { return &withWaitGroup{j: j} },
+			want:  "running waitgroup",
+		},
+		"success: embeds context.Context": {
+			addon: func(j *journal) any { return &withContext{Context: t.Context(), j: j} },
+			want:  "running context",
+		},
+		"success: implements error": {
+			addon: func(j *journal) any { return &withError{j: j} },
+			want:  "running error",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t)
+			j := &journal{}
+			a := tt.addon(j)
+			if err := e.m.Add(t.Context(), a); err != nil {
+				t.Fatalf("Add: %v", err)
+			}
+			if err := e.m.Trigger(t.Context(), RunningHook{}); err != nil {
+				t.Fatalf("Trigger(running): %v", err)
+			}
+			if err := e.m.Remove(t.Context(), a); err != nil {
+				t.Fatalf("Remove: %v", err)
+			}
+			if diff := cmp.Diff([]string{tt.want}, j.got()); diff != "" {
+				t.Errorf("hook calls (-want +got):\n%s", diff)
+			}
+			if logs := e.log.got(); len(logs) != 0 {
+				t.Errorf("unexpected log records: %v", logs)
+			}
+		})
 	}
 }

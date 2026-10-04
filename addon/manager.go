@@ -180,9 +180,13 @@ func (m *Manager) Add(ctx context.Context, addons ...any) error {
 // to them as its sub-addons.
 //
 // Registration refuses an addon whose name, or the name of one of its
-// sub-addons, is taken, and an addon with a method named after a hook
-// handler whose signature does not match the handler interface, which
-// would otherwise never be called. It then runs the load hook on the addon
+// sub-addons, is taken, and an addon with a near miss of a hook handler: a
+// method named after the handler whose first parameter is a
+// [context.Context] but whose signature does not match the handler
+// interface, which would otherwise never be called. A method of that name
+// without a leading context, such as the Done of an embedded
+// [sync.WaitGroup] or the Error of an addon that implements error, is not
+// a handler and is never called. It then runs the load hook on the addon
 // and its sub-addons, records their names, and applies the option values
 // that were deferred until an addon added the option. An error from a load
 // handler is returned; the addons whose load already ran stay loaded, as in
@@ -441,8 +445,11 @@ func addonName(addon any) string {
 	return strings.ToLower(t.String())
 }
 
-// checkAddon refuses an addon that the manager cannot track or whose hook
-// methods would never be called.
+// checkAddon refuses an addon that the manager cannot track or that has a
+// near miss of a hook handler: a method with the handler's name and a
+// leading context.Context but another signature, which would never be
+// called. A method with the handler's name and no leading context is an
+// ordinary method that happens to share the name, and is left alone.
 func checkAddon(a any) error {
 	if a == nil {
 		return fmt.Errorf("%w: nil sub-addon", ErrAddonManager)
@@ -454,12 +461,18 @@ func checkAddon(a any) error {
 	v := reflect.ValueOf(a)
 	for _, s := range hookSpecs {
 		want := s.handler.Method(0)
-		if got := v.MethodByName(want.Name); got.IsValid() && !t.Implements(s.handler) {
+		got := v.MethodByName(want.Name)
+		if !got.IsValid() || t.Implements(s.handler) {
+			continue
+		}
+		if mt := got.Type(); mt.NumIn() > 0 && mt.In(0) == contextType {
 			return fmt.Errorf("%w: addon %s: handler %s for the %s hook has type %v, want %v", ErrAddonManager, addonName(a), want.Name, s.hook.Name(), got.Type(), want.Type)
 		}
 	}
 	return nil
 }
+
+var contextType = reflect.TypeFor[context.Context]()
 
 // Loader is passed to the load hook. Through it an addon adds its options
 // and commands.

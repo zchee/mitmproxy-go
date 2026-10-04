@@ -18,6 +18,7 @@ import (
 	"github.com/zchee/mitmproxy-go/flowio/tnetstring"
 	"github.com/zchee/mitmproxy-go/internal/state"
 	"github.com/zchee/mitmproxy-go/internal/testutil"
+	"github.com/zchee/mitmproxy-go/internal/version"
 )
 
 const v21Fixture = "mitmproxy/flows/corrupted_gzip_body.mitm"
@@ -241,7 +242,7 @@ func dictOf(kv ...any) *state.Map {
 // TestVersionErrors checks mitmproxy's message for versions it cannot read,
 // rendered as Python renders them.
 func TestVersionErrors(t *testing.T) {
-	const prefix = "mitmproxy-go " + Version + " cannot read files with flow format version "
+	prefix := version.String() + " cannot read files with flow format version "
 	tests := map[string]struct {
 		data []byte
 		want string
@@ -293,7 +294,7 @@ func TestVersionErrors(t *testing.T) {
 // format 18. mitmproxy itself migrates these; mitmproxy-go reads format 18
 // and later only.
 func TestOldDumpfiles(t *testing.T) {
-	const prefix = "mitmproxy-go " + Version + " cannot read files with flow format version "
+	prefix := version.String() + " cannot read files with flow format version "
 	tests := map[string]struct {
 		rel  string
 		want string

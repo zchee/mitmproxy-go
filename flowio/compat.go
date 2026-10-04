@@ -13,6 +13,7 @@ import (
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/flowio/tnetstring"
 	"github.com/zchee/mitmproxy-go/internal/state"
+	"github.com/zchee/mitmproxy-go/internal/version"
 )
 
 // VersionError reports a flow whose format version cannot be read.
@@ -29,9 +30,9 @@ type VersionError struct {
 // mitmproxy-go's name and version in place of mitmproxy's.
 func (e *VersionError) Error() string {
 	if e.Newer {
-		return fmt.Sprintf("%s cannot read files with flow format version %s, please update mitmproxy.", versionName, e.Version)
+		return fmt.Sprintf("%s cannot read files with flow format version %s, please update mitmproxy.", version.String(), e.Version)
 	}
-	return fmt.Sprintf("%s cannot read files with flow format version %s.", versionName, e.Version)
+	return fmt.Sprintf("%s cannot read files with flow format version %s.", version.String(), e.Version)
 }
 
 // converters holds the migrations from each readable older version to the

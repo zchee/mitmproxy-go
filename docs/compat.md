@@ -70,6 +70,8 @@ No behavioural differences.
 | A filter object always has a compiled pattern. | A `*filter.Rex` built by hand instead of by `Parse` has no compiled pattern; `Match` returns false for it. | Go allows the zero value of an exported struct; it must not panic. |
 | Patterns run on Python's `re`, which has no time limit (`mitmproxy/flowfilter.py`). | Patterns run on Go's `regexp` (RE2) where it can express them, otherwise on `github.com/dlclark/regexp2`. A `regexp2` match that takes longer than 100 ms counts as no match and is logged as a warning. | RE2 cannot backtrack; the time limit bounds the backtracking fallback on hostile input. |
 | Byte patterns (`~b`, `~h`, `~m`, ...) see the input as Latin-1 bytes and fold case for ASCII only. | Both Go engines read the input as UTF-8 and fold case for all of Unicode. | Neither Go engine has a Latin-1 byte mode. |
+| In a `str` pattern (`~u`, `~d`, `~src`, `~dst`, `~meta`, `~marker`, `~comment`) the inline flag `(?a)` makes `\d`, `\w`, `\s` and `\b` ASCII-only and `(?L)` is an error; in a `bytes` pattern `(?u)` is an error (Python `re`). | The inline flags `a`, `u` and `L` are accepted and ignored; the operator alone decides whether the classes are Unicode or ASCII. | The filter package has always ignored these flags. Ignoring them never rejects a filter mitmproxy accepts; only `(?a)` in a `str` pattern changes what matches. |
+| `\d`, `\w` and `\s` in a `str` pattern follow the Unicode database of the Python that runs mitmproxy (15.1 for Python 3.13). | They follow Go's `unicode` package (17.0 for Go 1.27). | Go has no copy of Python's database. The two agree on every code point Unicode 15.1 assigns; only code points assigned later differ. |
 | `MITMPROXY_CASE_SENSITIVE_FILTERS` is read once, when `flowfilter` is imported (`mitmproxy/flowfilter.py`). | It is read on every `Parse` call. | No import-time state. |
 | `parse` raises `ValueError("Empty filter expression")` or `ValueError("Invalid filter expression: '<expr>'")` (`mitmproxy/flowfilter.py`). | `Parse` returns a `*ParseError` reading `empty filter expression` or `invalid filter expression "<expr>": <reason> at offset <n>`. | The error says where parsing failed. |
 
@@ -77,6 +79,10 @@ Reproduced on purpose (compatibility, not differences):
 
 - Python's `$` (end of input or before a final newline) in filter patterns, by rewriting a `$` at the end of a pattern
   for RE2 and sending other patterns to `regexp2`.
+- Python's `\d`, `\w`, `\s` and `\b` on either engine: Unicode categories in the `str` patterns of `~u`, `~d`, `~src`,
+  `~dst`, `~meta`, `~marker` and `~comment`, ASCII in the `bytes` patterns of the other operators, never folded for
+  case, and the same inside character classes. `\b` in a `str` pattern and `\B` in any pattern run on `regexp2`, where
+  Python 3.13's `\B`, which does not match in an empty input, is reproduced.
 - pyparsing's grammar as mitmproxy uses it: `a&b` is one bare word, expressions side by side inside parentheses are an
   error, tabs are expanded before parsing, and an operator name must be followed by whitespace, a non-ASCII character
   or the end of the input.

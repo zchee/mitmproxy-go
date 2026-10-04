@@ -1,0 +1,5216 @@
+{
+  "help": [
+    [
+      "~a",
+      "Match asset in response: CSS, JavaScript, images, fonts."
+    ],
+    [
+      "~all",
+      "Match all flows"
+    ],
+    [
+      "~b regex",
+      "Body"
+    ],
+    [
+      "~bq regex",
+      "Request body"
+    ],
+    [
+      "~bs regex",
+      "Response body"
+    ],
+    [
+      "~c int",
+      "HTTP response code"
+    ],
+    [
+      "~comment regex",
+      "Flow comment"
+    ],
+    [
+      "~d regex",
+      "Domain"
+    ],
+    [
+      "~dns",
+      "Match DNS flows"
+    ],
+    [
+      "~dst regex",
+      "Match destination address"
+    ],
+    [
+      "~e",
+      "Match error"
+    ],
+    [
+      "~h regex",
+      "Header"
+    ],
+    [
+      "~hq regex",
+      "Request header"
+    ],
+    [
+      "~hs regex",
+      "Response header"
+    ],
+    [
+      "~http",
+      "Match HTTP flows"
+    ],
+    [
+      "~m regex",
+      "Method"
+    ],
+    [
+      "~marked",
+      "Match marked flows"
+    ],
+    [
+      "~marker regex",
+      "Match marked flows with specified marker"
+    ],
+    [
+      "~meta regex",
+      "Flow metadata"
+    ],
+    [
+      "~q",
+      "Match request with no response"
+    ],
+    [
+      "~replay",
+      "Match replayed flows"
+    ],
+    [
+      "~replayq",
+      "Match replayed client request"
+    ],
+    [
+      "~replays",
+      "Match replayed server response"
+    ],
+    [
+      "~s",
+      "Match response"
+    ],
+    [
+      "~src regex",
+      "Match source address"
+    ],
+    [
+      "~t regex",
+      "Content-type header"
+    ],
+    [
+      "~tcp",
+      "Match TCP flows"
+    ],
+    [
+      "~tq regex",
+      "Request Content-Type header"
+    ],
+    [
+      "~ts regex",
+      "Response Content-Type header"
+    ],
+    [
+      "~u regex",
+      "URL"
+    ],
+    [
+      "~udp",
+      "Match UDP flows"
+    ],
+    [
+      "~websocket",
+      "Match WebSocket flows"
+    ],
+    [
+      "!",
+      "unary not"
+    ],
+    [
+      "&",
+      "and"
+    ],
+    [
+      "|",
+      "or"
+    ],
+    [
+      "(...)",
+      "grouping"
+    ]
+  ],
+  "records": [
+    {
+      "expr": "test",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "test"
+      ],
+      "describe": "url matches /test/i",
+      "dump": "FUrltest\n",
+      "describe_case_sensitive": "url matches /test/"
+    },
+    {
+      "expr": "~q",
+      "ok": true,
+      "tree": [
+        "FReq"
+      ],
+      "describe": "has no response",
+      "dump": "FReq\n",
+      "describe_case_sensitive": "has no response"
+    },
+    {
+      "expr": "~c 10",
+      "ok": true,
+      "tree": [
+        "FCode",
+        "10"
+      ],
+      "describe": "response code is 10",
+      "dump": "FCode\n",
+      "describe_case_sensitive": "response code is 10"
+    },
+    {
+      "expr": "~m foobar",
+      "ok": true,
+      "tree": [
+        "FMethod",
+        "foobar"
+      ],
+      "describe": "method matches /foobar/i",
+      "dump": "FMethodfoobar\n",
+      "describe_case_sensitive": "method matches /foobar/"
+    },
+    {
+      "expr": "~u foobar",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "foobar"
+      ],
+      "describe": "url matches /foobar/i",
+      "dump": "FUrlfoobar\n",
+      "describe_case_sensitive": "url matches /foobar/"
+    },
+    {
+      "expr": "~q ~c 10",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FReq"
+        ],
+        [
+          "FCode",
+          "10"
+        ]
+      ],
+      "describe": "has no response and response code is 10",
+      "dump": "FAnd\n\tFReq\n\tFCode\n",
+      "describe_case_sensitive": "has no response and response code is 10"
+    },
+    {
+      "expr": "~replay",
+      "ok": true,
+      "tree": [
+        "FReplay"
+      ],
+      "describe": "flow has been replayed",
+      "dump": "FReplay\n",
+      "describe_case_sensitive": "flow has been replayed"
+    },
+    {
+      "expr": "~replayq",
+      "ok": true,
+      "tree": [
+        "FReplayClient"
+      ],
+      "describe": "request has been replayed",
+      "dump": "FReplayClient\n",
+      "describe_case_sensitive": "request has been replayed"
+    },
+    {
+      "expr": "~replays",
+      "ok": true,
+      "tree": [
+        "FReplayServer"
+      ],
+      "describe": "response has been replayed",
+      "dump": "FReplayServer\n",
+      "describe_case_sensitive": "response has been replayed"
+    },
+    {
+      "expr": "~comment .",
+      "ok": true,
+      "tree": [
+        "FComment",
+        "."
+      ],
+      "describe": "comment matches /./im",
+      "dump": "FComment.\n",
+      "describe_case_sensitive": "comment matches /./m"
+    },
+    {
+      "expr": "~s шгн",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FResp"
+        ],
+        [
+          "FUrl",
+          "шгн"
+        ]
+      ],
+      "describe": "has response and url matches /шгн/i",
+      "dump": "FAnd\n\tFResp\n\tFUrlшгн\n",
+      "describe_case_sensitive": "has response and url matches /шгн/"
+    },
+    {
+      "expr": "foobar ~h rex",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "foobar"
+        ],
+        [
+          "FHead",
+          "rex"
+        ]
+      ],
+      "describe": "url matches /foobar/i and header matches /rex/im",
+      "dump": "FAnd\n\tFUrlfoobar\n\tFHeadrex\n",
+      "describe_case_sensitive": "url matches /foobar/ and header matches /rex/m"
+    },
+    {
+      "expr": "~u 'foo ~u bar' ~u voing",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "foo ~u bar"
+        ],
+        [
+          "FUrl",
+          "voing"
+        ]
+      ],
+      "describe": "url matches /foo ~u bar/i and url matches /voing/i",
+      "dump": "FAnd\n\tFUrlfoo ~u bar\n\tFUrlvoing\n",
+      "describe_case_sensitive": "url matches /foo ~u bar/ and url matches /voing/"
+    },
+    {
+      "expr": "~u 'foobar\\\"\\''",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "foobar\"'"
+      ],
+      "describe": "url matches /foobar\"'/i",
+      "dump": "FUrlfoobar\"'\n",
+      "describe_case_sensitive": "url matches /foobar\"'/"
+    },
+    {
+      "expr": "~u \"foo \\'bar\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "foo 'bar"
+      ],
+      "describe": "url matches /foo 'bar/i",
+      "dump": "FUrlfoo 'bar\n",
+      "describe_case_sensitive": "url matches /foo 'bar/"
+    },
+    {
+      "expr": "(~u foobar & ~h voing)",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "foobar"
+        ],
+        [
+          "FHead",
+          "voing"
+        ]
+      ],
+      "describe": "url matches /foobar/i and header matches /voing/im",
+      "dump": "FAnd\n\tFUrlfoobar\n\tFHeadvoing\n",
+      "describe_case_sensitive": "url matches /foobar/ and header matches /voing/m"
+    },
+    {
+      "expr": "!~h test",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FHead",
+          "test"
+        ]
+      ],
+      "describe": "not header matches /test/im",
+      "dump": "FNot\n\tFHeadtest\n",
+      "describe_case_sensitive": "not header matches /test/m"
+    },
+    {
+      "expr": "!(~u test & ~h bar)",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FAnd",
+          [
+            "FUrl",
+            "test"
+          ],
+          [
+            "FHead",
+            "bar"
+          ]
+        ]
+      ],
+      "describe": "not (url matches /test/i and header matches /bar/im)",
+      "dump": "FNot\n\tFAnd\n\t\tFUrltest\n\t\tFHeadbar\n",
+      "describe_case_sensitive": "not (url matches /test/ and header matches /bar/m)"
+    },
+    {
+      "expr": "~u foobar | ~h voing",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FUrl",
+          "foobar"
+        ],
+        [
+          "FHead",
+          "voing"
+        ]
+      ],
+      "describe": "url matches /foobar/i or header matches /voing/im",
+      "dump": "FOr\n\tFUrlfoobar\n\tFHeadvoing\n",
+      "describe_case_sensitive": "url matches /foobar/ or header matches /voing/m"
+    },
+    {
+      "expr": "~u foobar & ~h voing",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "foobar"
+        ],
+        [
+          "FHead",
+          "voing"
+        ]
+      ],
+      "describe": "url matches /foobar/i and header matches /voing/im",
+      "dump": "FAnd\n\tFUrlfoobar\n\tFHeadvoing\n",
+      "describe_case_sensitive": "url matches /foobar/ and header matches /voing/m"
+    },
+    {
+      "expr": "~hq 'header: qvalue'",
+      "ok": true,
+      "tree": [
+        "FHeadRequest",
+        "header: qvalue"
+      ],
+      "describe": "req. header matches /header: qvalue/im",
+      "dump": "FHeadRequestheader: qvalue\n",
+      "describe_case_sensitive": "req. header matches /header: qvalue/m"
+    },
+    {
+      "expr": "~http",
+      "ok": true,
+      "tree": [
+        "FHTTP"
+      ],
+      "describe": "is an HTTP Flow",
+      "dump": "FHTTP\n",
+      "describe_case_sensitive": "is an HTTP Flow"
+    },
+    {
+      "expr": "~a",
+      "ok": true,
+      "tree": [
+        "FAsset"
+      ],
+      "describe": "is asset",
+      "dump": "FAsset\n",
+      "describe_case_sensitive": "is asset"
+    },
+    {
+      "expr": "~t json",
+      "ok": true,
+      "tree": [
+        "FContentType",
+        "json"
+      ],
+      "describe": "content type matches /json/i",
+      "dump": "FContentTypejson\n",
+      "describe_case_sensitive": "content type matches /json/"
+    },
+    {
+      "expr": "~tq json",
+      "ok": true,
+      "tree": [
+        "FContentTypeRequest",
+        "json"
+      ],
+      "describe": "req. content type matches /json/i",
+      "dump": "FContentTypeRequestjson\n",
+      "describe_case_sensitive": "req. content type matches /json/"
+    },
+    {
+      "expr": "~s",
+      "ok": true,
+      "tree": [
+        "FResp"
+      ],
+      "describe": "has response",
+      "dump": "FResp\n",
+      "describe_case_sensitive": "has response"
+    },
+    {
+      "expr": "~e",
+      "ok": true,
+      "tree": [
+        "FErr"
+      ],
+      "describe": "has error",
+      "dump": "FErr\n",
+      "describe_case_sensitive": "has error"
+    },
+    {
+      "expr": "~marked",
+      "ok": true,
+      "tree": [
+        "FMarked"
+      ],
+      "describe": "is marked",
+      "dump": "FMarked\n",
+      "describe_case_sensitive": "is marked"
+    },
+    {
+      "expr": "~marker X",
+      "ok": true,
+      "tree": [
+        "FMarker",
+        "X"
+      ],
+      "describe": "marker matches /X/i",
+      "dump": "FMarkerX\n",
+      "describe_case_sensitive": "marker matches /X/"
+    },
+    {
+      "expr": "~h qvalue",
+      "ok": true,
+      "tree": [
+        "FHead",
+        "qvalue"
+      ],
+      "describe": "header matches /qvalue/im",
+      "dump": "FHeadqvalue\n",
+      "describe_case_sensitive": "header matches /qvalue/m"
+    },
+    {
+      "expr": "~h header",
+      "ok": true,
+      "tree": [
+        "FHead",
+        "header"
+      ],
+      "describe": "header matches /header/im",
+      "dump": "FHeadheader\n",
+      "describe_case_sensitive": "header matches /header/m"
+    },
+    {
+      "expr": "~h 'header: qvalue'",
+      "ok": true,
+      "tree": [
+        "FHead",
+        "header: qvalue"
+      ],
+      "describe": "header matches /header: qvalue/im",
+      "dump": "FHeadheader: qvalue\n",
+      "describe_case_sensitive": "header matches /header: qvalue/m"
+    },
+    {
+      "expr": "~h 'header-response: svalue'",
+      "ok": true,
+      "tree": [
+        "FHead",
+        "header-response: svalue"
+      ],
+      "describe": "header matches /header-response: svalue/im",
+      "dump": "FHeadheader-response: svalue\n",
+      "describe_case_sensitive": "header matches /header-response: svalue/m"
+    },
+    {
+      "expr": "~hs 'header-response: svalue'",
+      "ok": true,
+      "tree": [
+        "FHeadResponse",
+        "header-response: svalue"
+      ],
+      "describe": "resp. header matches /header-response: svalue/im",
+      "dump": "FHeadResponseheader-response: svalue\n",
+      "describe_case_sensitive": "resp. header matches /header-response: svalue/m"
+    },
+    {
+      "expr": "~b content",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "content"
+      ],
+      "describe": "body matches /content/is",
+      "dump": "FBodcontent\n",
+      "describe_case_sensitive": "body matches /content/s"
+    },
+    {
+      "expr": "~b message",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "message"
+      ],
+      "describe": "body matches /message/is",
+      "dump": "FBodmessage\n",
+      "describe_case_sensitive": "body matches /message/s"
+    },
+    {
+      "expr": "~bq content",
+      "ok": true,
+      "tree": [
+        "FBodRequest",
+        "content"
+      ],
+      "describe": "body request matches /content/is",
+      "dump": "FBodRequestcontent\n",
+      "describe_case_sensitive": "body request matches /content/s"
+    },
+    {
+      "expr": "~bs яч",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "яч"
+      ],
+      "describe": "body response matches /яч/is",
+      "dump": "FBodResponseяч\n",
+      "describe_case_sensitive": "body response matches /яч/s"
+    },
+    {
+      "expr": "~bs 测试",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "测试"
+      ],
+      "describe": "body response matches /测试/is",
+      "dump": "FBodResponse测试\n",
+      "describe_case_sensitive": "body response matches /测试/s"
+    },
+    {
+      "expr": "~bs ॐ",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "ॐ"
+      ],
+      "describe": "body response matches /ॐ/is",
+      "dump": "FBodResponseॐ\n",
+      "describe_case_sensitive": "body response matches /ॐ/s"
+    },
+    {
+      "expr": "~bs لله",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "لله"
+      ],
+      "describe": "body response matches /لله/is",
+      "dump": "FBodResponseلله\n",
+      "describe_case_sensitive": "body response matches /لله/s"
+    },
+    {
+      "expr": "~bs θεός",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "θεός"
+      ],
+      "describe": "body response matches /θεός/is",
+      "dump": "FBodResponseθεός\n",
+      "describe_case_sensitive": "body response matches /θεός/s"
+    },
+    {
+      "expr": "~bs לוהים",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "לוהים"
+      ],
+      "describe": "body response matches /לוהים/is",
+      "dump": "FBodResponseלוהים\n",
+      "describe_case_sensitive": "body response matches /לוהים/s"
+    },
+    {
+      "expr": "~bs 神",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "神"
+      ],
+      "describe": "body response matches /神/is",
+      "dump": "FBodResponse神\n",
+      "describe_case_sensitive": "body response matches /神/s"
+    },
+    {
+      "expr": "~bs 하나님",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "하나님"
+      ],
+      "describe": "body response matches /하나님/is",
+      "dump": "FBodResponse하나님\n",
+      "describe_case_sensitive": "body response matches /하나님/s"
+    },
+    {
+      "expr": "~bs Äÿ",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "Äÿ"
+      ],
+      "describe": "body response matches /Äÿ/is",
+      "dump": "FBodResponseÄÿ\n",
+      "describe_case_sensitive": "body response matches /Äÿ/s"
+    },
+    {
+      "expr": "~bs message",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "message"
+      ],
+      "describe": "body response matches /message/is",
+      "dump": "FBodResponsemessage\n",
+      "describe_case_sensitive": "body response matches /message/s"
+    },
+    {
+      "expr": "~m get",
+      "ok": true,
+      "tree": [
+        "FMethod",
+        "get"
+      ],
+      "describe": "method matches /get/i",
+      "dump": "FMethodget\n",
+      "describe_case_sensitive": "method matches /get/"
+    },
+    {
+      "expr": "~m GET",
+      "ok": true,
+      "tree": [
+        "FMethod",
+        "GET"
+      ],
+      "describe": "method matches /GET/i",
+      "dump": "FMethodGET\n",
+      "describe_case_sensitive": "method matches /GET/"
+    },
+    {
+      "expr": "~d address",
+      "ok": true,
+      "tree": [
+        "FDomain",
+        "address"
+      ],
+      "describe": "domain matches /address/i",
+      "dump": "FDomainaddress\n",
+      "describe_case_sensitive": "domain matches /address/"
+    },
+    {
+      "expr": "~u address",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "address"
+      ],
+      "describe": "url matches /address/i",
+      "dump": "FUrladdress\n",
+      "describe_case_sensitive": "url matches /address/"
+    },
+    {
+      "expr": "~u address:22/path",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "address:22/path"
+      ],
+      "describe": "url matches /address:22/path/i",
+      "dump": "FUrladdress:22/path\n",
+      "describe_case_sensitive": "url matches /address:22/path/"
+    },
+    {
+      "expr": "~c 200",
+      "ok": true,
+      "tree": [
+        "FCode",
+        "200"
+      ],
+      "describe": "response code is 200",
+      "dump": "FCode\n",
+      "describe_case_sensitive": "response code is 200"
+    },
+    {
+      "expr": "~src 127.0.0.1",
+      "ok": true,
+      "tree": [
+        "FSrc",
+        "127.0.0.1"
+      ],
+      "describe": "source address matches /127.0.0.1/i",
+      "dump": "FSrc127.0.0.1\n",
+      "describe_case_sensitive": "source address matches /127.0.0.1/"
+    },
+    {
+      "expr": "~src :22",
+      "ok": true,
+      "tree": [
+        "FSrc",
+        ":22"
+      ],
+      "describe": "source address matches /:22/i",
+      "dump": "FSrc:22\n",
+      "describe_case_sensitive": "source address matches /:22/"
+    },
+    {
+      "expr": "~src 127.0.0.1:22",
+      "ok": true,
+      "tree": [
+        "FSrc",
+        "127.0.0.1:22"
+      ],
+      "describe": "source address matches /127.0.0.1:22/i",
+      "dump": "FSrc127.0.0.1:22\n",
+      "describe_case_sensitive": "source address matches /127.0.0.1:22/"
+    },
+    {
+      "expr": "~dst address",
+      "ok": true,
+      "tree": [
+        "FDst",
+        "address"
+      ],
+      "describe": "destination address matches /address/i",
+      "dump": "FDstaddress\n",
+      "describe_case_sensitive": "destination address matches /address/"
+    },
+    {
+      "expr": "~dst :22",
+      "ok": true,
+      "tree": [
+        "FDst",
+        ":22"
+      ],
+      "describe": "destination address matches /:22/i",
+      "dump": "FDst:22\n",
+      "describe_case_sensitive": "destination address matches /:22/"
+    },
+    {
+      "expr": "~dst address:22",
+      "ok": true,
+      "tree": [
+        "FDst",
+        "address:22"
+      ],
+      "describe": "destination address matches /address:22/i",
+      "dump": "FDstaddress:22\n",
+      "describe_case_sensitive": "destination address matches /address:22/"
+    },
+    {
+      "expr": "~c 200 & ~h head",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FCode",
+          "200"
+        ],
+        [
+          "FHead",
+          "head"
+        ]
+      ],
+      "describe": "response code is 200 and header matches /head/im",
+      "dump": "FAnd\n\tFCode\n\tFHeadhead\n",
+      "describe_case_sensitive": "response code is 200 and header matches /head/m"
+    },
+    {
+      "expr": "(~c 200 & ~h head) & ~b content",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FAnd",
+          [
+            "FCode",
+            "200"
+          ],
+          [
+            "FHead",
+            "head"
+          ]
+        ],
+        [
+          "FBod",
+          "content"
+        ]
+      ],
+      "describe": "(response code is 200 and header matches /head/im) and body matches /content/is",
+      "dump": "FAnd\n\tFAnd\n\t\tFCode\n\t\tFHeadhead\n\tFBodcontent\n",
+      "describe_case_sensitive": "(response code is 200 and header matches /head/m) and body matches /content/s"
+    },
+    {
+      "expr": "~c 200 | ~h nohead",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FCode",
+          "200"
+        ],
+        [
+          "FHead",
+          "nohead"
+        ]
+      ],
+      "describe": "response code is 200 or header matches /nohead/im",
+      "dump": "FOr\n\tFCode\n\tFHeadnohead\n",
+      "describe_case_sensitive": "response code is 200 or header matches /nohead/m"
+    },
+    {
+      "expr": "~c 201 | ~h head",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FCode",
+          "201"
+        ],
+        [
+          "FHead",
+          "head"
+        ]
+      ],
+      "describe": "response code is 201 or header matches /head/im",
+      "dump": "FOr\n\tFCode\n\tFHeadhead\n",
+      "describe_case_sensitive": "response code is 201 or header matches /head/m"
+    },
+    {
+      "expr": "(~c 201 | ~h nohead) | ~s",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FOr",
+          [
+            "FCode",
+            "201"
+          ],
+          [
+            "FHead",
+            "nohead"
+          ]
+        ],
+        [
+          "FResp"
+        ]
+      ],
+      "describe": "(response code is 201 or header matches /nohead/im) or has response",
+      "dump": "FOr\n\tFOr\n\t\tFCode\n\t\tFHeadnohead\n\tFResp\n",
+      "describe_case_sensitive": "(response code is 201 or header matches /nohead/m) or has response"
+    },
+    {
+      "expr": "! ~c 201",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FCode",
+          "201"
+        ]
+      ],
+      "describe": "not response code is 201",
+      "dump": "FNot\n\tFCode\n",
+      "describe_case_sensitive": "not response code is 201"
+    },
+    {
+      "expr": "!~c 201 !~c 202",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FNot",
+          [
+            "FCode",
+            "201"
+          ]
+        ],
+        [
+          "FNot",
+          [
+            "FCode",
+            "202"
+          ]
+        ]
+      ],
+      "describe": "not response code is 201 and not response code is 202",
+      "dump": "FAnd\n\tFNot\n\t\tFCode\n\tFNot\n\t\tFCode\n",
+      "describe_case_sensitive": "not response code is 201 and not response code is 202"
+    },
+    {
+      "expr": "~meta a",
+      "ok": true,
+      "tree": [
+        "FMeta",
+        "a"
+      ],
+      "describe": "flow metadata matches /a/im",
+      "dump": "FMetaa\n",
+      "describe_case_sensitive": "flow metadata matches /a/m"
+    },
+    {
+      "expr": "~meta string",
+      "ok": true,
+      "tree": [
+        "FMeta",
+        "string"
+      ],
+      "describe": "flow metadata matches /string/im",
+      "dump": "FMetastring\n",
+      "describe_case_sensitive": "flow metadata matches /string/m"
+    },
+    {
+      "expr": "~meta key",
+      "ok": true,
+      "tree": [
+        "FMeta",
+        "key"
+      ],
+      "describe": "flow metadata matches /key/im",
+      "dump": "FMetakey\n",
+      "describe_case_sensitive": "flow metadata matches /key/m"
+    },
+    {
+      "expr": "~meta value",
+      "ok": true,
+      "tree": [
+        "FMeta",
+        "value"
+      ],
+      "describe": "flow metadata matches /value/im",
+      "dump": "FMetavalue\n",
+      "describe_case_sensitive": "flow metadata matches /value/m"
+    },
+    {
+      "expr": "~meta \"b: string\"",
+      "ok": true,
+      "tree": [
+        "FMeta",
+        "b: string"
+      ],
+      "describe": "flow metadata matches /b: string/im",
+      "dump": "FMetab: string\n",
+      "describe_case_sensitive": "flow metadata matches /b: string/m"
+    },
+    {
+      "expr": "~meta \"'key': 'value'\"",
+      "ok": true,
+      "tree": [
+        "FMeta",
+        "'key': 'value'"
+      ],
+      "describe": "flow metadata matches /'key': 'value'/im",
+      "dump": "FMeta'key': 'value'\n",
+      "describe_case_sensitive": "flow metadata matches /'key': 'value'/m"
+    },
+    {
+      "expr": "~dns",
+      "ok": true,
+      "tree": [
+        "FDNS"
+      ],
+      "describe": "is a DNS Flow",
+      "dump": "FDNS\n",
+      "describe_case_sensitive": "is a DNS Flow"
+    },
+    {
+      "expr": "~b dns.google",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "dns.google"
+      ],
+      "describe": "body matches /dns.google/is",
+      "dump": "FBoddns.google\n",
+      "describe_case_sensitive": "body matches /dns.google/s"
+    },
+    {
+      "expr": "~b 8.8.8.8",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "8.8.8.8"
+      ],
+      "describe": "body matches /8.8.8.8/is",
+      "dump": "FBod8.8.8.8\n",
+      "describe_case_sensitive": "body matches /8.8.8.8/s"
+    },
+    {
+      "expr": "~bq dns.google",
+      "ok": true,
+      "tree": [
+        "FBodRequest",
+        "dns.google"
+      ],
+      "describe": "body request matches /dns.google/is",
+      "dump": "FBodRequestdns.google\n",
+      "describe_case_sensitive": "body request matches /dns.google/s"
+    },
+    {
+      "expr": "~bs dns.google",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "dns.google"
+      ],
+      "describe": "body response matches /dns.google/is",
+      "dump": "FBodResponsedns.google\n",
+      "describe_case_sensitive": "body response matches /dns.google/s"
+    },
+    {
+      "expr": "~bs 8.8.8.8",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "8.8.8.8"
+      ],
+      "describe": "body response matches /8.8.8.8/is",
+      "dump": "FBodResponse8.8.8.8\n",
+      "describe_case_sensitive": "body response matches /8.8.8.8/s"
+    },
+    {
+      "expr": "~u dns.google",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "dns.google"
+      ],
+      "describe": "url matches /dns.google/i",
+      "dump": "FUrldns.google\n",
+      "describe_case_sensitive": "url matches /dns.google/"
+    },
+    {
+      "expr": "~tcp",
+      "ok": true,
+      "tree": [
+        "FTCP"
+      ],
+      "describe": "is a TCP Flow",
+      "dump": "FTCP\n",
+      "describe_case_sensitive": "is a TCP Flow"
+    },
+    {
+      "expr": "~b hello",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "hello"
+      ],
+      "describe": "body matches /hello/is",
+      "dump": "FBodhello\n",
+      "describe_case_sensitive": "body matches /hello/s"
+    },
+    {
+      "expr": "~b me",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "me"
+      ],
+      "describe": "body matches /me/is",
+      "dump": "FBodme\n",
+      "describe_case_sensitive": "body matches /me/s"
+    },
+    {
+      "expr": "~bq hello",
+      "ok": true,
+      "tree": [
+        "FBodRequest",
+        "hello"
+      ],
+      "describe": "body request matches /hello/is",
+      "dump": "FBodRequesthello\n",
+      "describe_case_sensitive": "body request matches /hello/s"
+    },
+    {
+      "expr": "~bs me",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "me"
+      ],
+      "describe": "body response matches /me/is",
+      "dump": "FBodResponseme\n",
+      "describe_case_sensitive": "body response matches /me/s"
+    },
+    {
+      "expr": "~b hello & ~b me",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FBod",
+          "hello"
+        ],
+        [
+          "FBod",
+          "me"
+        ]
+      ],
+      "describe": "body matches /hello/is and body matches /me/is",
+      "dump": "FAnd\n\tFBodhello\n\tFBodme\n",
+      "describe_case_sensitive": "body matches /hello/s and body matches /me/s"
+    },
+    {
+      "expr": "(~src :22 & ~dst :22) & ~b hello",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FAnd",
+          [
+            "FSrc",
+            ":22"
+          ],
+          [
+            "FDst",
+            ":22"
+          ]
+        ],
+        [
+          "FBod",
+          "hello"
+        ]
+      ],
+      "describe": "(source address matches /:22/i and destination address matches /:22/i) and body matches /hello/is",
+      "dump": "FAnd\n\tFAnd\n\t\tFSrc:22\n\t\tFDst:22\n\tFBodhello\n",
+      "describe_case_sensitive": "(source address matches /:22/ and destination address matches /:22/) and body matches /hello/s"
+    },
+    {
+      "expr": "~b hello | ~b me",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FBod",
+          "hello"
+        ],
+        [
+          "FBod",
+          "me"
+        ]
+      ],
+      "describe": "body matches /hello/is or body matches /me/is",
+      "dump": "FOr\n\tFBodhello\n\tFBodme\n",
+      "describe_case_sensitive": "body matches /hello/s or body matches /me/s"
+    },
+    {
+      "expr": "~src :22 | ~b me",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FSrc",
+          ":22"
+        ],
+        [
+          "FBod",
+          "me"
+        ]
+      ],
+      "describe": "source address matches /:22/i or body matches /me/is",
+      "dump": "FOr\n\tFSrc:22\n\tFBodme\n",
+      "describe_case_sensitive": "source address matches /:22/ or body matches /me/s"
+    },
+    {
+      "expr": "(~src :22 | ~dst :22) | ~b me",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FOr",
+          [
+            "FSrc",
+            ":22"
+          ],
+          [
+            "FDst",
+            ":22"
+          ]
+        ],
+        [
+          "FBod",
+          "me"
+        ]
+      ],
+      "describe": "(source address matches /:22/i or destination address matches /:22/i) or body matches /me/is",
+      "dump": "FOr\n\tFOr\n\t\tFSrc:22\n\t\tFDst:22\n\tFBodme\n",
+      "describe_case_sensitive": "(source address matches /:22/ or destination address matches /:22/) or body matches /me/s"
+    },
+    {
+      "expr": "! ~src :99",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FSrc",
+          ":99"
+        ]
+      ],
+      "describe": "not source address matches /:99/i",
+      "dump": "FNot\n\tFSrc:99\n",
+      "describe_case_sensitive": "not source address matches /:99/"
+    },
+    {
+      "expr": "!~src :99 !~src :99",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FNot",
+          [
+            "FSrc",
+            ":99"
+          ]
+        ],
+        [
+          "FNot",
+          [
+            "FSrc",
+            ":99"
+          ]
+        ]
+      ],
+      "describe": "not source address matches /:99/i and not source address matches /:99/i",
+      "dump": "FAnd\n\tFNot\n\t\tFSrc:99\n\tFNot\n\t\tFSrc:99\n",
+      "describe_case_sensitive": "not source address matches /:99/ and not source address matches /:99/"
+    },
+    {
+      "expr": "~udp",
+      "ok": true,
+      "tree": [
+        "FUDP"
+      ],
+      "describe": "is a UDP Flow",
+      "dump": "FUDP\n",
+      "describe_case_sensitive": "is a UDP Flow"
+    },
+    {
+      "expr": "~websocket",
+      "ok": true,
+      "tree": [
+        "FWebSocket"
+      ],
+      "describe": "is a Websocket Flow",
+      "dump": "FWebSocket\n",
+      "describe_case_sensitive": "is a Websocket Flow"
+    },
+    {
+      "expr": "~d example.com",
+      "ok": true,
+      "tree": [
+        "FDomain",
+        "example.com"
+      ],
+      "describe": "domain matches /example.com/i",
+      "dump": "FDomainexample.com\n",
+      "describe_case_sensitive": "domain matches /example.com/"
+    },
+    {
+      "expr": "~u example.com",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "example.com"
+      ],
+      "describe": "url matches /example.com/i",
+      "dump": "FUrlexample.com\n",
+      "describe_case_sensitive": "url matches /example.com/"
+    },
+    {
+      "expr": "~u example.com/ws",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "example.com/ws"
+      ],
+      "describe": "url matches /example.com/ws/i",
+      "dump": "FUrlexample.com/ws\n",
+      "describe_case_sensitive": "url matches /example.com/ws/"
+    },
+    {
+      "expr": "~all",
+      "ok": true,
+      "tree": [
+        "FAll"
+      ],
+      "describe": "all flows",
+      "dump": "FAll\n",
+      "describe_case_sensitive": "all flows"
+    },
+    {
+      "expr": "[foobar",
+      "ok": false
+    },
+    {
+      "expr": "foobar",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "foobar"
+      ],
+      "describe": "url matches /foobar/i",
+      "dump": "FUrlfoobar\n",
+      "describe_case_sensitive": "url matches /foobar/"
+    },
+    {
+      "expr": "",
+      "ok": false
+    },
+    {
+      "expr": "~b",
+      "ok": false
+    },
+    {
+      "expr": "~h [",
+      "ok": false
+    },
+    {
+      "expr": "~t content",
+      "ok": true,
+      "tree": [
+        "FContentType",
+        "content"
+      ],
+      "describe": "content type matches /content/i",
+      "dump": "FContentTypecontent\n",
+      "describe_case_sensitive": "content type matches /content/"
+    },
+    {
+      "expr": "~tq content",
+      "ok": true,
+      "tree": [
+        "FContentTypeRequest",
+        "content"
+      ],
+      "describe": "req. content type matches /content/i",
+      "dump": "FContentTypeRequestcontent\n",
+      "describe_case_sensitive": "req. content type matches /content/"
+    },
+    {
+      "expr": "~ts content",
+      "ok": true,
+      "tree": [
+        "FContentTypeResponse",
+        "content"
+      ],
+      "describe": "resp. content type matches /content/i",
+      "dump": "FContentTypeResponsecontent\n",
+      "describe_case_sensitive": "resp. content type matches /content/"
+    },
+    {
+      "expr": "~h rex",
+      "ok": true,
+      "tree": [
+        "FHead",
+        "rex"
+      ],
+      "describe": "header matches /rex/im",
+      "dump": "FHeadrex\n",
+      "describe_case_sensitive": "header matches /rex/m"
+    },
+    {
+      "expr": "~hq rex",
+      "ok": true,
+      "tree": [
+        "FHeadRequest",
+        "rex"
+      ],
+      "describe": "req. header matches /rex/im",
+      "dump": "FHeadRequestrex\n",
+      "describe_case_sensitive": "req. header matches /rex/m"
+    },
+    {
+      "expr": "~hs rex",
+      "ok": true,
+      "tree": [
+        "FHeadResponse",
+        "rex"
+      ],
+      "describe": "resp. header matches /rex/im",
+      "dump": "FHeadResponserex\n",
+      "describe_case_sensitive": "resp. header matches /rex/m"
+    },
+    {
+      "expr": "~hq header",
+      "ok": true,
+      "tree": [
+        "FHeadRequest",
+        "header"
+      ],
+      "describe": "req. header matches /header/im",
+      "dump": "FHeadRequestheader\n",
+      "describe_case_sensitive": "req. header matches /header/m"
+    },
+    {
+      "expr": "~hs header",
+      "ok": true,
+      "tree": [
+        "FHeadResponse",
+        "header"
+      ],
+      "describe": "resp. header matches /header/im",
+      "dump": "FHeadResponseheader\n",
+      "describe_case_sensitive": "resp. header matches /header/m"
+    },
+    {
+      "expr": "~b rex",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "rex"
+      ],
+      "describe": "body matches /rex/is",
+      "dump": "FBodrex\n",
+      "describe_case_sensitive": "body matches /rex/s"
+    },
+    {
+      "expr": "~bq rex",
+      "ok": true,
+      "tree": [
+        "FBodRequest",
+        "rex"
+      ],
+      "describe": "body request matches /rex/is",
+      "dump": "FBodRequestrex\n",
+      "describe_case_sensitive": "body request matches /rex/s"
+    },
+    {
+      "expr": "~bs rex",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "rex"
+      ],
+      "describe": "body response matches /rex/is",
+      "dump": "FBodResponserex\n",
+      "describe_case_sensitive": "body response matches /rex/s"
+    },
+    {
+      "expr": "~bs content",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "content"
+      ],
+      "describe": "body response matches /content/is",
+      "dump": "FBodResponsecontent\n",
+      "describe_case_sensitive": "body response matches /content/s"
+    },
+    {
+      "expr": "~u foo",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "foo"
+      ],
+      "describe": "url matches /foo/i",
+      "dump": "FUrlfoo\n",
+      "describe_case_sensitive": "url matches /foo/"
+    },
+    {
+      "expr": "~dst example.com:443",
+      "ok": true,
+      "tree": [
+        "FDst",
+        "example.com:443"
+      ],
+      "describe": "destination address matches /example.com:443/i",
+      "dump": "FDstexample.com:443\n",
+      "describe_case_sensitive": "destination address matches /example.com:443/"
+    },
+    {
+      "expr": "~meta foo",
+      "ok": true,
+      "tree": [
+        "FMeta",
+        "foo"
+      ],
+      "describe": "flow metadata matches /foo/im",
+      "dump": "FMetafoo\n",
+      "describe_case_sensitive": "flow metadata matches /foo/m"
+    },
+    {
+      "expr": "~marker red",
+      "ok": true,
+      "tree": [
+        "FMarker",
+        "red"
+      ],
+      "describe": "marker matches /red/i",
+      "dump": "FMarkerred\n",
+      "describe_case_sensitive": "marker matches /red/"
+    },
+    {
+      "expr": "~comment note",
+      "ok": true,
+      "tree": [
+        "FComment",
+        "note"
+      ],
+      "describe": "comment matches /note/im",
+      "dump": "FCommentnote\n",
+      "describe_case_sensitive": "comment matches /note/m"
+    },
+    {
+      "expr": "~c 404",
+      "ok": true,
+      "tree": [
+        "FCode",
+        "404"
+      ],
+      "describe": "response code is 404",
+      "dump": "FCode\n",
+      "describe_case_sensitive": "response code is 404"
+    },
+    {
+      "expr": "~u foo & ~c 200",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "foo"
+        ],
+        [
+          "FCode",
+          "200"
+        ]
+      ],
+      "describe": "url matches /foo/i and response code is 200",
+      "dump": "FAnd\n\tFUrlfoo\n\tFCode\n",
+      "describe_case_sensitive": "url matches /foo/ and response code is 200"
+    },
+    {
+      "expr": "~u foo | ~c 200",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FUrl",
+          "foo"
+        ],
+        [
+          "FCode",
+          "200"
+        ]
+      ],
+      "describe": "url matches /foo/i or response code is 200",
+      "dump": "FOr\n\tFUrlfoo\n\tFCode\n",
+      "describe_case_sensitive": "url matches /foo/ or response code is 200"
+    },
+    {
+      "expr": "!(~u foo | ~c 200)",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FOr",
+          [
+            "FUrl",
+            "foo"
+          ],
+          [
+            "FCode",
+            "200"
+          ]
+        ]
+      ],
+      "describe": "not (url matches /foo/i or response code is 200)",
+      "dump": "FNot\n\tFOr\n\t\tFUrlfoo\n\t\tFCode\n",
+      "describe_case_sensitive": "not (url matches /foo/ or response code is 200)"
+    },
+    {
+      "expr": "~ts json",
+      "ok": true,
+      "tree": [
+        "FContentTypeResponse",
+        "json"
+      ],
+      "describe": "resp. content type matches /json/i",
+      "dump": "FContentTypeResponsejson\n",
+      "describe_case_sensitive": "resp. content type matches /json/"
+    },
+    {
+      "expr": "~h nonexistent",
+      "ok": true,
+      "tree": [
+        "FHead",
+        "nonexistent"
+      ],
+      "describe": "header matches /nonexistent/im",
+      "dump": "FHeadnonexistent\n",
+      "describe_case_sensitive": "header matches /nonexistent/m"
+    },
+    {
+      "expr": "~hq 'header-response: svalue'",
+      "ok": true,
+      "tree": [
+        "FHeadRequest",
+        "header-response: svalue"
+      ],
+      "describe": "req. header matches /header-response: svalue/im",
+      "dump": "FHeadRequestheader-response: svalue\n",
+      "describe_case_sensitive": "req. header matches /header-response: svalue/m"
+    },
+    {
+      "expr": "~hq 'header-request: svalue'",
+      "ok": true,
+      "tree": [
+        "FHeadRequest",
+        "header-request: svalue"
+      ],
+      "describe": "req. header matches /header-request: svalue/im",
+      "dump": "FHeadRequestheader-request: svalue\n",
+      "describe_case_sensitive": "req. header matches /header-request: svalue/m"
+    },
+    {
+      "expr": "~hs 'header: qvalue'",
+      "ok": true,
+      "tree": [
+        "FHeadResponse",
+        "header: qvalue"
+      ],
+      "describe": "resp. header matches /header: qvalue/im",
+      "dump": "FHeadResponseheader: qvalue\n",
+      "describe_case_sensitive": "resp. header matches /header: qvalue/m"
+    },
+    {
+      "expr": "~b nonexistent",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "nonexistent"
+      ],
+      "describe": "body matches /nonexistent/is",
+      "dump": "FBodnonexistent\n",
+      "describe_case_sensitive": "body matches /nonexistent/s"
+    },
+    {
+      "expr": "~bq nomatch",
+      "ok": true,
+      "tree": [
+        "FBodRequest",
+        "nomatch"
+      ],
+      "describe": "body request matches /nomatch/is",
+      "dump": "FBodRequestnomatch\n",
+      "describe_case_sensitive": "body request matches /nomatch/s"
+    },
+    {
+      "expr": "~bq message",
+      "ok": true,
+      "tree": [
+        "FBodRequest",
+        "message"
+      ],
+      "describe": "body request matches /message/is",
+      "dump": "FBodRequestmessage\n",
+      "describe_case_sensitive": "body request matches /message/s"
+    },
+    {
+      "expr": "~bs nomatch",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "nomatch"
+      ],
+      "describe": "body response matches /nomatch/is",
+      "dump": "FBodResponsenomatch\n",
+      "describe_case_sensitive": "body response matches /nomatch/s"
+    },
+    {
+      "expr": "~m post",
+      "ok": true,
+      "tree": [
+        "FMethod",
+        "post"
+      ],
+      "describe": "method matches /post/i",
+      "dump": "FMethodpost\n",
+      "describe_case_sensitive": "method matches /post/"
+    },
+    {
+      "expr": "~d none",
+      "ok": true,
+      "tree": [
+        "FDomain",
+        "none"
+      ],
+      "describe": "domain matches /none/i",
+      "dump": "FDomainnone\n",
+      "describe_case_sensitive": "domain matches /none/"
+    },
+    {
+      "expr": "~u moo/path",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "moo/path"
+      ],
+      "describe": "url matches /moo/path/i",
+      "dump": "FUrlmoo/path\n",
+      "describe_case_sensitive": "url matches /moo/path/"
+    },
+    {
+      "expr": "~c 201",
+      "ok": true,
+      "tree": [
+        "FCode",
+        "201"
+      ],
+      "describe": "response code is 201",
+      "dump": "FCode\n",
+      "describe_case_sensitive": "response code is 201"
+    },
+    {
+      "expr": "~src foobar",
+      "ok": true,
+      "tree": [
+        "FSrc",
+        "foobar"
+      ],
+      "describe": "source address matches /foobar/i",
+      "dump": "FSrcfoobar\n",
+      "describe_case_sensitive": "source address matches /foobar/"
+    },
+    {
+      "expr": "~src :99",
+      "ok": true,
+      "tree": [
+        "FSrc",
+        ":99"
+      ],
+      "describe": "source address matches /:99/i",
+      "dump": "FSrc:99\n",
+      "describe_case_sensitive": "source address matches /:99/"
+    },
+    {
+      "expr": "~src address:22",
+      "ok": true,
+      "tree": [
+        "FSrc",
+        "address:22"
+      ],
+      "describe": "source address matches /address:22/i",
+      "dump": "FSrcaddress:22\n",
+      "describe_case_sensitive": "source address matches /address:22/"
+    },
+    {
+      "expr": "~dst foobar",
+      "ok": true,
+      "tree": [
+        "FDst",
+        "foobar"
+      ],
+      "describe": "destination address matches /foobar/i",
+      "dump": "FDstfoobar\n",
+      "describe_case_sensitive": "destination address matches /foobar/"
+    },
+    {
+      "expr": "~dst :99",
+      "ok": true,
+      "tree": [
+        "FDst",
+        ":99"
+      ],
+      "describe": "destination address matches /:99/i",
+      "dump": "FDst:99\n",
+      "describe_case_sensitive": "destination address matches /:99/"
+    },
+    {
+      "expr": "~c 200 & ~h nohead",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FCode",
+          "200"
+        ],
+        [
+          "FHead",
+          "nohead"
+        ]
+      ],
+      "describe": "response code is 200 and header matches /nohead/im",
+      "dump": "FAnd\n\tFCode\n\tFHeadnohead\n",
+      "describe_case_sensitive": "response code is 200 and header matches /nohead/m"
+    },
+    {
+      "expr": "(~c 200 & ~h head) & ~b nonexistent",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FAnd",
+          [
+            "FCode",
+            "200"
+          ],
+          [
+            "FHead",
+            "head"
+          ]
+        ],
+        [
+          "FBod",
+          "nonexistent"
+        ]
+      ],
+      "describe": "(response code is 200 and header matches /head/im) and body matches /nonexistent/is",
+      "dump": "FAnd\n\tFAnd\n\t\tFCode\n\t\tFHeadhead\n\tFBodnonexistent\n",
+      "describe_case_sensitive": "(response code is 200 and header matches /head/m) and body matches /nonexistent/s"
+    },
+    {
+      "expr": "(~c 200 & ~h nohead) & ~b content",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FAnd",
+          [
+            "FCode",
+            "200"
+          ],
+          [
+            "FHead",
+            "nohead"
+          ]
+        ],
+        [
+          "FBod",
+          "content"
+        ]
+      ],
+      "describe": "(response code is 200 and header matches /nohead/im) and body matches /content/is",
+      "dump": "FAnd\n\tFAnd\n\t\tFCode\n\t\tFHeadnohead\n\tFBodcontent\n",
+      "describe_case_sensitive": "(response code is 200 and header matches /nohead/m) and body matches /content/s"
+    },
+    {
+      "expr": "~c 201 | ~h nohead",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FCode",
+          "201"
+        ],
+        [
+          "FHead",
+          "nohead"
+        ]
+      ],
+      "describe": "response code is 201 or header matches /nohead/im",
+      "dump": "FOr\n\tFCode\n\tFHeadnohead\n",
+      "describe_case_sensitive": "response code is 201 or header matches /nohead/m"
+    },
+    {
+      "expr": "! ~c 200",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FCode",
+          "200"
+        ]
+      ],
+      "describe": "not response code is 200",
+      "dump": "FNot\n\tFCode\n",
+      "describe_case_sensitive": "not response code is 200"
+    },
+    {
+      "expr": "!~c 201 !~c 200",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FNot",
+          [
+            "FCode",
+            "201"
+          ]
+        ],
+        [
+          "FNot",
+          [
+            "FCode",
+            "200"
+          ]
+        ]
+      ],
+      "describe": "not response code is 201 and not response code is 200",
+      "dump": "FAnd\n\tFNot\n\t\tFCode\n\tFNot\n\t\tFCode\n",
+      "describe_case_sensitive": "not response code is 201 and not response code is 200"
+    },
+    {
+      "expr": "~meta no",
+      "ok": true,
+      "tree": [
+        "FMeta",
+        "no"
+      ],
+      "describe": "flow metadata matches /no/im",
+      "dump": "FMetano\n",
+      "describe_case_sensitive": "flow metadata matches /no/m"
+    },
+    {
+      "expr": "~bq 8.8.8.8",
+      "ok": true,
+      "tree": [
+        "FBodRequest",
+        "8.8.8.8"
+      ],
+      "describe": "body request matches /8.8.8.8/is",
+      "dump": "FBodRequest8.8.8.8\n",
+      "describe_case_sensitive": "body request matches /8.8.8.8/s"
+    },
+    {
+      "expr": "~u whatever",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "whatever"
+      ],
+      "describe": "url matches /whatever/i",
+      "dump": "FUrlwhatever\n",
+      "describe_case_sensitive": "url matches /whatever/"
+    },
+    {
+      "expr": "~bq me",
+      "ok": true,
+      "tree": [
+        "FBodRequest",
+        "me"
+      ],
+      "describe": "body request matches /me/is",
+      "dump": "FBodRequestme\n",
+      "describe_case_sensitive": "body request matches /me/s"
+    },
+    {
+      "expr": "~bq nonexistent",
+      "ok": true,
+      "tree": [
+        "FBodRequest",
+        "nonexistent"
+      ],
+      "describe": "body request matches /nonexistent/is",
+      "dump": "FBodRequestnonexistent\n",
+      "describe_case_sensitive": "body request matches /nonexistent/s"
+    },
+    {
+      "expr": "~bs hello",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "hello"
+      ],
+      "describe": "body response matches /hello/is",
+      "dump": "FBodResponsehello\n",
+      "describe_case_sensitive": "body response matches /hello/s"
+    },
+    {
+      "expr": "~bs nonexistent",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "nonexistent"
+      ],
+      "describe": "body response matches /nonexistent/is",
+      "dump": "FBodResponsenonexistent\n",
+      "describe_case_sensitive": "body response matches /nonexistent/s"
+    },
+    {
+      "expr": "~src wrongaddress & ~b hello",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FSrc",
+          "wrongaddress"
+        ],
+        [
+          "FBod",
+          "hello"
+        ]
+      ],
+      "describe": "source address matches /wrongaddress/i and body matches /hello/is",
+      "dump": "FAnd\n\tFSrcwrongaddress\n\tFBodhello\n",
+      "describe_case_sensitive": "source address matches /wrongaddress/ and body matches /hello/s"
+    },
+    {
+      "expr": "(~src address:22 & ~dst :22) & ~b nonexistent",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FAnd",
+          [
+            "FSrc",
+            "address:22"
+          ],
+          [
+            "FDst",
+            ":22"
+          ]
+        ],
+        [
+          "FBod",
+          "nonexistent"
+        ]
+      ],
+      "describe": "(source address matches /address:22/i and destination address matches /:22/i) and body matches /nonexistent/is",
+      "dump": "FAnd\n\tFAnd\n\t\tFSrcaddress:22\n\t\tFDst:22\n\tFBodnonexistent\n",
+      "describe_case_sensitive": "(source address matches /address:22/ and destination address matches /:22/) and body matches /nonexistent/s"
+    },
+    {
+      "expr": "(~src address:22 & ~dst :99) & ~b hello",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FAnd",
+          [
+            "FSrc",
+            "address:22"
+          ],
+          [
+            "FDst",
+            ":99"
+          ]
+        ],
+        [
+          "FBod",
+          "hello"
+        ]
+      ],
+      "describe": "(source address matches /address:22/i and destination address matches /:99/i) and body matches /hello/is",
+      "dump": "FAnd\n\tFAnd\n\t\tFSrcaddress:22\n\t\tFDst:99\n\tFBodhello\n",
+      "describe_case_sensitive": "(source address matches /address:22/ and destination address matches /:99/) and body matches /hello/s"
+    },
+    {
+      "expr": "~src :99 | ~dst :99",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FSrc",
+          ":99"
+        ],
+        [
+          "FDst",
+          ":99"
+        ]
+      ],
+      "describe": "source address matches /:99/i or destination address matches /:99/i",
+      "dump": "FOr\n\tFSrc:99\n\tFDst:99\n",
+      "describe_case_sensitive": "source address matches /:99/ or destination address matches /:99/"
+    },
+    {
+      "expr": "! ~src :22",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FSrc",
+          ":22"
+        ]
+      ],
+      "describe": "not source address matches /:22/i",
+      "dump": "FNot\n\tFSrc:22\n",
+      "describe_case_sensitive": "not source address matches /:22/"
+    },
+    {
+      "expr": "!~src :99 !~src :22",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FNot",
+          [
+            "FSrc",
+            ":99"
+          ]
+        ],
+        [
+          "FNot",
+          [
+            "FSrc",
+            ":22"
+          ]
+        ]
+      ],
+      "describe": "not source address matches /:99/i and not source address matches /:22/i",
+      "dump": "FAnd\n\tFNot\n\t\tFSrc:99\n\tFNot\n\t\tFSrc:22\n",
+      "describe_case_sensitive": "not source address matches /:99/ and not source address matches /:22/"
+    },
+    {
+      "expr": "~h whatever",
+      "ok": true,
+      "tree": [
+        "FHead",
+        "whatever"
+      ],
+      "describe": "header matches /whatever/im",
+      "dump": "FHeadwhatever\n",
+      "describe_case_sensitive": "header matches /whatever/m"
+    },
+    {
+      "expr": "~hq whatever",
+      "ok": true,
+      "tree": [
+        "FHeadRequest",
+        "whatever"
+      ],
+      "describe": "req. header matches /whatever/im",
+      "dump": "FHeadRequestwhatever\n",
+      "describe_case_sensitive": "req. header matches /whatever/m"
+    },
+    {
+      "expr": "~hs whatever",
+      "ok": true,
+      "tree": [
+        "FHeadResponse",
+        "whatever"
+      ],
+      "describe": "resp. header matches /whatever/im",
+      "dump": "FHeadResponsewhatever\n",
+      "describe_case_sensitive": "resp. header matches /whatever/m"
+    },
+    {
+      "expr": "~t whatever",
+      "ok": true,
+      "tree": [
+        "FContentType",
+        "whatever"
+      ],
+      "describe": "content type matches /whatever/i",
+      "dump": "FContentTypewhatever\n",
+      "describe_case_sensitive": "content type matches /whatever/"
+    },
+    {
+      "expr": "~tq whatever",
+      "ok": true,
+      "tree": [
+        "FContentTypeRequest",
+        "whatever"
+      ],
+      "describe": "req. content type matches /whatever/i",
+      "dump": "FContentTypeRequestwhatever\n",
+      "describe_case_sensitive": "req. content type matches /whatever/"
+    },
+    {
+      "expr": "~ts whatever",
+      "ok": true,
+      "tree": [
+        "FContentTypeResponse",
+        "whatever"
+      ],
+      "describe": "resp. content type matches /whatever/i",
+      "dump": "FContentTypeResponsewhatever\n",
+      "describe_case_sensitive": "resp. content type matches /whatever/"
+    },
+    {
+      "expr": "~d whatever",
+      "ok": true,
+      "tree": [
+        "FDomain",
+        "whatever"
+      ],
+      "describe": "domain matches /whatever/i",
+      "dump": "FDomainwhatever\n",
+      "describe_case_sensitive": "domain matches /whatever/"
+    },
+    {
+      "expr": "~m whatever",
+      "ok": true,
+      "tree": [
+        "FMethod",
+        "whatever"
+      ],
+      "describe": "method matches /whatever/i",
+      "dump": "FMethodwhatever\n",
+      "describe_case_sensitive": "method matches /whatever/"
+    },
+    {
+      "expr": "~b whatever",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "whatever"
+      ],
+      "describe": "body matches /whatever/is",
+      "dump": "FBodwhatever\n",
+      "describe_case_sensitive": "body matches /whatever/s"
+    },
+    {
+      "expr": "~bq whatever",
+      "ok": true,
+      "tree": [
+        "FBodRequest",
+        "whatever"
+      ],
+      "describe": "body request matches /whatever/is",
+      "dump": "FBodRequestwhatever\n",
+      "describe_case_sensitive": "body request matches /whatever/s"
+    },
+    {
+      "expr": "~bs whatever",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "whatever"
+      ],
+      "describe": "body response matches /whatever/is",
+      "dump": "FBodResponsewhatever\n",
+      "describe_case_sensitive": "body response matches /whatever/s"
+    },
+    {
+      "expr": "~c 0",
+      "ok": true,
+      "tree": [
+        "FCode",
+        "0"
+      ],
+      "describe": "response code is 0",
+      "dump": "FCode\n",
+      "describe_case_sensitive": "response code is 0"
+    },
+    {
+      "expr": "~dst nonexistent",
+      "ok": true,
+      "tree": [
+        "FDst",
+        "nonexistent"
+      ],
+      "describe": "destination address matches /nonexistent/i",
+      "dump": "FDstnonexistent\n",
+      "describe_case_sensitive": "destination address matches /nonexistent/"
+    },
+    {
+      "expr": "~src nonexistent",
+      "ok": true,
+      "tree": [
+        "FSrc",
+        "nonexistent"
+      ],
+      "describe": "source address matches /nonexistent/i",
+      "dump": "FSrcnonexistent\n",
+      "describe_case_sensitive": "source address matches /nonexistent/"
+    },
+    {
+      "expr": " ",
+      "ok": false
+    },
+    {
+      "expr": "\t\r\n",
+      "ok": false
+    },
+    {
+      "expr": "~b x",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "x"
+      ],
+      "describe": "body matches /x/is",
+      "dump": "FBodx\n",
+      "describe_case_sensitive": "body matches /x/s"
+    },
+    {
+      "expr": "~bq x",
+      "ok": true,
+      "tree": [
+        "FBodRequest",
+        "x"
+      ],
+      "describe": "body request matches /x/is",
+      "dump": "FBodRequestx\n",
+      "describe_case_sensitive": "body request matches /x/s"
+    },
+    {
+      "expr": "~bs x",
+      "ok": true,
+      "tree": [
+        "FBodResponse",
+        "x"
+      ],
+      "describe": "body response matches /x/is",
+      "dump": "FBodResponsex\n",
+      "describe_case_sensitive": "body response matches /x/s"
+    },
+    {
+      "expr": "~t x",
+      "ok": true,
+      "tree": [
+        "FContentType",
+        "x"
+      ],
+      "describe": "content type matches /x/i",
+      "dump": "FContentTypex\n",
+      "describe_case_sensitive": "content type matches /x/"
+    },
+    {
+      "expr": "~tq x",
+      "ok": true,
+      "tree": [
+        "FContentTypeRequest",
+        "x"
+      ],
+      "describe": "req. content type matches /x/i",
+      "dump": "FContentTypeRequestx\n",
+      "describe_case_sensitive": "req. content type matches /x/"
+    },
+    {
+      "expr": "~ts x",
+      "ok": true,
+      "tree": [
+        "FContentTypeResponse",
+        "x"
+      ],
+      "describe": "resp. content type matches /x/i",
+      "dump": "FContentTypeResponsex\n",
+      "describe_case_sensitive": "resp. content type matches /x/"
+    },
+    {
+      "expr": "~d x",
+      "ok": true,
+      "tree": [
+        "FDomain",
+        "x"
+      ],
+      "describe": "domain matches /x/i",
+      "dump": "FDomainx\n",
+      "describe_case_sensitive": "domain matches /x/"
+    },
+    {
+      "expr": "~dst x",
+      "ok": true,
+      "tree": [
+        "FDst",
+        "x"
+      ],
+      "describe": "destination address matches /x/i",
+      "dump": "FDstx\n",
+      "describe_case_sensitive": "destination address matches /x/"
+    },
+    {
+      "expr": "~h x",
+      "ok": true,
+      "tree": [
+        "FHead",
+        "x"
+      ],
+      "describe": "header matches /x/im",
+      "dump": "FHeadx\n",
+      "describe_case_sensitive": "header matches /x/m"
+    },
+    {
+      "expr": "~hq x",
+      "ok": true,
+      "tree": [
+        "FHeadRequest",
+        "x"
+      ],
+      "describe": "req. header matches /x/im",
+      "dump": "FHeadRequestx\n",
+      "describe_case_sensitive": "req. header matches /x/m"
+    },
+    {
+      "expr": "~hs x",
+      "ok": true,
+      "tree": [
+        "FHeadResponse",
+        "x"
+      ],
+      "describe": "resp. header matches /x/im",
+      "dump": "FHeadResponsex\n",
+      "describe_case_sensitive": "resp. header matches /x/m"
+    },
+    {
+      "expr": "~m x",
+      "ok": true,
+      "tree": [
+        "FMethod",
+        "x"
+      ],
+      "describe": "method matches /x/i",
+      "dump": "FMethodx\n",
+      "describe_case_sensitive": "method matches /x/"
+    },
+    {
+      "expr": "~src x",
+      "ok": true,
+      "tree": [
+        "FSrc",
+        "x"
+      ],
+      "describe": "source address matches /x/i",
+      "dump": "FSrcx\n",
+      "describe_case_sensitive": "source address matches /x/"
+    },
+    {
+      "expr": "~u x",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "x"
+      ],
+      "describe": "url matches /x/i",
+      "dump": "FUrlx\n",
+      "describe_case_sensitive": "url matches /x/"
+    },
+    {
+      "expr": "~meta x",
+      "ok": true,
+      "tree": [
+        "FMeta",
+        "x"
+      ],
+      "describe": "flow metadata matches /x/im",
+      "dump": "FMetax\n",
+      "describe_case_sensitive": "flow metadata matches /x/m"
+    },
+    {
+      "expr": "~marker x",
+      "ok": true,
+      "tree": [
+        "FMarker",
+        "x"
+      ],
+      "describe": "marker matches /x/i",
+      "dump": "FMarkerx\n",
+      "describe_case_sensitive": "marker matches /x/"
+    },
+    {
+      "expr": "~comment x",
+      "ok": true,
+      "tree": [
+        "FComment",
+        "x"
+      ],
+      "describe": "comment matches /x/im",
+      "dump": "FCommentx\n",
+      "describe_case_sensitive": "comment matches /x/m"
+    },
+    {
+      "expr": "~c 1",
+      "ok": true,
+      "tree": [
+        "FCode",
+        "1"
+      ],
+      "describe": "response code is 1",
+      "dump": "FCode\n",
+      "describe_case_sensitive": "response code is 1"
+    },
+    {
+      "expr": "~h",
+      "ok": false
+    },
+    {
+      "expr": "~u",
+      "ok": false
+    },
+    {
+      "expr": "~c",
+      "ok": false
+    },
+    {
+      "expr": "~c x",
+      "ok": false
+    },
+    {
+      "expr": "~c -1",
+      "ok": false
+    },
+    {
+      "expr": "~h (x)",
+      "ok": false
+    },
+    {
+      "expr": "~h ~q",
+      "ok": false
+    },
+    {
+      "expr": "~h )",
+      "ok": false
+    },
+    {
+      "expr": "~",
+      "ok": false
+    },
+    {
+      "expr": "~zz",
+      "ok": false
+    },
+    {
+      "expr": "~Q",
+      "ok": false
+    },
+    {
+      "expr": "~qq",
+      "ok": false
+    },
+    {
+      "expr": "~quux",
+      "ok": false
+    },
+    {
+      "expr": "~q~s",
+      "ok": false
+    },
+    {
+      "expr": "~q&",
+      "ok": false
+    },
+    {
+      "expr": "~q&~s",
+      "ok": false
+    },
+    {
+      "expr": "~q!",
+      "ok": false
+    },
+    {
+      "expr": "~q|~s",
+      "ok": false
+    },
+    {
+      "expr": "~h\"x\"",
+      "ok": false
+    },
+    {
+      "expr": "~h'x'",
+      "ok": false
+    },
+    {
+      "expr": "~hq'x'",
+      "ok": false
+    },
+    {
+      "expr": "~replayqx",
+      "ok": false
+    },
+    {
+      "expr": "~qш",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FReq"
+        ],
+        [
+          "FUrl",
+          "ш"
+        ]
+      ],
+      "describe": "has no response and url matches /ш/i",
+      "dump": "FAnd\n\tFReq\n\tFUrlш\n",
+      "describe_case_sensitive": "has no response and url matches /ш/"
+    },
+    {
+      "expr": "~hш",
+      "ok": true,
+      "tree": [
+        "FHead",
+        "ш"
+      ],
+      "describe": "header matches /ш/im",
+      "dump": "FHeadш\n",
+      "describe_case_sensitive": "header matches /ш/m"
+    },
+    {
+      "expr": "~aш",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FAsset"
+        ],
+        [
+          "FUrl",
+          "ш"
+        ]
+      ],
+      "describe": "is asset and url matches /ш/i",
+      "dump": "FAnd\n\tFAsset\n\tFUrlш\n",
+      "describe_case_sensitive": "is asset and url matches /ш/"
+    },
+    {
+      "expr": "~q　",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FReq"
+        ],
+        [
+          "FUrl",
+          "　"
+        ]
+      ],
+      "describe": "has no response and url matches /　/i",
+      "dump": "FAnd\n\tFReq\n\tFUrl　\n",
+      "describe_case_sensitive": "has no response and url matches /　/"
+    },
+    {
+      "expr": "~q\fx",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FReq"
+        ],
+        [
+          "FUrl",
+          "\fx"
+        ]
+      ],
+      "describe": "has no response and url matches /\fx/i",
+      "dump": "FAnd\n\tFReq\n\tFUrl\fx\n",
+      "describe_case_sensitive": "has no response and url matches /\fx/"
+    },
+    {
+      "expr": "(~q)",
+      "ok": false
+    },
+    {
+      "expr": "( ~q)",
+      "ok": false
+    },
+    {
+      "expr": "(~q )",
+      "ok": true,
+      "tree": [
+        "FReq"
+      ],
+      "describe": "has no response",
+      "dump": "FReq\n",
+      "describe_case_sensitive": "has no response"
+    },
+    {
+      "expr": "( ~q )",
+      "ok": true,
+      "tree": [
+        "FReq"
+      ],
+      "describe": "has no response",
+      "dump": "FReq\n",
+      "describe_case_sensitive": "has no response"
+    },
+    {
+      "expr": "~q\t",
+      "ok": true,
+      "tree": [
+        "FReq"
+      ],
+      "describe": "has no response",
+      "dump": "FReq\n",
+      "describe_case_sensitive": "has no response"
+    },
+    {
+      "expr": "\n~q\n",
+      "ok": true,
+      "tree": [
+        "FReq"
+      ],
+      "describe": "has no response",
+      "dump": "FReq\n",
+      "describe_case_sensitive": "has no response"
+    },
+    {
+      "expr": "~c 007",
+      "ok": true,
+      "tree": [
+        "FCode",
+        "7"
+      ],
+      "describe": "response code is 7",
+      "dump": "FCode\n",
+      "describe_case_sensitive": "response code is 7"
+    },
+    {
+      "expr": "~c 000",
+      "ok": true,
+      "tree": [
+        "FCode",
+        "0"
+      ],
+      "describe": "response code is 0",
+      "dump": "FCode\n",
+      "describe_case_sensitive": "response code is 0"
+    },
+    {
+      "expr": "~c 10x",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FCode",
+          "10"
+        ],
+        [
+          "FUrl",
+          "x"
+        ]
+      ],
+      "describe": "response code is 10 and url matches /x/i",
+      "dump": "FAnd\n\tFCode\n\tFUrlx\n",
+      "describe_case_sensitive": "response code is 10 and url matches /x/"
+    },
+    {
+      "expr": "~c 200&~q",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FCode",
+          "200"
+        ],
+        [
+          "FReq"
+        ]
+      ],
+      "describe": "response code is 200 and has no response",
+      "dump": "FAnd\n\tFCode\n\tFReq\n",
+      "describe_case_sensitive": "response code is 200 and has no response"
+    },
+    {
+      "expr": "~c 200 &~q",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FCode",
+          "200"
+        ],
+        [
+          "FReq"
+        ]
+      ],
+      "describe": "response code is 200 and has no response",
+      "dump": "FAnd\n\tFCode\n\tFReq\n",
+      "describe_case_sensitive": "response code is 200 and has no response"
+    },
+    {
+      "expr": "(~c 200)",
+      "ok": true,
+      "tree": [
+        "FCode",
+        "200"
+      ],
+      "describe": "response code is 200",
+      "dump": "FCode\n",
+      "describe_case_sensitive": "response code is 200"
+    },
+    {
+      "expr": "~c 99999999999999999999999",
+      "ok": true,
+      "tree": [
+        "FCode",
+        "99999999999999999999999"
+      ],
+      "describe": "response code is 99999999999999999999999",
+      "dump": "FCode\n",
+      "describe_case_sensitive": "response code is 99999999999999999999999"
+    },
+    {
+      "expr": "~c 1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+      "ok": true,
+      "tree": [
+        "FCode",
+        "1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "describe": "response code is 1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+      "dump": "FCode\n",
+      "describe_case_sensitive": "response code is 1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "expr": "~c 11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+      "ok": false
+    },
+    {
+      "expr": "~c 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+      "ok": false
+    },
+    {
+      "expr": "~c 1(",
+      "ok": false
+    },
+    {
+      "expr": "~c\t404",
+      "ok": true,
+      "tree": [
+        "FCode",
+        "404"
+      ],
+      "describe": "response code is 404",
+      "dump": "FCode\n",
+      "describe_case_sensitive": "response code is 404"
+    },
+    {
+      "expr": "!",
+      "ok": false
+    },
+    {
+      "expr": "!!",
+      "ok": false
+    },
+    {
+      "expr": "!)",
+      "ok": false
+    },
+    {
+      "expr": "!~q",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FReq"
+        ]
+      ],
+      "describe": "not has no response",
+      "dump": "FNot\n\tFReq\n",
+      "describe_case_sensitive": "not has no response"
+    },
+    {
+      "expr": "! ~q",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FReq"
+        ]
+      ],
+      "describe": "not has no response",
+      "dump": "FNot\n\tFReq\n",
+      "describe_case_sensitive": "not has no response"
+    },
+    {
+      "expr": "!!~q",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FNot",
+          [
+            "FReq"
+          ]
+        ]
+      ],
+      "describe": "not not has no response",
+      "dump": "FNot\n\tFNot\n\t\tFReq\n",
+      "describe_case_sensitive": "not not has no response"
+    },
+    {
+      "expr": "! ! ~q",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FNot",
+          [
+            "FReq"
+          ]
+        ]
+      ],
+      "describe": "not not has no response",
+      "dump": "FNot\n\tFNot\n\t\tFReq\n",
+      "describe_case_sensitive": "not not has no response"
+    },
+    {
+      "expr": "!(~q)",
+      "ok": false
+    },
+    {
+      "expr": "!( ~q )",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FReq"
+        ]
+      ],
+      "describe": "not has no response",
+      "dump": "FNot\n\tFReq\n",
+      "describe_case_sensitive": "not has no response"
+    },
+    {
+      "expr": "!(~q )",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FReq"
+        ]
+      ],
+      "describe": "not has no response",
+      "dump": "FNot\n\tFReq\n",
+      "describe_case_sensitive": "not has no response"
+    },
+    {
+      "expr": "~q & ",
+      "ok": false
+    },
+    {
+      "expr": "~q |",
+      "ok": false
+    },
+    {
+      "expr": "a |",
+      "ok": false
+    },
+    {
+      "expr": "a &",
+      "ok": false
+    },
+    {
+      "expr": "& a",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "&"
+        ],
+        [
+          "FUrl",
+          "a"
+        ]
+      ],
+      "describe": "url matches /&/i and url matches /a/i",
+      "dump": "FAnd\n\tFUrl&\n\tFUrla\n",
+      "describe_case_sensitive": "url matches /&/ and url matches /a/"
+    },
+    {
+      "expr": "| a",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "|"
+        ],
+        [
+          "FUrl",
+          "a"
+        ]
+      ],
+      "describe": "url matches /|/i and url matches /a/i",
+      "dump": "FAnd\n\tFUrl|\n\tFUrla\n",
+      "describe_case_sensitive": "url matches /|/ and url matches /a/"
+    },
+    {
+      "expr": "&",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "&"
+      ],
+      "describe": "url matches /&/i",
+      "dump": "FUrl&\n",
+      "describe_case_sensitive": "url matches /&/"
+    },
+    {
+      "expr": "|",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "|"
+      ],
+      "describe": "url matches /|/i",
+      "dump": "FUrl|\n",
+      "describe_case_sensitive": "url matches /|/"
+    },
+    {
+      "expr": "&&",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "&&"
+      ],
+      "describe": "url matches /&&/i",
+      "dump": "FUrl&&\n",
+      "describe_case_sensitive": "url matches /&&/"
+    },
+    {
+      "expr": "a & & b",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FAnd",
+          [
+            "FUrl",
+            "a"
+          ],
+          [
+            "FUrl",
+            "&"
+          ]
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "(url matches /a/i and url matches /&/i) and url matches /b/i",
+      "dump": "FAnd\n\tFAnd\n\t\tFUrla\n\t\tFUrl&\n\tFUrlb\n",
+      "describe_case_sensitive": "(url matches /a/ and url matches /&/) and url matches /b/"
+    },
+    {
+      "expr": "a | | b",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FOr",
+          [
+            "FUrl",
+            "a"
+          ],
+          [
+            "FUrl",
+            "|"
+          ]
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "(url matches /a/i or url matches /|/i) and url matches /b/i",
+      "dump": "FAnd\n\tFOr\n\t\tFUrla\n\t\tFUrl|\n\tFUrlb\n",
+      "describe_case_sensitive": "(url matches /a/ or url matches /|/) and url matches /b/"
+    },
+    {
+      "expr": "a & | b",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FAnd",
+          [
+            "FUrl",
+            "a"
+          ],
+          [
+            "FUrl",
+            "|"
+          ]
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "(url matches /a/i and url matches /|/i) and url matches /b/i",
+      "dump": "FAnd\n\tFAnd\n\t\tFUrla\n\t\tFUrl|\n\tFUrlb\n",
+      "describe_case_sensitive": "(url matches /a/ and url matches /|/) and url matches /b/"
+    },
+    {
+      "expr": "a&b",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a&b"
+      ],
+      "describe": "url matches /a&b/i",
+      "dump": "FUrla&b\n",
+      "describe_case_sensitive": "url matches /a&b/"
+    },
+    {
+      "expr": "a|b",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a|b"
+      ],
+      "describe": "url matches /a|b/i",
+      "dump": "FUrla|b\n",
+      "describe_case_sensitive": "url matches /a|b/"
+    },
+    {
+      "expr": "a!b",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a!b"
+      ],
+      "describe": "url matches /a!b/i",
+      "dump": "FUrla!b\n",
+      "describe_case_sensitive": "url matches /a!b/"
+    },
+    {
+      "expr": "a& b",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a&"
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "url matches /a&/i and url matches /b/i",
+      "dump": "FAnd\n\tFUrla&\n\tFUrlb\n",
+      "describe_case_sensitive": "url matches /a&/ and url matches /b/"
+    },
+    {
+      "expr": "a &b",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "url matches /a/i and url matches /b/i",
+      "dump": "FAnd\n\tFUrla\n\tFUrlb\n",
+      "describe_case_sensitive": "url matches /a/ and url matches /b/"
+    },
+    {
+      "expr": "a |b",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "url matches /a/i or url matches /b/i",
+      "dump": "FOr\n\tFUrla\n\tFUrlb\n",
+      "describe_case_sensitive": "url matches /a/ or url matches /b/"
+    },
+    {
+      "expr": "a| b",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a|"
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "url matches /a|/i and url matches /b/i",
+      "dump": "FAnd\n\tFUrla|\n\tFUrlb\n",
+      "describe_case_sensitive": "url matches /a|/ and url matches /b/"
+    },
+    {
+      "expr": "!a",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FUrl",
+          "a"
+        ]
+      ],
+      "describe": "not url matches /a/i",
+      "dump": "FNot\n\tFUrla\n",
+      "describe_case_sensitive": "not url matches /a/"
+    },
+    {
+      "expr": "a !b",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FNot",
+          [
+            "FUrl",
+            "b"
+          ]
+        ]
+      ],
+      "describe": "url matches /a/i and not url matches /b/i",
+      "dump": "FAnd\n\tFUrla\n\tFNot\n\t\tFUrlb\n",
+      "describe_case_sensitive": "url matches /a/ and not url matches /b/"
+    },
+    {
+      "expr": "a & !b",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FNot",
+          [
+            "FUrl",
+            "b"
+          ]
+        ]
+      ],
+      "describe": "url matches /a/i and not url matches /b/i",
+      "dump": "FAnd\n\tFUrla\n\tFNot\n\t\tFUrlb\n",
+      "describe_case_sensitive": "url matches /a/ and not url matches /b/"
+    },
+    {
+      "expr": "!a & b",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FNot",
+          [
+            "FUrl",
+            "a"
+          ]
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "not url matches /a/i and url matches /b/i",
+      "dump": "FAnd\n\tFNot\n\t\tFUrla\n\tFUrlb\n",
+      "describe_case_sensitive": "not url matches /a/ and url matches /b/"
+    },
+    {
+      "expr": "!a | b & c",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FNot",
+          [
+            "FUrl",
+            "a"
+          ]
+        ],
+        [
+          "FAnd",
+          [
+            "FUrl",
+            "b"
+          ],
+          [
+            "FUrl",
+            "c"
+          ]
+        ]
+      ],
+      "describe": "not url matches /a/i or (url matches /b/i and url matches /c/i)",
+      "dump": "FOr\n\tFNot\n\t\tFUrla\n\tFAnd\n\t\tFUrlb\n\t\tFUrlc\n",
+      "describe_case_sensitive": "not url matches /a/ or (url matches /b/ and url matches /c/)"
+    },
+    {
+      "expr": "a | b & c",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FAnd",
+          [
+            "FUrl",
+            "b"
+          ],
+          [
+            "FUrl",
+            "c"
+          ]
+        ]
+      ],
+      "describe": "url matches /a/i or (url matches /b/i and url matches /c/i)",
+      "dump": "FOr\n\tFUrla\n\tFAnd\n\t\tFUrlb\n\t\tFUrlc\n",
+      "describe_case_sensitive": "url matches /a/ or (url matches /b/ and url matches /c/)"
+    },
+    {
+      "expr": "a & b | c & d",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FAnd",
+          [
+            "FUrl",
+            "a"
+          ],
+          [
+            "FUrl",
+            "b"
+          ]
+        ],
+        [
+          "FAnd",
+          [
+            "FUrl",
+            "c"
+          ],
+          [
+            "FUrl",
+            "d"
+          ]
+        ]
+      ],
+      "describe": "(url matches /a/i and url matches /b/i) or (url matches /c/i and url matches /d/i)",
+      "dump": "FOr\n\tFAnd\n\t\tFUrla\n\t\tFUrlb\n\tFAnd\n\t\tFUrlc\n\t\tFUrld\n",
+      "describe_case_sensitive": "(url matches /a/ and url matches /b/) or (url matches /c/ and url matches /d/)"
+    },
+    {
+      "expr": "a & b & c",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FUrl",
+          "b"
+        ],
+        [
+          "FUrl",
+          "c"
+        ]
+      ],
+      "describe": "url matches /a/i and url matches /b/i and url matches /c/i",
+      "dump": "FAnd\n\tFUrla\n\tFUrlb\n\tFUrlc\n",
+      "describe_case_sensitive": "url matches /a/ and url matches /b/ and url matches /c/"
+    },
+    {
+      "expr": "a | b | c",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FUrl",
+          "b"
+        ],
+        [
+          "FUrl",
+          "c"
+        ]
+      ],
+      "describe": "url matches /a/i or url matches /b/i or url matches /c/i",
+      "dump": "FOr\n\tFUrla\n\tFUrlb\n\tFUrlc\n",
+      "describe_case_sensitive": "url matches /a/ or url matches /b/ or url matches /c/"
+    },
+    {
+      "expr": "a & (b) & c",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FUrl",
+          "b"
+        ],
+        [
+          "FUrl",
+          "c"
+        ]
+      ],
+      "describe": "url matches /a/i and url matches /b/i and url matches /c/i",
+      "dump": "FAnd\n\tFUrla\n\tFUrlb\n\tFUrlc\n",
+      "describe_case_sensitive": "url matches /a/ and url matches /b/ and url matches /c/"
+    },
+    {
+      "expr": "a & (b & c)",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FAnd",
+          [
+            "FUrl",
+            "b"
+          ],
+          [
+            "FUrl",
+            "c"
+          ]
+        ]
+      ],
+      "describe": "url matches /a/i and (url matches /b/i and url matches /c/i)",
+      "dump": "FAnd\n\tFUrla\n\tFAnd\n\t\tFUrlb\n\t\tFUrlc\n",
+      "describe_case_sensitive": "url matches /a/ and (url matches /b/ and url matches /c/)"
+    },
+    {
+      "expr": "(a & b) & c",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FAnd",
+          [
+            "FUrl",
+            "a"
+          ],
+          [
+            "FUrl",
+            "b"
+          ]
+        ],
+        [
+          "FUrl",
+          "c"
+        ]
+      ],
+      "describe": "(url matches /a/i and url matches /b/i) and url matches /c/i",
+      "dump": "FAnd\n\tFAnd\n\t\tFUrla\n\t\tFUrlb\n\tFUrlc\n",
+      "describe_case_sensitive": "(url matches /a/ and url matches /b/) and url matches /c/"
+    },
+    {
+      "expr": "(a | b) & c",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FOr",
+          [
+            "FUrl",
+            "a"
+          ],
+          [
+            "FUrl",
+            "b"
+          ]
+        ],
+        [
+          "FUrl",
+          "c"
+        ]
+      ],
+      "describe": "(url matches /a/i or url matches /b/i) and url matches /c/i",
+      "dump": "FAnd\n\tFOr\n\t\tFUrla\n\t\tFUrlb\n\tFUrlc\n",
+      "describe_case_sensitive": "(url matches /a/ or url matches /b/) and url matches /c/"
+    },
+    {
+      "expr": "a & (b | c) & d",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FOr",
+          [
+            "FUrl",
+            "b"
+          ],
+          [
+            "FUrl",
+            "c"
+          ]
+        ],
+        [
+          "FUrl",
+          "d"
+        ]
+      ],
+      "describe": "url matches /a/i and (url matches /b/i or url matches /c/i) and url matches /d/i",
+      "dump": "FAnd\n\tFUrla\n\tFOr\n\t\tFUrlb\n\t\tFUrlc\n\tFUrld\n",
+      "describe_case_sensitive": "url matches /a/ and (url matches /b/ or url matches /c/) and url matches /d/"
+    },
+    {
+      "expr": "((a))",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a"
+      ],
+      "describe": "url matches /a/i",
+      "dump": "FUrla\n",
+      "describe_case_sensitive": "url matches /a/"
+    },
+    {
+      "expr": "((a & b))",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "url matches /a/i and url matches /b/i",
+      "dump": "FAnd\n\tFUrla\n\tFUrlb\n",
+      "describe_case_sensitive": "url matches /a/ and url matches /b/"
+    },
+    {
+      "expr": "(a) b",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "url matches /a/i and url matches /b/i",
+      "dump": "FAnd\n\tFUrla\n\tFUrlb\n",
+      "describe_case_sensitive": "url matches /a/ and url matches /b/"
+    },
+    {
+      "expr": "a (b)",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "url matches /a/i and url matches /b/i",
+      "dump": "FAnd\n\tFUrla\n\tFUrlb\n",
+      "describe_case_sensitive": "url matches /a/ and url matches /b/"
+    },
+    {
+      "expr": "(a)(b)",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "url matches /a/i and url matches /b/i",
+      "dump": "FAnd\n\tFUrla\n\tFUrlb\n",
+      "describe_case_sensitive": "url matches /a/ and url matches /b/"
+    },
+    {
+      "expr": "(a b)",
+      "ok": false
+    },
+    {
+      "expr": "a & (b c)",
+      "ok": false
+    },
+    {
+      "expr": "()",
+      "ok": false
+    },
+    {
+      "expr": "(",
+      "ok": false
+    },
+    {
+      "expr": ")",
+      "ok": false
+    },
+    {
+      "expr": "a)",
+      "ok": false
+    },
+    {
+      "expr": "(a",
+      "ok": false
+    },
+    {
+      "expr": "(a))",
+      "ok": false
+    },
+    {
+      "expr": "((a)",
+      "ok": false
+    },
+    {
+      "expr": "a (",
+      "ok": false
+    },
+    {
+      "expr": "a ( b",
+      "ok": false
+    },
+    {
+      "expr": "!(a | b) & !c",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FNot",
+          [
+            "FOr",
+            [
+              "FUrl",
+              "a"
+            ],
+            [
+              "FUrl",
+              "b"
+            ]
+          ]
+        ],
+        [
+          "FNot",
+          [
+            "FUrl",
+            "c"
+          ]
+        ]
+      ],
+      "describe": "not (url matches /a/i or url matches /b/i) and not url matches /c/i",
+      "dump": "FAnd\n\tFNot\n\t\tFOr\n\t\t\tFUrla\n\t\t\tFUrlb\n\tFNot\n\t\tFUrlc\n",
+      "describe_case_sensitive": "not (url matches /a/ or url matches /b/) and not url matches /c/"
+    },
+    {
+      "expr": "a b c",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FUrl",
+          "b"
+        ],
+        [
+          "FUrl",
+          "c"
+        ]
+      ],
+      "describe": "url matches /a/i and url matches /b/i and url matches /c/i",
+      "dump": "FAnd\n\tFUrla\n\tFUrlb\n\tFUrlc\n",
+      "describe_case_sensitive": "url matches /a/ and url matches /b/ and url matches /c/"
+    },
+    {
+      "expr": "a & b c",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FAnd",
+          [
+            "FUrl",
+            "a"
+          ],
+          [
+            "FUrl",
+            "b"
+          ]
+        ],
+        [
+          "FUrl",
+          "c"
+        ]
+      ],
+      "describe": "(url matches /a/i and url matches /b/i) and url matches /c/i",
+      "dump": "FAnd\n\tFAnd\n\t\tFUrla\n\t\tFUrlb\n\tFUrlc\n",
+      "describe_case_sensitive": "(url matches /a/ and url matches /b/) and url matches /c/"
+    },
+    {
+      "expr": "a | b c",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FOr",
+          [
+            "FUrl",
+            "a"
+          ],
+          [
+            "FUrl",
+            "b"
+          ]
+        ],
+        [
+          "FUrl",
+          "c"
+        ]
+      ],
+      "describe": "(url matches /a/i or url matches /b/i) and url matches /c/i",
+      "dump": "FAnd\n\tFOr\n\t\tFUrla\n\t\tFUrlb\n\tFUrlc\n",
+      "describe_case_sensitive": "(url matches /a/ or url matches /b/) and url matches /c/"
+    },
+    {
+      "expr": "a b & c",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FAnd",
+          [
+            "FUrl",
+            "b"
+          ],
+          [
+            "FUrl",
+            "c"
+          ]
+        ]
+      ],
+      "describe": "url matches /a/i and (url matches /b/i and url matches /c/i)",
+      "dump": "FAnd\n\tFUrla\n\tFAnd\n\t\tFUrlb\n\t\tFUrlc\n",
+      "describe_case_sensitive": "url matches /a/ and (url matches /b/ and url matches /c/)"
+    },
+    {
+      "expr": "a b | c",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FOr",
+          [
+            "FUrl",
+            "b"
+          ],
+          [
+            "FUrl",
+            "c"
+          ]
+        ]
+      ],
+      "describe": "url matches /a/i and (url matches /b/i or url matches /c/i)",
+      "dump": "FAnd\n\tFUrla\n\tFOr\n\t\tFUrlb\n\t\tFUrlc\n",
+      "describe_case_sensitive": "url matches /a/ and (url matches /b/ or url matches /c/)"
+    },
+    {
+      "expr": "!a b",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FNot",
+          [
+            "FUrl",
+            "a"
+          ]
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "not url matches /a/i and url matches /b/i",
+      "dump": "FAnd\n\tFNot\n\t\tFUrla\n\tFUrlb\n",
+      "describe_case_sensitive": "not url matches /a/ and url matches /b/"
+    },
+    {
+      "expr": "a !b c",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FNot",
+          [
+            "FUrl",
+            "b"
+          ]
+        ],
+        [
+          "FUrl",
+          "c"
+        ]
+      ],
+      "describe": "url matches /a/i and not url matches /b/i and url matches /c/i",
+      "dump": "FAnd\n\tFUrla\n\tFNot\n\t\tFUrlb\n\tFUrlc\n",
+      "describe_case_sensitive": "url matches /a/ and not url matches /b/ and url matches /c/"
+    },
+    {
+      "expr": "foo",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "foo"
+      ],
+      "describe": "url matches /foo/i",
+      "dump": "FUrlfoo\n",
+      "describe_case_sensitive": "url matches /foo/"
+    },
+    {
+      "expr": "foo bar",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "foo"
+        ],
+        [
+          "FUrl",
+          "bar"
+        ]
+      ],
+      "describe": "url matches /foo/i and url matches /bar/i",
+      "dump": "FAnd\n\tFUrlfoo\n\tFUrlbar\n",
+      "describe_case_sensitive": "url matches /foo/ and url matches /bar/"
+    },
+    {
+      "expr": "foo&bar|baz!",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "foo&bar|baz!"
+      ],
+      "describe": "url matches /foo&bar|baz!/i",
+      "dump": "FUrlfoo&bar|baz!\n",
+      "describe_case_sensitive": "url matches /foo&bar|baz!/"
+    },
+    {
+      "expr": "шгн",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "шгн"
+      ],
+      "describe": "url matches /шгн/i",
+      "dump": "FUrlшгн\n",
+      "describe_case_sensitive": "url matches /шгн/"
+    },
+    {
+      "expr": "a　b",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a　b"
+      ],
+      "describe": "url matches /a　b/i",
+      "dump": "FUrla　b\n",
+      "describe_case_sensitive": "url matches /a　b/"
+    },
+    {
+      "expr": "a\fb",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a\fb"
+      ],
+      "describe": "url matches /a\fb/i",
+      "dump": "FUrla\fb\n",
+      "describe_case_sensitive": "url matches /a\fb/"
+    },
+    {
+      "expr": "a\u000bb",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a\u000bb"
+      ],
+      "describe": "url matches /a\u000bb/i",
+      "dump": "FUrla\u000bb\n",
+      "describe_case_sensitive": "url matches /a\u000bb/"
+    },
+    {
+      "expr": "a\u0000b",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a\u0000b"
+      ],
+      "describe": "url matches /a\u0000b/i",
+      "dump": "FUrla\u0000b\n",
+      "describe_case_sensitive": "url matches /a\u0000b/"
+    },
+    {
+      "expr": "a~b",
+      "ok": false
+    },
+    {
+      "expr": "a'b",
+      "ok": false
+    },
+    {
+      "expr": "a\"b",
+      "ok": false
+    },
+    {
+      "expr": "a(b",
+      "ok": false
+    },
+    {
+      "expr": "a)b",
+      "ok": false
+    },
+    {
+      "expr": "~u a~b",
+      "ok": false
+    },
+    {
+      "expr": "~u a'b",
+      "ok": false
+    },
+    {
+      "expr": "~u x(",
+      "ok": false
+    },
+    {
+      "expr": "~src 1(",
+      "ok": false
+    },
+    {
+      "expr": "\"a\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a"
+      ],
+      "describe": "url matches /a/i",
+      "dump": "FUrla\n",
+      "describe_case_sensitive": "url matches /a/"
+    },
+    {
+      "expr": "'a'",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a"
+      ],
+      "describe": "url matches /a/i",
+      "dump": "FUrla\n",
+      "describe_case_sensitive": "url matches /a/"
+    },
+    {
+      "expr": "\"\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        ""
+      ],
+      "describe": "url matches //i",
+      "dump": "FUrl\n",
+      "describe_case_sensitive": "url matches //"
+    },
+    {
+      "expr": "''",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        ""
+      ],
+      "describe": "url matches //i",
+      "dump": "FUrl\n",
+      "describe_case_sensitive": "url matches //"
+    },
+    {
+      "expr": "~u \"\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        ""
+      ],
+      "describe": "url matches //i",
+      "dump": "FUrl\n",
+      "describe_case_sensitive": "url matches //"
+    },
+    {
+      "expr": "~u ''",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        ""
+      ],
+      "describe": "url matches //i",
+      "dump": "FUrl\n",
+      "describe_case_sensitive": "url matches //"
+    },
+    {
+      "expr": "\"a b\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a b"
+      ],
+      "describe": "url matches /a b/i",
+      "dump": "FUrla b\n",
+      "describe_case_sensitive": "url matches /a b/"
+    },
+    {
+      "expr": "'a b'",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a b"
+      ],
+      "describe": "url matches /a b/i",
+      "dump": "FUrla b\n",
+      "describe_case_sensitive": "url matches /a b/"
+    },
+    {
+      "expr": "\"a\"b",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "url matches /a/i and url matches /b/i",
+      "dump": "FAnd\n\tFUrla\n\tFUrlb\n",
+      "describe_case_sensitive": "url matches /a/ and url matches /b/"
+    },
+    {
+      "expr": "~u \"a\"b",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "url matches /a/i and url matches /b/i",
+      "dump": "FAnd\n\tFUrla\n\tFUrlb\n",
+      "describe_case_sensitive": "url matches /a/ and url matches /b/"
+    },
+    {
+      "expr": "~u \"a\"~q",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FReq"
+        ]
+      ],
+      "describe": "url matches /a/i and has no response",
+      "dump": "FAnd\n\tFUrla\n\tFReq\n",
+      "describe_case_sensitive": "url matches /a/ and has no response"
+    },
+    {
+      "expr": "\"a\"|\"b\"",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "url matches /a/i or url matches /b/i",
+      "dump": "FOr\n\tFUrla\n\tFUrlb\n",
+      "describe_case_sensitive": "url matches /a/ or url matches /b/"
+    },
+    {
+      "expr": "'a'&'b'",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "a"
+        ],
+        [
+          "FUrl",
+          "b"
+        ]
+      ],
+      "describe": "url matches /a/i and url matches /b/i",
+      "dump": "FAnd\n\tFUrla\n\tFUrlb\n",
+      "describe_case_sensitive": "url matches /a/ and url matches /b/"
+    },
+    {
+      "expr": "\"a",
+      "ok": false
+    },
+    {
+      "expr": "'a",
+      "ok": false
+    },
+    {
+      "expr": "~u \"a",
+      "ok": false
+    },
+    {
+      "expr": "~u \"a\\\"",
+      "ok": false
+    },
+    {
+      "expr": "\"a\nb\"",
+      "ok": false
+    },
+    {
+      "expr": "\"a\rb\"",
+      "ok": false
+    },
+    {
+      "expr": "\"a\\\nb\"",
+      "ok": false
+    },
+    {
+      "expr": "\"a\\\rb\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a\rb"
+      ],
+      "describe": "url matches /a\rb/i",
+      "dump": "FUrla\rb\n",
+      "describe_case_sensitive": "url matches /a\rb/"
+    },
+    {
+      "expr": "'a\tb'",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a      b"
+      ],
+      "describe": "url matches /a      b/i",
+      "dump": "FUrla      b\n",
+      "describe_case_sensitive": "url matches /a      b/"
+    },
+    {
+      "expr": "\"a\\\\\"",
+      "ok": false
+    },
+    {
+      "expr": "\"a\\\\\\\"\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a\\\""
+      ],
+      "describe": "url matches /a\\\"/i",
+      "dump": "FUrla\\\"\n",
+      "describe_case_sensitive": "url matches /a\\\"/"
+    },
+    {
+      "expr": "~u \"\\d+\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "d+"
+      ],
+      "describe": "url matches /d+/i",
+      "dump": "FUrld+\n",
+      "describe_case_sensitive": "url matches /d+/"
+    },
+    {
+      "expr": "~u \"\\\\d+\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "\\d+"
+      ],
+      "describe": "url matches /\\d+/i",
+      "dump": "FUrl\\d+\n",
+      "describe_case_sensitive": "url matches /\\d+/"
+    },
+    {
+      "expr": "~u \"a\\nb\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a\nb"
+      ],
+      "describe": "url matches /a\nb/i",
+      "dump": "FUrla\nb\n",
+      "describe_case_sensitive": "url matches /a\nb/"
+    },
+    {
+      "expr": "~u \"a\\\\nb\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a\\nb"
+      ],
+      "describe": "url matches /a\\nb/i",
+      "dump": "FUrla\\nb\n",
+      "describe_case_sensitive": "url matches /a\\nb/"
+    },
+    {
+      "expr": "~u \"\\t\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "\t"
+      ],
+      "describe": "url matches /\t/i",
+      "dump": "FUrl\t\n",
+      "describe_case_sensitive": "url matches /\t/"
+    },
+    {
+      "expr": "~u \"\\\\t\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "\\t"
+      ],
+      "describe": "url matches /\\t/i",
+      "dump": "FUrl\\t\n",
+      "describe_case_sensitive": "url matches /\\t/"
+    },
+    {
+      "expr": "~u \"\\f\\r\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "\f\r"
+      ],
+      "describe": "url matches /\f\r/i",
+      "dump": "FUrl\f\r\n",
+      "describe_case_sensitive": "url matches /\f\r/"
+    },
+    {
+      "expr": "~u \"\\Z\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "Z"
+      ],
+      "describe": "url matches /Z/i",
+      "dump": "FUrlZ\n",
+      "describe_case_sensitive": "url matches /Z/"
+    },
+    {
+      "expr": "~u \"\\\\Z\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "\\Z"
+      ],
+      "describe": "url matches /\\Z/i",
+      "dump": "FUrl\\Z\n",
+      "describe_case_sensitive": "url matches /\\Z/"
+    },
+    {
+      "expr": "~u \"\\x41\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "x41"
+      ],
+      "describe": "url matches /x41/i",
+      "dump": "FUrlx41\n",
+      "describe_case_sensitive": "url matches /x41/"
+    },
+    {
+      "expr": "~u \"\\xA2\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "¢"
+      ],
+      "describe": "url matches /¢/i",
+      "dump": "FUrl¢\n",
+      "describe_case_sensitive": "url matches /¢/"
+    },
+    {
+      "expr": "~u \"\\xa2\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "¢"
+      ],
+      "describe": "url matches /¢/i",
+      "dump": "FUrl¢\n",
+      "describe_case_sensitive": "url matches /¢/"
+    },
+    {
+      "expr": "~u \"\\xG2\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "xG2"
+      ],
+      "describe": "url matches /xG2/i",
+      "dump": "FUrlxG2\n",
+      "describe_case_sensitive": "url matches /xG2/"
+    },
+    {
+      "expr": "~u \"\\u004\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "u004"
+      ],
+      "describe": "url matches /u004/i",
+      "dump": "FUrlu004\n",
+      "describe_case_sensitive": "url matches /u004/"
+    },
+    {
+      "expr": "~u \"\\uA4\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "¤"
+      ],
+      "describe": "url matches /¤/i",
+      "dump": "FUrl¤\n",
+      "describe_case_sensitive": "url matches /¤/"
+    },
+    {
+      "expr": "~u \"\\u00e9\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "u00e9"
+      ],
+      "describe": "url matches /u00e9/i",
+      "dump": "FUrlu00e9\n",
+      "describe_case_sensitive": "url matches /u00e9/"
+    },
+    {
+      "expr": "~u \"\\0\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "\u0000"
+      ],
+      "describe": "url matches /\u0000/i",
+      "dump": "FUrl\u0000\n",
+      "describe_case_sensitive": "url matches /\u0000/"
+    },
+    {
+      "expr": "~u \"\\03\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "03"
+      ],
+      "describe": "url matches /03/i",
+      "dump": "FUrl03\n",
+      "describe_case_sensitive": "url matches /03/"
+    },
+    {
+      "expr": "~u \"\\073\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "\u000073"
+      ],
+      "describe": "url matches /\u000073/i",
+      "dump": "FUrl\u000073\n",
+      "describe_case_sensitive": "url matches /\u000073/"
+    },
+    {
+      "expr": "~u \"\\13\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "13"
+      ],
+      "describe": "url matches /13/i",
+      "dump": "FUrl13\n",
+      "describe_case_sensitive": "url matches /13/"
+    },
+    {
+      "expr": "~u \"\\101\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "101"
+      ],
+      "describe": "url matches /101/i",
+      "dump": "FUrl101\n",
+      "describe_case_sensitive": "url matches /101/"
+    },
+    {
+      "expr": "~u \"\\q\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "q"
+      ],
+      "describe": "url matches /q/i",
+      "dump": "FUrlq\n",
+      "describe_case_sensitive": "url matches /q/"
+    },
+    {
+      "expr": "~u '\\''",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "'"
+      ],
+      "describe": "url matches /'/i",
+      "dump": "FUrl'\n",
+      "describe_case_sensitive": "url matches /'/"
+    },
+    {
+      "expr": "~u \"\\'\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "'"
+      ],
+      "describe": "url matches /'/i",
+      "dump": "FUrl'\n",
+      "describe_case_sensitive": "url matches /'/"
+    },
+    {
+      "expr": "~u '\\\"'",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "\""
+      ],
+      "describe": "url matches /\"/i",
+      "dump": "FUrl\"\n",
+      "describe_case_sensitive": "url matches /\"/"
+    },
+    {
+      "expr": "~u \"\\шx\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "шx"
+      ],
+      "describe": "url matches /шx/i",
+      "dump": "FUrlшx\n",
+      "describe_case_sensitive": "url matches /шx/"
+    },
+    {
+      "expr": "~u \"(?s)a\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "(?s)a"
+      ],
+      "describe": "url matches /(?s)a/is",
+      "dump": "FUrl(?s)a\n",
+      "describe_case_sensitive": "url matches /(?s)a/s"
+    },
+    {
+      "expr": "~u \"(?si)a\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "(?si)a"
+      ],
+      "describe": "url matches /(?si)a/is",
+      "dump": "FUrl(?si)a\n",
+      "describe_case_sensitive": "url matches /(?si)a/is"
+    },
+    {
+      "expr": "~u \"(?i)(?m)a\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "(?i)(?m)a"
+      ],
+      "describe": "url matches /(?i)(?m)a/im",
+      "dump": "FUrl(?i)(?m)a\n",
+      "describe_case_sensitive": "url matches /(?i)(?m)a/im"
+    },
+    {
+      "expr": "~u \"(?x)a b\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "(?x)a b"
+      ],
+      "describe": "url matches /(?x)a b/i",
+      "dump": "FUrl(?x)a b\n",
+      "describe_case_sensitive": "url matches /(?x)a b/"
+    },
+    {
+      "expr": "~b \"(?s:a)\"",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "(?s:a)"
+      ],
+      "describe": "body matches /(?s:a)/is",
+      "dump": "FBod(?s:a)\n",
+      "describe_case_sensitive": "body matches /(?s:a)/s"
+    },
+    {
+      "expr": "~u \"(?a)a\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "(?a)a"
+      ],
+      "describe": "url matches /(?a)a/i",
+      "dump": "FUrl(?a)a\n",
+      "describe_case_sensitive": "url matches /(?a)a/"
+    },
+    {
+      "expr": "~h \"(?m)a\"",
+      "ok": true,
+      "tree": [
+        "FHead",
+        "(?m)a"
+      ],
+      "describe": "header matches /(?m)a/im",
+      "dump": "FHead(?m)a\n",
+      "describe_case_sensitive": "header matches /(?m)a/m"
+    },
+    {
+      "expr": "~b \"(?ms)a\"",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "(?ms)a"
+      ],
+      "describe": "body matches /(?ms)a/ims",
+      "dump": "FBod(?ms)a\n",
+      "describe_case_sensitive": "body matches /(?ms)a/ms"
+    },
+    {
+      "expr": "~u \"a(?i)\"",
+      "ok": false
+    },
+    {
+      "expr": "~u \"foo(?=bar)\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "foo(?=bar)"
+      ],
+      "describe": "url matches /foo(?=bar)/i",
+      "dump": "FUrlfoo(?=bar)\n",
+      "describe_case_sensitive": "url matches /foo(?=bar)/"
+    },
+    {
+      "expr": "~h \"(?<!x)y\"",
+      "ok": true,
+      "tree": [
+        "FHead",
+        "(?<!x)y"
+      ],
+      "describe": "header matches /(?<!x)y/im",
+      "dump": "FHead(?<!x)y\n",
+      "describe_case_sensitive": "header matches /(?<!x)y/m"
+    },
+    {
+      "expr": "~b \"(\\\\w)\\\\1\"",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "(\\w)\\1"
+      ],
+      "describe": "body matches /(\\w)\\1/is",
+      "dump": "FBod(\\w)\\1\n",
+      "describe_case_sensitive": "body matches /(\\w)\\1/s"
+    },
+    {
+      "expr": "~u [",
+      "ok": false
+    },
+    {
+      "expr": "~u \"(\"",
+      "ok": false
+    },
+    {
+      "expr": "~u \"a{2}\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a{2}"
+      ],
+      "describe": "url matches /a{2}/i",
+      "dump": "FUrla{2}\n",
+      "describe_case_sensitive": "url matches /a{2}/"
+    },
+    {
+      "expr": "~u *a",
+      "ok": false
+    },
+    {
+      "expr": "~u \"^/api/\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "^/api/"
+      ],
+      "describe": "url matches /^/api//i",
+      "dump": "FUrl^/api/\n",
+      "describe_case_sensitive": "url matches /^/api//"
+    },
+    {
+      "expr": "~u .js$",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        ".js$"
+      ],
+      "describe": "url matches /.js$/i",
+      "dump": "FUrl.js$\n",
+      "describe_case_sensitive": "url matches /.js$/"
+    },
+    {
+      "expr": "~d ^example\\.com$",
+      "ok": true,
+      "tree": [
+        "FDomain",
+        "^example\\.com$"
+      ],
+      "describe": "domain matches /^example\\.com$/i",
+      "dump": "FDomain^example\\.com$\n",
+      "describe_case_sensitive": "domain matches /^example\\.com$/"
+    },
+    {
+      "expr": "~u \\.(png|jpg)",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "\\."
+        ],
+        [
+          "FUrl",
+          "png|jpg"
+        ]
+      ],
+      "describe": "url matches /\\./i and url matches /png|jpg/i",
+      "dump": "FAnd\n\tFUrl\\.\n\tFUrlpng|jpg\n",
+      "describe_case_sensitive": "url matches /\\./ and url matches /png|jpg/"
+    },
+    {
+      "expr": "~u \"\\.(png|jpg)$\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        ".(png|jpg)$"
+      ],
+      "describe": "url matches /.(png|jpg)$/i",
+      "dump": "FUrl.(png|jpg)$\n",
+      "describe_case_sensitive": "url matches /.(png|jpg)$/"
+    },
+    {
+      "expr": "~m ^(GET|POST)$",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FMethod",
+          "^"
+        ],
+        [
+          "FUrl",
+          "GET|POST"
+        ],
+        [
+          "FUrl",
+          "$"
+        ]
+      ],
+      "describe": "method matches /^/i and url matches /GET|POST/i and url matches /$/i",
+      "dump": "FAnd\n\tFMethod^\n\tFUrlGET|POST\n\tFUrl$\n",
+      "describe_case_sensitive": "method matches /^/ and url matches /GET|POST/ and url matches /$/"
+    },
+    {
+      "expr": "~src ^127\\.0\\.0\\.1:",
+      "ok": true,
+      "tree": [
+        "FSrc",
+        "^127\\.0\\.0\\.1:"
+      ],
+      "describe": "source address matches /^127\\.0\\.0\\.1:/i",
+      "dump": "FSrc^127\\.0\\.0\\.1:\n",
+      "describe_case_sensitive": "source address matches /^127\\.0\\.0\\.1:/"
+    },
+    {
+      "expr": "~dst :443$",
+      "ok": true,
+      "tree": [
+        "FDst",
+        ":443$"
+      ],
+      "describe": "destination address matches /:443$/i",
+      "dump": "FDst:443$\n",
+      "describe_case_sensitive": "destination address matches /:443$/"
+    },
+    {
+      "expr": "~meta \"^key: value$\"",
+      "ok": true,
+      "tree": [
+        "FMeta",
+        "^key: value$"
+      ],
+      "describe": "flow metadata matches /^key: value$/im",
+      "dump": "FMeta^key: value$\n",
+      "describe_case_sensitive": "flow metadata matches /^key: value$/m"
+    },
+    {
+      "expr": "~marker ^:red_circle:$",
+      "ok": true,
+      "tree": [
+        "FMarker",
+        "^:red_circle:$"
+      ],
+      "describe": "marker matches /^:red_circle:$/i",
+      "dump": "FMarker^:red_circle:$\n",
+      "describe_case_sensitive": "marker matches /^:red_circle:$/"
+    },
+    {
+      "expr": "~comment ^todo",
+      "ok": true,
+      "tree": [
+        "FComment",
+        "^todo"
+      ],
+      "describe": "comment matches /^todo/im",
+      "dump": "FComment^todo\n",
+      "describe_case_sensitive": "comment matches /^todo/m"
+    },
+    {
+      "expr": "~d example.com & ~m POST & !~c 200",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FDomain",
+          "example.com"
+        ],
+        [
+          "FMethod",
+          "POST"
+        ],
+        [
+          "FNot",
+          [
+            "FCode",
+            "200"
+          ]
+        ]
+      ],
+      "describe": "domain matches /example.com/i and method matches /POST/i and not response code is 200",
+      "dump": "FAnd\n\tFDomainexample.com\n\tFMethodPOST\n\tFNot\n\t\tFCode\n",
+      "describe_case_sensitive": "domain matches /example.com/ and method matches /POST/ and not response code is 200"
+    },
+    {
+      "expr": "~u /api/ & (~t json | ~t xml)",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FUrl",
+          "/api/"
+        ],
+        [
+          "FOr",
+          [
+            "FContentType",
+            "json"
+          ],
+          [
+            "FContentType",
+            "xml"
+          ]
+        ]
+      ],
+      "describe": "url matches //api//i and (content type matches /json/i or content type matches /xml/i)",
+      "dump": "FAnd\n\tFUrl/api/\n\tFOr\n\t\tFContentTypejson\n\t\tFContentTypexml\n",
+      "describe_case_sensitive": "url matches //api// and (content type matches /json/ or content type matches /xml/)"
+    },
+    {
+      "expr": "!(~a | ~t image) & ~s",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FNot",
+          [
+            "FOr",
+            [
+              "FAsset"
+            ],
+            [
+              "FContentType",
+              "image"
+            ]
+          ]
+        ],
+        [
+          "FResp"
+        ]
+      ],
+      "describe": "not (is asset or content type matches /image/i) and has response",
+      "dump": "FAnd\n\tFNot\n\t\tFOr\n\t\t\tFAsset\n\t\t\tFContentTypeimage\n\tFResp\n",
+      "describe_case_sensitive": "not (is asset or content type matches /image/) and has response"
+    },
+    {
+      "expr": "~websocket & ~b ping",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FWebSocket"
+        ],
+        [
+          "FBod",
+          "ping"
+        ]
+      ],
+      "describe": "is a Websocket Flow and body matches /ping/is",
+      "dump": "FAnd\n\tFWebSocket\n\tFBodping\n",
+      "describe_case_sensitive": "is a Websocket Flow and body matches /ping/s"
+    },
+    {
+      "expr": "~dns & ~u example",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FDNS"
+        ],
+        [
+          "FUrl",
+          "example"
+        ]
+      ],
+      "describe": "is a DNS Flow and url matches /example/i",
+      "dump": "FAnd\n\tFDNS\n\tFUrlexample\n",
+      "describe_case_sensitive": "is a DNS Flow and url matches /example/"
+    },
+    {
+      "expr": "~tcp | ~udp",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FTCP"
+        ],
+        [
+          "FUDP"
+        ]
+      ],
+      "describe": "is a TCP Flow or is a UDP Flow",
+      "dump": "FOr\n\tFTCP\n\tFUDP\n",
+      "describe_case_sensitive": "is a TCP Flow or is a UDP Flow"
+    },
+    {
+      "expr": "~replay & !~replayq",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FReplay"
+        ],
+        [
+          "FNot",
+          [
+            "FReplayClient"
+          ]
+        ]
+      ],
+      "describe": "flow has been replayed and not request has been replayed",
+      "dump": "FAnd\n\tFReplay\n\tFNot\n\t\tFReplayClient\n",
+      "describe_case_sensitive": "flow has been replayed and not request has been replayed"
+    },
+    {
+      "expr": "~marked & ~marker \"needs review\"",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FMarked"
+        ],
+        [
+          "FMarker",
+          "needs review"
+        ]
+      ],
+      "describe": "is marked and marker matches /needs review/i",
+      "dump": "FAnd\n\tFMarked\n\tFMarkerneeds review\n",
+      "describe_case_sensitive": "is marked and marker matches /needs review/"
+    },
+    {
+      "expr": "~h \"^content-type: text/html\" & ~bs \"<title>\"",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FHead",
+          "^content-type: text/html"
+        ],
+        [
+          "FBodResponse",
+          "<title>"
+        ]
+      ],
+      "describe": "header matches /^content-type: text/html/im and body response matches /<title>/is",
+      "dump": "FAnd\n\tFHead^content-type: text/html\n\tFBodResponse<title>\n",
+      "describe_case_sensitive": "header matches /^content-type: text/html/m and body response matches /<title>/s"
+    },
+    {
+      "expr": "(~q & ~s ) & ~e",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FAnd",
+          [
+            "FReq"
+          ],
+          [
+            "FResp"
+          ]
+        ],
+        [
+          "FErr"
+        ]
+      ],
+      "describe": "(has no response and has response) and has error",
+      "dump": "FAnd\n\tFAnd\n\t\tFReq\n\t\tFResp\n\tFErr\n",
+      "describe_case_sensitive": "(has no response and has response) and has error"
+    },
+    {
+      "expr": "(~q & ~s) & ~e",
+      "ok": false
+    },
+    {
+      "expr": "!(~q | ~s )",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FOr",
+          [
+            "FReq"
+          ],
+          [
+            "FResp"
+          ]
+        ]
+      ],
+      "describe": "not (has no response or has response)",
+      "dump": "FNot\n\tFOr\n\t\tFReq\n\t\tFResp\n",
+      "describe_case_sensitive": "not (has no response or has response)"
+    },
+    {
+      "expr": "~q & (~s ) & ~e",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FReq"
+        ],
+        [
+          "FResp"
+        ],
+        [
+          "FErr"
+        ]
+      ],
+      "describe": "has no response and has response and has error",
+      "dump": "FAnd\n\tFReq\n\tFResp\n\tFErr\n",
+      "describe_case_sensitive": "has no response and has response and has error"
+    },
+    {
+      "expr": "~q & (~s & ~e )",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FReq"
+        ],
+        [
+          "FAnd",
+          [
+            "FResp"
+          ],
+          [
+            "FErr"
+          ]
+        ]
+      ],
+      "describe": "has no response and (has response and has error)",
+      "dump": "FAnd\n\tFReq\n\tFAnd\n\t\tFResp\n\t\tFErr\n",
+      "describe_case_sensitive": "has no response and (has response and has error)"
+    },
+    {
+      "expr": "(!~q )",
+      "ok": true,
+      "tree": [
+        "FNot",
+        [
+          "FReq"
+        ]
+      ],
+      "describe": "not has no response",
+      "dump": "FNot\n\tFReq\n",
+      "describe_case_sensitive": "not has no response"
+    },
+    {
+      "expr": "(~q & !~s ) | ~e",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FAnd",
+          [
+            "FReq"
+          ],
+          [
+            "FNot",
+            [
+              "FResp"
+            ]
+          ]
+        ],
+        [
+          "FErr"
+        ]
+      ],
+      "describe": "(has no response and not has response) or has error",
+      "dump": "FOr\n\tFAnd\n\t\tFReq\n\t\tFNot\n\t\t\tFResp\n\tFErr\n",
+      "describe_case_sensitive": "(has no response and not has response) or has error"
+    },
+    {
+      "expr": "(~c 200 | ~h x)",
+      "ok": true,
+      "tree": [
+        "FOr",
+        [
+          "FCode",
+          "200"
+        ],
+        [
+          "FHead",
+          "x"
+        ]
+      ],
+      "describe": "response code is 200 or header matches /x/im",
+      "dump": "FOr\n\tFCode\n\tFHeadx\n",
+      "describe_case_sensitive": "response code is 200 or header matches /x/m"
+    },
+    {
+      "expr": "(~u a | ~marked ) ~e",
+      "ok": true,
+      "tree": [
+        "FAnd",
+        [
+          "FOr",
+          [
+            "FUrl",
+            "a"
+          ],
+          [
+            "FMarked"
+          ]
+        ],
+        [
+          "FErr"
+        ]
+      ],
+      "describe": "(url matches /a/i or is marked) and has error",
+      "dump": "FAnd\n\tFOr\n\t\tFUrla\n\t\tFMarked\n\tFErr\n",
+      "describe_case_sensitive": "(url matches /a/ or is marked) and has error"
+    }
+  ]
+}

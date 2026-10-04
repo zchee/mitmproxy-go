@@ -12,8 +12,9 @@
 // result cache is not replicated, and upstream's fallback to Python text
 // codecs (such as "utf8") is not provided: those names are unknown here.
 //
-// No limit is placed on the decompressed size, as upstream places none; the
-// zstd decoder keeps libzstd's default maximum window of 128 MiB.
+// [Decode] places no limit on the decompressed size, as upstream places
+// none; its zstd decoder keeps libzstd's default maximum window of 128 MiB.
+// [DecodeLimit] is the bounded variant for bodies from the network.
 package encoding
 
 import (
@@ -22,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -39,6 +41,10 @@ import (
 // ErrUnknownEncoding is wrapped by the error Decode and Encode return for an
 // encoding name they do not support.
 var ErrUnknownEncoding = errors.New("unknown encoding")
+
+// ErrSizeLimit is wrapped by the error DecodeLimit returns when the decoded
+// output would be larger than the limit.
+var ErrSizeLimit = errors.New("decoded size exceeds the limit")
 
 // Error describes a failed Decode or Encode call.
 type Error struct {
@@ -131,6 +137,30 @@ var (
 // The identity encodings ("identity" and "none") return data itself. Every
 // other encoding returns a newly allocated slice.
 func Decode(data []byte, encoding string) ([]byte, error) {
+	return decode(data, encoding, unlimited)
+}
+
+// DecodeLimit is [Decode] with a bound on the decoded size. Once the output
+// grows beyond limit bytes, it stops decoding and returns an error wrapping
+// [ErrSizeLimit]; output of exactly limit bytes is accepted, and a negative
+// limit is treated as zero. Under the limit the result is the same as
+// Decode's.
+//
+// The memory DecodeLimit uses grows with the output, not with the size the
+// input claims, and stays within a small multiple of limit. A zstd frame may
+// need its declared window before any output is produced, so for zstd the
+// bound is at least the 8 MiB window RFC 9659 lets HTTP senders use; a frame
+// whose window is larger than that and larger than limit is refused with
+// ErrSizeLimit before it is decoded.
+func DecodeLimit(data []byte, encoding string, limit int64) ([]byte, error) {
+	return decode(data, encoding, max(limit, 0))
+}
+
+// unlimited is the limit passed by Decode.
+const unlimited = -1
+
+// decode implements Decode and DecodeLimit. A negative limit means no limit.
+func decode(data []byte, encoding string, limit int64) ([]byte, error) {
 	encoding = strings.ToLower(encoding)
 	var (
 		out []byte
@@ -138,15 +168,19 @@ func Decode(data []byte, encoding string) ([]byte, error) {
 	)
 	switch encoding {
 	case "none", "identity":
+		if limit >= 0 && int64(len(data)) > limit {
+			err = sizeLimitError(limit)
+			break
+		}
 		return data, nil
 	case "gzip":
-		out, err = decodeGzip(data)
+		out, err = decodeGzip(data, limit)
 	case "deflate", "deflateraw":
-		out, err = decodeDeflate(data)
+		out, err = decodeDeflate(data, limit)
 	case "br":
-		out, err = decodeBrotli(data)
+		out, err = decodeBrotli(data, limit)
 	case "zstd":
-		out, err = decodeZstd(data)
+		out, err = decodeZstd(data, limit)
 	default:
 		err = ErrUnknownEncoding
 	}
@@ -154,6 +188,10 @@ func Decode(data []byte, encoding string) ([]byte, error) {
 		return nil, newError("decoding", encoding, data, err)
 	}
 	return out, nil
+}
+
+func sizeLimitError(limit int64) error {
+	return fmt.Errorf("%w of %d bytes", ErrSizeLimit, limit)
 }
 
 // Encode encodes data with the named encoding.
@@ -282,11 +320,22 @@ func truncated(err error) bool {
 const maxPrealloc = 64 << 20
 
 // readAll drains r, keeping whatever was produced before an error. sizeHint
-// is the expected decoded size.
-func readAll(r io.Reader, sizeHint int) ([]byte, error) {
+// is the expected decoded size. With a non-negative limit, reading stops
+// once the output exceeds limit bytes and the error wraps ErrSizeLimit.
+func readAll(r io.Reader, sizeHint int, limit int64) ([]byte, error) {
+	if limit >= 0 {
+		sizeHint = int(min(int64(sizeHint), limit))
+	}
+	if limit >= 0 && limit < math.MaxInt64 {
+		// One byte beyond the limit tells an exact fit from an overrun.
+		r = io.LimitReader(r, limit+1)
+	}
 	var buf bytes.Buffer
 	buf.Grow(min(sizeHint, maxPrealloc) + bytes.MinRead)
 	_, err := buf.ReadFrom(r)
+	if limit >= 0 && int64(buf.Len()) > limit {
+		return nil, sizeLimitError(limit)
+	}
 	return buf.Bytes(), err
 }
 
@@ -294,7 +343,7 @@ func readAll(r io.Reader, sizeHint int) ([]byte, error) {
 // header like zlib's windowBits 47 does. Only the first gzip member is
 // decoded and trailing data is ignored. A stream that ends early yields the
 // output decompressed so far, matching zlib's decompressobj.
-func decodeGzip(data []byte) ([]byte, error) {
+func decodeGzip(data []byte, limit int64) ([]byte, error) {
 	if len(data) == 0 {
 		return []byte{}, nil
 	}
@@ -320,7 +369,7 @@ func decodeGzip(data []byte) ([]byte, error) {
 		}
 		r = zr
 	}
-	out, err := readAll(r, gzipSizeHint(data))
+	out, err := readAll(r, gzipSizeHint(data), limit)
 	if err != nil && !truncated(err) {
 		return nil, err
 	}
@@ -329,36 +378,72 @@ func decodeGzip(data []byte) ([]byte, error) {
 
 // decodeDeflate decodes zlib-wrapped DEFLATE data and falls back to raw
 // DEFLATE when that fails, since some servers omit the zlib header and
-// checksum. Unlike decodeGzip, a truncated stream is an error.
-func decodeDeflate(data []byte) ([]byte, error) {
+// checksum. Unlike decodeGzip, a truncated stream is an error. Output that
+// exceeds limit as zlib data is not decoded again as raw DEFLATE.
+func decodeDeflate(data []byte, limit int64) ([]byte, error) {
 	if len(data) == 0 {
 		return []byte{}, nil
 	}
 	if zr, err := zlib.NewReader(bytes.NewReader(data)); err == nil {
-		if out, err := readAll(zr, len(data)*expansionGuess); err == nil {
-			return out, nil
+		out, err := readAll(zr, len(data)*expansionGuess, limit)
+		if err == nil || errors.Is(err, ErrSizeLimit) {
+			return out, err
 		}
 	}
 	// Closing a flate reader releases nothing, so it is left to the GC.
-	return readAll(flate.NewReader(bytes.NewReader(data)), len(data)*expansionGuess)
+	return readAll(flate.NewReader(bytes.NewReader(data)), len(data)*expansionGuess, limit)
 }
 
-func decodeBrotli(data []byte) ([]byte, error) {
+func decodeBrotli(data []byte, limit int64) ([]byte, error) {
 	if len(data) == 0 {
 		return []byte{}, nil
 	}
-	return readAll(brotli.NewReader(bytes.NewReader(data)), len(data)*expansionGuess)
+	return readAll(brotli.NewReader(bytes.NewReader(data)), len(data)*expansionGuess, limit)
 }
 
-func decodeZstd(data []byte) ([]byte, error) {
+// zstdMinMemory is the smallest decoder memory bound DecodeLimit uses for
+// zstd: RFC 9659 lets HTTP senders use a window of up to 8 MiB, and a
+// smaller bound would refuse such a frame however short its content.
+const zstdMinMemory = 8 << 20
+
+func decodeZstd(data []byte, limit int64) ([]byte, error) {
 	if len(data) == 0 {
 		return []byte{}, nil
 	}
-	dec, err := zstdDecoder()
+	if limit < 0 {
+		dec, err := zstdDecoder()
+		if err != nil {
+			return nil, err
+		}
+		return dec.DecodeAll(data, nil)
+	}
+	// The decoder's memory bound is fixed when it is created, so a bounded
+	// decode needs its own decoder. The bound caps both the output and the
+	// window, and frames that declare a larger content size are refused
+	// from their header.
+	mem := max(uint64(limit), zstdMinMemory)
+	dec, err := zstd.NewReader(nil,
+		zstd.WithDecoderConcurrency(1),
+		zstd.WithDecoderMaxWindow(zstdWindowLimit),
+		zstd.WithDecoderMaxMemory(mem),
+	)
 	if err != nil {
 		return nil, err
 	}
-	return dec.DecodeAll(data, nil)
+	defer dec.Close()
+	out, err := dec.DecodeAll(data, nil)
+	switch {
+	case errors.Is(err, zstd.ErrDecoderSizeExceeded):
+		return nil, sizeLimitError(limit)
+	case errors.Is(err, zstd.ErrWindowSizeExceeded) && mem < zstdWindowLimit:
+		// Decode would accept this window; the limit is what refuses it.
+		return nil, fmt.Errorf("%w: %w", sizeLimitError(limit), err)
+	case err != nil:
+		return nil, err
+	case int64(len(out)) > limit:
+		return nil, sizeLimitError(limit)
+	}
+	return out, nil
 }
 
 func encodeGzip(data []byte) ([]byte, error) {

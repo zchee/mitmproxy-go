@@ -528,6 +528,35 @@ func TestCopy(t *testing.T) {
 	}
 }
 
+// TestModifiedRightAfterBackup pins a quirk upstream has as well: a backup
+// taken with no backup in place holds "backup": None, while the current
+// state then holds the backup itself, so the two never compare equal and
+// modified() is True before anything changes.
+func TestModifiedRightAfterBackup(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		f Flow
+	}{
+		"success: http": {f: tFlow(tflowOpts{resp: true})},
+		"success: tcp":  {f: tTCPFlow(false)},
+		"success: udp":  {f: tUDPFlow(false)},
+		"success: dns":  {f: tDNSFlow(true, false)},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if tt.f.Modified() {
+				t.Fatal("Modified() = true before Backup()")
+			}
+			tt.f.Backup()
+			if !tt.f.Modified() {
+				t.Error("Modified() = false right after Backup(), want true as upstream's modified() returns")
+			}
+		})
+	}
+}
+
 func TestBackup(t *testing.T) {
 	t.Parallel()
 

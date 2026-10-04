@@ -95,9 +95,19 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: stable
-      - uses: golangci/golangci-lint-action@v9
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.14
+      # Files behind the difftest build tag are invisible to the run above,
+      # and internal/difftest has a "!difftest" file that a tagged run
+      # alone would skip, so both runs are needed.
+      - name: golangci-lint (difftest build tag)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14
+          args: --build-tags difftest
+          skip-save-cache: true
 
   fuzz-smoke:
     runs-on: ubuntu-26.04
@@ -161,5 +171,12 @@ jobs:
       # the full version and dependabot bumps it. Switch to "@vN" if upstream
       # publishes major tags again.
       - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          # The uv cache depends on the pinned mitmproxy commit, which the
+          # inline script metadata of the oracle scripts and the difftest
+          # runner declare; the default globs match no file here.
+          cache-dependency-glob: |
+            **/testdata/*.py
+            internal/difftest/difftest.go
       - name: Differential tests against the pinned Python mitmproxy
         run: go test -tags difftest -count=1 ./...

@@ -25,18 +25,23 @@
 //   - \Z, which Python defines as the absolute end of the input, becomes
 //     \z. RE2 rejects \Z and regexp2 gives it the .NET meaning "end or
 //     before a final newline".
+//   - Without Multiline, Python's $ matches at the end of the input and
+//     also before a newline that ends it, while RE2's $ matches only at the
+//     end. A $ that nothing can follow, such as the one in "\.js$" or
+//     "(a$|b$)", becomes "\n?\z" for RE2, which is the same thing for a
+//     search. A $ anywhere else, such as in "a$\n" or "(a$)+", sends the
+//     pattern to regexp2, whose $ already has Python's meaning.
 //
-// Known differences that are not translated: without Multiline, Python's $
-// also matches before a newline that ends the input, while RE2's $ does
-// not (regexp2 agrees with Python); Python's bytes patterns treat input as
-// Latin-1 bytes and fold case for ASCII only, while both Go engines decode
-// UTF-8 and fold case for all of Unicode.
+// A known difference that is not translated: Python's bytes patterns treat
+// input as Latin-1 bytes and fold case for ASCII only, while both Go engines
+// decode UTF-8 and fold case for all of Unicode.
 package regex
 
 import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"regexp/syntax"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -133,8 +138,7 @@ func Compile(pattern string, flags Flags) (Matcher, error) {
 	eff := flags | inline
 
 	if !verbose {
-		re, err := regexp.Compile(re2Prefix(eff) + body)
-		if err == nil {
+		if re := compileRE2(re2Prefix(eff) + body); re != nil {
 			return &re2Matcher{re: re, pattern: pattern, flags: eff}, nil
 		}
 	}
@@ -158,6 +162,81 @@ func Compile(pattern string, flags Flags) (Matcher, error) {
 	}
 	re.MatchTimeout = MatchTimeout
 	return &backtrackMatcher{re: re, pattern: pattern, flags: eff}, nil
+}
+
+// compileRE2 compiles src with the standard regexp package, giving $ its
+// Python meaning. It returns nil when RE2 rejects src or when a $ is not in
+// tail position, so that the caller falls back to regexp2.
+func compileRE2(src string) *regexp.Regexp {
+	tree, err := syntax.Parse(src, syntax.Perl)
+	if err != nil {
+		return nil
+	}
+	found, tail := pythonDollars(tree, true)
+	if !found {
+		// Compile the source as written rather than a re-rendered tree.
+		re, err := regexp.Compile(src)
+		if err != nil {
+			return nil
+		}
+		return re
+	}
+	if !tail {
+		return nil
+	}
+	rewriteDollars(tree)
+	re, err := regexp.Compile(tree.String())
+	if err != nil {
+		return nil
+	}
+	return re
+}
+
+// isPythonDollar reports whether re is a $ outside Multiline, which RE2
+// parses as end of text.
+func isPythonDollar(re *syntax.Regexp) bool {
+	return re.Op == syntax.OpEndText && re.Flags&syntax.WasDollar != 0
+}
+
+// pythonDollars reports whether re contains a $ outside Multiline and
+// whether every such $ is in tail position: no part of the pattern can
+// match after it. tail says whether re itself is in tail position.
+func pythonDollars(re *syntax.Regexp, tail bool) (found, allTail bool) {
+	if isPythonDollar(re) {
+		return true, tail
+	}
+	allTail = true
+	for i, sub := range re.Sub {
+		subTail := false
+		switch re.Op {
+		case syntax.OpConcat:
+			subTail = tail && i == len(re.Sub)-1
+		case syntax.OpAlternate, syntax.OpCapture:
+			subTail = tail
+		}
+		f, t := pythonDollars(sub, subTail)
+		found = found || f
+		allTail = allTail && t
+	}
+	return found, allTail
+}
+
+// rewriteDollars replaces every $ outside Multiline with "\n?\z": an
+// optional final newline, then the end of the input.
+func rewriteDollars(re *syntax.Regexp) {
+	if isPythonDollar(re) {
+		*re = syntax.Regexp{
+			Op: syntax.OpConcat,
+			Sub: []*syntax.Regexp{
+				{Op: syntax.OpQuest, Sub: []*syntax.Regexp{{Op: syntax.OpLiteral, Rune: []rune{'\n'}}}},
+				{Op: syntax.OpEndText},
+			},
+		}
+		return
+	}
+	for _, sub := range re.Sub {
+		rewriteDollars(sub)
+	}
 }
 
 func re2Prefix(f Flags) string {

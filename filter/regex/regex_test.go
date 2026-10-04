@@ -149,6 +149,62 @@ func TestCompile(t *testing.T) {
 			pattern: "(?P<n>a)b",
 			probes:  []probe{{"ab", true}},
 		},
+		"success: tail dollar matches before a final newline": {
+			pattern: "foo$",
+			probes:  []probe{{"foo", true}, {"foo\n", true}, {"foo\n\n", false}, {"foo\nx", false}, {"foox", false}},
+		},
+		"success: tail dollar in every alternative": {
+			pattern: "(?:a$|b$)",
+			probes:  []probe{{"xa\n", true}, {"xb", true}, {"ab\nc", false}},
+		},
+		"success: tail dollar inside a capture": {
+			pattern: `\.(js|css)$`,
+			probes:  []probe{{"/app.js\n", true}, {"/app.css", true}, {"/app.js?x", false}},
+		},
+		"success: tail dollar with dotall": {
+			pattern:   "a.$",
+			flags:     DotAll,
+			wantFlags: DotAll,
+			probes:    []probe{{"a\n", true}, {"ab\n", true}, {"ab\nc", false}},
+		},
+		"success: multiline dollar is left to RE2": {
+			pattern:   "^a$",
+			flags:     Multiline,
+			wantFlags: Multiline,
+			probes:    []probe{{"x\na\ny", true}, {"x\nab", false}},
+		},
+		"success: scoped multiline dollar is left to RE2": {
+			pattern: "(?m:a$)b",
+			probes:  []probe{{"ab", false}, {"a\nb", false}},
+		},
+		"success: escaped dollar is a literal": {
+			pattern: `a\$`,
+			probes:  []probe{{"a$", true}, {"a\n", false}},
+		},
+		"success: dollar inside a class is a literal": {
+			pattern: "a[$]",
+			probes:  []probe{{"a$", true}, {"a", false}},
+		},
+		"success: dollar before more pattern uses regexp2": {
+			pattern:      "a$\n",
+			backtracking: true,
+			probes:       []probe{{"a\n", true}, {"a", false}, {"a\n\n", false}},
+		},
+		"success: dollar under repetition uses regexp2": {
+			pattern:      "(?:a$)+",
+			backtracking: true,
+			probes:       []probe{{"xa\n", true}, {"xa", true}, {"xab", false}},
+		},
+		"success: dollar under ignore case": {
+			pattern:   "FOO$",
+			flags:     IgnoreCase,
+			wantFlags: IgnoreCase,
+			probes:    []probe{{"x foo\n", true}, {"foo bar", false}},
+		},
+		"success: python \\Z does not match before a final newline": {
+			pattern: `a\Z|b$`,
+			probes:  []probe{{"a\n", false}, {"b\n", true}, {"a", true}},
+		},
 		"success: empty pattern matches everything": {
 			pattern: "",
 			probes:  []probe{{"", true}, {"anything", true}},

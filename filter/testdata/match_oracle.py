@@ -111,7 +111,13 @@ def handmade_flows() -> list[Flow]:
     ipv6.client_conn.peername = ("::1", 443)
     ipv6.server_conn.address = ("example.com", 443)
 
-    return [trailing, compressed, broken, ipv6]
+    # Method, host and path ending in a newline, where only Python's $
+    # (and the rewritten one) matches "get$", "address$" and "path$".
+    newline = tflow.tflow(
+        req=tutils.treq(method=b"GET\n", host="address\n", path=b"/path\n")
+    )
+
+    return [trailing, compressed, broken, ipv6, newline]
 
 
 def main() -> None:

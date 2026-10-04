@@ -1,0 +1,117 @@
+add_upstream_certs_to_client_chain	bool	false	Add all certificates of the upstream server to the certificate chain that will be served to the proxy client, as extras.
+allow_hosts	sequence of str	[]	Opposite of --ignore-hosts.
+anticache	bool	false	Strip out request headers that might cause the server to return 304-not-modified.
+anticomp	bool	false	Try to convince servers to send us un-compressed data.
+block_global	bool	true	Block connections from public IP addresses.
+block_list	sequence of str	[]	Block matching requests and return an empty response with the specified HTTP status. Option syntax is "/flow-filter/status-code", where flow-filter describes which requests this rule should be applied to and status-code is the HTTP status code to return for blocked requests. The separator ("/" in the example) can be any character. Setting a non-standard status code of 444 will close the connection without sending a response.
+block_private	bool	false	Block connections from local (private) IP addresses. This option does not affect loopback addresses (connections from the local machine), which are always permitted.
+body_size_limit	optional str	null	Byte size limit of HTTP request and response bodies. Understands k/m/g suffixes, i.e. 3m for 3 megabytes.
+cert_passphrase	optional str	null	Passphrase for decrypting the private key provided in the --cert option.  Note that passing cert_passphrase on the command line makes your passphrase visible in your system's process list. Specify it in config.yaml to avoid this.
+certs	sequence of str	[]	SSL certificates of the form "[domain=]path". The domain may include a wildcard, and is equal to "*" if not specified. The file at path is a certificate in PEM format. If a private key is included in the PEM, it is used, else the default key in the conf dir is used. The PEM file should contain the full certificate chain, with the leaf certificate as the first entry.
+ciphers_client	optional str	null	Set supported ciphers for client <-> mitmproxy connections using OpenSSL syntax.
+ciphers_server	optional str	null	Set supported ciphers for mitmproxy <-> server connections using OpenSSL syntax.
+client_certs	optional str	null	Client certificate file or directory.
+client_replay	sequence of str	[]	Replay client requests from a saved file.
+client_replay_concurrency	int	1	Concurrency limit on in-flight client replay requests. Currently the only valid values are 1 and -1 (no limit).
+command_history	bool	true	Persist command history between mitmproxy invocations.
+confdir	str	"~/.mitmproxy"	Location of the default mitmproxy configuration files.
+connect_addr	optional str	null	Set the local IP address that mitmproxy should use when connecting to upstream servers.
+connection_strategy	str	"eager"	Determine when server connections should be established. When set to lazy, mitmproxy tries to defer establishing an upstream connection as long as possible. This makes it possible to use server replay while being offline. When set to eager, mitmproxy can detect protocols with server-side greetings, as well as accurately mirror TLS ALPN negotiation.
+console_default_contentview	str	"auto"	The default content view mode.
+console_eventlog_verbosity	str	"info"	EventLog verbosity.
+console_flowlist_layout	str	"default"	Set the flowlist layout
+console_focus_follow	bool	false	Focus follows new flows.
+console_layout	str	"single"	Console layout.
+console_layout_headers	bool	true	Show layout component headers
+console_mouse	bool	true	Console mouse interaction.
+console_palette	str	"solarized_dark"	Color palette.
+console_palette_transparent	bool	true	Set transparent background for palette.
+console_quickhelp_visible	bool	true	Show the quick help bar at the bottom of the console.
+console_strip_trailing_newlines	bool	false	Strip trailing newlines from edited request/response bodies.
+content_view_lines_cutoff	int	512	Flow content view lines limit. Limit is enabled by default to speedup flows browsing.
+dns_name_servers	sequence of str	[]	Name servers to use for lookups in regular DNS mode/wireguard mode. Default: operating system's name servers
+dns_use_hosts_file	bool	true	Use the hosts file for DNS lookups in regular DNS mode/wireguard mode.
+dumper_default_contentview	str	"auto"	The default content view mode.
+dumper_filter	optional str	null	Limit which flows are dumped.
+export_preserve_original_ip	bool	false	When exporting a request as an external command, make an effort to connect to the same IP as in the original request. This helps with reproducibility in cases where the behaviour depends on the particular host we are connecting to. Currently this only affects curl exports.
+flow_detail	int	1	The display detail level for flows in mitmdump: 0 (quiet) to 4 (very verbose).   0: no output   1: shortened request URL with response status code   2: full request URL with response status code and HTTP headers   3: 2 + truncated response content, content of WebSocket and TCP messages (content_view_lines_cutoff: 512)   4: 3 + nothing is truncated
+hardump	str	""	Save a HAR file with all flows on exit. You may select particular flows by setting save_stream_filter. For mitmdump, enabling this option will mean that flows are kept in memory.
+http2	bool	true	Enable/disable HTTP/2 support. HTTP/2 support is enabled by default.
+http2_ping_keepalive	int	58	Send a PING frame if an HTTP/2 connection is idle for more than the specified number of seconds to prevent the remote site from closing it. Set to 0 to disable this feature.
+http3	bool	true	Enable/disable support for QUIC and HTTP/3. Enabled by default.
+http_connect_send_host_header	bool	true	Include host header with CONNECT requests. Enabled by default.
+ignore_hosts	sequence of str	[]	Ignore host and forward all traffic without processing it. In transparent mode, it is recommended to use an IP address (range), not the hostname. In regular mode, only SSL traffic is ignored and the hostname should be used. The supplied value is interpreted as a regular expression and matched on the ip or the hostname.
+intercept	optional str	null	Intercept filter expression.
+intercept_active	bool	false	Intercept toggle
+keep_alt_svc_header	bool	false	Reverse Proxy: Keep Alt-Svc headers as-is, even if they do not point to mitmproxy. Enabling this option may cause clients to bypass the proxy.
+keep_host_header	bool	false	Reverse Proxy: Keep the original host header instead of rewriting it to the reverse proxy target.
+keepserving	bool	false	Continue serving after client playback, server playback or file read. This option is ignored by interactive tools, which always keep serving.
+key_size	int	2048	TLS key size for certificates and CA.
+listen_host	str	""	Address to bind proxy server(s) to (may be overridden for individual modes, see `mode`).
+listen_port	optional int	null	Port to bind proxy server(s) to (may be overridden for individual modes, see `mode`). By default, the port is mode-specific. The default regular HTTP proxy spawns on port 8080.
+map_local	sequence of str	[]	Map remote resources to a local file using a pattern of the form "[/flow-filter]/url-regex/file-or-directory-path", where the separator can be any character.
+map_remote	sequence of str	[]	Map remote resources to another remote URL using a pattern of the form "[/flow-filter]/url-regex/replacement", where the separator can be any character.
+mode	sequence of str	["regular"]	The proxy server type(s) to spawn. Can be passed multiple times.  Mitmproxy supports "regular" (HTTP), "local", "transparent", "socks5", "reverse:SPEC", "upstream:SPEC", and "wireguard[:PATH]" proxy servers. For reverse and upstream proxy modes, SPEC is host specification in the form of "http[s]://host[:port]". For WireGuard mode, PATH may point to a file containing key material. If no such file exists, it will be created on startup.  You may append `@listen_port` or `@listen_host:listen_port` to override `listen_host` or `listen_port` for a specific proxy mode. Features such as client playback will use the first mode to determine which upstream server to use.
+modify_body	sequence of str	[]	Replacement pattern of the form "[/flow-filter]/regex/[@]replacement", where the separator can be any character. The @ allows to provide a file path that is used to read the replacement string.
+modify_headers	sequence of str	[]	Header modify pattern of the form "[/flow-filter]/header-name/[@]header-value", where the separator can be any character. The @ allows to provide a file path that is used to read the header value string. An empty header-value removes existing header-name headers.
+normalize_outbound_headers	bool	true	Normalize outgoing HTTP/2 header names, but emit a warning when doing so. HTTP/2 does not allow uppercase header names. This option makes sure that HTTP/2 headers set in custom scripts are lowercased before they are sent.
+onboarding	bool	true	Toggle the mitmproxy onboarding app.
+onboarding_host	str	"mitm.it"	Onboarding app domain. For transparent mode, use an IP when a DNS entry for the app domain is not present.
+protobuf_definitions	optional str	null	Path to a .proto file that's used to resolve Protobuf field names when pretty-printing.
+proxy_debug	bool	false	Enable debug logs in the proxy core.
+proxyauth	optional str	null	Require proxy authentication. Format: "username:pass", "any" to accept any user/pass combination, "@path" to use an Apache htpasswd file, or "ldap[s]:url_server_ldap[:port]:dn_auth:password:dn_subtree[?search_filter_key=...]" for LDAP authentication.
+rawtcp	bool	true	Enable/disable raw TCP connections. TCP connections are enabled by default.
+readfile_filter	optional str	null	Read only matching flows.
+request_client_cert	bool	false	Requests a client certificate (TLS message 'CertificateRequest') to establish a mutual TLS connection between client and mitmproxy (combined with 'client_certs' option for mitmproxy and upstream).
+rfile	optional str	null	Read flows from file.
+save_stream_file	optional str	null	Stream flows to file as they arrive. Prefix path with + to append. The full path can use python strftime() formating, missing directories are created as needed. A new file is opened every time the formatted string changes.
+save_stream_filter	optional str	null	Filter which flows are written to file.
+scripts	sequence of str	[]	Execute a script.
+server	bool	true	Start a proxy server. Enabled by default.
+server_replay	sequence of str	[]	Replay server responses from a saved file.
+server_replay_extra	str	"forward"	Behaviour for extra requests during replay for which no replayable response was found. Setting a numeric string value will return an empty HTTP response with the respective status code.
+server_replay_ignore_content	bool	false	Ignore request content while searching for a saved flow to replay.
+server_replay_ignore_host	bool	false	Ignore request destination host while searching for a saved flow to replay.
+server_replay_ignore_params	sequence of str	[]	Request parameters to be ignored while searching for a saved flow to replay.
+server_replay_ignore_payload_params	sequence of str	[]	Request payload parameters (application/x-www-form-urlencoded or multipart/form-data) to be ignored while searching for a saved flow to replay.
+server_replay_ignore_port	bool	false	Ignore request destination port while searching for a saved flow to replay.
+server_replay_kill_extra	bool	false	Kill extra requests during replay (for which no replayable response was found).[Deprecated, prefer to use server_replay_extra='kill']
+server_replay_nopop	bool	false	Deprecated alias for `server_replay_reuse`.
+server_replay_refresh	bool	true	Refresh server replay responses by adjusting date, expires and last-modified headers, as well as adjusting cookie expiration.
+server_replay_reuse	bool	false	Don't remove flows from server replay state after use. This makes it possible to replay same response multiple times.
+server_replay_use_headers	sequence of str	[]	Request headers that need to match while searching for a saved flow to replay.
+show_ignored_hosts	bool	false	Record ignored flows in the UI even if we do not perform TLS interception. This option will keep ignored flows' contents in memory, which can greatly increase memory usage. A future release will fix this issue, record ignored flows by default, and remove this option.
+showhost	bool	false	Use the Host header to construct URLs for display.              This option is disabled by default because malicious apps may send misleading host headers to evade             your analysis. If this is not a concern, enable this options for better flow display.
+ssl_insecure	bool	false	Do not verify upstream server SSL/TLS certificates.              If this option is enabled, certificate validation is skipped and mitmproxy itself will be vulnerable to             TLS interception.
+ssl_verify_upstream_trusted_ca	optional str	null	Path to a PEM formatted trusted CA certificate.
+ssl_verify_upstream_trusted_confdir	optional str	null	Path to a directory of trusted CA certificates for upstream server verification prepared using the c_rehash tool.
+stickyauth	optional str	null	Set sticky auth filter. Matched against requests.
+stickycookie	optional str	null	Set sticky cookie filter. Matched against requests.
+store_streamed_bodies	bool	false	Store HTTP request and response bodies when streamed (see `stream_large_bodies`). This increases memory consumption, but makes it possible to inspect streamed bodies.
+stream_large_bodies	optional str	null	Stream data to the client if request or response body exceeds the given threshold. If streamed, the body will not be stored in any way, and such responses cannot be modified. Understands k/m/g suffixes, i.e. 3m for 3 megabytes. To store streamed bodies, see `store_streamed_bodies`.
+strip_ech	bool	true	Strip Encrypted ClientHello (ECH) data from DNS HTTPS records so that mitmproxy can generate matching certificates.
+tcp_hosts	sequence of str	[]	Generic TCP SSL proxy mode for all hosts that match the pattern. Similar to --ignore-hosts, but SSL connections are intercepted. The communication contents are printed to the log in verbose mode.
+tcp_timeout	int	600	Timeout in seconds for inactive TCP connections. Connections will be closed after this period of inactivity.
+termlog_verbosity	str	"info"	Log verbosity.
+tls_ecdh_curve_client	optional str	null	Use a specific elliptic curve for ECDHE key exchange on client connections. OpenSSL syntax, for example "prime256v1" (see `openssl ecparam -list_curves`).
+tls_ecdh_curve_server	optional str	null	Use a specific elliptic curve for ECDHE key exchange on server connections. OpenSSL syntax, for example "prime256v1" (see `openssl ecparam -list_curves`).
+tls_version_client_max	str	"UNBOUNDED"	Set the maximum TLS version for client connections.
+tls_version_client_min	str	"TLS1_2"	Set the minimum TLS version for client connections. UNBOUNDED, SSL3, TLS1 and TLS1_1 are insecure.
+tls_version_server_max	str	"UNBOUNDED"	Set the maximum TLS version for server connections.
+tls_version_server_min	str	"TLS1_2"	Set the minimum TLS version for server connections. UNBOUNDED, SSL3, TLS1 and TLS1_1 are insecure.
+udp_hosts	sequence of str	[]	Generic UDP SSL proxy mode for all hosts that match the pattern. Similar to --ignore-hosts, but SSL connections are intercepted. The communication contents are printed to the log in verbose mode.
+upstream_auth	optional str	null	Add HTTP Basic authentication to upstream proxy and reverse proxy requests. Format: username:password.
+upstream_cert	bool	true	Connect to upstream server to look up certificate details.
+validate_inbound_headers	bool	true	Make sure that incoming HTTP requests and responses are not malformed. Disabling this option makes mitmproxy vulnerable to HTTP smuggling attacks.
+view_filter	optional str	null	Limit the view to matching flows.
+view_order	str	"time"	Flow sort order.
+view_order_reversed	bool	false	Reverse the sorting order.
+web_columns	sequence of str	["tls", "icon", "path", "method", "status", "size", "time"]	Columns to show in the flow list. Can be one of the following: icon, index, method, version, path, quickactions, size, status, time, timestamp, tls, comment
+web_debug	bool	false	Enable mitmweb debugging.
+web_host	str	"127.0.0.1"	Web UI host.
+web_open_browser	bool	true	Start a browser.
+web_password	str	""	Password to protect the mitmweb user interface. Values starting with `$` are interpreted as an argon2 hash, everything else is considered a plaintext password. If no password is provided, a random token is generated on startup.For automated calls, you can pass the password as token query parameteror as `Authorization: Bearer ...` header.
+web_port	int	8081	Web UI port.
+web_static_viewer	optional str	""	The path to output a static viewer.
+web_theme	str	"system"	Preferred color theme for the mitmweb user interface.
+websocket	bool	true	Enable/disable WebSocket support. WebSocket support is enabled by default.

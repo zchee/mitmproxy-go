@@ -407,3 +407,39 @@ func TestPanicReleasesLock(t *testing.T) {
 		})
 	}
 }
+
+// TestLiveFrameFromGoroutineIsNotDetected pins the limit the package
+// documentation states: a goroutine started by a hook that uses the hook's
+// frame while the hook still holds the lock re-enters without being
+// refused, because a frame is valid for its whole hold of the lock and Go
+// has no goroutine identity to check. The hook waits for the goroutine, so
+// the two never run at the same time here; the test only shows that
+// nothing stops the use. If this test starts failing, the documented limit
+// is gone and the package documentation must say so.
+func TestLiveFrameFromGoroutineIsNotDetected(t *testing.T) {
+	d, starts, ends := countingDispatcher()
+	var (
+		inner error
+		ran   bool
+	)
+	within(t, "hook with a goroutine", func() {
+		err := d.do(t.Context(), func(ctx context.Context) error {
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				inner = d.do(ctx, func(context.Context) error { ran = true; return nil })
+			}()
+			<-done
+			return nil
+		})
+		if err != nil {
+			t.Errorf("do: %v", err)
+		}
+	})
+	if inner != nil || !ran {
+		t.Errorf("the goroutine's do = %v, ran = %v; want it to re-enter undetected", inner, ran)
+	}
+	if *starts != 1 || *ends != 1 {
+		t.Errorf("lock acquired %d and released %d times, want 1 and 1: the goroutine re-entered the hook's hold", *starts, *ends)
+	}
+}

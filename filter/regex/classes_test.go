@@ -165,6 +165,8 @@ func TestCompileClassEdges(t *testing.T) {
 		`success: \w under ignore case on Kelvin`:             {pattern: `(?i)\w`, input: "\u212a", str: true, bytes: false},
 		`success: [^\W] under ignore case`:                    {pattern: `(?i)[^\W]`, input: "\u212a", str: true, bytes: false},
 		`success: \w under ignore case on long s`:             {pattern: `(?i)\w`, input: "\u017f", str: true, bytes: false},
+		`success: \W in a lookbehind on é`:                    {pattern: `(?<=\W)x`, input: "\u00e9x", str: false, bytes: true, strBT: true, bytesBT: true},
+		`success: \W in a lookbehind on Kelvin`:               {pattern: `(?<=\W)x`, input: "\u212ax", str: false, bytes: true, strBT: true, bytesBT: true},
 		`success: \W beside a folded alternative`:             {pattern: `(?=.)(?i:!|\W)`, input: "\u212a", str: false, bytes: true, strBT: true, bytesBT: true},
 		`success: \W beside a folded alternative on dotted I`: {pattern: `(?=.)(?i:!|\W)`, input: "\u0130", str: false, bytes: true, strBT: true, bytesBT: true},
 	}

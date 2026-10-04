@@ -280,10 +280,11 @@ func rewriteDollars(re *syntax.Regexp) {
 }
 
 func re2Prefix(f Flags) string {
-	if f == 0 {
+	s := f.String()
+	if s == "" {
 		return ""
 	}
-	return "(?" + f.String() + ")"
+	return "(?" + s + ")"
 }
 
 // leadingFlags strips the global inline flag groups, such as (?i) or (?sx),

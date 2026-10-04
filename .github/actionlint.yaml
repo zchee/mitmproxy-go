@@ -1,0 +1,5 @@
+# GitHub-hosted runner images newer than actionlint's built-in label table.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
+    - xcode-27

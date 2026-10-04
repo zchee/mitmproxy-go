@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    # Windows runners default to pwsh; every step is written for bash.
+    shell: bash
+
+jobs:
+  build:
+    name: build (${{ matrix.os }}, go ${{ matrix.go }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-26.04
+          - xcode-27
+          - windows-2025
+        go:
+          - stable
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+      - name: go build and go vet
+        run: go build ./... && go vet ./...
+
+  test:
+    name: test (${{ matrix.os }}, go ${{ matrix.go }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-26.04
+          - xcode-27
+          - windows-2025
+        go:
+          - stable
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+      - name: go test -race
+        run: go test -race -count=1 ./...
+
+  gotip:
+    name: build and test (gotip)
+    runs-on: ubuntu-26.04
+    # The development toolchain may break for reasons outside this module;
+    # a failure here is a warning, not a gate.
+    continue-on-error: true
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          # Bootstrap toolchain that builds gotip from source.
+          go-version: stable
+      - name: Install gotip
+        run: |
+          go install golang.org/dl/gotip@latest
+          echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+      - name: Download and build the development toolchain
+        run: gotip download
+      - name: gotip build, vet and test
+        run: |
+          gotip version
+          gotip build ./...
+          gotip vet ./...
+          gotip test -race -count=1 ./...
+
+  lint:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14
+
+  fuzz-smoke:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Run every fuzz target for 30 seconds
+        run: |
+          set -euo pipefail
+          # go test -fuzz accepts one package and one target per run, so
+          # loop over the targets each package lists. Assigning the output
+          # to a variable first makes a compile error fail the job.
+          pkgs="$(go list ./...)"
+          count=0
+          for pkg in ${pkgs}; do
+            listed="$(go test -list '^Fuzz' "${pkg}")"
+            for target in $(grep '^Fuzz' <<<"${listed}" || true); do
+              echo "::group::${pkg} ${target}"
+              go test -run '^$' -fuzz "^${target}\$" -fuzztime 30s "${pkg}"
+              echo "::endgroup::"
+              count=$((count + 1))
+            done
+          done
+          echo "ran ${count} fuzz target(s)"
+
+  licenses:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Install go-licenses
+        run: |
+          go install github.com/google/go-licenses/v2@v2.0.1
+          echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+      - name: Reject GPL, LGPL, AGPL, MPL and unclassified licences
+        run: |
+          # GPL and LGPL are "restricted", AGPL is "forbidden" and MPL is
+          # "reciprocal" in go-licenses. Each GOOS is checked because some
+          # dependencies are imported on one platform only.
+          for goos in linux darwin windows; do
+            echo "::group::GOOS=${goos}"
+            GOOS="${goos}" go-licenses check ./... --disallowed_types=forbidden,restricted,reciprocal,unknown
+            echo "::endgroup::"
+          done
+
+  difftest:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      # setup-uv has published no floating major tag since v8, so this pins
+      # the full version and dependabot bumps it. Switch to "@vN" if upstream
+      # publishes major tags again.
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Differential tests against the pinned Python mitmproxy
+        run: go test -tags difftest -count=1 ./...

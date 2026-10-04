@@ -66,8 +66,13 @@ var operatorExprs = []string{
 // newline; the oracle's hand-made flows end those fields in a newline.
 var dollarExprs = []string{
 	`~b "two$"`, `~bq "content$"`, `~bs "two$"`, `~m "get$"`, `~d "address$"`, `~u "path$"`,
-	`~t "json$"`, `~tq "json$"`, `~ts "html$"`,
+	`~t "json$"`, `~tq "json$"`, `~ts "html$"`, markerDollarExpr,
 }
+
+// markerDollarExpr also matches a flow whose marker is exactly ":red:", so
+// TestMatchMatchesUpstream checks that its selection includes the flow
+// marked ":red:\n" as well.
+const markerDollarExpr = `~marker "red:$"`
 
 // extraExprs take the regexp2 path, pin value formatting, or combine
 // operators.
@@ -145,6 +150,16 @@ func TestMatchMatchesUpstream(t *testing.T) {
 	}
 	if all := want.Results[slices.Index(matchExprs, "~all")]; len(all) != len(flows) {
 		t.Errorf("~all selects %d of %d flows upstream", len(all), len(flows))
+	}
+	newlineMarked := slices.IndexFunc(flows, func(f flow.Flow) bool {
+		v, _ := f.GetState().Get("marked")
+		return v == ":red:\n"
+	})
+	if newlineMarked < 0 {
+		t.Fatal(`no flow is marked ":red:\n", so the ~marker row does not test $ before a final newline`)
+	}
+	if sel := want.Results[slices.Index(matchExprs, markerDollarExpr)]; !slices.Contains(sel, newlineMarked) {
+		t.Errorf("%q selects %v upstream, which lacks flow %d marked \":red:\\n\"", markerDollarExpr, sel, newlineMarked)
 	}
 }
 

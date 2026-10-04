@@ -17,6 +17,7 @@ import (
 
 // olderFixtures are the fixtures in formats 18 to 20, with their version.
 var olderFixtures = map[string]int64{
+	"mitmproxy/flows/diff_data.mitm":      18,
 	"mitmproxy/flows/error_log.mitm":      18,
 	"mitmproxy/flows/incomplete_log.mitm": 18,
 	"mitmproxy/flows/successful_log.mitm": 18,

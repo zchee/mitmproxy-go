@@ -212,6 +212,7 @@ func TestFlowFormatVersions(t *testing.T) {
 		"corrupted_gzip_body is format 21": {path: "mitmproxy/flows/corrupted_gzip_body.mitm", want: 21},
 		"event_stream is format 20":        {path: "mitmproxy/flows/event_stream.mitm", want: 20},
 		"websocket is format 20":           {path: "mitmproxy/flows/websocket.mitm", want: 20},
+		"diff_data is format 18":           {path: "mitmproxy/flows/diff_data.mitm", want: 18},
 		"error_log is format 18":           {path: "mitmproxy/flows/error_log.mitm", want: 18},
 		"incomplete_log is format 18":      {path: "mitmproxy/flows/incomplete_log.mitm", want: 18},
 		"successful_log is format 18":      {path: "mitmproxy/flows/successful_log.mitm", want: 18},

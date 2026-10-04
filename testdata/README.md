@@ -73,6 +73,7 @@ read from the files with a byte scan for the tnetstring fragment
 | `mitmproxy/flows/corrupted_gzip_body.mitm` | 21 | current format; HTTP flow with a corrupted gzip body |
 | `mitmproxy/flows/event_stream.mitm` | 20 | server-sent events |
 | `mitmproxy/flows/websocket.mitm` | 20 | WebSocket flow |
+| `mitmproxy/flows/diff_data.mitm` | 18 | |
 | `mitmproxy/flows/error_log.mitm` | 18 | |
 | `mitmproxy/flows/incomplete_log.mitm` | 18 | |
 | `mitmproxy/flows/successful_log.mitm` | 18 | |

@@ -890,3 +890,25 @@ func TestAddonCommandsFollowTheAddon(t *testing.T) {
 		}
 	})
 }
+
+// TestDefaultLoggerAtLogTime installs the default logger after the
+// Manager exists; handler errors still reach it.
+func TestDefaultLoggerAtLogTime(t *testing.T) {
+	saved := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(saved) })
+
+	m := NewManager(options.NewManager(), command.NewManager(), Config{})
+	t.Cleanup(m.Close)
+	rec := &recordHandler{}
+	slog.SetDefault(slog.New(rec))
+
+	if err := m.Add(t.Context(), &hooker{name: "a", j: &journal{}, err: errors.New("boom")}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := m.Trigger(t.Context(), RunningHook{}); err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+	if diff := cmp.Diff([]string{"ERROR Addon error: boom addon=a"}, rec.got()); diff != "" {
+		t.Errorf("records on the default logger (-want +got):\n%s", diff)
+	}
+}

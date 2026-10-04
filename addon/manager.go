@@ -48,7 +48,8 @@ type Parent interface {
 // Config configures a [Manager].
 type Config struct {
 	// Logger receives the errors handlers return and the panics they raise.
-	// Nil means [slog.Default].
+	// Nil means [slog.Default] as it is at the time of each record, so a
+	// program may install its default logger after creating the Manager.
 	Logger *slog.Logger
 
 	// OnDispatchStart and OnDispatchEnd, when set, are called each time the
@@ -84,15 +85,11 @@ type Manager struct {
 // NewManager returns a Manager that adds addon options to opts and addon
 // commands to cmds, and fires the configure hook whenever opts change.
 func NewManager(opts *options.Manager, cmds *command.Manager, cfg Config) *Manager {
-	logger := cfg.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
 	m := &Manager{
 		d:        dispatcher{onStart: cfg.OnDispatchStart, onEnd: cfg.OnDispatchEnd},
 		options:  opts,
 		cmds:     cmds,
-		logger:   logger,
+		logger:   cfg.Logger,
 		lookup:   make(map[string]any),
 		commands: make(map[any][]string),
 	}
@@ -100,6 +97,14 @@ func NewManager(opts *options.Manager, cmds *command.Manager, cfg Config) *Manag
 		return m.Trigger(ctx, ConfigureHook{Updated: updated})
 	})
 	return m
+}
+
+// log returns the logger for the manager's own records.
+func (m *Manager) log() *slog.Logger {
+	if m.logger != nil {
+		return m.logger
+	}
+	return slog.Default()
 }
 
 // Close stops firing the configure hook for option changes. It does not
@@ -200,7 +205,7 @@ func (m *Manager) register(ctx context.Context, addon any) error {
 			break
 		}
 		if _, ok := a.(AddLogHandler); ok {
-			m.logger.WarnContext(ctx, "The add_log event has been deprecated, use log/slog instead.", "addon", name)
+			m.log().WarnContext(ctx, "The add_log event has been deprecated, use log/slog instead.", "addon", name)
 		}
 	}
 	m.mu.RUnlock()
@@ -306,7 +311,7 @@ func (m *Manager) Trigger(ctx context.Context, hook Hook) error {
 			if _, ok := errors.AsType[*options.OptionsError](err); ok {
 				return err
 			}
-			m.logger.ErrorContext(ctx, "Addon error: "+err.Error(), "addon", addonName(a), "hook", hook.Name())
+			m.log().ErrorContext(ctx, "Addon error: "+err.Error(), "addon", addonName(a), "hook", hook.Name())
 		}
 		return nil
 	})
@@ -427,7 +432,7 @@ func (l *Loader) AddOption(ctx context.Context, name string, typ options.Type, d
 		if same {
 			return nil
 		}
-		l.m.logger.WarnContext(ctx, "Over-riding existing option "+name, "addon", addonName(l.addon))
+		l.m.log().WarnContext(ctx, "Over-riding existing option "+name, "addon", addonName(l.addon))
 	}
 	var opts []options.AddOption
 	if choices != nil {

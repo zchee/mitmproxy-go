@@ -119,7 +119,21 @@ def handmade_flows() -> list[Flow]:
     )
     newline.marked = ":red:\n"
 
-    return [trailing, compressed, broken, ipv6, newline]
+    # Non-ASCII subjects for \d, \w, \s and \b, which are Unicode-aware
+    # in the str patterns of ~u and ~comment and ASCII-only in the bytes
+    # patterns of ~b and ~h: an Arabic-Indic digit, letters outside ASCII,
+    # a fraction (a word character in Python, not in .NET), an em space
+    # and the Kelvin sign.
+    classes = tflow.tflow(
+        req=tutils.treq(
+            path="/caf\u00e9/\u0663/".encode(),
+            headers=http.Headers(((b"X-Note", "caf\u00e9".encode()),)),
+            content="n=\u0663; a\u2003b caf\u00e9x \u212aelvin".encode(),
+        )
+    )
+    classes.comment = "caf\u00e9 \u00bd! \u00e9x a\u2003b \u0663"
+
+    return [trailing, compressed, broken, ipv6, newline, classes]
 
 
 def main() -> None:

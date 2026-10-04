@@ -84,6 +84,22 @@ var extraExprs = []string{
 	"~http & !~s", "~tcp | ~udp", "!(~q | ~s ) & ~http", "~websocket & ~bs me", "~b binary ~http",
 }
 
+// classExprs use \d, \w, \s, \b and their complements on the oracle's
+// flow with non-ASCII subjects, in the str patterns of ~u and ~comment and
+// the bytes patterns of ~b and ~h, on RE2 and, with a lookaround, on
+// regexp2. Inside quotes the filter grammar drops a backslash, so a class
+// escape is written \\d there.
+var classExprs = []string{
+	`~u /\d/`, `~u "/\\d/(?!x)"`, `~u /\D/`,
+	`~comment caf\w`, `~comment "\\w(?=!)"`, `~comment caf\W`, `~comment "b [\\d-]$"`, `~comment "b [^\\D-]$"`,
+	`~comment "a\\sb"`, `~comment "a\\Sb"`, `~comment "a\\sb(?!x)"`,
+	`~comment "\\bx"`, `~comment "fé\\b"`, `~comment "\\Bx"`,
+	`~b n=\d;`, `~b "n=\\d(?=;)"`, `~b "n=\\D(?!q)"`,
+	`~b "caf\\w"`, `~b "caf\\w(?!q)"`, `~b "caf\\W"`, `~b "caf\\W(?!q)"`, `~b "\\W(?=elvin)"`,
+	`~b "a\\sb"`, `~b "a\\sb(?!q)"`, `~b \bx`, `~b "\\bx(?!q)"`,
+	`~h "x-note: caf\\w"`, `~h "x-note: caf\\W"`, `~h "x-note: caf\\W(?!q)"`,
+}
+
 // TestMatchMatchesUpstream evaluates matchExprs on the same flows in Go
 // and in the pinned upstream mitmproxy and compares the selections. The
 // flows come from testdata/match_oracle.py, which writes them to one flow
@@ -95,7 +111,7 @@ func TestMatchMatchesUpstream(t *testing.T) {
 	}
 	t.Setenv("MITMPROXY_CASE_SENSITIVE_FILTERS", "")
 	dir := t.TempDir()
-	matchExprs := slices.Concat(operatorExprs, dollarExprs, extraExprs)
+	matchExprs := slices.Concat(operatorExprs, dollarExprs, extraExprs, classExprs)
 	exprsPath := filepath.Join(dir, "exprs.json")
 	data, err := json.Marshal(matchExprs)
 	if err != nil {

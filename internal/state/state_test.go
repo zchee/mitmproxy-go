@@ -189,6 +189,10 @@ func TestEqual(t *testing.T) {
 		"success: big int compares with float exactly":  {a: new(big.Int).Add(two64(), big.NewInt(1)), b: 1.8446744073709552e19, want: false},
 		"success: big int differs from infinity":        {a: two64(), b: math.Inf(1), want: false},
 		"success: big int differs from str":             {a: two64(), b: "18446744073709551616", want: false},
+		"success: nil big int differs from big int":     {a: (*big.Int)(nil), b: two64(), want: false},
+		"success: int64 differs from nil big int":       {a: int64(0), b: (*big.Int)(nil), want: false},
+		"success: float differs from nil big int":       {a: 0.0, b: (*big.Int)(nil), want: false},
+		"success: big int differs from nil big int":     {a: two64(), b: (*big.Int)(nil), want: false},
 		"success: bytes key differs from text key":      {a: keyed(false), b: keyed(true), want: false},
 		"success: bytes keys equal":                     {a: keyed(true), b: keyed(true), want: true},
 	}

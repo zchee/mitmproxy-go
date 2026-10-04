@@ -495,6 +495,13 @@ func Equal(a, b any) bool {
 	if n, ok := b.(int); ok {
 		b = int64(n)
 	}
+	// A nil *big.Int is no integer; Dumps refuses it as well.
+	if n, ok := a.(*big.Int); ok && n == nil {
+		return false
+	}
+	if n, ok := b.(*big.Int); ok && n == nil {
+		return false
+	}
 	switch x := a.(type) {
 	case nil:
 		return b == nil

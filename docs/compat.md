@@ -59,6 +59,7 @@ No behavioural differences.
 | `tnetstring.loads` ignores bytes after the first value (`mitmproxy/io/tnetstring.py`). | `Loads` rejects trailing bytes. `Load`, which reads a stream, is unchanged. | A value with trailing data is malformed. |
 | Integers, floats and nested length prefixes are parsed with Python's `int()` and `float()`, which accept surrounding whitespace and `_` digit separators; dictionary keys may be any hashable value (`mitmproxy/io/tnetstring.py`). | Whitespace and `_` are rejected; dictionary keys must be text or byte strings. | mitmproxy never writes these forms; rejecting them keeps the parser simple and strict. |
 | Nesting and integer size are limited only by Python's recursion limit and its 4300-digit `int` conversion limit. | Nesting is limited to 1000 levels and integer literals to 4300 digits, both as explicit errors. | The same limits, made explicit so hostile input cannot exhaust the goroutine stack. |
+| A flow's fields hold Python integers of any size, and `set_state` coerces a float field to `int()` (`mitmproxy/flow.py`, `mitmproxy/connection.py`). | An integer beyond the int64 range is kept as a `*big.Int` in free-form state such as `metadata` and written back unchanged. A typed field (a port, a timestamp, a status code, ...) refuses it, and refuses a float whose integer part is beyond that range, with `integer N does not fit in 64 bits`. | The models hold integers as `int64`; no real port, timestamp or size exceeds it. |
 
 ## filter and filter/regex
 

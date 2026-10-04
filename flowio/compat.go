@@ -5,6 +5,7 @@ package flowio
 
 import (
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"unicode"
@@ -194,6 +195,9 @@ func convert20To21(data *state.Map) error {
 func migrate(data *state.Map) error {
 	for {
 		v, _ := data.Get("version")
+		if b, ok := v.(*big.Int); ok {
+			return &VersionError{Version: b.String(), Newer: b.Sign() > 0}
+		}
 		n, isInt := v.(int64)
 		if !isInt {
 			s, err := renderTupleVersion(v)

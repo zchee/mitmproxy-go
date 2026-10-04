@@ -82,3 +82,13 @@ func TestDifferentialWrite(t *testing.T) {
 		})
 	}
 }
+
+// TestDifferentialBigInt checks that mitmproxy reads a flow file whose
+// metadata holds integers beyond int64, as mitmproxy-go writes it, and
+// writes it back unchanged.
+func TestDifferentialBigInt(t *testing.T) {
+	src := bigMetadataFile(t)
+	if got := difftest.Python(t, rewriteScript, src); !bytes.Equal(got, src) {
+		t.Errorf("mitmproxy re-wrote the file differently:\nwant %q\n got %q", src, got)
+	}
+}

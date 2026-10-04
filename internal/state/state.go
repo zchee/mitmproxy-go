@@ -6,7 +6,10 @@
 //
 // A state value is one of the types the flow file codec can carry: nil (for
 // Python None), bool, int64, float64, string (Python str), []byte (Python
-// bytes), []any (Python list or tuple) and *omap.Map[any] (Python dict).
+// bytes), []any (Python list or tuple) and *omap.Map[any] (Python dict). An
+// integer that does not fit in an int64 is a *big.Int. Free-form state such
+// as flow metadata keeps it and writes it back unchanged; the typed
+// accessors refuse it, since the models hold integers as int64.
 // Models build their state with [omap.NewWithCapacity] and read it back with
 // a [Decoder], which consumes the dictionary key by key so that whatever is
 // left afterwards is reported as unexpected, as upstream's set_state does.
@@ -215,8 +218,15 @@ func AsInt(v any) (int64, error) {
 		return int64(n), nil
 	case float64:
 		return floatToInt(n)
+	case *big.Int:
+		return 0, bigIntError(n)
 	}
 	return 0, typeError("int", v)
+}
+
+// bigIntError refuses an integer that only a *big.Int holds.
+func bigIntError(n *big.Int) error {
+	return fmt.Errorf("integer %s does not fit in 64 bits", n)
 }
 
 // floatToInt truncates f toward zero. The bounds are exact powers of two:
@@ -229,13 +239,14 @@ func floatToInt(f float64) (int64, error) {
 		return 0, errors.New("cannot convert float infinity to integer")
 	case f < -(1<<63) || f >= 1<<63:
 		i, _ := big.NewFloat(f).Int(nil)
-		return 0, fmt.Errorf("integer %s does not fit in 64 bits", i)
+		return 0, bigIntError(i)
 	}
 	return int64(f), nil
 }
 
 // AsFloat converts a state value to a float. Integers are accepted, as
-// Python's float() does when upstream's set_state coerces numeric fields.
+// Python's float() does when upstream's set_state coerces numeric fields,
+// except one beyond the int64 range, which no typed field holds.
 func AsFloat(v any) (float64, error) {
 	switch n := v.(type) {
 	case float64:
@@ -244,6 +255,8 @@ func AsFloat(v any) (float64, error) {
 		return float64(n), nil
 	case int:
 		return float64(n), nil
+	case *big.Int:
+		return 0, bigIntError(n)
 	}
 	return 0, typeError("float", v)
 }
@@ -317,7 +330,7 @@ func TypeName(v any) string {
 		return "NoneType"
 	case bool:
 		return "bool"
-	case int, int64:
+	case int, int64, *big.Int:
 		return "int"
 	case float64:
 		return "float"
@@ -413,6 +426,11 @@ func Copy(v any) any {
 			out[i] = Copy(e)
 		}
 		return out
+	case *big.Int:
+		if x == nil {
+			return x
+		}
+		return new(big.Int).Set(x)
 	case *Map:
 		return CopyMap(x)
 	}
@@ -462,9 +480,9 @@ func NewID() string {
 // Equal reports whether two state values are equal under Python's ==.
 //
 // Dictionaries compare without regard to key order and lists element by
-// element. Integers compare by value whether held as int or int64, and
-// equal floats of the same value. Bytes never equal strings, as in Python
-// 3. Values of any other type are never equal.
+// element. Integers compare by value whether held as int, int64 or
+// *big.Int, and equal floats of the same value. Bytes never equal strings,
+// as in Python 3. Values of any other type are never equal.
 func Equal(a, b any) bool {
 	if n, ok := a.(int); ok {
 		a = int64(n)
@@ -484,6 +502,8 @@ func Equal(a, b any) bool {
 			return x == y
 		case float64:
 			return float64(x) == y
+		case *big.Int:
+			return y.IsInt64() && y.Int64() == x
 		}
 		return false
 	case float64:
@@ -492,6 +512,18 @@ func Equal(a, b any) bool {
 			return x == y
 		case int64:
 			return x == float64(y)
+		case *big.Int:
+			return bigEqualFloat(y, x)
+		}
+		return false
+	case *big.Int:
+		switch y := b.(type) {
+		case *big.Int:
+			return x.Cmp(y) == 0
+		case int64:
+			return x.IsInt64() && x.Int64() == y
+		case float64:
+			return bigEqualFloat(x, y)
 		}
 		return false
 	case string:
@@ -525,4 +557,12 @@ func Equal(a, b any) bool {
 		return true
 	}
 	return false
+}
+
+// bigEqualFloat compares an integer with a float exactly, as Python does.
+func bigEqualFloat(i *big.Int, f float64) bool {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return false
+	}
+	return new(big.Float).SetInt(i).Cmp(big.NewFloat(f)) == 0
 }

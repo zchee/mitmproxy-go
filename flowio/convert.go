@@ -4,17 +4,15 @@
 package flowio
 
 import (
-	"fmt"
-	"math/big"
-
 	"github.com/zchee/mitmproxy-go/flowio/tnetstring"
 	"github.com/zchee/mitmproxy-go/internal/state"
 )
 
 // fromTnetstring converts a decoded tnetstring value into a state value:
 // dictionaries become *state.Map with their keys in file order, lists are
-// converted element by element, and scalars are kept. The flow models hold
-// integers as int64, so an integer that only fits a *big.Int is an error.
+// converted element by element, and scalars are kept. An integer beyond the
+// int64 range stays a *big.Int: free-form state such as metadata keeps it,
+// and the models refuse it in their typed fields.
 func fromTnetstring(v any) (any, error) {
 	switch x := v.(type) {
 	case *tnetstring.Dict:
@@ -37,8 +35,6 @@ func fromTnetstring(v any) (any, error) {
 			out[i] = c
 		}
 		return out, nil
-	case *big.Int:
-		return nil, fmt.Errorf("integer %s does not fit in 64 bits", x)
 	}
 	return v, nil
 }

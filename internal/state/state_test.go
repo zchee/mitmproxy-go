@@ -5,6 +5,7 @@ package state
 
 import (
 	"math"
+	"math/big"
 	"regexp"
 	"testing"
 
@@ -178,6 +179,16 @@ func TestEqual(t *testing.T) {
 		"success: int equals float":                     {a: 2, b: 2.0, want: true},
 		"success: float equals int":                     {a: 2.0, b: 2, want: true},
 		"success: int differs from int64":               {a: 1, b: int64(2), want: false},
+		"success: big ints compare by value":            {a: two64(), b: two64(), want: true},
+		"success: big int differs from big int":         {a: two64(), b: new(big.Int).Neg(two64()), want: false},
+		"success: big int in int64 range equals int64":  {a: big.NewInt(5), b: int64(5), want: true},
+		"success: int64 equals big int in range":        {a: int64(5), b: big.NewInt(5), want: true},
+		"success: int equals big int in range":          {a: 5, b: big.NewInt(5), want: true},
+		"success: big int equals float of its value":    {a: two64(), b: 1.8446744073709552e19, want: true},
+		"success: float equals big int of its value":    {a: 1.8446744073709552e19, b: two64(), want: true},
+		"success: big int compares with float exactly":  {a: new(big.Int).Add(two64(), big.NewInt(1)), b: 1.8446744073709552e19, want: false},
+		"success: big int differs from infinity":        {a: two64(), b: math.Inf(1), want: false},
+		"success: big int differs from str":             {a: two64(), b: "18446744073709551616", want: false},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -208,6 +219,7 @@ func TestAsInt(t *testing.T) {
 		"error: 2**63 does not fit":            {in: 1 << 63 * 1.0, wantErr: "integer 9223372036854775808 does not fit in 64 bits"},
 		"error: below -2**63":                  {in: -1e19, wantErr: "integer -10000000000000000000 does not fit in 64 bits"},
 		"error: str":                           {in: "1", wantErr: "expected int, got str"},
+		"error: integer beyond int64":          {in: new(big.Int).Lsh(big.NewInt(1), 64), wantErr: "integer 18446744073709551616 does not fit in 64 bits"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -224,5 +236,33 @@ func TestAsInt(t *testing.T) {
 				t.Errorf("AsInt(%v) = %d, want %d", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+// two64 returns 2**64, an integer that does not fit in an int64.
+func two64() *big.Int {
+	return new(big.Int).Lsh(big.NewInt(1), 64)
+}
+
+func TestBigInt(t *testing.T) {
+	t.Parallel()
+
+	if got := TypeName(two64()); got != "int" {
+		t.Errorf("TypeName(2**64) = %q, want %q", got, "int")
+	}
+	if _, err := AsFloat(two64()); err == nil || err.Error() != "integer 18446744073709551616 does not fit in 64 bits" {
+		t.Errorf("AsFloat(2**64) error = %v, want the integer refused", err)
+	}
+
+	orig := NewMap(1)
+	orig.Set("k", two64())
+	cp := CopyMap(orig)
+	if !Equal(orig, cp) {
+		t.Fatalf("CopyMap = %v, want a map equal to %v", cp, orig)
+	}
+	c, _ := cp.Get("k")
+	c.(*big.Int).SetInt64(1)
+	if o, _ := orig.Get("k"); o.(*big.Int).Cmp(two64()) != 0 {
+		t.Errorf("mutating the copied *big.Int changed the original to %v", o)
 	}
 }

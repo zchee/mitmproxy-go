@@ -207,9 +207,13 @@ func TestReaderErrors(t *testing.T) {
 			data:    encode(t, dictOf("type", "unknown", "version", int64(flow.FormatVersion))),
 			wantErr: "unknown flow type: unknown",
 		},
-		"error: integer beyond int64": {
+		"error: version beyond int64": {
 			data:    bigInt,
-			wantErr: "invalid flow: integer 1180591620717411303424 does not fit in 64 bits",
+			wantErr: "cannot read files with flow format version 1180591620717411303424, please update mitmproxy.",
+		},
+		"error: integer beyond int64 in a typed field": {
+			data:    withBigInt(t, "timestamp_created"),
+			wantErr: `field "timestamp_created": integer 18446744073709551616 does not fit in 64 bits`,
 		},
 		"error: missing version": {
 			data:    encode(t, dictOf("type", "http")),
@@ -237,6 +241,56 @@ func TestReaderErrors(t *testing.T) {
 				t.Errorf("errors.Is(%v, %v) = false", err, tt.is)
 			}
 		})
+	}
+}
+
+// two64 returns 2**64, an integer that does not fit in an int64.
+func two64() *big.Int {
+	return new(big.Int).Lsh(big.NewInt(1), 64)
+}
+
+// withBigInt returns the v21 fixture's first flow with 2**64 stored under
+// key at the top level of the flow.
+func withBigInt(t *testing.T, key string) []byte {
+	t.Helper()
+	m := state.CopyMap(rawFlows(t, v21Fixture)[0])
+	m.Set(key, two64())
+	return encode(t, m)
+}
+
+// bigMetadataFile returns the v21 fixture with the list [2**64, -2**64]
+// stored in the first flow's metadata, written by Writer.
+func bigMetadataFile(t *testing.T) []byte {
+	t.Helper()
+	flows, err := readAll(t, testutil.Fixture(t, v21Fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One key only: a dictionary is written in reverse insertion order and
+	// read in file order, so the keys of free-form state swap places on
+	// every round trip, as they do in mitmproxy.
+	flows[0].Common().Metadata.Set("big", []any{two64(), new(big.Int).Neg(two64())})
+	return writeAll(t, flows)
+}
+
+// TestBigIntInMetadata checks that an integer beyond int64 in free-form
+// state, which a Python addon can store, survives a read and a write.
+func TestBigIntInMetadata(t *testing.T) {
+	src := bigMetadataFile(t)
+	if !bytes.Contains(src, []byte("20:18446744073709551616#")) || !bytes.Contains(src, []byte("21:-18446744073709551616#")) {
+		t.Fatalf("the written file does not hold 2**64 and -2**64 as integers:\n%q", src)
+	}
+
+	flows, err := readAll(t, src)
+	if err != nil {
+		t.Fatalf("reading a flow with 2**64 in its metadata: %v", err)
+	}
+	want := []any{two64(), new(big.Int).Neg(two64())}
+	if got, _ := flows[0].Common().Metadata.Get("big"); !state.Equal(got, want) {
+		t.Errorf("metadata[big] = %v, want %v", got, want)
+	}
+	if out := writeAll(t, flows); !bytes.Equal(out, src) {
+		t.Errorf("Write(Read(file)) differs from the file:\nwant %q\n got %q", src, out)
 	}
 }
 

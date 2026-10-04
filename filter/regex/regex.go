@@ -19,15 +19,23 @@
 //   - Global inline flag groups at the start of the pattern, such as (?s)
 //     or (?im), become Flags. Python records them in the compiled pattern's
 //     flags, and the filter layer prints those flags, so Matcher.Flags
-//     reports them as well. The Python-only flags a, u and L, which only
-//     change what \w, \b and similar classes match, are ignored: the
-//     Unicode flag passed to Compile alone decides that. x (verbose) is
-//     honoured by compiling with regexp2.
+//     reports them as well. x (verbose) is honoured by compiling with
+//     regexp2.
+//   - The Python-only flags a, u and L choose what \d, \w, \s and \b
+//     match, globally or in a scoped group such as (?a:...). a makes them
+//     ASCII and, globally, removes Unicode from the reported flags; u keeps
+//     a str pattern's Unicode classes. They are rejected where Python
+//     rejects them: L in a str pattern, u in a bytes pattern, two of them
+//     in one group, a with u or L across global groups, and any of them
+//     after "-". L in a bytes pattern makes Python follow the C library's
+//     locale; here the classes stay ASCII.
 //   - \d, \D, \w, \W, \s and \S, also inside character classes, become
 //     explicit classes that match what Python matches: Unicode categories
 //     for a str pattern (Unicode), ASCII for a bytes pattern, and never
 //     folded for case. Neither Go engine agrees with Python on its own: RE2
-//     is ASCII-only, and regexp2 uses the .NET definitions.
+//     is ASCII-only, and regexp2 uses the .NET definitions. They are found
+//     by scanning the pattern source, not by rewriting the parsed tree as
+//     for $, because regexp/syntax parses \d and [0-9] into the same node.
 //   - \b keeps RE2's ASCII meaning in a bytes pattern. In a str pattern, and
 //     \B in any pattern, the pattern goes to regexp2, where they become
 //     lookarounds on Python's word characters. Python's \B does not match
@@ -49,6 +57,7 @@
 package regex
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -147,19 +156,22 @@ func logTimeout(pattern string, err error) {
 // It returns an error only when neither RE2 nor regexp2 accepts the
 // translated pattern.
 func Compile(pattern string, flags Flags) (Matcher, error) {
-	body, inline, verbose := leadingFlags(pattern)
-	if err := checkFlagGroups(body); err != nil {
-		return nil, fmt.Errorf("regex: cannot compile %q: %w", pattern, err)
-	}
-	body = translateEscapes(body)
-	eff := flags | inline
-	re2Body, re2OK, body, err := translateClasses(body, eff, verbose)
+	str := flags&Unicode != 0
+	body, eff, verbose, err := leadingFlags(pattern, flags)
 	if err != nil {
 		return nil, fmt.Errorf("regex: cannot compile %q: %w", pattern, err)
 	}
+	if err := checkFlagGroups(body); err != nil {
+		return nil, fmt.Errorf("regex: cannot compile %q: %w", pattern, err)
+	}
+	tr, err := translateClasses(translateEscapes(body), eff, str, verbose)
+	if err != nil {
+		return nil, fmt.Errorf("regex: cannot compile %q: %w", pattern, err)
+	}
+	body = tr.backtrack
 
-	if !verbose && re2OK {
-		if re := compileRE2(re2Prefix(eff)+re2Body, eff&Unicode != 0); re != nil {
+	if !verbose && tr.re2OK {
+		if re := compileRE2(re2Prefix(eff)+tr.re2, tr.unicodeBoundary); re != nil {
 			return &re2Matcher{re: re, pattern: pattern, flags: eff}, nil
 		}
 	}
@@ -188,8 +200,8 @@ func Compile(pattern string, flags Flags) (Matcher, error) {
 // compileRE2 compiles src with the standard regexp package, giving $ its
 // Python meaning. It returns nil when RE2 rejects src, when a $ is not in
 // tail position, or when src has a word boundary RE2 cannot give Python's
-// meaning, so that the caller falls back to regexp2. uni says whether src
-// is a str pattern.
+// meaning, so that the caller falls back to regexp2. uni says whether a \b
+// in src stands where the classes are Unicode.
 func compileRE2(src string, uni bool) *regexp.Regexp {
 	tree, err := syntax.Parse(src, syntax.Perl)
 	if err != nil {
@@ -218,7 +230,7 @@ func compileRE2(src string, uni bool) *regexp.Regexp {
 	return re
 }
 
-// foreignBoundary reports whether re has a \B, or a \b in a str pattern.
+// foreignBoundary reports whether re has a \B, or a \b when uni is set.
 // RE2's \b is an ASCII word boundary, which is Python's \b for a bytes
 // pattern only, and RE2's \B matches in an empty input, where Python's does
 // not.
@@ -288,32 +300,55 @@ func re2Prefix(f Flags) string {
 }
 
 // leadingFlags strips the global inline flag groups, such as (?i) or (?sx),
-// from the start of pattern. Python only accepts global flags there.
-func leadingFlags(pattern string) (body string, flags Flags, verbose bool) {
-	body = pattern
+// from the start of pattern, where Python only accepts them, and returns
+// flags combined with them. (?a) turns Unicode off, as it makes a str
+// pattern's classes ASCII. The a, u and L letters are checked the way
+// Python checks them, also across groups.
+func leadingFlags(pattern string, flags Flags) (body string, eff Flags, verbose bool, err error) {
+	body, eff = pattern, flags
+	str := flags&Unicode != 0
+	var ascii, uni, locale bool
 	for {
 		rest, ok := strings.CutPrefix(body, "(?")
 		if !ok {
-			return body, flags, verbose
+			break
 		}
 		end := strings.IndexByte(rest, ')')
 		if end <= 0 || strings.Trim(rest[:end], "aiLmsux") != "" {
-			return body, flags, verbose
+			break
+		}
+		if err := checkCharsetFlags(rest[:end], "", str); err != nil {
+			return "", 0, false, err
 		}
 		for _, c := range rest[:end] {
 			switch c {
 			case 'i':
-				flags |= IgnoreCase
+				eff |= IgnoreCase
 			case 'm':
-				flags |= Multiline
+				eff |= Multiline
 			case 's':
-				flags |= DotAll
+				eff |= DotAll
 			case 'x':
 				verbose = true
+			case 'a':
+				ascii = true
+			case 'u':
+				uni = true
+			case 'L':
+				locale = true
 			}
 		}
 		body = rest[end+1:]
 	}
+	switch {
+	case ascii && uni:
+		return "", 0, false, errors.New("ASCII and UNICODE flags are incompatible")
+	case ascii && locale:
+		return "", 0, false, errors.New("ASCII and LOCALE flags are incompatible")
+	case ascii:
+		eff &^= Unicode
+	}
+	return body, eff, verbose, nil
 }
 
 // checkFlagGroups rejects a flag group without a colon, such as (?i) or

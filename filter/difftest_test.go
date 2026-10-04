@@ -87,7 +87,7 @@ var extraExprs = []string{
 // classExprs use \d, \w, \s, \b and their complements on the oracle's
 // flow with non-ASCII subjects, in the str patterns of ~u and ~comment and
 // the bytes patterns of ~b and ~h, on RE2 and, with a lookaround, on
-// regexp2. Inside quotes the filter grammar drops a backslash, so a class
+// regexp2. The last rows make str patterns ASCII with (?a). Inside quotes the filter grammar drops a backslash, so a class
 // escape is written \\d there.
 var classExprs = []string{
 	`~u /\d/`, `~u "/\\d/(?!x)"`, `~u /\D/`,
@@ -98,6 +98,7 @@ var classExprs = []string{
 	`~b "caf\\w"`, `~b "caf\\w(?!q)"`, `~b "caf\\W"`, `~b "caf\\W(?!q)"`, `~b "\\W(?=elvin)"`,
 	`~b "a\\sb"`, `~b "a\\sb(?!q)"`, `~b \bx`, `~b "\\bx(?!q)"`,
 	`~h "x-note: caf\\w"`, `~h "x-note: caf\\W"`, `~h "x-note: caf\\W(?!q)"`,
+	`~comment "(?a)caf\\W"`, `~u "(?a)/\\d/"`, `~comment "(?a:caf\\w)"`,
 }
 
 // TestMatchMatchesUpstream evaluates matchExprs on the same flows in Go

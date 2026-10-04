@@ -5,6 +5,7 @@ package regex
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"regexp/syntax"
 	"slices"
@@ -349,16 +350,53 @@ func hasClassEscape(pattern string) bool {
 type scope struct {
 	fold    bool // IgnoreCase
 	verbose bool
+	uni     bool // Unicode classes: a str pattern outside (?a)
+}
+
+// checkCharsetFlags checks the a, u and L letters of one inline flag group,
+// on and off being the letters before and after its "-", the way Python's
+// re does. str says whether the pattern is a str pattern.
+func checkCharsetFlags(on, off string, str bool) error {
+	if strings.ContainsAny(off, "auL") {
+		return errors.New("bad inline flags: cannot turn off flags 'a', 'u' and 'L'")
+	}
+	n := 0
+	for _, c := range "auL" {
+		if strings.ContainsRune(on, c) {
+			n++
+		}
+	}
+	switch {
+	case n > 1:
+		return errors.New("bad inline flags: flags 'a', 'u' and 'L' are incompatible")
+	case str && strings.Contains(on, "L"):
+		return errors.New("bad inline flags: cannot use 'L' flag with a str pattern")
+	case !str && strings.Contains(on, "u"):
+		return errors.New("bad inline flags: cannot use 'u' flag with a bytes pattern")
+	}
+	return nil
 }
 
 // classTranslator rewrites the class escapes of a pattern once for each
 // engine.
 type classTranslator struct {
 	src   string
-	uni   bool
+	str   bool
 	re2   strings.Builder
 	bt    strings.Builder
 	re2OK bool
+	// uniBoundary says that a \b stands where the classes are Unicode.
+	uniBoundary bool
+}
+
+// translation is a pattern rewritten for each engine.
+type translation struct {
+	re2       string
+	re2OK     bool // false when RE2 cannot express the pattern
+	backtrack string
+	// unicodeBoundary says that a \b stands where the classes are Unicode,
+	// so RE2's ASCII \b cannot stand for it.
+	unicodeBoundary bool
 }
 
 func (t *classTranslator) both(s string) {
@@ -367,14 +405,14 @@ func (t *classTranslator) both(s string) {
 }
 
 // translateClasses gives \d, \D, \w, \W, \s, \S, \b and \B the meaning
-// Python's re gives them, for a str pattern when flags has Unicode and for
-// a bytes pattern otherwise. It returns the pattern for RE2, or re2OK
-// false when RE2 cannot express it, and the pattern for regexp2.
+// Python's re gives them: Unicode where flags has Unicode or a scoped (?u:
+// group says so, ASCII elsewhere. str says whether the pattern is a str
+// pattern, which decides which scoped a, u and L flags are errors.
 //
 // The escapes are found by scanning the source rather than the parsed
 // tree, because regexp/syntax turns \d and [0-9] into the same node. The
-// scanner knows escapes, character classes, comments and the scoped i and
-// x flags, which is all it needs to find the escapes and to tell a class
+// scanner knows escapes, character classes, comments and the scoped a, u,
+// i and x flags, which is all it needs to find the escapes and to tell a class
 // member from a range.
 //
 // Each class escape becomes an explicit class with case folding turned
@@ -382,16 +420,16 @@ func (t *classTranslator) both(s string) {
 // holding the union, computed with the case folding in force at that
 // point; regexp2 gets an alternation or, for a negated class, a lookahead,
 // so that it keeps interpreting the other members itself. RE2 keeps \b in
-// a bytes pattern, where its ASCII word boundary is Python's; compileRE2
+// ASCII classes, where its ASCII word boundary is Python's; compileRE2
 // sends every other \b and \B to regexp2, where they become lookarounds.
-func translateClasses(body string, flags Flags, verbose bool) (re2 string, re2OK bool, bt string, err error) {
-	if !hasClassEscape(body) {
-		return body, true, body, nil
+func translateClasses(body string, flags Flags, str, verbose bool) (translation, error) {
+	if !hasClassEscape(body) && !strings.Contains(body, "(?") {
+		return translation{re2: body, re2OK: true, backtrack: body}, nil
 	}
-	t := &classTranslator{src: body, uni: flags&Unicode != 0, re2OK: true}
+	t := &classTranslator{src: body, str: str, re2OK: true}
 	t.re2.Grow(len(body))
 	t.bt.Grow(len(body))
-	stack := []scope{{fold: flags&IgnoreCase != 0, verbose: verbose}}
+	stack := []scope{{fold: flags&IgnoreCase != 0, verbose: verbose, uni: flags&Unicode != 0}}
 	src := body
 	for i := 0; i < len(src); {
 		cur := stack[len(stack)-1]
@@ -404,20 +442,21 @@ func translateClasses(body string, flags Flags, verbose bool) (re2 string, re2OK
 			}
 			switch e := src[i+1]; {
 			case isShorthand(e):
-				c := shorthandExpr([]byte{e}, t.uni)
+				c := shorthandExpr([]byte{e}, cur.uni)
 				t.re2.WriteString(c.exact())
 				t.bt.WriteString(c.backtrackExact())
 			case e == 'b' || e == 'B':
 				t.re2.WriteString(src[i : i+2])
-				t.bt.WriteString(boundary(e, t.uni))
+				t.bt.WriteString(boundary(e, cur.uni))
+				t.uniBoundary = t.uniBoundary || e == 'b' && cur.uni
 			default:
 				t.both(src[i : i+2])
 			}
 			i += 2
 		case c == '[':
-			end, err := t.class(i, cur.fold)
+			end, err := t.class(i, cur)
 			if err != nil {
-				return "", false, "", err
+				return translation{}, err
 			}
 			i = end
 		case c == '(' && strings.HasPrefix(src[i:], "(?#"):
@@ -425,7 +464,22 @@ func translateClasses(body string, flags Flags, verbose bool) (re2 string, re2OK
 			t.both(src[i:end])
 			i = end
 		case c == '(':
-			stack = append(stack, scopedFlags(src[i+1:], cur))
+			next, err := scopedFlags(src[i+1:], cur, str)
+			if err != nil {
+				return translation{}, err
+			}
+			stack = append(stack, next)
+			// Neither engine knows the a, u and L flags; drop them from
+			// the group's header.
+			if on, off, n, ok := flagGroup(src[i+1:]); ok && strings.ContainsAny(on, "auL") {
+				header := "(?" + strings.Trim(on, "auL")
+				if off != "" {
+					header += "-" + off
+				}
+				t.both(header + ":")
+				i += 1 + n
+				continue
+			}
 			t.both("(")
 			i++
 		case c == ')':
@@ -447,7 +501,7 @@ func translateClasses(body string, flags Flags, verbose bool) (re2 string, re2OK
 			i++
 		}
 	}
-	return t.re2.String(), t.re2OK, t.bt.String(), nil
+	return translation{re2: t.re2.String(), re2OK: t.re2OK, backtrack: t.bt.String(), unicodeBoundary: t.uniBoundary}, nil
 }
 
 // commentEnd returns the index after the ) that closes a (?# comment whose
@@ -468,21 +522,23 @@ func commentEnd(src string, i int) int {
 
 // scopedFlags returns the scope inside a group whose text after "(" is
 // rest: cur changed by the flags of a (?flags-flags:...) group, or cur
-// itself for any other group.
-func scopedFlags(rest string, cur scope) scope {
-	rest, ok := strings.CutPrefix(rest, "?")
+// itself for any other group. It rejects the a, u and L flags Python
+// rejects; str says whether the pattern is a str pattern.
+func scopedFlags(rest string, cur scope, str bool) (scope, error) {
+	on, off, _, ok := flagGroup(rest)
 	if !ok {
-		return cur
+		return cur, nil
 	}
-	end := strings.IndexByte(rest, ':')
-	if end < 0 {
-		return cur
-	}
-	on, off, _ := strings.Cut(rest[:end], "-")
-	if strings.Trim(on, "aiLmsux") != "" || strings.Trim(off, "imsx") != "" || on+off == "" {
-		return cur
+	if err := checkCharsetFlags(on, off, str); err != nil {
+		return cur, err
 	}
 	next := cur
+	switch {
+	case strings.Contains(on, "a"):
+		next.uni = false
+	case strings.Contains(on, "u"):
+		next.uni = true
+	}
 	if strings.Contains(on, "i") {
 		next.fold = true
 	}
@@ -495,7 +551,26 @@ func scopedFlags(rest string, cur scope) scope {
 	if strings.Contains(off, "x") {
 		next.verbose = false
 	}
-	return next
+	return next, nil
+}
+
+// flagGroup reports whether rest, the text after a "(", opens a
+// (?flags-flags:...) group, and returns the letters before and after the
+// "-" and the length of the header up to and including the ":".
+func flagGroup(rest string) (on, off string, n int, ok bool) {
+	body, found := strings.CutPrefix(rest, "?")
+	if !found {
+		return "", "", 0, false
+	}
+	end := strings.IndexByte(body, ':')
+	if end < 0 {
+		return "", "", 0, false
+	}
+	on, off, _ = strings.Cut(body[:end], "-")
+	if strings.Trim(on, "aiLmsux") != "" || strings.Trim(off, "aiLmsux") != "" || on+off == "" {
+		return "", "", 0, false
+	}
+	return on, off, end + 2, true
 }
 
 // classItem is one member of a character class: a class escape such as \w,
@@ -593,7 +668,7 @@ func isHex(c byte) bool {
 // members is a range unless a ] follows it. A range with a class escape at
 // either end is an error, as in Python. A class that the pattern does not
 // close is copied as it is, for the engines to reject.
-func (t *classTranslator) class(i int, fold bool) (int, error) {
+func (t *classTranslator) class(i int, cur scope) (int, error) {
 	src := t.src
 	j := i + 1
 	neg := j < len(src) && src[j] == '^'
@@ -643,7 +718,7 @@ func (t *classTranslator) class(i int, fold bool) (int, error) {
 		return j, nil
 	}
 
-	sh := shorthandExpr(shorts, t.uni)
+	sh := shorthandExpr(shorts, cur.uni)
 	if rest.Len() == 0 {
 		if neg {
 			sh = sh.negate()
@@ -662,7 +737,7 @@ func (t *classTranslator) class(i int, fold bool) (int, error) {
 	if !t.re2OK {
 		return j, nil
 	}
-	members, ok := re2ClassSet("["+others+"]", fold)
+	members, ok := re2ClassSet("["+others+"]", cur.fold)
 	if !ok {
 		t.re2OK = false
 		return j, nil

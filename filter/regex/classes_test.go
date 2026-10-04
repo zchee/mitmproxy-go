@@ -328,3 +328,92 @@ func BenchmarkCompileClass(b *testing.B) {
 		})
 	}
 }
+
+// TestCompileCharsetFlags checks the inline flags a, u and L. want and
+// wantFlags are what Python 3.13 gives with re.search under re.IGNORECASE:
+// a str pattern compiled with re.ASCII loses re.UNICODE from its flags.
+func TestCompileCharsetFlags(t *testing.T) {
+	tests := map[string]struct {
+		pattern      string
+		flags        Flags
+		input        string
+		want         bool
+		wantFlags    Flags
+		backtracking bool
+	}{
+		"success: global a makes \\d ASCII":     {pattern: `(?a)\d`, flags: Unicode, input: "\u0663", want: false, wantFlags: IgnoreCase},
+		"success: scoped a makes \\d ASCII":     {pattern: `(?a:\d)`, flags: Unicode, input: "\u0663", want: false, wantFlags: IgnoreCase | Unicode},
+		"success: scoped a ends with its group": {pattern: `(?a:\d)\d`, flags: Unicode, input: "5\u0663", want: true, wantFlags: IgnoreCase | Unicode},
+		"success: global u keeps \\d Unicode":   {pattern: `(?u)\d`, flags: Unicode, input: "\u0663", want: true, wantFlags: IgnoreCase | Unicode},
+		"success: global a makes \\w ASCII":     {pattern: `(?a)\w`, flags: Unicode, input: "\u00e9", want: false, wantFlags: IgnoreCase},
+		"success: global a keeps \\b on RE2":    {pattern: `(?a)\bx`, flags: Unicode, input: "\u00e9x", want: true, wantFlags: IgnoreCase},
+		"success: scoped a keeps \\b on RE2":    {pattern: `(?a:\b)x`, flags: Unicode, input: "\u00e9x", want: true, wantFlags: IgnoreCase | Unicode},
+		"success: global a in a negated class":  {pattern: `(?a)[^\w.]`, flags: Unicode, input: "\u00e9", want: true, wantFlags: IgnoreCase},
+		"success: global a makes \\s ASCII":     {pattern: `(?a)\s`, flags: Unicode, input: "\u2003", want: false, wantFlags: IgnoreCase},
+		"success: global a after another group": {pattern: `(?i)(?a)\d`, flags: Unicode, input: "\u0663", want: false, wantFlags: IgnoreCase},
+		"success: scoped u inside scoped a":     {pattern: `(?a:(?u:\w))`, flags: Unicode, input: "\u00e9", want: true, wantFlags: IgnoreCase | Unicode},
+		"success: scoped a with other flags":    {pattern: `(?ai-s:\w)`, flags: Unicode, input: "\u00e9", want: false, wantFlags: IgnoreCase | Unicode},
+		// CPython's re.search misses this match, because it computes where
+		// a match can start with the global flags; re.match finds it, and
+		// the scoped flag is what the pattern says.
+		"success: scoped u under global a is Unicode": {pattern: `(?a)(?u:\d)`, flags: Unicode, input: "\u0663", want: true, wantFlags: IgnoreCase},
+		"success: global a with \\B":                  {pattern: `(?a)\B`, flags: Unicode, input: "\u00e9", want: true, wantFlags: IgnoreCase, backtracking: true},
+		"success: global a in a bytes pattern":        {pattern: `(?a)\d`, input: "5", want: true, wantFlags: IgnoreCase},
+		"success: scoped a in a bytes pattern":        {pattern: `(?a:\d)`, input: "5", want: true, wantFlags: IgnoreCase},
+		"success: global L in a bytes pattern":        {pattern: `(?L)\d`, input: "5", want: true, wantFlags: IgnoreCase},
+		"success: scoped L in a bytes pattern":        {pattern: `(?L:\w)`, input: "\u00e9", want: false, wantFlags: IgnoreCase},
+		"success: global L keeps ASCII \\w":           {pattern: `(?L)\w`, input: "a", want: true, wantFlags: IgnoreCase},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			m, err := Compile(tt.pattern, tt.flags|IgnoreCase)
+			if err != nil {
+				t.Fatalf("Compile(%q) error = %v", tt.pattern, err)
+			}
+			if got := IsBacktracking(m); got != tt.backtracking {
+				t.Errorf("IsBacktracking() = %v, want %v", got, tt.backtracking)
+			}
+			if got := m.Flags(); got != tt.wantFlags {
+				t.Errorf("Flags() = %d, want %d", got, tt.wantFlags)
+			}
+			if got := m.MatchString(tt.input); got != tt.want {
+				t.Errorf("MatchString(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCompileCharsetFlagErrors checks that the inline flags a, u and L are
+// rejected where Python 3.13 rejects them, with Python's message.
+func TestCompileCharsetFlagErrors(t *testing.T) {
+	tests := map[string]struct {
+		pattern string
+		flags   Flags
+		wantErr string
+	}{
+		"error: global L in a str pattern":    {pattern: `(?L)\d`, flags: Unicode, wantErr: "cannot use 'L' flag with a str pattern"},
+		"error: scoped L in a str pattern":    {pattern: `(?L:\d)`, flags: Unicode, wantErr: "cannot use 'L' flag with a str pattern"},
+		"error: a and u in one group":         {pattern: `(?au)\d`, flags: Unicode, wantErr: "flags 'a', 'u' and 'L' are incompatible"},
+		"error: a and u in one scoped group":  {pattern: `(?au:\d)`, flags: Unicode, wantErr: "flags 'a', 'u' and 'L' are incompatible"},
+		"error: a turned off":                 {pattern: `(?-a:\d)`, flags: Unicode, wantErr: "cannot turn off flags 'a', 'u' and 'L'"},
+		"error: u turned off":                 {pattern: `(?-u:\d)`, flags: Unicode, wantErr: "cannot turn off flags 'a', 'u' and 'L'"},
+		"error: a and u in two global groups": {pattern: `(?a)(?u)\d`, flags: Unicode, wantErr: "ASCII and UNICODE flags are incompatible"},
+		"error: L after a in a str pattern":   {pattern: `(?a)(?L)\d`, flags: Unicode, wantErr: "cannot use 'L' flag with a str pattern"},
+		"error: global u in a bytes pattern":  {pattern: `(?u)\d`, wantErr: "cannot use 'u' flag with a bytes pattern"},
+		"error: scoped u in a bytes pattern":  {pattern: `(?u:\d)`, wantErr: "cannot use 'u' flag with a bytes pattern"},
+		"error: a and L in one group":         {pattern: `(?aL)\d`, wantErr: "flags 'a', 'u' and 'L' are incompatible"},
+		"error: a and L in two global groups": {pattern: `(?a)(?L)\d`, wantErr: "ASCII and LOCALE flags are incompatible"},
+		"error: L turned off":                 {pattern: `(?-L:\d)`, wantErr: "cannot turn off flags 'a', 'u' and 'L'"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			m, err := Compile(tt.pattern, tt.flags)
+			if err == nil {
+				t.Fatalf("Compile(%q) = %v, want error", tt.pattern, m)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Compile(%q) error = %q, want it to contain %q", tt.pattern, err, tt.wantErr)
+			}
+		})
+	}
+}

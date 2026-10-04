@@ -5211,6 +5211,82 @@
       "describe": "(url matches /a/i or is marked) and has error",
       "dump": "FAnd\n\tFOr\n\t\tFUrla\n\t\tFMarked\n\tFErr\n",
       "describe_case_sensitive": "(url matches /a/ or is marked) and has error"
+    },
+    {
+      "expr": "~u \"(?L)a\"",
+      "ok": false
+    },
+    {
+      "expr": "~comment \"(?L:a)\"",
+      "ok": false
+    },
+    {
+      "expr": "~b \"(?u)a\"",
+      "ok": false
+    },
+    {
+      "expr": "~h \"(?u:a)\"",
+      "ok": false
+    },
+    {
+      "expr": "~u \"(?au)a\"",
+      "ok": false
+    },
+    {
+      "expr": "~u \"(?-a:a)\"",
+      "ok": false
+    },
+    {
+      "expr": "~u \"(?a)(?u)a\"",
+      "ok": false
+    },
+    {
+      "expr": "~b \"(?a)(?L)a\"",
+      "ok": false
+    },
+    {
+      "expr": "~b \"(?L)a\"",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "(?L)a"
+      ],
+      "describe": "body matches /(?L)a/is",
+      "dump": "FBod(?L)a\n",
+      "describe_case_sensitive": "body matches /(?L)a/s"
+    },
+    {
+      "expr": "~b \"(?L:a)\"",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "(?L:a)"
+      ],
+      "describe": "body matches /(?L:a)/is",
+      "dump": "FBod(?L:a)\n",
+      "describe_case_sensitive": "body matches /(?L:a)/s"
+    },
+    {
+      "expr": "~u \"(?a:a)\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "(?a:a)"
+      ],
+      "describe": "url matches /(?a:a)/i",
+      "dump": "FUrl(?a:a)\n",
+      "describe_case_sensitive": "url matches /(?a:a)/"
+    },
+    {
+      "expr": "~d \"(?u)a\"",
+      "ok": true,
+      "tree": [
+        "FDomain",
+        "(?u)a"
+      ],
+      "describe": "domain matches /(?u)a/i",
+      "dump": "FDomain(?u)a\n",
+      "describe_case_sensitive": "domain matches /(?u)a/"
     }
   ]
 }

@@ -85,7 +85,7 @@ func TestCompile(t *testing.T) {
 			wantFlags: IgnoreCase | Multiline,
 			probes:    []probe{{"a\nB", true}},
 		},
-		"success: python-only inline flags are dropped": {
+		"success: ascii flag in a bytes pattern changes nothing": {
 			pattern:   "(?a)\\w+",
 			wantFlags: 0,
 			probes:    []probe{{"abc", true}},

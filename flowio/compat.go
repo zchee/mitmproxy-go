@@ -35,8 +35,158 @@ func (e *VersionError) Error() string {
 }
 
 // converters holds the migrations from each readable older version to the
-// next one.
-var converters = map[int64]func(*state.Map) error{}
+// next one, ported from mitmproxy's io/compat.py.
+var converters = map[int64]func(*state.Map) error{
+	18: convert18To19,
+	19: convert19To20,
+	20: convert20To21,
+}
+
+// connDict returns the connection dictionary data[key]. mitmproxy indexes
+// it directly, so a missing or non-dict connection fails there too.
+func connDict(data *state.Map, key string) (*state.Map, error) {
+	v, ok := data.Get(key)
+	if !ok {
+		return nil, fmt.Errorf("invalid flow: %s is missing", key)
+	}
+	m, ok := v.(*state.Map)
+	if !ok {
+		return nil, fmt.Errorf("invalid flow: %s is a %s, not a dict", key, state.TypeName(v))
+	}
+	return m, nil
+}
+
+// popInto moves conn[from] to conn[to], storing None when from is absent,
+// as conn[to] = conn.pop(from, None) does.
+func popInto(conn *state.Map, to, from string) {
+	v, _ := conn.Pop(from)
+	conn.Set(to, v)
+}
+
+// popRequired removes conn[key], failing when it is absent, as
+// conn.pop(key) does.
+func popRequired(conn *state.Map, name, key string) error {
+	if _, ok := conn.Pop(key); !ok {
+		return fmt.Errorf("invalid flow: %s.%s is missing", name, key)
+	}
+	return nil
+}
+
+// convert18To19 ports convert_18_19: connection addresses are renamed to
+// peername, sockname and via, cipher_name to cipher, and address hosts
+// stored as bytes are decoded.
+func convert18To19(data *state.Map) error {
+	data.Set("version", int64(19))
+	client, err := connDict(data, "client_conn")
+	if err != nil {
+		return err
+	}
+	popInto(client, "peername", "address")
+	if v, _ := client.Get("timestamp_start"); v == nil {
+		client.Set("timestamp_start", 0.0)
+	}
+	if err := popRequired(client, "client_conn", "tls_extensions"); err != nil {
+		return err
+	}
+
+	server, err := connDict(data, "server_conn")
+	if err != nil {
+		return err
+	}
+	popInto(server, "peername", "ip_address")
+	popInto(server, "sockname", "source_address")
+	popInto(server, "via", "via2")
+
+	for _, name := range []string{"client_conn", "server_conn"} {
+		conn, err := connDict(data, name)
+		if err != nil {
+			return err
+		}
+		if err := popRequired(conn, name, "tls_established"); err != nil {
+			return err
+		}
+		popInto(conn, "cipher", "cipher_name")
+		if !conn.Has("transport_protocol") {
+			conn.Set("transport_protocol", "tcp")
+		}
+		for _, key := range []string{"peername", "sockname", "address"} {
+			// Only a non-empty list can hold a bytes host; mitmproxy's
+			// truthiness test and [0] index amount to the same check.
+			v, _ := conn.Get(key)
+			if addr, ok := v.([]any); ok && len(addr) > 0 {
+				if host, ok := addr[0].([]byte); ok {
+					addr[0] = decodeBackslashReplace(host)
+				}
+			}
+		}
+	}
+
+	sni, ok := server.Get("sni")
+	if !ok {
+		return fmt.Errorf("invalid flow: server_conn.sni is missing")
+	}
+	if sni == true {
+		v, _ := server.Get("address")
+		addr, ok := v.([]any)
+		if !ok || len(addr) == 0 {
+			return fmt.Errorf("invalid flow: server_conn.sni is True but server_conn.address is %s", state.TypeName(v))
+		}
+		server.Set("sni", addr[0])
+	}
+	return nil
+}
+
+// decodeBackslashReplace decodes b as UTF-8 the way Python's
+// bytes.decode(errors="backslashreplace") does: each byte of an invalid
+// sequence becomes \xNN.
+func decodeBackslashReplace(b []byte) string {
+	var s strings.Builder
+	s.Grow(len(b))
+	for len(b) > 0 {
+		r, size := utf8.DecodeRune(b)
+		if r == utf8.RuneError && size <= 1 {
+			fmt.Fprintf(&s, `\x%02x`, b[0])
+			b = b[1:]
+			continue
+		}
+		s.Write(b[:size])
+		b = b[size:]
+	}
+	return s.String()
+}
+
+// convert19To20 ports convert_19_20, which drops the connection state.
+func convert19To20(data *state.Map) error {
+	data.Set("version", int64(20))
+	for _, name := range []string{"client_conn", "server_conn"} {
+		conn, err := connDict(data, name)
+		if err != nil {
+			return err
+		}
+		conn.Delete("state")
+	}
+	return nil
+}
+
+// convert20To21 ports convert_20_21, which renames TLS version "QUIC" to
+// "QUICv1".
+func convert20To21(data *state.Map) error {
+	data.Set("version", int64(21))
+	for _, name := range []string{"client_conn", "server_conn"} {
+		conn, err := connDict(data, name)
+		if err != nil {
+			return err
+		}
+		v, ok := conn.Get("tls_version")
+		if !ok {
+			return fmt.Errorf("invalid flow: %s.tls_version is missing", name)
+		}
+		if v == "QUIC" {
+			conn.Set("tls_version", "QUICv1")
+		}
+	}
+	return nil
+}
 
 // migrate brings a flow's state to [flow.FormatVersion], as mitmproxy's
 // compat.migrate_flow does, but only from the versions in converters.

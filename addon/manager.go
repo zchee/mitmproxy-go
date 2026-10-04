@@ -95,7 +95,10 @@ func NewManager(opts *options.Manager, cmds *command.Manager, cfg Config) *Manag
 		commands: make(map[any][]string),
 	}
 	m.unsubscribe = opts.Subscribe(func(ctx context.Context, updated map[string]struct{}) error {
-		return m.Trigger(ctx, ConfigureHook{Updated: updated})
+		hook := ConfigureHook{Updated: updated}
+		return m.d.do(ctx, func(ctx context.Context) error {
+			return m.trigger(inSync(ctx, hook.Name()), hook)
+		})
 	})
 	return m
 }
@@ -214,7 +217,8 @@ func (m *Manager) register(ctx context.Context, addon any) error {
 		return err
 	}
 
-	if err := m.invokeTree(ctx, addon, LoadHook{Loader: &Loader{m: m, addon: addon}}); err != nil {
+	load := LoadHook{Loader: &Loader{m: m, addon: addon}}
+	if err := m.invokeTree(inSync(ctx, load.Name()), addon, load); err != nil {
 		// The addon is not registered, so nothing could remove it later;
 		// take back the commands its load added.
 		m.unregisterCommands(addon)
@@ -260,7 +264,7 @@ func (m *Manager) Remove(ctx context.Context, addon any) error {
 				m.unregisterCommands(a)
 			}
 		}()
-		return m.invokeTree(ctx, addon, DoneHook{})
+		return m.invokeTree(inSync(ctx, DoneHook{}.Name()), addon, DoneHook{})
 	})
 }
 
@@ -270,7 +274,7 @@ func (m *Manager) Remove(ctx context.Context, addon any) error {
 func (m *Manager) Clear(ctx context.Context) error {
 	return m.d.do(ctx, func(ctx context.Context) error {
 		for _, a := range m.Chain() {
-			if err := m.invokeTree(ctx, a, DoneHook{}); err != nil {
+			if err := m.invokeTree(inSync(ctx, DoneHook{}.Name()), a, DoneHook{}); err != nil {
 				return err
 			}
 		}

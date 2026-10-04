@@ -786,3 +786,164 @@ func TestStaleFrameInHandlerIsNotSwallowed(t *testing.T) {
 		}
 	})
 }
+
+// syncProbe calls Concurrent from the handler of one hook and records what
+// happened, so that a test can tell whether the lock was released there.
+type syncProbe struct {
+	name  string
+	probe string // "load", "configure" or "done"
+	body  func(ctx context.Context) error
+	ran   bool
+	errs  []error
+}
+
+func (p *syncProbe) Name() string { return p.name }
+
+func (p *syncProbe) try(ctx context.Context, hook string) {
+	if hook != p.probe {
+		return
+	}
+	_, err := Concurrent(ctx, func(ctx context.Context) error {
+		p.ran = true
+		if p.body != nil {
+			return p.body(ctx)
+		}
+		return nil
+	})
+	p.errs = append(p.errs, err)
+}
+
+func (p *syncProbe) Load(ctx context.Context, l *Loader) error {
+	if p.probe == "configure" {
+		if err := l.AddOption(ctx, "probe_flag", options.TypeBool, false, "A flag."); err != nil {
+			return err
+		}
+	}
+	p.try(ctx, "load")
+	return nil
+}
+
+func (p *syncProbe) Configure(ctx context.Context, _ map[string]struct{}) error {
+	p.try(ctx, "configure")
+	return nil
+}
+
+func (p *syncProbe) Done(ctx context.Context) error {
+	p.try(ctx, "done")
+	return nil
+}
+
+// TestConcurrentRefusedInSyncHooks calls Concurrent from the hooks that
+// mitmproxy dispatches synchronously. Releasing the lock there would let
+// other dispatch run in the middle of a registration, a removal or an
+// option change, so Concurrent must refuse even at the outermost level.
+func TestConcurrentRefusedInSyncHooks(t *testing.T) {
+	tests := map[string]struct {
+		probe   string
+		fire    func(t *testing.T, e *testEnv, p *syncProbe) error
+		wantMsg string
+	}{
+		"error: load of Add": {
+			probe:   "load",
+			fire:    func(*testing.T, *testEnv, *syncProbe) error { return nil },
+			wantMsg: "load",
+		},
+		"error: configure fired by an option change": {
+			probe: "configure",
+			fire: func(t *testing.T, e *testEnv, _ *syncProbe) error {
+				return e.opts.Set(t.Context(), "probe_flag=true")
+			},
+			wantMsg: "configure",
+		},
+		"error: done of Remove": {
+			probe: "done",
+			fire: func(t *testing.T, e *testEnv, p *syncProbe) error {
+				return e.m.Remove(t.Context(), p)
+			},
+			wantMsg: "done",
+		},
+		"error: done of Clear": {
+			probe: "done",
+			fire: func(t *testing.T, e *testEnv, _ *syncProbe) error {
+				return e.m.Clear(t.Context())
+			},
+			wantMsg: "done",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t)
+			p := &syncProbe{name: "probe", probe: tt.probe}
+			within(t, "Add and fire", func() {
+				if err := e.m.Add(t.Context(), p); err != nil {
+					t.Errorf("Add: %v", err)
+					return
+				}
+				if err := tt.fire(t, e, p); err != nil {
+					t.Errorf("fire: %v", err)
+				}
+			})
+			if p.ran {
+				t.Error("the body of Concurrent ran inside a synchronous hook")
+			}
+			if len(p.errs) != 1 {
+				t.Fatalf("Concurrent called %d times, want 1", len(p.errs))
+			}
+			err := p.errs[0]
+			if !errors.Is(err, ErrSyncContext) || !strings.Contains(err.Error(), tt.wantMsg) {
+				t.Errorf("Concurrent error = %v, want ErrSyncContext naming the %s hook", err, tt.wantMsg)
+			}
+		})
+	}
+
+	t.Run("success: done fired through Trigger may release the lock", func(t *testing.T) {
+		// The master fires done at shutdown through Trigger, as mitmproxy
+		// fires it through the asynchronous trigger_event.
+		e := newEnv(t)
+		p := &syncProbe{name: "probe", probe: "done"}
+		within(t, "Trigger(done)", func() {
+			if err := e.m.Add(t.Context(), p); err != nil {
+				t.Errorf("Add: %v", err)
+				return
+			}
+			if err := e.m.Trigger(t.Context(), DoneHook{}); err != nil {
+				t.Errorf("Trigger: %v", err)
+			}
+		})
+		if !p.ran || len(p.errs) != 1 || p.errs[0] != nil {
+			t.Errorf("ran=%v errs=%v, want the body run without error", p.ran, p.errs)
+		}
+	})
+}
+
+// TestNoSecondAddonDuringLoad releases the lock from a load handler and
+// registers a second addon of the same name in the gap. Refusing
+// Concurrent in load keeps the name check and the record of the name in
+// one hold of the lock.
+func TestNoSecondAddonDuringLoad(t *testing.T) {
+	e := newEnv(t)
+	second := &hooker{name: "dup", j: &journal{}}
+	var addErr error
+	first := &syncProbe{name: "dup", probe: "load", body: func(context.Context) error {
+		addErr = e.m.Add(t.Context(), second)
+		return nil
+	}}
+	within(t, "Add(first)", func() {
+		if err := e.m.Add(t.Context(), first); err != nil {
+			t.Errorf("Add(first): %v", err)
+		}
+	})
+	if first.ran {
+		t.Errorf("the load handler released the lock; Add(second) in the gap returned %v", addErr)
+	}
+	if len(first.errs) != 1 || !errors.Is(first.errs[0], ErrSyncContext) {
+		t.Errorf("Concurrent errors = %v, want one ErrSyncContext", first.errs)
+	}
+	err := e.m.Add(t.Context(), second)
+	if !errors.Is(err, ErrAddonManager) || !strings.Contains(err.Error(), "An addon called 'dup' already exists.") {
+		t.Errorf("Add(second) error = %v, want the duplicate name refused", err)
+	}
+	if got := e.m.Get("dup"); got != first || e.m.Len() != 1 {
+		t.Errorf("Get(dup) = %p, Len = %d; want the first addon alone", got, e.m.Len())
+	}
+}

@@ -171,11 +171,16 @@ func (e *encoder) value(v any, depth int) error {
 		start := e.size()
 		// Walking forwards while prepending leaves the entries in reverse
 		// insertion order, as mitmproxy writes them.
-		for k, val := range v.All() {
-			if err := e.value(val, depth+1); err != nil {
+		for i := range v.Len() {
+			ent := &v.entries[i]
+			if err := e.value(ent.value, depth+1); err != nil {
 				return err
 			}
-			if err := e.text(k); err != nil {
+			if ent.bytesKey {
+				e.prependByte(',')
+				e.prependString(ent.key)
+				e.prefix(len(ent.key))
+			} else if err := e.text(ent.key); err != nil {
 				return err
 			}
 		}

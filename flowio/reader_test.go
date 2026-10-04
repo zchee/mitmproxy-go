@@ -35,11 +35,7 @@ func rawFlows(t *testing.T, rel string) []*state.Map {
 			t.Fatalf("%s: flow %d: %v", rel, len(out), err)
 		}
 		rest = r
-		m, err := fromTnetstring(v)
-		if err != nil {
-			t.Fatalf("%s: flow %d: %v", rel, len(out), err)
-		}
-		out = append(out, m.(*state.Map))
+		out = append(out, fromTnetstring(v).(*state.Map))
 	}
 	return out
 }
@@ -258,19 +254,62 @@ func withBigInt(t *testing.T, key string) []byte {
 	return encode(t, m)
 }
 
-// bigMetadataFile returns the v21 fixture with the list [2**64, -2**64]
-// stored in the first flow's metadata, written by Writer.
-func bigMetadataFile(t *testing.T) []byte {
+// metadataFile returns the v21 fixture, written by Writer after set has
+// changed the first flow's metadata. set should leave every dictionary with
+// one key: a dictionary is written in reverse insertion order and read in
+// file order, so the keys of free-form state swap places on every round
+// trip, as they do in mitmproxy.
+func metadataFile(t *testing.T, set func(md *state.Map)) []byte {
 	t.Helper()
 	flows, err := readAll(t, testutil.Fixture(t, v21Fixture))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// One key only: a dictionary is written in reverse insertion order and
-	// read in file order, so the keys of free-form state swap places on
-	// every round trip, as they do in mitmproxy.
-	flows[0].Common().Metadata.Set("big", []any{two64(), new(big.Int).Neg(two64())})
+	set(flows[0].Common().Metadata)
 	return writeAll(t, flows)
+}
+
+// bigMetadataFile returns the v21 fixture with the list [2**64, -2**64]
+// stored in the first flow's metadata.
+func bigMetadataFile(t *testing.T) []byte {
+	t.Helper()
+	return metadataFile(t, func(md *state.Map) {
+		md.Set("big", []any{two64(), new(big.Int).Neg(two64())})
+	})
+}
+
+// bytesKeyMetadataFile returns the v21 fixture with {b"\xff": {b"k": 1}}
+// as the first flow's metadata: byte-string keys, one of them not UTF-8.
+func bytesKeyMetadataFile(t *testing.T) []byte {
+	t.Helper()
+	return metadataFile(t, func(md *state.Map) {
+		inner := state.NewMap(1)
+		inner.SetBytesKey("k", int64(1))
+		md.SetBytesKey("\xff", inner)
+	})
+}
+
+// TestBytesKeysInMetadata checks that dictionary keys keep their kind
+// through a read and a write: a byte-string key is written back with the ,
+// tag, even when it is not UTF-8, as mitmproxy writes a bytes key.
+func TestBytesKeysInMetadata(t *testing.T) {
+	src := bytesKeyMetadataFile(t)
+	if !bytes.Contains(src, []byte("8:metadata;15:1:\xff,8:1:k,1:1#}}")) {
+		t.Fatalf("the written file does not hold metadata {b'\\xff': {b'k': 1}}:\n%q", src)
+	}
+
+	flows, err := readAll(t, src)
+	if err != nil {
+		t.Fatalf("reading a flow with byte-string metadata keys: %v", err)
+	}
+	md := flows[0].Common().Metadata
+	inner, _ := md.Get("\xff")
+	if !md.IsBytesKey("\xff") || !inner.(*state.Map).IsBytesKey("k") {
+		t.Errorf("metadata = %v, want {b\"\\xff\": {b\"k\": 1}}", md)
+	}
+	if out := writeAll(t, flows); !bytes.Equal(out, src) {
+		t.Errorf("Write(Read(file)) differs from the file:\nwant %q\n got %q", src, out)
+	}
 }
 
 // TestBigIntInMetadata checks that an integer beyond int64 in free-form

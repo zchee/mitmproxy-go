@@ -20,12 +20,20 @@ const dictIndexThreshold = 8
 type dictEntry struct {
 	key   string
 	value any
+	// bytesKey marks a key read from, or to be written as, a byte string
+	// (the , tag) rather than text (the ; tag).
+	bytesKey bool
 }
 
 // Dict is a tnetstring dictionary: string keys in insertion order.
 //
 // It follows Python dict semantics. Setting an existing key replaces its value
 // and keeps its position, and Equal ignores order, as Python's == does.
+//
+// Each key is either text, written with the ; tag, or a byte string, written
+// with the , tag, so that a key keeps the kind it was read with. A key is
+// identified by its bytes alone: a Dict cannot hold the text key "k" and the
+// byte-string key b"k" at once, which a Python dict can.
 //
 // The zero value is an empty Dict ready to use. A Dict is not safe for
 // concurrent use. Read-only methods accept a nil *Dict and treat it as empty.
@@ -57,14 +65,38 @@ func (d *Dict) find(key string) int {
 	return -1
 }
 
-// Set stores value under key. A new key is appended; an existing key keeps its
-// position.
+// Set stores value under key. A new key is appended as a text key; an
+// existing key keeps its position and its kind.
 func (d *Dict) Set(key string, value any) {
 	if i := d.find(key); i >= 0 {
 		d.entries[i].value = value
 		return
 	}
-	d.entries = append(d.entries, dictEntry{key: key, value: value})
+	d.add(dictEntry{key: key, value: value})
+}
+
+// SetBytesKey stores value under key and makes key a byte-string key, which
+// need not be valid UTF-8. A new key is appended; an existing key keeps its
+// position.
+func (d *Dict) SetBytesKey(key string, value any) {
+	if i := d.find(key); i >= 0 {
+		d.entries[i].value = value
+		d.entries[i].bytesKey = true
+		return
+	}
+	d.add(dictEntry{key: key, value: value, bytesKey: true})
+}
+
+// IsBytesKey reports whether key is present as a byte-string key.
+func (d *Dict) IsBytesKey(key string) bool {
+	i := d.find(key)
+	return i >= 0 && d.entries[i].bytesKey
+}
+
+// add appends an entry whose key is not present yet.
+func (d *Dict) add(e dictEntry) {
+	key := e.key
+	d.entries = append(d.entries, e)
 	switch {
 	case d.index != nil:
 		d.index[key] = len(d.entries) - 1
@@ -118,8 +150,8 @@ func (d *Dict) All() iter.Seq2[string, any] {
 	}
 }
 
-// Equal reports whether d and o hold the same keys with equal values,
-// regardless of order.
+// Equal reports whether d and o hold the same keys, of the same kinds, with
+// equal values, regardless of order.
 //
 // Values are compared as Python compares the decoded objects: lists element
 // by element, integers by numeric value whether held as int64 or *big.Int, and
@@ -128,9 +160,10 @@ func (d *Dict) Equal(o *Dict) bool {
 	if d.Len() != o.Len() {
 		return false
 	}
-	for k, v := range d.All() {
-		ov, ok := o.Get(k)
-		if !ok || !Equal(v, ov) {
+	for i := range d.Len() {
+		e := &d.entries[i]
+		j := o.find(e.key)
+		if j < 0 || o.entries[j].bytesKey != e.bytesKey || !Equal(e.value, o.entries[j].value) {
 			return false
 		}
 	}

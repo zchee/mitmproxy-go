@@ -24,8 +24,9 @@
 //	}    dictionary          *Dict                  *Dict
 //
 // The ; tag is mitmproxy's extension: the original tnetstring specification
-// has only byte strings. Dictionary keys are written with ; and read from
-// either ; or , because older flow files use byte-string keys.
+// has only byte strings. Dictionary keys may be either, as older flow files
+// and addon metadata use byte-string keys; a [Dict] remembers the kind of
+// each key and writes it back with the same tag.
 //
 // The writer reproduces mitmproxy's output byte for byte. Python builds the
 // output right to left, so dictionary entries appear in reverse insertion

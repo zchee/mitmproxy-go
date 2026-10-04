@@ -25,8 +25,9 @@ import (
 // entry is an exported mirror of a Dict entry, so go-cmp can diff decoded
 // trees and show key order.
 type entry struct {
-	Key   string
-	Value any
+	Key      string
+	BytesKey bool
+	Value    any
 }
 
 // plain converts a decoded value into a tree go-cmp can diff field by field.
@@ -37,7 +38,7 @@ func plain(v any) any {
 	case *Dict:
 		out := []entry{}
 		for k, val := range v.All() {
-			out = append(out, entry{Key: k, Value: plain(val)})
+			out = append(out, entry{Key: k, BytesKey: v.IsBytesKey(k), Value: plain(val)})
 		}
 		return out
 	case []any:
@@ -68,11 +69,17 @@ func treeDiff(want, got any) string {
 	return fmt.Sprintf("encodings differ: want %q (%v), got %q (%v)", we, werr, ge, gerr)
 }
 
-// dict builds a Dict from alternating keys and values.
+// dict builds a Dict from alternating keys and values. A string key is a
+// text key and a []byte key a byte-string key.
 func dict(kv ...any) *Dict {
 	d := NewDict(len(kv) / 2)
 	for i := 0; i < len(kv); i += 2 {
-		d.Set(kv[i].(string), kv[i+1])
+		switch k := kv[i].(type) {
+		case string:
+			d.Set(k, kv[i+1])
+		case []byte:
+			d.SetBytesKey(string(k), kv[i+1])
+		}
 	}
 	return d
 }
@@ -92,8 +99,7 @@ func nest(depth int, leaf any) any {
 // formatExamples are the FORMAT_EXAMPLES of mitmproxy's
 // test/mitmproxy/io/test_tnetstring.py, followed by the examples in the
 // tnetstring module docstring. canonical marks the encodings Dumps
-// reproduces byte for byte; the dictionary example uses a byte-string key,
-// which this package reads as a string and writes back with the ; tag.
+// reproduces byte for byte.
 var formatExamples = map[string]struct {
 	data      string
 	want      any
@@ -101,7 +107,7 @@ var formatExamples = map[string]struct {
 }{
 	"empty dict":  {data: "0:}", want: dict(), canonical: true},
 	"empty list":  {data: "0:]", want: []any{}, canonical: true},
-	"nested dict": {data: "51:5:hello,39:11:12345678901#4:this,4:true!0:~4:\x00\x00\x00\x00,]}", want: dict("hello", []any{int64(12345678901), []byte("this"), true, nil, []byte("\x00\x00\x00\x00")})},
+	"nested dict": {data: "51:5:hello,39:11:12345678901#4:this,4:true!0:~4:\x00\x00\x00\x00,]}", want: dict([]byte("hello"), []any{int64(12345678901), []byte("this"), true, nil, []byte("\x00\x00\x00\x00")}), canonical: true},
 	"int":         {data: "5:12345#", want: int64(12345), canonical: true},
 	"bytes":       {data: "12:this is cool,", want: []byte("this is cool"), canonical: true},
 	"unicode":     {data: "19:this is unicode \xe2\x98\x85;", want: "this is unicode ★", canonical: true},
@@ -292,10 +298,20 @@ func TestDictSemantics(t *testing.T) {
 		wantKeys []string
 		want     *Dict
 	}{
-		"success: byte-string keys become strings": {
-			data:     "16:1:a,1:1#1:b,1:2#}",
+		"success: byte-string keys stay byte strings": {
+			data:     "16:1:a,1:1#1:b;1:2#}",
 			wantKeys: []string{"a", "b"},
-			want:     dict("a", int64(1), "b", int64(2)),
+			want:     dict([]byte("a"), int64(1), "b", int64(2)),
+		},
+		"success: byte-string key that is not UTF-8": {
+			data:     "8:1:\xff,1:1#}",
+			wantKeys: []string{"\xff"},
+			want:     dict([]byte("\xff"), int64(1)),
+		},
+		"success: duplicate byte-string key keeps its kind": {
+			data:     "16:1:a,1:1#1:a,1:2#}",
+			wantKeys: []string{"a"},
+			want:     dict([]byte("a"), int64(2)),
 		},
 		"success: duplicate key keeps first position and last value": {
 			data:     "24:1:a;1:1#1:b;1:2#1:a;1:3#}",
@@ -373,6 +389,21 @@ func TestDictAPI(t *testing.T) {
 	if diff := gocmp.Diff(manyKeyNames(12), d.Keys()); diff != "" {
 		t.Errorf("Set on an existing key moved it (-want +got):\n%s", diff)
 	}
+	k := NewDict(2)
+	k.Set("t", int64(1))
+	k.SetBytesKey("b", int64(2))
+	k.Set("b", int64(3))
+	if !k.IsBytesKey("b") || k.IsBytesKey("t") || k.IsBytesKey("absent") || nilDict.IsBytesKey("b") {
+		t.Errorf("IsBytesKey: b=%v t=%v absent=%v; want Set to keep the kind of an existing key", k.IsBytesKey("b"), k.IsBytesKey("t"), k.IsBytesKey("absent"))
+	}
+	k.SetBytesKey("t", int64(4))
+	if !k.IsBytesKey("t") {
+		t.Error("SetBytesKey on a text key left it a text key")
+	}
+	if enc, err := Dumps(k); err != nil || string(enc) != "16:1:b,1:3#1:t,1:4#}" {
+		t.Errorf("Dumps = %q, %v; want byte-string keys written with ,", enc, err)
+	}
+
 	var stopped []string
 	for k := range d.All() {
 		stopped = append(stopped, k)
@@ -399,6 +430,8 @@ func TestEqual(t *testing.T) {
 		"failure: string is not bytes":      {a: "a", b: []byte("a"), want: false},
 		"failure: dict value differs":       {a: dict("a", int64(1)), b: dict("a", int64(2)), want: false},
 		"failure: dict key differs":         {a: dict("a", int64(1)), b: dict("b", int64(1)), want: false},
+		"failure: dict key kind differs":    {a: dict("a", int64(1)), b: dict([]byte("a"), int64(1)), want: false},
+		"success: byte-string keys equal":   {a: dict([]byte("a"), int64(1)), b: dict([]byte("a"), int64(1)), want: true},
 		"failure: list length differs":      {a: []any{nil}, b: []any{}, want: false},
 		"failure: int is not float":         {a: int64(1), b: 1.0, want: false},
 		"failure: big is not int64 range":   {a: big1, b: int64(0), want: false},
@@ -537,6 +570,8 @@ func TestLoadsErrors(t *testing.T) {
 		"error: invalid UTF-8":      {data: "1:\xff;", wantErr: "invalid UTF-8"},
 		"error: non-string key":     {data: "7:1:1#0:~}", wantErr: "dictionary key is int64"},
 		"error: key without value":  {data: "4:1:a;}", wantErr: "has no value"},
+		"error: bytes and text key": {data: "16:1:a,1:1#1:a;1:2#}", wantErr: `dictionary has both a byte-string and a text key "a"`},
+		"error: text and bytes key": {data: "16:1:a;1:1#1:a,1:2#}", wantErr: `dictionary has both a byte-string and a text key "a"`},
 		"error: bad item in list":   {data: "3:0:x]", wantErr: "unknown type tag"},
 		"error: bad key in dict":    {data: "3:0:x}", wantErr: "unknown type tag"},
 		"error: bad value in dict":  {data: "7:1:a;0:x}", wantErr: "unknown type tag"},

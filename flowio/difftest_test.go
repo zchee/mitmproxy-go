@@ -83,12 +83,22 @@ func TestDifferentialWrite(t *testing.T) {
 	}
 }
 
-// TestDifferentialBigInt checks that mitmproxy reads a flow file whose
-// metadata holds integers beyond int64, as mitmproxy-go writes it, and
-// writes it back unchanged.
-func TestDifferentialBigInt(t *testing.T) {
-	src := bigMetadataFile(t)
-	if got := difftest.Python(t, rewriteScript, src); !bytes.Equal(got, src) {
-		t.Errorf("mitmproxy re-wrote the file differently:\nwant %q\n got %q", src, got)
+// TestDifferentialMetadata checks that mitmproxy reads flow files whose
+// metadata holds values only free-form state carries, as mitmproxy-go
+// writes them, and writes them back unchanged.
+func TestDifferentialMetadata(t *testing.T) {
+	tests := map[string]struct {
+		file func(t *testing.T) []byte
+	}{
+		"success: integers beyond int64":       {file: bigMetadataFile},
+		"success: byte-string keys, not UTF-8": {file: bytesKeyMetadataFile},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			src := tt.file(t)
+			if got := difftest.Python(t, rewriteScript, src); !bytes.Equal(got, src) {
+				t.Errorf("mitmproxy re-wrote the file differently:\nwant %q\n got %q", src, got)
+			}
+		})
 	}
 }

@@ -398,6 +398,16 @@ func TestMapEqual(t *testing.T) {
 			b:    anyMap("a", 1, "b", 2),
 			want: false,
 		},
+		"error: byte-string key differs from text key": {
+			a:    anyMap("a", 1),
+			b:    bytesKeyMap("a", 1),
+			want: false,
+		},
+		"success: byte-string keys compare equal": {
+			a:    bytesKeyMap("a", 1),
+			b:    bytesKeyMap("a", 1),
+			want: true,
+		},
 	}
 
 	for name, tt := range tests {
@@ -709,5 +719,76 @@ func BenchmarkMapJSONMarshal(b *testing.B) {
 		if _, err := json.Marshal(m); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// bytesKeyMap is anyMap with every key a byte-string key.
+func bytesKeyMap(kv ...any) *Map[any] {
+	m := New[any]()
+	for i := 0; i < len(kv); i += 2 {
+		m.SetBytesKey(kv[i].(string), kv[i+1])
+	}
+	return m
+}
+
+func TestMapBytesKey(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		size int
+	}{
+		"success: small map":   {size: 2},
+		"success: indexed map": {size: 20},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			m := New[int]()
+			apply(m, manyKeys(tt.size))
+			m.SetBytesKey("\xff", 1)
+			m.SetBytesKey("k0", 2)
+			m.Set("\xff", 3)
+
+			kinds := map[string]bool{}
+			for k := range m.All() {
+				kinds[k] = m.IsBytesKey(k)
+			}
+			want := map[string]bool{"\xff": true}
+			for _, k := range keyRange(0, tt.size) {
+				want[k] = k == "k0"
+			}
+			if diff := gocmp.Diff(want, kinds); diff != "" {
+				t.Errorf("key kinds mismatch (-want +got):\n%s", diff)
+			}
+			if v, _ := m.Get("\xff"); v != 3 {
+				t.Errorf("Get(\\xff) = %d after Set, want 3", v)
+			}
+			wantKeys := append(keyRange(0, tt.size), "\xff")
+			if diff := gocmp.Diff(wantKeys, m.Keys()); diff != "" {
+				t.Errorf("SetBytesKey moved a key (-want +got):\n%s", diff)
+			}
+
+			c := m.Clone()
+			if !c.IsBytesKey("k0") || !c.Equal(m) {
+				t.Error("Clone lost a byte-string key")
+			}
+			m.Pop("k0")
+			m.Set("k0", 0)
+			if m.IsBytesKey("k0") {
+				t.Error("a key set again after Pop is still a byte-string key")
+			}
+			if !c.IsBytesKey("k0") {
+				t.Error("changing the original changed the clone's key kind")
+			}
+		})
+	}
+
+	var nilMap *Map[int]
+	if nilMap.IsBytesKey("k") || New[int]().IsBytesKey("k") {
+		t.Error("IsBytesKey reported an absent key")
+	}
+	if got, want := bytesKeyMap("k", 1).String(), `{b"k": 1}`; got != want {
+		t.Errorf("String() = %s, want %s", got, want)
 	}
 }

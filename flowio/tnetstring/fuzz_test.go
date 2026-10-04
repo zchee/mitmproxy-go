@@ -13,8 +13,8 @@ import (
 )
 
 // FuzzLoads feeds arbitrary bytes to the reader. Whatever decodes must encode
-// again, unless a byte-string dictionary key is not UTF-8, and the encoding
-// must be stable: decoding reverses no order and encoding reverses every
+// again, byte-string dictionary keys that are not UTF-8 included, and the
+// encoding must be stable: decoding reverses no order and encoding reverses every
 // dictionary, so encoding twice through a decode is the identity.
 func FuzzLoads(f *testing.F) {
 	for _, tt := range formatExamples {
@@ -23,7 +23,7 @@ func FuzzLoads(f *testing.F) {
 	for _, seed := range []string{
 		"", "0:", ":", "00:~", "1:\xff;", "2:\xff\xfe,", "4:1:\xff,}", "3:inf^", "3:nan^", "5:1e400^",
 		"30:123456789012345678901234567890#", "1000000000000:pwned!,", "7:1:1#0:~}", "0:~OK",
-		"16:1:a,1:1#1:a,1:2#}",
+		"16:1:a,1:1#1:a,1:2#}", "16:1:a,1:1#1:a;1:2#}", "8:1:\xff,1:1#}",
 	} {
 		f.Add([]byte(seed))
 	}
@@ -49,10 +49,7 @@ func FuzzLoads(f *testing.F) {
 
 		first, err := Dumps(v)
 		if err != nil {
-			if !strings.Contains(err.Error(), "not valid UTF-8") {
-				t.Fatalf("Dumps of a decoded value failed: %v", err)
-			}
-			return
+			t.Fatalf("Dumps of a decoded value failed: %v", err)
 		}
 		reversed, err := Loads(first)
 		if err != nil {

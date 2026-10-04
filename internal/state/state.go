@@ -437,14 +437,19 @@ func Copy(v any) any {
 	return v
 }
 
-// CopyMap returns a deep copy of a state dictionary. CopyMap(nil) is nil.
+// CopyMap returns a deep copy of a state dictionary, byte-string keys
+// included. CopyMap(nil) is nil.
 func CopyMap(m *Map) *Map {
 	if m == nil {
 		return nil
 	}
 	out := NewMap(m.Len())
 	for k, v := range m.All() {
-		out.Set(k, Copy(v))
+		if m.IsBytesKey(k) {
+			out.SetBytesKey(k, Copy(v))
+		} else {
+			out.Set(k, Copy(v))
+		}
 	}
 	return out
 }
@@ -479,8 +484,8 @@ func NewID() string {
 
 // Equal reports whether two state values are equal under Python's ==.
 //
-// Dictionaries compare without regard to key order and lists element by
-// element. Integers compare by value whether held as int, int64 or
+// Dictionaries compare without regard to key order, and a byte-string key
+// never equals a text key; lists compare element by element. Integers compare by value whether held as int, int64 or
 // *big.Int, and equal floats of the same value. Bytes never equal strings,
 // as in Python 3. Values of any other type are never equal.
 func Equal(a, b any) bool {
@@ -550,7 +555,7 @@ func Equal(a, b any) bool {
 		}
 		for k, v := range x.All() {
 			w, ok := y.Get(k)
-			if !ok || !Equal(v, w) {
+			if !ok || x.IsBytesKey(k) != y.IsBytesKey(k) || !Equal(v, w) {
 				return false
 			}
 		}

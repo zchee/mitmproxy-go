@@ -193,11 +193,12 @@ func parse(tag byte, data []byte, depth int) (any, error) {
 				return nil, err
 			}
 			var key string
+			var bytesKey bool
 			switch k := k.(type) {
 			case string:
 				key = k
 			case []byte:
-				key = string(k)
+				key, bytesKey = string(k), true
 			default:
 				return nil, syntaxErrorf("not a tnetstring: dictionary key is %T, not a string", k)
 			}
@@ -209,7 +210,14 @@ func parse(tag byte, data []byte, depth int) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			d.Set(key, v)
+			if i := d.find(key); i >= 0 && d.entries[i].bytesKey != bytesKey {
+				return nil, syntaxErrorf("not a tnetstring: dictionary has both a byte-string and a text key %q, which this decoder cannot hold apart", key)
+			}
+			if bytesKey {
+				d.SetBytesKey(key, v)
+			} else {
+				d.Set(key, v)
+			}
 			data = rest
 		}
 		return d, nil

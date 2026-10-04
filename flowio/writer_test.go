@@ -110,11 +110,7 @@ func rawFlowsOf(t *testing.T, b []byte) []*state.Map {
 			t.Fatal(err)
 		}
 		rest = r
-		m, err := fromTnetstring(v)
-		if err != nil {
-			t.Fatal(err)
-		}
-		out = append(out, m.(*state.Map))
+		out = append(out, fromTnetstring(v).(*state.Map))
 	}
 	return out
 }

@@ -8,6 +8,10 @@
 // deleting a key removes it from the order. Go maps iterate in random order,
 // so serialising a state dictionary with them would not reproduce the key
 // order mitmproxy writes into flow files.
+//
+// A key also records whether it is text or a byte string, the two key kinds
+// a flow file can hold, so that a key read as Python bytes is written back
+// as bytes. A key is identified by its bytes alone, whatever its kind.
 package omap
 
 import (
@@ -31,6 +35,8 @@ const indexThreshold = 8
 type entry[V any] struct {
 	key string
 	val V
+	// bytesKey marks a key that stands for a Python bytes object.
+	bytesKey bool
 }
 
 // Map is a string-keyed map that remembers insertion order.
@@ -83,14 +89,42 @@ func (m *Map[V]) buildIndex() {
 
 // Set associates v with k.
 //
-// A new key is appended at the end of the order. Overwriting an existing key
-// keeps its original position, as assignment to a Python dict does.
+// A new key is appended at the end of the order, as a text key. Overwriting
+// an existing key keeps its original position, as assignment to a Python
+// dict does, and its kind.
 func (m *Map[V]) Set(k string, v V) {
 	if i := m.find(k); i >= 0 {
 		m.entries[i].val = v
 		return
 	}
-	m.entries = append(m.entries, entry[V]{key: k, val: v})
+	m.add(entry[V]{key: k, val: v})
+}
+
+// SetBytesKey associates v with k and makes k a byte-string key, which need
+// not be valid UTF-8. Like [Map.Set], it appends a new key and keeps an
+// existing key in place.
+func (m *Map[V]) SetBytesKey(k string, v V) {
+	if i := m.find(k); i >= 0 {
+		m.entries[i].val = v
+		m.entries[i].bytesKey = true
+		return
+	}
+	m.add(entry[V]{key: k, val: v, bytesKey: true})
+}
+
+// IsBytesKey reports whether k is present as a byte-string key.
+func (m *Map[V]) IsBytesKey(k string) bool {
+	if m == nil {
+		return false
+	}
+	i := m.find(k)
+	return i >= 0 && m.entries[i].bytesKey
+}
+
+// add appends an entry whose key is not present yet.
+func (m *Map[V]) add(e entry[V]) {
+	k := e.key
+	m.entries = append(m.entries, e)
 	switch {
 	case m.index != nil:
 		m.index[k] = len(m.entries) - 1
@@ -200,8 +234,8 @@ func (m *Map[V]) Clone() *Map[V] {
 	}
 }
 
-// Equal reports whether m and o hold the same keys in the same order with
-// equal values.
+// Equal reports whether m and o hold the same keys, of the same kinds, in
+// the same order with equal values.
 //
 // Values are compared with [bytes.Equal] for []byte, element by element for
 // []any, recursively for nested *Map values, and with [reflect.DeepEqual]
@@ -216,7 +250,7 @@ func (m *Map[V]) Equal(o *Map[V]) bool {
 	}
 	for i := range m.entries {
 		a, b := m.entries[i], o.entries[i]
-		if a.key != b.key || !valueEqual(a.val, b.val) {
+		if a.key != b.key || a.bytesKey != b.bytesKey || !valueEqual(a.val, b.val) {
 			return false
 		}
 	}
@@ -257,15 +291,19 @@ func valueEqual(a, b any) bool {
 }
 
 // String formats m like a Python dict literal, for debugging and test
-// failure output.
+// failure output. Byte-string keys carry a b prefix.
 func (m *Map[V]) String() string {
 	var b bytes.Buffer
 	b.WriteByte('{')
-	for k, v := range m.All() {
+	for i := range m.Len() {
+		e := &m.entries[i]
 		if b.Len() > 1 {
 			b.WriteString(", ")
 		}
-		fmt.Fprintf(&b, "%q: %v", k, v)
+		if e.bytesKey {
+			b.WriteByte('b')
+		}
+		fmt.Fprintf(&b, "%q: %v", e.key, e.val)
 	}
 	b.WriteByte('}')
 	return b.String()

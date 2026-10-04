@@ -189,6 +189,8 @@ func TestEqual(t *testing.T) {
 		"success: big int compares with float exactly":  {a: new(big.Int).Add(two64(), big.NewInt(1)), b: 1.8446744073709552e19, want: false},
 		"success: big int differs from infinity":        {a: two64(), b: math.Inf(1), want: false},
 		"success: big int differs from str":             {a: two64(), b: "18446744073709551616", want: false},
+		"success: bytes key differs from text key":      {a: keyed(false), b: keyed(true), want: false},
+		"success: bytes keys equal":                     {a: keyed(true), b: keyed(true), want: true},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -264,5 +266,37 @@ func TestBigInt(t *testing.T) {
 	c.(*big.Int).SetInt64(1)
 	if o, _ := orig.Get("k"); o.(*big.Int).Cmp(two64()) != 0 {
 		t.Errorf("mutating the copied *big.Int changed the original to %v", o)
+	}
+}
+
+// keyed returns {"k": 1}, with a byte-string key when bytesKey is set.
+func keyed(bytesKey bool) *Map {
+	m := NewMap(1)
+	if bytesKey {
+		m.SetBytesKey("k", int64(1))
+	} else {
+		m.Set("k", int64(1))
+	}
+	return m
+}
+
+func TestCopyMapKeepsKeyKinds(t *testing.T) {
+	t.Parallel()
+
+	inner := NewMap(1)
+	inner.SetBytesKey("\xff", nil)
+	orig := NewMap(2)
+	orig.SetBytesKey("b", inner)
+	orig.Set("t", int64(1))
+
+	cp := CopyMap(orig)
+	if !cp.IsBytesKey("b") || cp.IsBytesKey("t") {
+		t.Errorf("CopyMap key kinds: b=%v t=%v, want b a byte-string key and t text", cp.IsBytesKey("b"), cp.IsBytesKey("t"))
+	}
+	if in, _ := cp.Get("b"); !in.(*Map).IsBytesKey("\xff") {
+		t.Error("CopyMap lost the kind of a nested byte-string key")
+	}
+	if !Equal(orig, cp) {
+		t.Errorf("CopyMap = %v, want a map equal to %v", cp, orig)
 	}
 }

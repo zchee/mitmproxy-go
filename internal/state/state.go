@@ -14,7 +14,10 @@ package state
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
+	"math"
+	"math/big"
 	"slices"
 	"time"
 
@@ -199,8 +202,11 @@ func AsBytes(v any) ([]byte, error) {
 	return b, nil
 }
 
-// AsInt converts a state value to an integer. Floats are truncated, as
-// Python's int() does when upstream's set_state coerces numeric fields.
+// AsInt converts a state value to an integer. Floats are truncated toward
+// zero, as Python's int() does when upstream's set_state coerces numeric
+// fields. Like int(), it refuses NaN and the infinities; a float whose
+// integer part does not fit in an int64 is refused too, since the models
+// hold integers as int64.
 func AsInt(v any) (int64, error) {
 	switch n := v.(type) {
 	case int64:
@@ -208,9 +214,24 @@ func AsInt(v any) (int64, error) {
 	case int:
 		return int64(n), nil
 	case float64:
-		return int64(n), nil
+		return floatToInt(n)
 	}
 	return 0, typeError("int", v)
+}
+
+// floatToInt truncates f toward zero. The bounds are exact powers of two:
+// float64(math.MaxInt64) rounds up to 2**63, which does not fit.
+func floatToInt(f float64) (int64, error) {
+	switch {
+	case math.IsNaN(f):
+		return 0, errors.New("cannot convert float NaN to integer")
+	case math.IsInf(f, 0):
+		return 0, errors.New("cannot convert float infinity to integer")
+	case f < -(1<<63) || f >= 1<<63:
+		i, _ := big.NewFloat(f).Int(nil)
+		return 0, fmt.Errorf("integer %s does not fit in 64 bits", i)
+	}
+	return int64(f), nil
 }
 
 // AsFloat converts a state value to a float. Integers are accepted, as

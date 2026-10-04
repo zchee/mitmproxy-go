@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"math"
 	"math/big"
 	"strings"
 	"testing"
@@ -164,11 +165,19 @@ func TestReaderErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	nanPort := state.CopyMap(rawFlows(t, v21Fixture)[0])
+	cc, _ := nanPort.Get("client_conn")
+	cc.(*state.Map).Set("peername", []any{"127.0.0.1", math.NaN()})
+
 	tests := map[string]struct {
 		data    []byte
 		wantErr string
 		is      error
 	}{
+		"error: NaN port": {
+			data:    encode(t, nanPort),
+			wantErr: "cannot convert float NaN to integer",
+		},
 		"error: HAR file": {
 			data: []byte(`{"log": {"entries": []}}`),
 			is:   ErrHARNotSupportedYet,

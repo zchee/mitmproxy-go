@@ -4,6 +4,7 @@
 package state
 
 import (
+	"math"
 	"regexp"
 	"testing"
 
@@ -178,6 +179,44 @@ func TestEqual(t *testing.T) {
 			t.Parallel()
 			if got := Equal(tt.a, tt.b); got != tt.want {
 				t.Errorf("Equal(%v, %v) = %v, want %v", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAsInt(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		in      any
+		want    int64
+		wantErr string
+	}{
+		"success: int64":                       {in: int64(-7), want: -7},
+		"success: int":                         {in: 7, want: 7},
+		"success: float truncates toward zero": {in: -3.9, want: -3},
+		"success: largest float below 2**63":   {in: math.Nextafter(1<<63, 0), want: 1<<63 - 1024},
+		"success: -2**63 fits":                 {in: -(1 << 63) * 1.0, want: math.MinInt64},
+		"error: NaN":                           {in: math.NaN(), wantErr: "cannot convert float NaN to integer"},
+		"error: positive infinity":             {in: math.Inf(1), wantErr: "cannot convert float infinity to integer"},
+		"error: negative infinity":             {in: math.Inf(-1), wantErr: "cannot convert float infinity to integer"},
+		"error: 2**63 does not fit":            {in: 1 << 63 * 1.0, wantErr: "integer 9223372036854775808 does not fit in 64 bits"},
+		"error: below -2**63":                  {in: -1e19, wantErr: "integer -10000000000000000000 does not fit in 64 bits"},
+		"error: str":                           {in: "1", wantErr: "expected int, got str"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got, err := AsInt(tt.in)
+			var gotErr string
+			if err != nil {
+				gotErr = err.Error()
+			}
+			if gotErr != tt.wantErr {
+				t.Fatalf("AsInt(%v) error = %q, want %q", tt.in, gotErr, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("AsInt(%v) = %d, want %d", tt.in, got, tt.want)
 			}
 		})
 	}

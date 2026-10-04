@@ -383,7 +383,11 @@ func TestRegisterRefused(t *testing.T) {
 		},
 		"error: uncomparable addon": {
 			addons:  func() []any { return []any{uncomparable{}} },
-			wantMsg: "uncomparable type",
+			wantMsg: "uncomparable value of type addon.uncomparable",
+		},
+		"error: struct value holding an uncomparable value": {
+			addons:  func() []any { return []any{holder{v: []string{"x"}}} },
+			wantMsg: "uncomparable value of type addon.holder",
 		},
 		"error: nil addon": {
 			addons:  func() []any { return []any{nil} },
@@ -1038,5 +1042,29 @@ func TestHookNamedMethodsThatAreNotHandlers(t *testing.T) {
 				t.Errorf("unexpected log records: %v", logs)
 			}
 		})
+	}
+}
+
+// holder is a comparable struct type whose values are uncomparable when
+// the interface field holds a slice: comparing two such values panics.
+type holder struct{ v any }
+
+// TestRemoveUncomparableValue removes a struct value that cannot be
+// compared while a comparable value of the same type is registered.
+func TestRemoveUncomparableValue(t *testing.T) {
+	e := newEnv(t)
+	kept := holder{v: 1}
+	if err := e.m.Add(t.Context(), kept); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	var err error
+	if r := capturePanic(func() { err = e.m.Remove(t.Context(), holder{v: []string{"x"}}) }); r != nil {
+		t.Fatalf("Remove panicked: %v", r)
+	}
+	if !errors.Is(err, ErrAddonManager) || !strings.Contains(err.Error(), "uncomparable value of type addon.holder") {
+		t.Errorf("Remove error = %v, want ErrAddonManager naming the uncomparable value", err)
+	}
+	if got := e.m.Get("holder"); got != kept || e.m.Len() != 1 {
+		t.Errorf("Get(holder) = %v, Len = %d; want the registered value kept", got, e.m.Len())
 	}
 }

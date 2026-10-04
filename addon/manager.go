@@ -248,12 +248,17 @@ func (m *Manager) Remove(ctx context.Context, addon any) error {
 		if addon == nil {
 			return fmt.Errorf("%w: cannot remove a nil addon", ErrAddonManager)
 		}
+		// A registered addon is comparable, so a value that is not cannot
+		// be one of them, and comparing it would panic.
+		if !reflect.ValueOf(addon).Comparable() {
+			return fmt.Errorf("%w: addon %s is an uncomparable value of type %T and cannot be registered", ErrAddonManager, addonName(addon), addon)
+		}
 		for a := range traverse(addon) {
 			name := addonName(a)
 			m.mu.Lock()
 			_, ok := m.lookup[name]
 			if ok {
-				if reflect.TypeOf(a).Comparable() {
+				if reflect.ValueOf(a).Comparable() {
 					m.chain = slices.DeleteFunc(m.chain, func(c any) bool { return c == a })
 				}
 				delete(m.lookup, name)
@@ -455,10 +460,13 @@ func checkAddon(a any) error {
 		return fmt.Errorf("%w: nil sub-addon", ErrAddonManager)
 	}
 	t := reflect.TypeOf(a)
-	if !t.Comparable() {
-		return fmt.Errorf("%w: addon %s has the uncomparable type %v; register a pointer", ErrAddonManager, addonName(a), t)
-	}
 	v := reflect.ValueOf(a)
+	// Value.Comparable also looks at the dynamic values of interface
+	// fields: a struct type is comparable, but comparing two values of it
+	// panics when such a field holds a slice, a map or a function.
+	if !v.Comparable() {
+		return fmt.Errorf("%w: addon %s is an uncomparable value of type %v; register a pointer", ErrAddonManager, addonName(a), t)
+	}
 	for _, s := range hookSpecs {
 		want := s.handler.Method(0)
 		got := v.MethodByName(want.Name)
@@ -523,7 +531,7 @@ func (l *Loader) AddCommand(name string, fn any, opts ...command.Option) error {
 
 // unregisterCommands removes the commands addon added through its Loader.
 func (m *Manager) unregisterCommands(addon any) {
-	if addon == nil || !reflect.TypeOf(addon).Comparable() {
+	if addon == nil || !reflect.ValueOf(addon).Comparable() {
 		return
 	}
 	m.mu.Lock()

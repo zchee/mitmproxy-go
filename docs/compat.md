@@ -98,7 +98,7 @@ Reproduced on purpose (compatibility, not differences):
 | Upstream | Go | Reason |
 |---|---|---|
 | `CommandManager.add` silently replaces a command that is already registered (`mitmproxy/command.py`). | `Register` refuses the name with `ErrDuplicateCommand`. | Two addons claiming one command are reported instead of one shadowing the other. |
-| Removing an addon leaves its commands registered (`mitmproxy/addonmanager.py`). | The addon manager unregisters the commands the addon added through its loader (`Manager.Unregister`). | Loading the addon again would otherwise be refused as a duplicate, and a removed addon's command would stay callable. |
+| Removing an addon leaves its commands registered (`mitmproxy/addonmanager.py`). | The addon manager unregisters the commands the addon and its sub-addons added through their loaders (`Manager.Unregister`); each addon of a tree has a loader of its own, so removing a sub-addon removes only the commands it added. | Loading the addon again would otherwise be refused as a duplicate, and a removed addon's command would stay callable. |
 | Command help is re-wrapped to 70 columns with `textwrap.wrap` (`mitmproxy/command.py`). | Help is stored as given, with surrounding whitespace removed. Not reproduced yet. | The wrapping is still to be ported; help shown by the web frontend differs until it is. |
 
 ## addon

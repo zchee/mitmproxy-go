@@ -219,12 +219,20 @@ func (m *Manager) register(ctx context.Context, addon any) error {
 		}
 	}
 
-	load := LoadHook{Loader: &Loader{m: m, addon: addon}}
-	if err := m.invokeTree(inSync(ctx, load.Name()), addon, load); err != nil {
-		// The addon is not registered, so nothing could remove it later;
-		// take back the commands its load added.
-		m.unregisterCommands(addon)
-		return err
+	// Each addon of the tree gets a Loader of its own, so that the
+	// commands it adds belong to it and leave with it when it alone is
+	// removed. The frame of a synchronous dispatch is never replaced, so
+	// every handler can be called with it.
+	ctx = inSync(ctx, LoadHook{}.Name())
+	for a := range traverse(addon) {
+		if _, err := (LoadHook{Loader: &Loader{m: m, addon: a}}).invoke(ctx, a); err != nil {
+			// The addon is not registered, so nothing could remove it
+			// later; take back the commands the loads added.
+			for a := range traverse(addon) {
+				m.unregisterCommands(a)
+			}
+			return err
+		}
 	}
 
 	// Traverse again: load may have changed the sub-addons, as it does in
@@ -524,10 +532,16 @@ func (l *Loader) AddOption(ctx context.Context, name string, typ options.Type, d
 
 // AddCommand adds a command to the command registry (mitmproxy's
 // Loader.add_command). See [command.Manager.Register] for the functions a
-// command may be. The command belongs to the addon being loaded and is
-// unregistered when that addon is removed. A name another addon's command
-// already has is refused with [command.ErrDuplicateCommand].
+// command may be. The command belongs to the addon whose load received l,
+// which may be a sub-addon, and is unregistered when that addon is
+// removed. A name another addon's command already has is refused with
+// [command.ErrDuplicateCommand].
 func (l *Loader) AddCommand(name string, fn any, opts ...command.Option) error {
+	// A sub-addon that its parent added during load was not checked at
+	// registration; one that cannot be compared cannot own commands.
+	if !reflect.ValueOf(l.addon).Comparable() {
+		return fmt.Errorf("%w: addon %s is an uncomparable value of type %T; register a pointer", ErrAddonManager, addonName(l.addon), l.addon)
+	}
 	if err := l.m.cmds.Register(name, fn, opts...); err != nil {
 		return err
 	}

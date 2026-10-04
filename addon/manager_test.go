@@ -1107,3 +1107,96 @@ func TestRegisterCallsAddonCodeUnlocked(t *testing.T) {
 		}
 	})
 }
+
+// growingParent adds the command "<name>.cmd" on load, and then appends
+// grow to its sub-addons, as a script loader does when it loads a script.
+type growingParent struct {
+	name     string
+	children []any
+	grow     any
+}
+
+func (p *growingParent) Name() string  { return p.name }
+func (p *growingParent) Addons() []any { return p.children }
+
+func (p *growingParent) Load(_ context.Context, l *Loader) error {
+	if err := l.AddCommand(p.name+".cmd", func() {}); err != nil {
+		return err
+	}
+	if p.grow != nil {
+		p.children = append(p.children, p.grow)
+	}
+	return nil
+}
+
+// loadingHolder is a struct value addon that adds a command on load.
+type loadingHolder struct{ v any }
+
+func (loadingHolder) Load(_ context.Context, l *Loader) error {
+	return l.AddCommand("holder.cmd", func() {})
+}
+
+// commandNames lists the registered commands in registration order.
+func commandNames(cmds *command.Manager) []string {
+	var names []string
+	for n := range cmds.Commands() {
+		names = append(names, n)
+	}
+	return names
+}
+
+// TestSubAddonCommandsFollowTheSubAddon checks that the commands a
+// sub-addon adds in its own load belong to it, not to the addon passed to
+// Add.
+func TestSubAddonCommandsFollowTheSubAddon(t *testing.T) {
+	tests := map[string]struct {
+		remove func(parent, child any) any
+		want   []string
+	}{
+		"success: removing the sub-addon removes its commands": {
+			remove: func(_, child any) any { return child },
+			want:   []string{"parent.cmd"},
+		},
+		"success: removing the parent removes both": {
+			remove: func(parent, _ any) any { return parent },
+			want:   nil,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t)
+			child := &growingParent{name: "child"}
+			parent := &growingParent{name: "parent", children: []any{child}}
+			if err := e.m.Add(t.Context(), parent); err != nil {
+				t.Fatalf("Add: %v", err)
+			}
+			if diff := cmp.Diff([]string{"parent.cmd", "child.cmd"}, commandNames(e.cmds)); diff != "" {
+				t.Fatalf("commands after Add (-want +got):\n%s", diff)
+			}
+			if err := e.m.Remove(t.Context(), tt.remove(parent, child)); err != nil {
+				t.Fatalf("Remove: %v", err)
+			}
+			if diff := cmp.Diff(tt.want, commandNames(e.cmds)); diff != "" {
+				t.Errorf("commands after Remove (-want +got):\n%s", diff)
+			}
+		})
+	}
+
+	t.Run("error: an uncomparable sub-addon added during load cannot own commands", func(t *testing.T) {
+		e := newEnv(t)
+		parent := &growingParent{name: "parent", grow: loadingHolder{v: []string{"x"}}}
+		var err error
+		if r := capturePanic(func() { err = e.m.Add(t.Context(), parent) }); r != nil {
+			t.Fatalf("Add panicked: %v", r)
+		}
+		if !errors.Is(err, ErrAddonManager) || !strings.Contains(err.Error(), "uncomparable value of type addon.loadingHolder") {
+			t.Errorf("Add error = %v, want ErrAddonManager naming the uncomparable sub-addon", err)
+		}
+		if names := commandNames(e.cmds); len(names) != 0 {
+			t.Errorf("commands left after the failed load: %v", names)
+		}
+		if e.m.Get("parent") != nil {
+			t.Error("the addon whose load failed is registered")
+		}
+	})
+}

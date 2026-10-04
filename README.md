@@ -22,7 +22,8 @@ binary yet. The three binaries `mitmdump`, `mitmproxy` and `mitmweb` will live u
 
 The work plan, with scope, architecture, package choices and acceptance criteria, is
 [docs/plans/mitmproxy-go-port.md](docs/plans/mitmproxy-go-port.md). Pinned dependencies and their upgrade paths are
-listed in [docs/dependencies.md](docs/dependencies.md).
+listed in [docs/dependencies.md](docs/dependencies.md). Where the port behaves differently from mitmproxy on purpose,
+and why, is listed in [docs/compat.md](docs/compat.md).
 
 ## Requirements
 

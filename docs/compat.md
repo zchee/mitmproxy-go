@@ -1,0 +1,175 @@
+# Behavioural differences from mitmproxy
+
+This page lists every place where the Go port behaves differently from upstream mitmproxy (commit `3368a0a`, see the
+README) on purpose. It is written for a reader who knows mitmproxy. Each table names the upstream behaviour with the
+file it lives in, the Go behaviour, and the reason. Paths without a prefix are relative to the upstream repository root
+(`mitmproxy/...`).
+
+The tables cover the code that exists today. The last section lists differences that are already decided for code that
+is not written yet. Where a package reproduces an upstream oddity on purpose, it is listed under "Reproduced on purpose"
+so that it is not mistaken for a port bug.
+
+Anything not listed here is meant to behave as upstream does; a difference that is not on this page is a bug.
+
+## connection
+
+No behavioural differences.
+
+## flow
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `Flow.kill()` clears `intercepted` but does not set the resume event, so a task in `wait_for_resume()` on a killed intercepted flow stays blocked until its connection is torn down (`mitmproxy/flow.py`). | `Kill` also releases every `WaitForResume` caller. | A blocked goroutine would leak; there is no event loop that tears it down with the connection. |
+| `Flow.set_state` stores `backup` as given, whatever its type (`mitmproxy/flow.py`). | `backup` must be a dictionary or null; anything else fails the load. | Flow state is decoded into typed Go fields, and a backup is used as a flow state later. |
+| Message content of TCP, UDP and WebSocket messages is stored as given by `from_state` (`mitmproxy/tcp.py`, `mitmproxy/udp.py`, `mitmproxy/websocket.py`). A WebSocket flow that mitmproxy migrated from a format older than 18 can hold text instead of bytes there, and keeps it when saved again; `~b` then raises `TypeError`. | Content must be bytes; a flow with text content fails to load. | Content is a `[]byte`. Rejecting the flow on load is clearer than failing later inside a filter. |
+
+## httpmsg
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `validate_headers` checks header names and Content-Length with `re` patterns ending in `$`, which also matches before a final newline, so a name `"Foo\n"` or a value `"42\n"` is accepted (`mitmproxy/net/http/validate.py`). | The patterns are anchored at the absolute end; a trailing newline is rejected. | These checks guard against request smuggling; the stricter reading is the safe one. |
+| `Request.constrain_encoding()` joins the kept codings in the iteration order of a Python set, which is not defined (`mitmproxy/http.py`). | The kept codings always appear in the order gzip, identity, deflate, br, zstd. | Deterministic output. |
+| Body text is decoded and encoded with Python's codec registry (`mitmproxy/http.py`, `mitmproxy/net/encoding.py`). | Character sets are resolved through the IANA and WHATWG indexes of `golang.org/x/text`, plus Python's own spellings (`cp1252`, `iso8859_7`, `euc_kr`, `cp932`, ...). Most labels resolve to the same encoding, but the two sets differ: `utf-7`, `mac_roman`, `hz`, `johab`, `big5hkscs`, `iso2022_kr` and `cp1006` are not supported, and WHATWG-only labels such as `x-user-defined`, `unicode-1-1-utf-8`, `x-mac-cyrillic` and `x-gbk` are accepted. An unsupported label behaves like an unknown one in upstream: `Text` fails and `SetText` falls back to UTF-8. | Go has no codec registry; `x/text` is the maintained set of encodings. |
+| Undecodable body bytes returned by `get_text(strict=False)` are surrogate escapes (U+DC80 to U+DCFF) in a `str` (`mitmproxy/http.py`). | `TextOrRaw` returns those bytes unchanged inside the Go string, which is then not valid UTF-8. `SetText` with such text writes the same bytes upstream's `surrogateescape` fallback writes. | A Go string cannot hold lone surrogates; raw bytes play their role. |
+| A non-ASCII host is converted with Python's `idna` codec, which implements IDNA 2003 with nameprep tables fixed at Unicode 3.2 (`mitmproxy/net/http/url.py`). | Conversion uses UTS #46 transitional processing from `golang.org/x/net/idna`, which maps characters as nameprep does (`ß` becomes `ss`) but follows current Unicode tables, so rare characters can map differently. | Go has no IDNA 2003 implementation; UTS #46 transitional processing is the closest one. |
+
+## tcp, udp
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `TCPMessage` and `UDPMessage` print the content as a Python bytes literal: `-> b'hello\n'` (`mitmproxy/tcp.py`, `mitmproxy/udp.py`). | `String` prints a Go-quoted string: `-> "hello\n"`. | Go syntax in Go output. The flow summaries (`<TCPFlow (3 messages)>`) are unchanged. |
+
+## websocket
+
+No differences beyond the message content rule listed under [flow](#flow).
+
+## dns
+
+No behavioural differences.
+
+## flowio and flowio/tnetstring
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `FlowReader` migrates every flow format from `(0, 11)` up to the current version 21 (`mitmproxy/io/compat.py`). | Formats 18 to 20 are migrated; older ones are rejected with upstream's message for an unknown version: `mitmproxy-go 0.1.0-dev cannot read files with flow format version 17.` | Scope decision for the port; porting the older migrations is a listed follow-up in the work plan. |
+| A file starting with `{` (after an optional UTF-8 byte order mark) is read as HAR (`mitmproxy/io/io.py`). | Such a file returns `ErrHARNotSupportedYet`. The byte order mark is skipped only before `{`, as upstream does. | HAR import is not written yet. |
+| Every tnetstring decoding error is reported as `Invalid data format.`; an empty file ends the stream silently (`mitmproxy/io/io.py`). | The codec's own message is returned, for example `not a tnetstring: truncated value`; an empty file ends the stream with `io.EOF`. | A precise message helps locate a corrupt file. |
+| Error texts name `mitmproxy <version>` (`mitmproxy/version.py`). | They name `mitmproxy-go <version>` (package `internal/version`). The hint `please update mitmproxy` is kept as upstream writes it. | The reader is a different program. |
+| The reader and writer are `FlowReader` and `FlowWriter` (`mitmproxy/io/io.py`). | They are `flowio.Reader` and `flowio.Writer`. | Go naming: the package name already says "flow". |
+| `tnetstring.loads` ignores bytes after the first value (`mitmproxy/io/tnetstring.py`). | `Loads` rejects trailing bytes. `Load`, which reads a stream, is unchanged. | A value with trailing data is malformed. |
+| Integers, floats and nested length prefixes are parsed with Python's `int()` and `float()`, which accept surrounding whitespace and `_` digit separators; dictionary keys may be any hashable value (`mitmproxy/io/tnetstring.py`). | Whitespace and `_` are rejected; dictionary keys must be text or byte strings. | mitmproxy never writes these forms; rejecting them keeps the parser simple and strict. |
+| Nesting and integer size are limited only by Python's recursion limit and its 4300-digit `int` conversion limit. | Nesting is limited to 1000 levels and integer literals to 4300 digits, both as explicit errors. | The same limits, made explicit so hostile input cannot exhaust the goroutine stack. |
+
+## filter and filter/regex
+
+| Upstream | Go | Reason |
+|---|---|---|
+| An operator that reads the request of an HTTP flow whose request is `None`, such as `~m`, `~d`, `~h` or `~t`, raises `AttributeError` (`mitmproxy/flowfilter.py`). | The operator returns false. | A filter must not crash the caller. Such flows only exist when built by hand; flow files always have a request. |
+| A filter object always has a compiled pattern. | A `*filter.Rex` built by hand instead of by `Parse` has no compiled pattern; `Match` returns false for it. | Go allows the zero value of an exported struct; it must not panic. |
+| Patterns run on Python's `re`, which has no time limit (`mitmproxy/flowfilter.py`). | Patterns run on Go's `regexp` (RE2) where it can express them, otherwise on `github.com/dlclark/regexp2`. A `regexp2` match that takes longer than 100 ms counts as no match and is logged as a warning. | RE2 cannot backtrack; the time limit bounds the backtracking fallback on hostile input. |
+| Byte patterns (`~b`, `~h`, `~m`, ...) see the input as Latin-1 bytes and fold case for ASCII only. | Both Go engines read the input as UTF-8 and fold case for all of Unicode. | Neither Go engine has a Latin-1 byte mode. |
+| `MITMPROXY_CASE_SENSITIVE_FILTERS` is read once, when `flowfilter` is imported (`mitmproxy/flowfilter.py`). | It is read on every `Parse` call. | No import-time state. |
+| `parse` raises `ValueError("Empty filter expression")` or `ValueError("Invalid filter expression: '<expr>'")` (`mitmproxy/flowfilter.py`). | `Parse` returns a `*ParseError` reading `empty filter expression` or `invalid filter expression "<expr>": <reason> at offset <n>`. | The error says where parsing failed. |
+
+Reproduced on purpose (compatibility, not differences):
+
+- Python's `$` (end of input or before a final newline) in filter patterns, by rewriting a `$` at the end of a pattern
+  for RE2 and sending other patterns to `regexp2`.
+- pyparsing's grammar as mitmproxy uses it: `a&b` is one bare word, expressions side by side inside parentheses are an
+  error, tabs are expanded before parsing, and an operator name must be followed by whitespace, a non-ASCII character
+  or the end of the input.
+- pyparsing 3.3's `QuotedString` unescaping bug: `\x41` stays the text `x41`, because the numeric-escape regex was
+  written in an f-string.
+- The 4300-digit limit of Python's `int()` for `~c` arguments.
+- `~b`, `~bq` and `~bs` search each WebSocket, TCP and UDP message on its own, as upstream's `FBod` does.
+
+## options
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `OptManager.update` applies values one by one; a value of the wrong type raises `TypeError` after the values before it were applied (`mitmproxy/optmanager.py`). | Every value is type-checked before any is applied; a type error changes nothing. Unknown names are still reported after the known ones were applied, as upstream does. | An update is all or nothing for type errors. |
+| `save` creates a new file with the default mode, normally readable by everyone (`mitmproxy/optmanager.py`). | `Save` creates a new file with mode 0600; an existing file keeps its permissions. | The file can hold `cert_passphrase`. |
+| `serialize` adds options that are not yet in the file in the iteration order of a Python set (`opts.keys()`), which is not defined (`mitmproxy/optmanager.py`). | They are added in registration order. Keys already in the file keep their order, as upstream does. | Deterministic output. |
+| A type error reads `Expected <class 'bool'> for name, but got <class 'int'>.` (`mitmproxy/utils/typecheck.py`). | It reads `Expected bool for name, but got int.`, with the option type names of `--options` and Go type names. | Python class reprs have no Go counterpart. |
+
+## command
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `CommandManager.add` silently replaces a command that is already registered (`mitmproxy/command.py`). | `Register` refuses the name with `ErrDuplicateCommand`. | Two addons claiming one command are reported instead of one shadowing the other. |
+| Removing an addon leaves its commands registered (`mitmproxy/addonmanager.py`). | The addon manager unregisters the commands the addon added through its loader (`Manager.Unregister`). | Loading the addon again would otherwise be refused as a duplicate, and a removed addon's command would stay callable. |
+| Command help is re-wrapped to 70 columns with `textwrap.wrap` (`mitmproxy/command.py`). | Help is stored as given, with surrounding whitespace removed. Not reproduced yet. | The wrapping is still to be ported; help shown by the web frontend differs until it is. |
+
+## addon
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Every hook runs on one asyncio event loop (`mitmproxy/addonmanager.py`). | Hooks run on the caller's goroutine under one dispatch lock. A command or option change made inside a hook re-enters through a dispatch frame carried in the `context.Context`. A frame used after the lock was released makes test binaries panic and returns `ErrStaleFrame` elsewhere. | Go mutexes are not re-entrant, and goroutines have no event loop to confine them. |
+| A blocking handler is an `async` function; invoking it from a synchronous context fails with `Async handler ... cannot be called from sync context` before the handler runs (`mitmproxy/addonmanager.py`). | A Go hook calls `addon.Concurrent` to run blocking work with the lock released. Called from a nested dispatch it returns an error wrapping `ErrSyncContext`; the code of the hook before the call has already run. | Go hooks are plain functions; the release point is explicit. |
+| Log records reach `add_log` through `call_soon_threadsafe`, an unbounded queue (`mitmproxy/log.py`). | The queue is bounded (`DefaultLogQueueSize`). When it is full a record is dropped, and one warning entry later says how many were dropped. | Logging never blocks, and an addon that logs from `add_log` cannot grow memory without bound. |
+
+## master
+
+No behavioural differences. `Master.Do` is the Go entry point for goroutines that are not running a hook (frontends,
+timers, script reloaders); upstream reaches the same state by scheduling work on its event loop.
+
+## internal/human
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `parse_size` returns a Python integer of any size (`mitmproxy/utils/human.py`). | `ParseSize` returns `ErrSizeRange` for a well-formed size that does not fit in an `int64`. | Sizes are `int64`. |
+| Digits and whitespace in `parse_size` follow Python's Unicode 16 tables. | They follow Go's Unicode 17 tables, so digits added in Unicode 17 are accepted. | The tables come with each runtime. |
+| `format_timestamp` and `format_timestamp_with_milli` raise for NaN, infinities and timestamps outside the years 1 to 9999. | The caller must pass a finite timestamp in that range; the output for other values is not defined. | Flow timestamps are always finite; no error return for a value that cannot occur. |
+| `format_address` falls back to `host:port` for an IPv6 zone containing `%`, because `ipaddress` rejects it. | Same output; Go's `netip` would accept such a zone, so `FormatAddress` checks for it. | Listed only to explain the extra check; the output matches. |
+
+## internal/strutil
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `bytes_to_escaped_str` post-processes its output with a regex whose repeated group keeps only its last repetition, so two or more backslashes before a quote (or, with `keep_spacing`, before `\n`, `\r` or `\t`) lose all but one escaped pair, and the text no longer decodes to the input (`mitmproxy/utils/strutils.py`). | `BytesToEscapedStr` keeps every backslash; its output always decodes back to the input. | Upstream bug. |
+| `always_bytes` and `always_str` convert between `str` and `bytes` (`mitmproxy/utils/strutils.py`). | Not ported: Go uses `[]byte(s)` and `string(b)`, and callers pick a text codec themselves. | Go has no union of text and bytes to normalise. |
+
+## internal/netutil
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `is_valid_host` matches each label with a `re` pattern ending in `$`, so a host ending in a newline is valid (`mitmproxy/net/check.py`). | `check.IsValidHost` rejects a trailing newline. | A newline is never part of a host name. |
+| `is_valid_host` encodes a `str` host with Python's IDNA 2003 codec (`mitmproxy/net/check.py`). | `check.IsValidHost` uses UTS #46 transitional processing, as described under [httpmsg](#httpmsg). | Go has no IDNA 2003 implementation. |
+| `encoding.decode` and `encode` fall back to Python's text codecs for names that are not content codings, such as `utf8`, and cache the last result (`mitmproxy/net/encoding.py`). | `encoding.Decode` and `Encode` accept only the content codings (`none`, `identity`, `gzip`, `deflate`, `deflateraw`, `br`, `zstd`); other names are errors. There is no result cache. | A text codec is not a Content-Encoding. |
+
+## Decided for code that is not written yet
+
+These differences are settled in the work plan ([docs/plans/mitmproxy-go-port.md](plans/mitmproxy-go-port.md): the
+sections "Starlark `concurrent` design", "Defaults set by the plan", the ADR and "Open items") and will appear in the
+tables above when the code lands.
+
+Scripting (Starlark instead of Python):
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Addon scripts are Python modules. | Scripts are Starlark modules. The `load` hook is named `on_load`, because `load` is a Starlark keyword; the other 45 hook names are unchanged. | No embedded Python interpreter. |
+| `@concurrent` decorates a handler. | Starlark has no decorators: a handler is written `def _request(flow): ...` followed by `request = concurrent(_request)` at the top level, and the hook name comes from that global name. | Starlark syntax. |
+| A `@concurrent` handler shares the module's globals and the live flow and connection objects. | Concurrent handlers run from a second, frozen instance of the module, so top-level code runs twice per load, writes to module globals from a handler fail, and the handler works on a copy of the flow that is merged back field by field. `client_conn` and `server_conn` are read-only snapshots. | A Starlark module that several goroutines call at once must be frozen; live connections are owned by their goroutine. |
+| `@concurrent` is accepted on any hook except `load` and `configure`. | `concurrent` is accepted only on the 23 hooks that take a single flow; on any other hook the script fails to load with upstream's message `Concurrent decorator not supported for '<name>' method.` | Only a flow can be copied and merged back. |
+| Calling a `@concurrent` handler directly returns a coroutine that is never awaited, so the handler does not run. | A direct call fails with `concurrent(<fn>) cannot be called directly; it runs only when invoked as a hook`. | Starlark has no coroutine value to return. |
+| `script.run` rejects a concurrent handler with `Async handler <hook> (<module repr>) cannot be called from sync context`. | The message names the script path where upstream prints the module's repr. | A Starlark module has no Python repr. |
+
+Options that only the Go port has (`testdata/options-go-only.txt`; not registered yet):
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `local_redirector_path` | str | `""` | Path to the local mode redirector; empty means it is downloaded into the configuration directory on first use. |
+| `otel_exporter_endpoint` | str | `""` | OTLP endpoint for OpenTelemetry traces and metrics; empty disables the exporter. |
+| `pprof_addr` | str | `""` | Loopback address that serves `net/http/pprof`; empty disables it. |
+| `script_max_steps` | int | `0` | Maximum Starlark execution steps per script hook call; 0 means no limit. |
+
+TLS and protocol layers:
+
+| Upstream | Go | Reason |
+|---|---|---|
+| pyOpenSSL can talk to servers that only offer finite-field DHE, SSLv3, RC4, 3DES or export cipher suites, and honours `@SECLEVEL=0`. | Go's `crypto/tls` supports none of these, so `ssl_insecure` interception of such legacy or IoT servers fails. `mitmproxy-dhparam.pem` is written only to keep the configuration directory layout and is never used. | The port uses the standard TLS stack. An OpenSSL- or utls-backed layer is a possible follow-up. |
+| — | Go processes ECH before the proxy sees the ClientHello, so without the origin's ECH key only the outer `public_name` SNI is visible. Clients that attempt ECH fail unless `strip_ech` (default true) removed the `ech` parameter from the HTTPS records they resolved through the proxy. | Behaviour of Go's `crypto/tls`. |
+| HTTP/2 windows are 2^31−1 and data is acknowledged at once (`mitmproxy/proxy/layers/http/_http_h2.py`, `_http2.py`). | Bounded windows: 100 concurrent streams, a 1 MiB initial stream window growing to 16 MiB, and a 128 MiB budget for granted windows; a stream's window is returned only when its data has been consumed. | Memory per connection stays bounded under slow readers. |
+| TLS connections are half-closed with a bare TCP FIN (`mitmproxy/proxy/layers/tls.py`). | The proxy sends `close_notify`, then FIN. | Go's `tls.Conn.CloseWrite` sends `close_notify`; peers see a clean TLS shutdown. |
+| Server connections are reused by address, TLS, `via` and transport protocol (`mitmproxy/proxy/layers/http/__init__.py`). | The SNI is part of the key as well. | A connection opened for one SNI is never reused for another. |
+| DTLS follows the `tls_version_*` options. | `pion/dtls` speaks DTLS 1.2 only: a version window that contains `TLS1_2` negotiates DTLS 1.2, any other window fails the DTLS connection. | Limit of the only maintained pure-Go DTLS implementation. |

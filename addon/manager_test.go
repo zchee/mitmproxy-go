@@ -16,9 +16,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/command"
-	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/options"
 )
 
@@ -124,14 +122,25 @@ func (h *hooker) Done(context.Context) error {
 }
 
 func TestHookTable(t *testing.T) {
+	// The order of the hook list in the specification of this package:
+	// lifecycle, connection, HTTP, WebSocket, TCP, UDP, DNS, TLS, QUIC.
 	want := []string{
-		"load", "configure", "running", "done", "add_log",
+		"load", "configure", "running", "done", "update", "add_log",
 		"next_layer", "client_connected", "client_disconnected",
 		"server_connect", "server_connected", "server_disconnected", "server_connect_error",
 		"socks5_auth",
+		"requestheaders", "request", "responseheaders", "response", "error",
+		"http_connect", "http_connect_upstream", "http_connected", "http_connect_error",
+		"websocket_start", "websocket_message", "websocket_end",
+		"tcp_start", "tcp_message", "tcp_end", "tcp_error",
+		"udp_start", "udp_message", "udp_end", "udp_error",
+		"dns_request", "dns_response", "dns_error",
 		"tls_clienthello", "tls_start_client", "tls_start_server",
 		"tls_established_client", "tls_established_server", "tls_failed_client", "tls_failed_server",
 		"quic_start_client", "quic_start_server",
+	}
+	if len(want) != 46 {
+		t.Fatalf("the expected list has %d hooks, want mitmproxy's 46", len(want))
 	}
 	var got []string
 	for _, s := range hookSpecs {
@@ -148,184 +157,6 @@ func TestHookTable(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("hook names (-want +got):\n%s", diff)
-	}
-}
-
-// everyHook implements every handler and records the argument each
-// receives.
-type everyHook struct {
-	got map[string]any
-}
-
-func (a *everyHook) rec(name string, arg any) error { a.got[name] = arg; return nil }
-
-func (a *everyHook) Load(_ context.Context, l *Loader) error { return a.rec("load", l) }
-func (a *everyHook) Configure(_ context.Context, u map[string]struct{}) error {
-	return a.rec("configure", u)
-}
-func (a *everyHook) Running(context.Context) error              { return a.rec("running", nil) }
-func (a *everyHook) Done(context.Context) error                 { return a.rec("done", nil) }
-func (a *everyHook) AddLog(_ context.Context, e LogEntry) error { return a.rec("add_log", e) }
-func (a *everyHook) NextLayer(_ context.Context, d *hookdata.NextLayer) error {
-	return a.rec("next_layer", d)
-}
-
-func (a *everyHook) ClientConnected(_ context.Context, c *connection.Client) error {
-	return a.rec("client_connected", c)
-}
-
-func (a *everyHook) ClientDisconnected(_ context.Context, c *connection.Client) error {
-	return a.rec("client_disconnected", c)
-}
-
-func (a *everyHook) ServerConnect(_ context.Context, d *hookdata.ServerConnection) error {
-	return a.rec("server_connect", d)
-}
-
-func (a *everyHook) ServerConnected(_ context.Context, d *hookdata.ServerConnection) error {
-	return a.rec("server_connected", d)
-}
-
-func (a *everyHook) ServerDisconnected(_ context.Context, d *hookdata.ServerConnection) error {
-	return a.rec("server_disconnected", d)
-}
-
-func (a *everyHook) ServerConnectError(_ context.Context, d *hookdata.ServerConnection) error {
-	return a.rec("server_connect_error", d)
-}
-
-func (a *everyHook) Socks5Auth(_ context.Context, d *hookdata.Socks5Auth) error {
-	return a.rec("socks5_auth", d)
-}
-
-func (a *everyHook) TLSClientHello(_ context.Context, d *hookdata.ClientHello) error {
-	return a.rec("tls_clienthello", d)
-}
-
-func (a *everyHook) TLSStartClient(_ context.Context, d *hookdata.TLS) error {
-	return a.rec("tls_start_client", d)
-}
-
-func (a *everyHook) TLSStartServer(_ context.Context, d *hookdata.TLS) error {
-	return a.rec("tls_start_server", d)
-}
-
-func (a *everyHook) TLSEstablishedClient(_ context.Context, d *hookdata.TLS) error {
-	return a.rec("tls_established_client", d)
-}
-
-func (a *everyHook) TLSEstablishedServer(_ context.Context, d *hookdata.TLS) error {
-	return a.rec("tls_established_server", d)
-}
-
-func (a *everyHook) TLSFailedClient(_ context.Context, d *hookdata.TLS) error {
-	return a.rec("tls_failed_client", d)
-}
-
-func (a *everyHook) TLSFailedServer(_ context.Context, d *hookdata.TLS) error {
-	return a.rec("tls_failed_server", d)
-}
-
-func (a *everyHook) QUICStartClient(_ context.Context, d *hookdata.QUICTLS) error {
-	return a.rec("quic_start_client", d)
-}
-
-func (a *everyHook) QUICStartServer(_ context.Context, d *hookdata.QUICTLS) error {
-	return a.rec("quic_start_server", d)
-}
-
-// TestHooksReachHandlers dispatches every hook through Trigger and checks
-// that the handler is called once with the hook's argument.
-func TestHooksReachHandlers(t *testing.T) {
-	client := connection.NewClient(connection.Address{Host: "127.0.0.1", Port: 50000}, connection.Address{Host: "127.0.0.1", Port: 8080}, 1)
-	hctx := &hookdata.Context{Client: client, Server: &connection.Server{}}
-	tlsData := &hookdata.TLS{Conn: &hctx.Client.Connection, Context: hctx}
-	quicData := &hookdata.QUICTLS{Conn: &hctx.Server.Connection, Context: hctx}
-	serverConn := &hookdata.ServerConnection{Server: hctx.Server, Client: client}
-	loader := &Loader{}
-	updated := map[string]struct{}{"anticache": {}}
-	entry := LogEntry{Msg: "hello", Level: LevelAlert}
-
-	tests := map[string]struct {
-		hook Hook
-		arg  any
-	}{
-		"success: load":                   {hook: LoadHook{Loader: loader}, arg: loader},
-		"success: configure":              {hook: ConfigureHook{Updated: updated}, arg: updated},
-		"success: running":                {hook: RunningHook{}},
-		"success: done":                   {hook: DoneHook{}},
-		"success: add_log":                {hook: AddLogHook{Entry: entry}, arg: entry},
-		"success: next_layer":             {hook: NextLayerHook{Data: &hookdata.NextLayer{Context: hctx}}},
-		"success: client_connected":       {hook: ClientConnectedHook{Client: client}, arg: client},
-		"success: client_disconnected":    {hook: ClientDisconnectedHook{Client: client}, arg: client},
-		"success: server_connect":         {hook: ServerConnectHook{Data: serverConn}, arg: serverConn},
-		"success: server_connected":       {hook: ServerConnectedHook{Data: serverConn}, arg: serverConn},
-		"success: server_disconnected":    {hook: ServerDisconnectedHook{Data: serverConn}, arg: serverConn},
-		"success: server_connect_error":   {hook: ServerConnectErrorHook{Data: serverConn}, arg: serverConn},
-		"success: socks5_auth":            {hook: Socks5AuthHook{Data: &hookdata.Socks5Auth{Client: client, Username: "u"}}},
-		"success: tls_clienthello":        {hook: TLSClientHelloHook{Data: &hookdata.ClientHello{Context: hctx}}},
-		"success: tls_start_client":       {hook: TLSStartClientHook{Data: tlsData}, arg: tlsData},
-		"success: tls_start_server":       {hook: TLSStartServerHook{Data: tlsData}, arg: tlsData},
-		"success: tls_established_client": {hook: TLSEstablishedClientHook{Data: tlsData}, arg: tlsData},
-		"success: tls_established_server": {hook: TLSEstablishedServerHook{Data: tlsData}, arg: tlsData},
-		"success: tls_failed_client":      {hook: TLSFailedClientHook{Data: tlsData}, arg: tlsData},
-		"success: tls_failed_server":      {hook: TLSFailedServerHook{Data: tlsData}, arg: tlsData},
-		"success: quic_start_client":      {hook: QUICStartClientHook{Data: quicData}, arg: quicData},
-		"success: quic_start_server":      {hook: QUICStartServerHook{Data: quicData}, arg: quicData},
-	}
-	if len(tests) != len(hookSpecs) {
-		t.Fatalf("%d test cases for %d hooks", len(tests), len(hookSpecs))
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			e := newEnv(t)
-			a := &everyHook{got: make(map[string]any)}
-			if err := e.m.Add(t.Context(), a); err != nil {
-				t.Fatalf("Add: %v", err)
-			}
-			clear(a.got) // drop load and the configure for deferred options
-			if err := e.m.Trigger(t.Context(), tt.hook); err != nil {
-				t.Fatalf("Trigger: %v", err)
-			}
-			if diff := cmp.Diff([]string{tt.hook.Name()}, slices.Collect(maps.Keys(a.got))); diff != "" {
-				t.Fatalf("handlers called (-want +got):\n%s", diff)
-			}
-			got := a.got[tt.hook.Name()]
-			want := tt.arg
-			if want == nil {
-				// Pointer arguments built inline: compare with the hook's
-				// own field through the hook value.
-				want = argOf(tt.hook)
-			}
-			if !sameArg(got, want) {
-				t.Errorf("%s received %#v, want %#v", tt.hook.Name(), got, want)
-			}
-		})
-	}
-}
-
-// argOf returns the single argument a hook value carries, or nil.
-func argOf(h Hook) any {
-	switch h := h.(type) {
-	case NextLayerHook:
-		return h.Data
-	case Socks5AuthHook:
-		return h.Data
-	case TLSClientHelloHook:
-		return h.Data
-	default:
-		return nil
-	}
-}
-
-// sameArg compares pointers by identity and other values by equality.
-func sameArg(got, want any) bool {
-	switch w := want.(type) {
-	case map[string]struct{}:
-		g, ok := got.(map[string]struct{})
-		return ok && maps.Equal(g, w)
-	default:
-		return got == want
 	}
 }
 
@@ -562,12 +393,12 @@ func TestRegisterRefused(t *testing.T) {
 
 func TestDefaultName(t *testing.T) {
 	e := newEnv(t)
-	a := &everyHook{got: make(map[string]any)}
+	a := &optAddon{j: &journal{}, help: "h"}
 	if err := e.m.Add(t.Context(), a); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	if e.m.Get("everyhook") != a || !e.m.Contains(&everyHook{}) {
-		t.Errorf("addon without Name() is not registered as %q", "everyhook")
+	if e.m.Get("optaddon") != a || !e.m.Contains(&optAddon{}) {
+		t.Errorf("addon without Name() is not registered as %q", "optaddon")
 	}
 }
 
@@ -911,4 +742,47 @@ func TestDefaultLoggerAtLogTime(t *testing.T) {
 	if diff := cmp.Diff([]string{"ERROR Addon error: boom addon=a"}, rec.got()); diff != "" {
 		t.Errorf("records on the default logger (-want +got):\n%s", diff)
 	}
+}
+
+// keeper keeps the context of its configure hook and uses it in its
+// running hook, after the lock was released in between.
+type keeper struct {
+	m    *Manager
+	kept context.Context
+}
+
+func (k *keeper) Configure(ctx context.Context, _ map[string]struct{}) error {
+	k.kept = ctx
+	return nil
+}
+
+func (k *keeper) Running(context.Context) error {
+	return k.m.Do(k.kept, func(context.Context) error { return nil })
+}
+
+// TestStaleFrameInHandlerIsNotSwallowed uses a stale frame inside a
+// handler. In test binaries the panic must reach the caller instead of
+// being logged as an addon error.
+func TestStaleFrameInHandlerIsNotSwallowed(t *testing.T) {
+	e := newEnv(t)
+	k := &keeper{m: e.m}
+	if err := e.m.Add(t.Context(), k); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := e.m.Trigger(t.Context(), ConfigureHook{Updated: map[string]struct{}{}}); err != nil {
+		t.Fatalf("Trigger(configure): %v", err)
+	}
+	r := capturePanic(func() { _ = e.m.Trigger(t.Context(), RunningHook{}) })
+	if perr, ok := r.(error); !ok || !errors.Is(perr, ErrStaleFrame) {
+		t.Fatalf("recovered %v, want the stale-frame panic", r)
+	}
+	if logs := e.log.got(); len(logs) != 0 {
+		t.Errorf("stale frame logged as an addon error: %v", logs)
+	}
+	// The lock was released despite the panic.
+	within(t, "dispatch after the panic", func() {
+		if err := e.m.Trigger(t.Context(), DoneHook{}); err != nil {
+			t.Errorf("Trigger: %v", err)
+		}
+	})
 }

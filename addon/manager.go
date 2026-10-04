@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/zchee/mitmproxy-go/command"
+	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/options"
 )
 
@@ -288,6 +289,36 @@ func (m *Manager) Clear(ctx context.Context) error {
 	})
 }
 
+// Hook runs hook on every addon in the chain like [Manager.Trigger], and
+// then, when hook carries a flow, runs the update hook with that flow, in
+// the same hold of the dispatch lock (mitmproxy's handle_lifecycle). The
+// proxy calls Hook for every lifecycle event of a connection or flow on
+// the goroutine that handles it.
+//
+// The handlers of both hooks run in the caller's hold of the lock, not in a
+// nested one, so a flow hook dispatched at the outermost level may call
+// [Concurrent]. Update runs after a handler error, which is logged, and
+// after a handler halted the first hook with [ErrAddonHalt], as in
+// mitmproxy. It is skipped only when the first hook's dispatch fails: a
+// handler returned an [*options.OptionsError], or ctx carries a stale
+// frame.
+func (m *Manager) Hook(ctx context.Context, hook Hook) error {
+	return m.d.do(ctx, func(ctx context.Context) error {
+		if err := m.trigger(ctx, hook); err != nil {
+			return err
+		}
+		fh, ok := hook.(flowHook)
+		if !ok {
+			return nil
+		}
+		f := fh.flowArg()
+		if f == nil {
+			return nil
+		}
+		return m.trigger(ctx, UpdateHook{Flows: []flow.Flow{f}})
+	})
+}
+
 // Trigger runs hook on every addon in the chain, each addon before its
 // sub-addons, under the dispatch lock.
 //
@@ -298,23 +329,37 @@ func (m *Manager) Clear(ctx context.Context) error {
 // [*options.OptionsError] stops the hook and is returned, so that an option
 // change that a configure handler rejects is rolled back. Trigger returns
 // an error otherwise only when ctx carries a stale dispatch frame.
+//
+// A handler that presents a stale frame, for example a context it kept
+// from an earlier hook, is not treated as an ordinary failing handler: the
+// panic test binaries raise for it is not recovered, so the misuse fails
+// the test. Other builds log the [ErrStaleFrame] error like any handler
+// error.
 func (m *Manager) Trigger(ctx context.Context, hook Hook) error {
 	return m.d.do(ctx, func(ctx context.Context) error {
-		for _, a := range m.Chain() {
-			err := m.safeInvokeTree(ctx, a, hook)
-			if err == nil {
-				continue
-			}
-			if errors.Is(err, ErrAddonHalt) {
-				return nil
-			}
-			if _, ok := errors.AsType[*options.OptionsError](err); ok {
-				return err
-			}
-			m.log().ErrorContext(ctx, "Addon error: "+err.Error(), "addon", addonName(a), "hook", hook.Name())
-		}
-		return nil
+		return m.trigger(ctx, hook)
 	})
+}
+
+// trigger is Trigger for a caller that holds the dispatch lock through the
+// frame in ctx. It runs the handlers in that frame instead of a nested one,
+// so that handlers of a hook dispatched at the outermost level may call
+// [Concurrent].
+func (m *Manager) trigger(ctx context.Context, hook Hook) error {
+	for _, a := range m.Chain() {
+		err := m.safeInvokeTree(ctx, a, hook)
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, ErrAddonHalt) {
+			return nil
+		}
+		if _, ok := errors.AsType[*options.OptionsError](err); ok {
+			return err
+		}
+		m.log().ErrorContext(ctx, "Addon error: "+err.Error(), "addon", addonName(a), "hook", hook.Name())
+	}
+	return nil
 }
 
 // panicError is a recovered handler panic.
@@ -329,6 +374,9 @@ func (e *panicError) Error() string { return fmt.Sprintf("panic: %v\n%s", e.valu
 func (m *Manager) safeInvokeTree(ctx context.Context, addon any, hook Hook) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
+			if e, ok := r.(error); ok && errors.Is(e, ErrStaleFrame) {
+				panic(r)
+			}
 			err = &panicError{value: r, stack: debug.Stack()}
 		}
 	}()

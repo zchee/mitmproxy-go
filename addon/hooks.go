@@ -9,6 +9,7 @@ import (
 
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/connection"
+	"github.com/zchee/mitmproxy-go/flow"
 )
 
 // Hook is an event dispatched to addons. Each hook is a struct type of this
@@ -45,6 +46,11 @@ type RunningHook struct{}
 // DoneHook is mitmproxy's done hook: it runs when an addon is removed or
 // the proxy shuts down, and is the last hook the addon receives.
 type DoneHook struct{}
+
+// UpdateHook is mitmproxy's update hook: one or more flows have been
+// changed, usually by another addon. [Manager.Hook] fires it after every
+// flow hook, with that hook's flow.
+type UpdateHook struct{ Flows []flow.Flow }
 
 // AddLogHook is mitmproxy's deprecated add_log hook: it runs for every log
 // entry. A handler must not log, or each entry it logs feeds the hook again.
@@ -83,6 +89,101 @@ type ServerConnectErrorHook struct{ Data *hookdata.ServerConnection }
 // Socks5AuthHook is mitmproxy's socks5_auth hook: a SOCKS5 client sent
 // credentials, which a handler accepts by setting Data.Valid.
 type Socks5AuthHook struct{ Data *hookdata.Socks5Auth }
+
+// RequestHeadersHook is mitmproxy's requestheaders hook: HTTP request headers
+// were successfully read. At this point, the body is empty.
+type RequestHeadersHook struct{ Flow *flow.HTTPFlow }
+
+// RequestHook is mitmproxy's request hook: the full HTTP request has been
+// read.
+type RequestHook struct{ Flow *flow.HTTPFlow }
+
+// ResponseHeadersHook is mitmproxy's responseheaders hook: HTTP response
+// headers were successfully read. At this point, the body is empty.
+type ResponseHeadersHook struct{ Flow *flow.HTTPFlow }
+
+// ResponseHook is mitmproxy's response hook: the full HTTP response has been
+// read.
+type ResponseHook struct{ Flow *flow.HTTPFlow }
+
+// ErrorHook is mitmproxy's error hook: an HTTP error has occurred, such as an
+// invalid server response or an interrupted connection. This is distinct from
+// a valid server HTTP error response, which is simply a response with an HTTP
+// error code. Every flow receives either error or response, not both.
+type ErrorHook struct{ Flow *flow.HTTPFlow }
+
+// HTTPConnectHook is mitmproxy's http_connect hook: an HTTP CONNECT request
+// was received. A handler may set the flow's response to answer the request
+// itself; a non-2xx response makes the proxy close the connection.
+type HTTPConnectHook struct{ Flow *flow.HTTPFlow }
+
+// HTTPConnectUpstreamHook is mitmproxy's http_connect_upstream hook: an HTTP
+// CONNECT request is about to be sent to an upstream proxy. A handler may add
+// headers to it, for example for authentication.
+type HTTPConnectUpstreamHook struct{ Flow *flow.HTTPFlow }
+
+// HTTPConnectedHook is mitmproxy's http_connected hook: an HTTP CONNECT tunnel
+// was established.
+type HTTPConnectedHook struct{ Flow *flow.HTTPFlow }
+
+// HTTPConnectErrorHook is mitmproxy's http_connect_error hook: an HTTP CONNECT
+// tunnel failed, for example because the upstream proxy refused it or the
+// server could not be reached.
+type HTTPConnectErrorHook struct{ Flow *flow.HTTPFlow }
+
+// WebSocketStartHook is mitmproxy's websocket_start hook: a WebSocket
+// connection has commenced.
+type WebSocketStartHook struct{ Flow *flow.HTTPFlow }
+
+// WebSocketMessageHook is mitmproxy's websocket_message hook: a WebSocket
+// message was received from the client or the server; it is the last message
+// in the flow's WebSocket messages. A handler may change it or drop it.
+type WebSocketMessageHook struct{ Flow *flow.HTTPFlow }
+
+// WebSocketEndHook is mitmproxy's websocket_end hook: a WebSocket connection
+// has ended. The flow's WebSocket data holds the close code and reason.
+type WebSocketEndHook struct{ Flow *flow.HTTPFlow }
+
+// TCPStartHook is mitmproxy's tcp_start hook: a TCP connection has started.
+type TCPStartHook struct{ Flow *flow.TCPFlow }
+
+// TCPMessageHook is mitmproxy's tcp_message hook: a TCP connection has
+// received a message; it is the last message in the flow. A handler may change
+// it.
+type TCPMessageHook struct{ Flow *flow.TCPFlow }
+
+// TCPEndHook is mitmproxy's tcp_end hook: a TCP connection has ended.
+type TCPEndHook struct{ Flow *flow.TCPFlow }
+
+// TCPErrorHook is mitmproxy's tcp_error hook: a TCP error has occurred. Every
+// TCP flow receives either tcp_error or tcp_end, not both.
+type TCPErrorHook struct{ Flow *flow.TCPFlow }
+
+// UDPStartHook is mitmproxy's udp_start hook: a UDP connection has started.
+type UDPStartHook struct{ Flow *flow.UDPFlow }
+
+// UDPMessageHook is mitmproxy's udp_message hook: a UDP connection has
+// received a message; it is the last message in the flow. A handler may change
+// it.
+type UDPMessageHook struct{ Flow *flow.UDPFlow }
+
+// UDPEndHook is mitmproxy's udp_end hook: a UDP connection has ended.
+type UDPEndHook struct{ Flow *flow.UDPFlow }
+
+// UDPErrorHook is mitmproxy's udp_error hook: a UDP error has occurred. Every
+// UDP flow receives either udp_error or udp_end, not both.
+type UDPErrorHook struct{ Flow *flow.UDPFlow }
+
+// DNSRequestHook is mitmproxy's dns_request hook: a DNS query has been
+// received.
+type DNSRequestHook struct{ Flow *flow.DNSFlow }
+
+// DNSResponseHook is mitmproxy's dns_response hook: a DNS response has been
+// received or set.
+type DNSResponseHook struct{ Flow *flow.DNSFlow }
+
+// DNSErrorHook is mitmproxy's dns_error hook: a DNS error has occurred.
+type DNSErrorHook struct{ Flow *flow.DNSFlow }
 
 // TLSClientHelloHook is mitmproxy's tls_clienthello hook: a client's TLS
 // ClientHello has been received.
@@ -140,6 +241,11 @@ type DoneHandler interface {
 	Done(ctx context.Context) error
 }
 
+// UpdateHandler receives the update hook.
+type UpdateHandler interface {
+	Update(ctx context.Context, flows []flow.Flow) error
+}
+
 // AddLogHandler receives the add_log hook. The hook is deprecated, as in
 // mitmproxy; install a [log/slog.Handler] instead.
 type AddLogHandler interface {
@@ -184,6 +290,121 @@ type ServerConnectErrorHandler interface {
 // Socks5AuthHandler receives the socks5_auth hook.
 type Socks5AuthHandler interface {
 	Socks5Auth(ctx context.Context, data *hookdata.Socks5Auth) error
+}
+
+// RequestHeadersHandler receives the requestheaders hook.
+type RequestHeadersHandler interface {
+	RequestHeaders(ctx context.Context, f *flow.HTTPFlow) error
+}
+
+// RequestHandler receives the request hook.
+type RequestHandler interface {
+	Request(ctx context.Context, f *flow.HTTPFlow) error
+}
+
+// ResponseHeadersHandler receives the responseheaders hook.
+type ResponseHeadersHandler interface {
+	ResponseHeaders(ctx context.Context, f *flow.HTTPFlow) error
+}
+
+// ResponseHandler receives the response hook.
+type ResponseHandler interface {
+	Response(ctx context.Context, f *flow.HTTPFlow) error
+}
+
+// ErrorHandler receives the error hook.
+type ErrorHandler interface {
+	Error(ctx context.Context, f *flow.HTTPFlow) error
+}
+
+// HTTPConnectHandler receives the http_connect hook.
+type HTTPConnectHandler interface {
+	HTTPConnect(ctx context.Context, f *flow.HTTPFlow) error
+}
+
+// HTTPConnectUpstreamHandler receives the http_connect_upstream hook.
+type HTTPConnectUpstreamHandler interface {
+	HTTPConnectUpstream(ctx context.Context, f *flow.HTTPFlow) error
+}
+
+// HTTPConnectedHandler receives the http_connected hook.
+type HTTPConnectedHandler interface {
+	HTTPConnected(ctx context.Context, f *flow.HTTPFlow) error
+}
+
+// HTTPConnectErrorHandler receives the http_connect_error hook.
+type HTTPConnectErrorHandler interface {
+	HTTPConnectError(ctx context.Context, f *flow.HTTPFlow) error
+}
+
+// WebSocketStartHandler receives the websocket_start hook.
+type WebSocketStartHandler interface {
+	WebSocketStart(ctx context.Context, f *flow.HTTPFlow) error
+}
+
+// WebSocketMessageHandler receives the websocket_message hook.
+type WebSocketMessageHandler interface {
+	WebSocketMessage(ctx context.Context, f *flow.HTTPFlow) error
+}
+
+// WebSocketEndHandler receives the websocket_end hook.
+type WebSocketEndHandler interface {
+	WebSocketEnd(ctx context.Context, f *flow.HTTPFlow) error
+}
+
+// TCPStartHandler receives the tcp_start hook.
+type TCPStartHandler interface {
+	TCPStart(ctx context.Context, f *flow.TCPFlow) error
+}
+
+// TCPMessageHandler receives the tcp_message hook.
+type TCPMessageHandler interface {
+	TCPMessage(ctx context.Context, f *flow.TCPFlow) error
+}
+
+// TCPEndHandler receives the tcp_end hook.
+type TCPEndHandler interface {
+	TCPEnd(ctx context.Context, f *flow.TCPFlow) error
+}
+
+// TCPErrorHandler receives the tcp_error hook.
+type TCPErrorHandler interface {
+	TCPError(ctx context.Context, f *flow.TCPFlow) error
+}
+
+// UDPStartHandler receives the udp_start hook.
+type UDPStartHandler interface {
+	UDPStart(ctx context.Context, f *flow.UDPFlow) error
+}
+
+// UDPMessageHandler receives the udp_message hook.
+type UDPMessageHandler interface {
+	UDPMessage(ctx context.Context, f *flow.UDPFlow) error
+}
+
+// UDPEndHandler receives the udp_end hook.
+type UDPEndHandler interface {
+	UDPEnd(ctx context.Context, f *flow.UDPFlow) error
+}
+
+// UDPErrorHandler receives the udp_error hook.
+type UDPErrorHandler interface {
+	UDPError(ctx context.Context, f *flow.UDPFlow) error
+}
+
+// DNSRequestHandler receives the dns_request hook.
+type DNSRequestHandler interface {
+	DNSRequest(ctx context.Context, f *flow.DNSFlow) error
+}
+
+// DNSResponseHandler receives the dns_response hook.
+type DNSResponseHandler interface {
+	DNSResponse(ctx context.Context, f *flow.DNSFlow) error
+}
+
+// DNSErrorHandler receives the dns_error hook.
+type DNSErrorHandler interface {
+	DNSError(ctx context.Context, f *flow.DNSFlow) error
 }
 
 // TLSClientHelloHandler receives the tls_clienthello hook.
@@ -244,6 +465,9 @@ func (RunningHook) Name() string { return "running" }
 func (DoneHook) Name() string { return "done" }
 
 // Name implements [Hook].
+func (UpdateHook) Name() string { return "update" }
+
+// Name implements [Hook].
 func (AddLogHook) Name() string { return "add_log" }
 
 // Name implements [Hook].
@@ -269,6 +493,75 @@ func (ServerConnectErrorHook) Name() string { return "server_connect_error" }
 
 // Name implements [Hook].
 func (Socks5AuthHook) Name() string { return "socks5_auth" }
+
+// Name implements [Hook].
+func (RequestHeadersHook) Name() string { return "requestheaders" }
+
+// Name implements [Hook].
+func (RequestHook) Name() string { return "request" }
+
+// Name implements [Hook].
+func (ResponseHeadersHook) Name() string { return "responseheaders" }
+
+// Name implements [Hook].
+func (ResponseHook) Name() string { return "response" }
+
+// Name implements [Hook].
+func (ErrorHook) Name() string { return "error" }
+
+// Name implements [Hook].
+func (HTTPConnectHook) Name() string { return "http_connect" }
+
+// Name implements [Hook].
+func (HTTPConnectUpstreamHook) Name() string { return "http_connect_upstream" }
+
+// Name implements [Hook].
+func (HTTPConnectedHook) Name() string { return "http_connected" }
+
+// Name implements [Hook].
+func (HTTPConnectErrorHook) Name() string { return "http_connect_error" }
+
+// Name implements [Hook].
+func (WebSocketStartHook) Name() string { return "websocket_start" }
+
+// Name implements [Hook].
+func (WebSocketMessageHook) Name() string { return "websocket_message" }
+
+// Name implements [Hook].
+func (WebSocketEndHook) Name() string { return "websocket_end" }
+
+// Name implements [Hook].
+func (TCPStartHook) Name() string { return "tcp_start" }
+
+// Name implements [Hook].
+func (TCPMessageHook) Name() string { return "tcp_message" }
+
+// Name implements [Hook].
+func (TCPEndHook) Name() string { return "tcp_end" }
+
+// Name implements [Hook].
+func (TCPErrorHook) Name() string { return "tcp_error" }
+
+// Name implements [Hook].
+func (UDPStartHook) Name() string { return "udp_start" }
+
+// Name implements [Hook].
+func (UDPMessageHook) Name() string { return "udp_message" }
+
+// Name implements [Hook].
+func (UDPEndHook) Name() string { return "udp_end" }
+
+// Name implements [Hook].
+func (UDPErrorHook) Name() string { return "udp_error" }
+
+// Name implements [Hook].
+func (DNSRequestHook) Name() string { return "dns_request" }
+
+// Name implements [Hook].
+func (DNSResponseHook) Name() string { return "dns_response" }
+
+// Name implements [Hook].
+func (DNSErrorHook) Name() string { return "dns_error" }
 
 // Name implements [Hook].
 func (TLSClientHelloHook) Name() string { return "tls_clienthello" }
@@ -327,6 +620,14 @@ func (DoneHook) invoke(ctx context.Context, a any) (bool, error) {
 		return false, nil
 	}
 	return true, x.Done(ctx)
+}
+
+func (h UpdateHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(UpdateHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.Update(ctx, h.Flows)
 }
 
 func (h AddLogHook) invoke(ctx context.Context, a any) (bool, error) {
@@ -399,6 +700,190 @@ func (h Socks5AuthHook) invoke(ctx context.Context, a any) (bool, error) {
 		return false, nil
 	}
 	return true, x.Socks5Auth(ctx, h.Data)
+}
+
+func (h RequestHeadersHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(RequestHeadersHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.RequestHeaders(ctx, h.Flow)
+}
+
+func (h RequestHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(RequestHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.Request(ctx, h.Flow)
+}
+
+func (h ResponseHeadersHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(ResponseHeadersHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.ResponseHeaders(ctx, h.Flow)
+}
+
+func (h ResponseHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(ResponseHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.Response(ctx, h.Flow)
+}
+
+func (h ErrorHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(ErrorHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.Error(ctx, h.Flow)
+}
+
+func (h HTTPConnectHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(HTTPConnectHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.HTTPConnect(ctx, h.Flow)
+}
+
+func (h HTTPConnectUpstreamHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(HTTPConnectUpstreamHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.HTTPConnectUpstream(ctx, h.Flow)
+}
+
+func (h HTTPConnectedHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(HTTPConnectedHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.HTTPConnected(ctx, h.Flow)
+}
+
+func (h HTTPConnectErrorHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(HTTPConnectErrorHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.HTTPConnectError(ctx, h.Flow)
+}
+
+func (h WebSocketStartHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(WebSocketStartHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.WebSocketStart(ctx, h.Flow)
+}
+
+func (h WebSocketMessageHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(WebSocketMessageHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.WebSocketMessage(ctx, h.Flow)
+}
+
+func (h WebSocketEndHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(WebSocketEndHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.WebSocketEnd(ctx, h.Flow)
+}
+
+func (h TCPStartHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(TCPStartHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.TCPStart(ctx, h.Flow)
+}
+
+func (h TCPMessageHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(TCPMessageHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.TCPMessage(ctx, h.Flow)
+}
+
+func (h TCPEndHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(TCPEndHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.TCPEnd(ctx, h.Flow)
+}
+
+func (h TCPErrorHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(TCPErrorHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.TCPError(ctx, h.Flow)
+}
+
+func (h UDPStartHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(UDPStartHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.UDPStart(ctx, h.Flow)
+}
+
+func (h UDPMessageHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(UDPMessageHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.UDPMessage(ctx, h.Flow)
+}
+
+func (h UDPEndHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(UDPEndHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.UDPEnd(ctx, h.Flow)
+}
+
+func (h UDPErrorHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(UDPErrorHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.UDPError(ctx, h.Flow)
+}
+
+func (h DNSRequestHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(DNSRequestHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.DNSRequest(ctx, h.Flow)
+}
+
+func (h DNSResponseHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(DNSResponseHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.DNSResponse(ctx, h.Flow)
+}
+
+func (h DNSErrorHook) invoke(ctx context.Context, a any) (bool, error) {
+	x, ok := a.(DNSErrorHandler)
+	if !ok {
+		return false, nil
+	}
+	return true, x.DNSError(ctx, h.Flow)
 }
 
 func (h TLSClientHelloHook) invoke(ctx context.Context, a any) (bool, error) {
@@ -487,6 +972,7 @@ var hookSpecs = []hookSpec{
 	{ConfigureHook{}, reflect.TypeFor[ConfigureHandler]()},
 	{RunningHook{}, reflect.TypeFor[RunningHandler]()},
 	{DoneHook{}, reflect.TypeFor[DoneHandler]()},
+	{UpdateHook{}, reflect.TypeFor[UpdateHandler]()},
 	{AddLogHook{}, reflect.TypeFor[AddLogHandler]()},
 	{NextLayerHook{}, reflect.TypeFor[NextLayerHandler]()},
 	{ClientConnectedHook{}, reflect.TypeFor[ClientConnectedHandler]()},
@@ -496,6 +982,29 @@ var hookSpecs = []hookSpec{
 	{ServerDisconnectedHook{}, reflect.TypeFor[ServerDisconnectedHandler]()},
 	{ServerConnectErrorHook{}, reflect.TypeFor[ServerConnectErrorHandler]()},
 	{Socks5AuthHook{}, reflect.TypeFor[Socks5AuthHandler]()},
+	{RequestHeadersHook{}, reflect.TypeFor[RequestHeadersHandler]()},
+	{RequestHook{}, reflect.TypeFor[RequestHandler]()},
+	{ResponseHeadersHook{}, reflect.TypeFor[ResponseHeadersHandler]()},
+	{ResponseHook{}, reflect.TypeFor[ResponseHandler]()},
+	{ErrorHook{}, reflect.TypeFor[ErrorHandler]()},
+	{HTTPConnectHook{}, reflect.TypeFor[HTTPConnectHandler]()},
+	{HTTPConnectUpstreamHook{}, reflect.TypeFor[HTTPConnectUpstreamHandler]()},
+	{HTTPConnectedHook{}, reflect.TypeFor[HTTPConnectedHandler]()},
+	{HTTPConnectErrorHook{}, reflect.TypeFor[HTTPConnectErrorHandler]()},
+	{WebSocketStartHook{}, reflect.TypeFor[WebSocketStartHandler]()},
+	{WebSocketMessageHook{}, reflect.TypeFor[WebSocketMessageHandler]()},
+	{WebSocketEndHook{}, reflect.TypeFor[WebSocketEndHandler]()},
+	{TCPStartHook{}, reflect.TypeFor[TCPStartHandler]()},
+	{TCPMessageHook{}, reflect.TypeFor[TCPMessageHandler]()},
+	{TCPEndHook{}, reflect.TypeFor[TCPEndHandler]()},
+	{TCPErrorHook{}, reflect.TypeFor[TCPErrorHandler]()},
+	{UDPStartHook{}, reflect.TypeFor[UDPStartHandler]()},
+	{UDPMessageHook{}, reflect.TypeFor[UDPMessageHandler]()},
+	{UDPEndHook{}, reflect.TypeFor[UDPEndHandler]()},
+	{UDPErrorHook{}, reflect.TypeFor[UDPErrorHandler]()},
+	{DNSRequestHook{}, reflect.TypeFor[DNSRequestHandler]()},
+	{DNSResponseHook{}, reflect.TypeFor[DNSResponseHandler]()},
+	{DNSErrorHook{}, reflect.TypeFor[DNSErrorHandler]()},
 	{TLSClientHelloHook{}, reflect.TypeFor[TLSClientHelloHandler]()},
 	{TLSStartClientHook{}, reflect.TypeFor[TLSStartClientHandler]()},
 	{TLSStartServerHook{}, reflect.TypeFor[TLSStartServerHandler]()},
@@ -505,4 +1014,174 @@ var hookSpecs = []hookSpec{
 	{TLSFailedServerHook{}, reflect.TypeFor[TLSFailedServerHandler]()},
 	{QUICStartClientHook{}, reflect.TypeFor[QUICStartClientHandler]()},
 	{QUICStartServerHook{}, reflect.TypeFor[QUICStartServerHandler]()},
+}
+
+// flowHook is implemented by the hooks whose argument is a flow. After
+// such a hook, [Manager.Hook] fires update with the flow, as mitmproxy does
+// for every lifecycle event whose first argument is a flow.
+type flowHook interface {
+	Hook
+	// flowArg returns the hook's flow, or nil when the hook carries none.
+	flowArg() flow.Flow
+}
+
+func (h RequestHeadersHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h RequestHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h ResponseHeadersHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h ResponseHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h ErrorHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h HTTPConnectHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h HTTPConnectUpstreamHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h HTTPConnectedHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h HTTPConnectErrorHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h WebSocketStartHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h WebSocketMessageHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h WebSocketEndHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h TCPStartHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h TCPMessageHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h TCPEndHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h TCPErrorHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h UDPStartHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h UDPMessageHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h UDPEndHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h UDPErrorHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h DNSRequestHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h DNSResponseHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
+}
+
+func (h DNSErrorHook) flowArg() flow.Flow {
+	if h.Flow == nil {
+		return nil
+	}
+	return h.Flow
 }

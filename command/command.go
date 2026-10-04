@@ -8,6 +8,12 @@
 // checked when it is registered: every parameter must map to a command type
 // identity ([Type]), and so must the result, mirroring the annotation checks
 // mitmproxy performs when it builds a Command.
+//
+// Help text set with [WithHelp] is stored with surrounding whitespace
+// removed and is otherwise kept as given. mitmproxy also re-wraps a
+// command's help to 70 columns (Python's textwrap.wrap); that wrapping is not
+// reproduced yet, so help served to the web frontend will differ from
+// mitmproxy's until it is.
 package command
 
 import (

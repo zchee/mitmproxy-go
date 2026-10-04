@@ -545,6 +545,27 @@ func TestMatchSemantics(t *testing.T) {
 		f.Response.RawContent = []byte("first\nsecond\n")
 		checkAll(t, f, yes("~bs first.second"), yes("~bs second$"), no("~bs first$"), yes("~b second$"), no("~bq second$"))
 	})
+	t.Run("dollar accepts one final newline in a request body, not two", func(t *testing.T) {
+		f := tflow(tflowOpts{})
+		f.Request.RawContent = []byte("done\n")
+		checkAll(t, f, yes(`~b "done$"`))
+		f.Request.RawContent = []byte("done\n\n")
+		checkAll(t, f, no(`~b "done$"`))
+	})
+	t.Run("dollar accepts one final newline in a path set directly, not two", func(t *testing.T) {
+		f := tflow(tflowOpts{})
+		f.Request.Path = "/done\n"
+		checkAll(t, f, yes(`~u "done$"`))
+		f.Request.Path = "/done\n\n"
+		checkAll(t, f, no(`~u "done$"`))
+	})
+	t.Run("lookahead takes the backtracking engine", func(t *testing.T) {
+		f := tflow(tflowOpts{})
+		f.Request.RawContent = []byte("fooy")
+		checkAll(t, f, yes(`~bq "foo(?!x)"`))
+		f.Request.RawContent = []byte("foox")
+		checkAll(t, f, no(`~bq "foo(?!x)"`))
+	})
 	t.Run("a missing body is skipped and an empty one is searched", func(t *testing.T) {
 		f := tflow(tflowOpts{})
 		f.Request.RawContent = nil

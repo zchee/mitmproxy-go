@@ -167,7 +167,9 @@ listener (TCP / UDP 4-tuple demux / QUIC / netstack forwarder / local-mode IPC)
 Public packages (what a Go addon author or embedder imports):
 
 ```
-flow/        Flow, HTTPFlow, TCPFlow, UDPFlow, DNSFlow, Error, state codec, ordered metadata map (py:flow.py, http.py, tcp.py, udp.py, dns.py)
+flow/        Flow, HTTPFlow, TCPFlow, UDPFlow, DNSFlow, Error, flow state codec (py:flow.py, http.py, tcp.py, udp.py, dns.py)
+flow/state/  state.Map, Decoder and value helpers: the serialised-state vocabulary every model's GetState/SetState uses (py:mitmproxy/coretypes/serializable.py)
+omap/        insertion-ordered string-keyed Map with text and bytes key kinds; state.Map and the options/command registries are built on it
 connection/  Client, Server, TransportProtocol (py:connection.py)
 httpmsg/     Headers (raw field tuples), Request, Response, Message, URL/cookies/multipart/status (py:http.py:49-179, py:mitmproxy/net/http/*)
 websocket/   WebSocketData, WebSocketMessage, Fragmentizer (py:websocket.py)
@@ -601,3 +603,4 @@ Still open:
   - §11 unchanged: the changes make the worker bindings buildable, close a peer-memory gap in the chunk hand-off and add tests; none changes the expected performance, scalability, reliability or cost of the chosen architecture.
 - 2026-10-05 (plan date from `date`: 2026-10-05 07:29 JST): three packages renamed because their names clashed with standard library packages that the same code also imports: the public HTTP data model `go:http/` is now `go:httpmsg/` (beside `net/http`; the `stdhttp` import alias it required is gone), and the planned layers `go:internal/proxy/layers/http` and `go:internal/proxy/layers/tls` are now `go:internal/proxy/layers/httplayer` and `go:internal/proxy/layers/tlslayer` (beside `net/http` and `crypto/tls`). Revision number unchanged.
 - 2026-10-05 (plan date from `date`: 2026-10-05 08:03 JST): names, paths and dependency text brought in line with the code: `flowio.Reader`/`flowio.Writer`; the flow builders live in `go:internal/testutil/testflow` as `TClientConn`/`TServerConn`; the options precedence test goes through `(*options.Manager).LoadAll`; `go.mod` pins as §4, each module added with the first package that imports it, and §4 gains `golang.org/x/text` v0.42.0 (imported by `httpmsg`); the integration, platform and browser e2e CI jobs land with the first test of their kind; fixture paths are under `testdata/mitmproxy/`. Revision number unchanged.
+- 2026-10-05 (plan date from `date`: 2026-10-05 08:30 JST): `omap` and `flow/state` became public packages (formerly under `internal/`), because exported flow signatures (`GetState`/`SetState`, the `*FromState` constructors, `flow.Base.Metadata`) use `state.Map`, which code outside the module could not name; §3.2 lists both. The upstream research note on tnetstring dict keys is corrected: `_rdumpq` writes a bytes key with `,` and a str key with `;`, and the Go writer does the same.

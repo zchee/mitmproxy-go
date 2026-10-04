@@ -170,7 +170,7 @@ Frontend build:
 
 **Codec.** A file is a plain concatenation of top-level tnetstrings, one flow-state dict each (`io/io.py`).
 - Tags: `,` bytes, `;` UTF-8 str, `#` int, `^` float, `!` bool, `~` null, `]` list or tuple, `}` dict.
-- The writer encodes dict keys as `;` (`tnetstring.py:_rdumpq`). The module docstring about "surrogate-escaped ASCII keys" is stale. A Go writer must emit `;` for keys. The reader must accept bytes keys, because `compat` handles old files.
+- The writer encodes each dict key through `_rdumpq` like any other value (`tnetstring.py:139-144`), so a bytes key is written with `,` and a str key with `;`. The module docstring about "surrogate-escaped ASCII keys" is stale. A Go writer must keep each key's kind: the Go writer emits `,` for a key read or set as bytes and `;` for a text key. The reader must accept bytes keys, because `compat` handles old files.
 - Python `str` values become `;` and `bytes` values become `,`. Enums serialize as `.value`, `Cert` as PEM bytes, `Headers` as a tuple of `(bytes, bytes)` pairs.
 
 **Reader.** `FlowReader.stream()` skips a UTF-8 BOM, then treats a leading `{` as a HAR file (`io/har.py:request_to_flow`). Otherwise it reads the tnetstring stream.

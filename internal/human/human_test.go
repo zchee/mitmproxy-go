@@ -230,6 +230,13 @@ func TestPrettyOptDuration(t *testing.T) {
 	}
 }
 
+func TestNoAddress(t *testing.T) {
+	// Upstream: format_address(None) == "<no address>".
+	if diff := gocmp.Diff("<no address>", NoAddress); diff != "" {
+		t.Errorf("NoAddress mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func loadLocation(t *testing.T, name string) *time.Location {
 	t.Helper()
 	loc, err := time.LoadLocation(name)

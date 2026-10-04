@@ -798,3 +798,95 @@ func TestCloseStopsConfigure(t *testing.T) {
 		t.Errorf("configure fired after Close: %v", j.got()[before:])
 	}
 }
+
+// echoAddon adds the command "<prefix>.echo" on load, and optionally fails
+// its load afterwards.
+type echoAddon struct {
+	name, prefix string
+	version      int
+	failLoad     error
+}
+
+func (a *echoAddon) Name() string { return a.name }
+
+func (a *echoAddon) Load(_ context.Context, l *Loader) error {
+	v := a.version
+	if err := l.AddCommand(a.prefix+".echo", func(s string) string { return fmt.Sprintf("v%d %s", v, s) }, command.WithParams("s")); err != nil {
+		return err
+	}
+	return a.failLoad
+}
+
+func TestAddonCommandsFollowTheAddon(t *testing.T) {
+	t.Run("success: remove then load again re-adds the commands", func(t *testing.T) {
+		e := newEnv(t)
+		old := &echoAddon{name: "script", prefix: "script", version: 1}
+		if err := e.m.Add(t.Context(), old); err != nil {
+			t.Fatalf("Add(v1): %v", err)
+		}
+		if err := e.m.Remove(t.Context(), old); err != nil {
+			t.Fatalf("Remove(v1): %v", err)
+		}
+		if _, err := e.cmds.Call(t.Context(), "script.echo", "x"); !errors.Is(err, command.ErrUnknownCommand) {
+			t.Fatalf("Call after Remove error = %v, want ErrUnknownCommand", err)
+		}
+		reloaded := &echoAddon{name: "script", prefix: "script", version: 2}
+		if err := e.m.Add(t.Context(), reloaded); err != nil {
+			t.Fatalf("Add(v2) after Remove: %v", err)
+		}
+		got, err := e.cmds.Call(t.Context(), "script.echo", "x")
+		if err != nil || got != "v2 x" {
+			t.Errorf("Call(script.echo) = %v, %v; want the reloaded addon's command", got, err)
+		}
+	})
+
+	t.Run("error: two live addons cannot add one command", func(t *testing.T) {
+		e := newEnv(t)
+		if err := e.m.Add(t.Context(), &echoAddon{name: "first", prefix: "shared", version: 1}); err != nil {
+			t.Fatalf("Add(first): %v", err)
+		}
+		err := e.m.Add(t.Context(), &echoAddon{name: "second", prefix: "shared", version: 2})
+		if !errors.Is(err, command.ErrDuplicateCommand) {
+			t.Fatalf("Add(second) error = %v, want ErrDuplicateCommand", err)
+		}
+		got, err := e.cmds.Call(t.Context(), "shared.echo", "x")
+		if err != nil || got != "v1 x" {
+			t.Errorf("Call(shared.echo) = %v, %v; want the first addon's command kept", got, err)
+		}
+		if e.m.Get("second") != nil {
+			t.Error("the addon whose load failed is registered")
+		}
+	})
+
+	t.Run("error: a failed load takes back the commands it added", func(t *testing.T) {
+		e := newEnv(t)
+		errLoad := errors.New("load failed")
+		err := e.m.Add(t.Context(), &echoAddon{name: "broken", prefix: "broken", failLoad: errLoad})
+		if !errors.Is(err, errLoad) {
+			t.Fatalf("Add error = %v, want %v", err, errLoad)
+		}
+		if _, err := e.cmds.Call(t.Context(), "broken.echo", "x"); !errors.Is(err, command.ErrUnknownCommand) {
+			t.Errorf("Call after a failed load error = %v, want ErrUnknownCommand", err)
+		}
+		if err := e.m.Add(t.Context(), &echoAddon{name: "broken", prefix: "broken", version: 2}); err != nil {
+			t.Errorf("Add after the failed load: %v", err)
+		}
+	})
+
+	t.Run("success: Clear unregisters every addon's commands", func(t *testing.T) {
+		e := newEnv(t)
+		if err := e.m.Add(t.Context(), &echoAddon{name: "a", prefix: "a"}, &echoAddon{name: "b", prefix: "b"}); err != nil {
+			t.Fatalf("Add: %v", err)
+		}
+		if err := e.m.Clear(t.Context()); err != nil {
+			t.Fatalf("Clear: %v", err)
+		}
+		var left []string
+		for n := range e.cmds.Commands() {
+			left = append(left, n)
+		}
+		if len(left) != 0 {
+			t.Errorf("commands left after Clear: %v", left)
+		}
+	})
+}

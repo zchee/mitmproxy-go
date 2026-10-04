@@ -62,10 +62,10 @@ type Config struct {
 // AddonManager). All dispatch happens under the manager's dispatch lock; see
 // the package documentation.
 type Manager struct {
-	d        dispatcher
-	options  *options.Manager
-	commands *command.Manager
-	logger   *slog.Logger
+	d       dispatcher
+	options *options.Manager
+	cmds    *command.Manager
+	logger  *slog.Logger
 
 	// mu guards chain and lookup. Changes happen under the dispatch lock as
 	// well, so that hooks see a consistent set of addons; mu lets Get and
@@ -74,6 +74,9 @@ type Manager struct {
 	mu     sync.RWMutex
 	chain  []any
 	lookup map[string]any
+	// commands lists, per addon passed to Register, the commands it added
+	// through its Loader, so that removing the addon removes them.
+	commands map[any][]string
 
 	unsubscribe func()
 }
@@ -88,9 +91,10 @@ func NewManager(opts *options.Manager, cmds *command.Manager, cfg Config) *Manag
 	m := &Manager{
 		d:        dispatcher{onStart: cfg.OnDispatchStart, onEnd: cfg.OnDispatchEnd},
 		options:  opts,
-		commands: cmds,
+		cmds:     cmds,
 		logger:   logger,
 		lookup:   make(map[string]any),
+		commands: make(map[any][]string),
 	}
 	m.unsubscribe = opts.Subscribe(func(ctx context.Context, updated map[string]struct{}) error {
 		return m.Trigger(ctx, ConfigureHook{Updated: updated})
@@ -108,7 +112,7 @@ func (m *Manager) Close() {
 func (m *Manager) Options() *options.Manager { return m.options }
 
 // Commands returns the command registry addons add their commands to.
-func (m *Manager) Commands() *command.Manager { return m.commands }
+func (m *Manager) Commands() *command.Manager { return m.cmds }
 
 // Do runs fn under the dispatch lock and passes it a context that lets
 // calls inside fn, such as an option change that fires configure, re-enter
@@ -205,6 +209,9 @@ func (m *Manager) register(ctx context.Context, addon any) error {
 	}
 
 	if err := m.invokeTree(ctx, addon, LoadHook{Loader: &Loader{m: m, addon: addon}}); err != nil {
+		// The addon is not registered, so nothing could remove it later;
+		// take back the commands its load added.
+		m.unregisterCommands(addon)
 		return err
 	}
 
@@ -218,8 +225,10 @@ func (m *Manager) register(ctx context.Context, addon any) error {
 }
 
 // Remove removes addon and its sub-addons, then runs the done hook on
-// them. An addon that is not in the chain because a parent addon manages
-// it must also be removed from that parent's sub-addons by the parent.
+// them, then unregisters the commands they added, so that loading the
+// addon again can add them again. An addon that is not in the chain
+// because a parent addon manages it must also be removed from that
+// parent's sub-addons by the parent.
 func (m *Manager) Remove(ctx context.Context, addon any) error {
 	return m.d.do(ctx, func(ctx context.Context) error {
 		if addon == nil {
@@ -240,12 +249,18 @@ func (m *Manager) Remove(ctx context.Context, addon any) error {
 				return fmt.Errorf("%w: No such addon: %s", ErrAddonManager, name)
 			}
 		}
+		defer func() {
+			for a := range traverse(addon) {
+				m.unregisterCommands(a)
+			}
+		}()
 		return m.invokeTree(ctx, addon, DoneHook{})
 	})
 }
 
-// Clear runs the done hook on every addon in the chain and removes them
-// all.
+// Clear runs the done hook on every addon in the chain, then removes them
+// all and unregisters the commands they added. When a done handler fails,
+// Clear returns its error and leaves the addons registered.
 func (m *Manager) Clear(ctx context.Context) error {
 	return m.d.do(ctx, func(ctx context.Context) error {
 		for _, a := range m.Chain() {
@@ -254,9 +269,16 @@ func (m *Manager) Clear(ctx context.Context) error {
 			}
 		}
 		m.mu.Lock()
+		owned := m.commands
 		m.chain = nil
 		m.lookup = make(map[string]any)
+		m.commands = make(map[any][]string)
 		m.mu.Unlock()
+		for _, names := range owned {
+			for _, n := range names {
+				m.cmds.Unregister(n)
+			}
+		}
 		return nil
 	})
 }
@@ -416,7 +438,29 @@ func (l *Loader) AddOption(ctx context.Context, name string, typ options.Type, d
 
 // AddCommand adds a command to the command registry (mitmproxy's
 // Loader.add_command). See [command.Manager.Register] for the functions a
-// command may be.
+// command may be. The command belongs to the addon being loaded and is
+// unregistered when that addon is removed. A name another addon's command
+// already has is refused with [command.ErrDuplicateCommand].
 func (l *Loader) AddCommand(name string, fn any, opts ...command.Option) error {
-	return l.m.commands.Register(name, fn, opts...)
+	if err := l.m.cmds.Register(name, fn, opts...); err != nil {
+		return err
+	}
+	l.m.mu.Lock()
+	l.m.commands[l.addon] = append(l.m.commands[l.addon], name)
+	l.m.mu.Unlock()
+	return nil
+}
+
+// unregisterCommands removes the commands addon added through its Loader.
+func (m *Manager) unregisterCommands(addon any) {
+	if addon == nil || !reflect.TypeOf(addon).Comparable() {
+		return
+	}
+	m.mu.Lock()
+	names := m.commands[addon]
+	delete(m.commands, addon)
+	m.mu.Unlock()
+	for _, n := range names {
+		m.cmds.Unregister(n)
+	}
 }

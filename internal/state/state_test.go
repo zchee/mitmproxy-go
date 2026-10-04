@@ -1,0 +1,150 @@
+// Copyright 2026 The mitmproxy-go Authors.
+// SPDX-License-Identifier: MIT
+
+package state
+
+import (
+	"regexp"
+	"testing"
+
+	gocmp "github.com/google/go-cmp/cmp"
+)
+
+func TestDecoder(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		build   func() *Map
+		read    func(d *Decoder) any
+		want    any
+		wantErr string
+	}{
+		"success: all scalar kinds": {
+			build: func() *Map {
+				m := NewMap(6)
+				m.Set("s", "x")
+				m.Set("b", []byte("y"))
+				m.Set("i", int64(3))
+				m.Set("f", int64(2))
+				m.Set("t", true)
+				m.Set("n", nil)
+				return m
+			},
+			read: func(d *Decoder) any {
+				return []any{d.String("s"), d.Bytes("b"), d.Int("i"), d.Float("f"), d.Bool("t"), d.OptString("n")}
+			},
+			want: []any{"x", []byte("y"), int64(3), 2.0, true, (*string)(nil)},
+		},
+		"success: float truncates to int": {
+			build: func() *Map {
+				m := NewMap(1)
+				m.Set("i", 3.9)
+				return m
+			},
+			read: func(d *Decoder) any { return d.Int("i") },
+			want: int64(3),
+		},
+		"success: typed nil bytes is empty, not None": {
+			build: func() *Map {
+				m := NewMap(1)
+				m.Set("b", []byte(nil))
+				return m
+			},
+			read: func(d *Decoder) any { return d.OptBytes("b") != nil },
+			want: true,
+		},
+		"error: first error sticks": {
+			build: func() *Map {
+				m := NewMap(2)
+				m.Set("a", int64(1))
+				m.Set("b", "ok")
+				return m
+			},
+			read: func(d *Decoder) any {
+				d.String("a")
+				return d.String("b")
+			},
+			want:    "",
+			wantErr: `T.set_state: field "a": expected str, got int`,
+		},
+		"error: leftover keys in order": {
+			build: func() *Map {
+				m := NewMap(3)
+				m.Set("z", nil)
+				m.Set("a", nil)
+				m.Set("k", nil)
+				return m
+			},
+			read:    func(d *Decoder) any { return d.Any("a") },
+			want:    nil,
+			wantErr: "unexpected fields in T.set_state: [z k]",
+		},
+		"error: nil state": {
+			build:   func() *Map { return nil },
+			read:    func(d *Decoder) any { return d.Any("a") },
+			want:    nil,
+			wantErr: "T.set_state: state is None, expected a dict",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			d := NewDecoder(tt.build(), "T")
+			got := tt.read(d)
+			if diff := gocmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("value mismatch (-want +got):\n%s", diff)
+			}
+			err := d.Finish()
+			var gotErr string
+			if err != nil {
+				gotErr = err.Error()
+			}
+			if gotErr != tt.wantErr {
+				t.Errorf("Finish() = %q, want %q", gotErr, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestCopy(t *testing.T) {
+	t.Parallel()
+
+	inner := NewMap(1)
+	inner.Set("k", []byte("v"))
+	orig := NewMap(2)
+	orig.Set("list", []any{[]byte("a"), inner})
+	orig.Set("n", int64(1))
+
+	cp := CopyMap(orig)
+	if diff := gocmp.Diff(orig, cp); diff != "" {
+		t.Fatalf("copy differs (-orig +copy):\n%s", diff)
+	}
+	l, _ := cp.Get("list")
+	l.([]any)[0].([]byte)[0] = 'X'
+	l.([]any)[1].(*Map).Set("k2", nil)
+	if diff := gocmp.Diff([]any{[]byte("a"), inner}, mustGet(orig, "list")); diff != "" || inner.Len() != 1 {
+		t.Errorf("mutating the copy changed the original:\n%s", diff)
+	}
+}
+
+func mustGet(m *Map, k string) any {
+	v, _ := m.Get(k)
+	return v
+}
+
+func TestNewID(t *testing.T) {
+	t.Parallel()
+
+	re := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	seen := map[string]bool{}
+	for range 100 {
+		id := NewID()
+		if !re.MatchString(id) {
+			t.Fatalf("NewID() = %q, not a version 4 UUID", id)
+		}
+		if seen[id] {
+			t.Fatalf("NewID() repeated %q", id)
+		}
+		seen[id] = true
+	}
+}

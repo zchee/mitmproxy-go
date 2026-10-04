@@ -16,7 +16,7 @@
 // field is deterministic except the creation timestamp of [TWebSocketFlow].
 //
 // The package imports the flow model packages, so their internal tests
-// (package flow, package http, ...) cannot import it; external test packages
+// (package flow, package httpmsg, ...) cannot import it; external test packages
 // (package flow_test) can.
 package testflow
 
@@ -26,7 +26,7 @@ import (
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/dns"
 	"github.com/zchee/mitmproxy-go/flow"
-	"github.com/zchee/mitmproxy-go/http"
+	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/internal/state"
 	"github.com/zchee/mitmproxy-go/tcp"
 	"github.com/zchee/mitmproxy-go/udp"
@@ -164,9 +164,9 @@ func TWebSocketFlow(flags ...With) *flow.HTTPFlow {
 	set := collect("TWebSocketFlow", WithError, flags)
 
 	f := flow.NewHTTPFlow(TClientConn(), TServerConn(), true)
-	f.Request = &http.Request{
+	f.Request = &httpmsg.Request{
 		HTTPVersion: "HTTP/1.1",
-		Headers: http.Headers{
+		Headers: httpmsg.Headers{
 			{Name: []byte("connection"), Value: []byte("upgrade")},
 			{Name: []byte("upgrade"), Value: []byte("websocket")},
 			{Name: []byte("sec-websocket-version"), Value: []byte("13")},
@@ -182,9 +182,9 @@ func TWebSocketFlow(flags ...With) *flow.HTTPFlow {
 		Authority:      "example.com",
 		Path:           "/ws",
 	}
-	f.Response = &http.Response{
+	f.Response = &httpmsg.Response{
 		HTTPVersion: "HTTP/1.1",
-		Headers: http.Headers{
+		Headers: httpmsg.Headers{
 			{Name: []byte("connection"), Value: []byte("upgrade")},
 			{Name: []byte("upgrade"), Value: []byte("websocket")},
 			{Name: []byte("sec-websocket-accept"), Value: []byte{}},

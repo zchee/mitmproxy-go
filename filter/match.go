@@ -10,7 +10,7 @@ import (
 
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/flow"
-	"github.com/zchee/mitmproxy-go/http"
+	"github.com/zchee/mitmproxy-go/httpmsg"
 )
 
 // MatchAll matches every flow, like upstream's flowfilter.match_all.
@@ -128,7 +128,7 @@ var assetTypes = []*regexp.Regexp{
 // contentTypeMatches reports whether any Content-Type field of h, with the
 // name compared case-insensitively over ASCII, has a value that match
 // accepts.
-func contentTypeMatches(match func([]byte) bool, h http.Headers) bool {
+func contentTypeMatches(match func([]byte) bool, h httpmsg.Headers) bool {
 	for _, field := range h {
 		if strings.EqualFold(string(field.Name), "content-type") && match(field.Value) {
 			return true

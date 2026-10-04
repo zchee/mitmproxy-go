@@ -1,7 +1,7 @@
 // Copyright 2026 The mitmproxy-go Authors.
 // SPDX-License-Identifier: MIT
 
-// Package http holds mitmproxy's HTTP data model: raw header fields,
+// Package httpmsg holds mitmproxy's HTTP data model: raw header fields,
 // requests, responses and the helpers built on them.
 //
 // The types keep the raw protocol data the proxy saw. Text attributes that
@@ -9,10 +9,7 @@
 // reason) are Go strings holding those bytes unchanged, so non-UTF-8 values
 // survive a round trip. Their serialised state matches mitmproxy's flow
 // format 21.
-//
-// Code that also needs the standard library's net/http should import it as
-// stdhttp.
-package http
+package httpmsg
 
 import (
 	"fmt"

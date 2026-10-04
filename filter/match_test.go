@@ -10,7 +10,7 @@ import (
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/dns"
 	"github.com/zchee/mitmproxy-go/flow"
-	"github.com/zchee/mitmproxy-go/http"
+	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/internal/state"
 	"github.com/zchee/mitmproxy-go/tcp"
 	"github.com/zchee/mitmproxy-go/udp"
@@ -37,16 +37,16 @@ func tserverConn() *connection.Server {
 	return s
 }
 
-func headers(kv ...string) http.Headers {
-	h := make(http.Headers, 0, len(kv)/2)
+func headers(kv ...string) httpmsg.Headers {
+	h := make(httpmsg.Headers, 0, len(kv)/2)
 	for i := 0; i < len(kv); i += 2 {
-		h = append(h, http.Field{Name: []byte(kv[i]), Value: []byte(kv[i+1])})
+		h = append(h, httpmsg.Field{Name: []byte(kv[i]), Value: []byte(kv[i+1])})
 	}
 	return h
 }
 
-func treq() *http.Request {
-	return &http.Request{
+func treq() *httpmsg.Request {
+	return &httpmsg.Request{
 		HTTPVersion:    "HTTP/1.1",
 		Headers:        headers("header", "qvalue", "content-length", "7"),
 		RawContent:     []byte("content"),
@@ -60,8 +60,8 @@ func treq() *http.Request {
 	}
 }
 
-func tresp() *http.Response {
-	return &http.Response{
+func tresp() *httpmsg.Response {
+	return &httpmsg.Response{
 		HTTPVersion:    "HTTP/1.1",
 		Headers:        headers("header-response", "svalue", "content-length", "7"),
 		RawContent:     []byte("message"),
@@ -109,7 +109,7 @@ func twebsocket() *websocket.Data {
 
 func twebsocketflow() *flow.HTTPFlow {
 	f := flow.NewHTTPFlow(tclientConn(), tserverConn(), true)
-	f.Request = &http.Request{
+	f.Request = &httpmsg.Request{
 		HTTPVersion:    "HTTP/1.1",
 		Headers:        headers("connection", "upgrade", "upgrade", "websocket", "sec-websocket-version", "13", "sec-websocket-key", "1234"),
 		RawContent:     []byte{},
@@ -122,7 +122,7 @@ func twebsocketflow() *flow.HTTPFlow {
 		Authority:      "example.com",
 		Path:           "/ws",
 	}
-	f.Response = &http.Response{
+	f.Response = &httpmsg.Response{
 		HTTPVersion:    "HTTP/1.1",
 		Headers:        headers("connection", "upgrade", "upgrade", "websocket", "sec-websocket-accept", ""),
 		RawContent:     []byte{},
@@ -329,7 +329,7 @@ func TestMatchingHTTPFlow(t *testing.T) {
 		matchBody(t, qf, s)
 
 		qf, s = req(), resp()
-		for _, m := range []*http.Message{&qf.Request.Message, &s.Request.Message, &s.Response.Message} {
+		for _, m := range []*httpmsg.Message{&qf.Request.Message, &s.Request.Message, &s.Response.Message} {
 			if err := m.Encode("gzip"); err != nil {
 				t.Fatal(err)
 			}
@@ -534,7 +534,7 @@ func TestMatchSemantics(t *testing.T) {
 	})
 	t.Run("content-type name is case-insensitive", func(t *testing.T) {
 		f := tflow(tflowOpts{})
-		f.Request.Headers = append(f.Request.Headers, http.Field{Name: []byte("CONTENT-TYPE"), Value: []byte("text/xml")})
+		f.Request.Headers = append(f.Request.Headers, httpmsg.Field{Name: []byte("CONTENT-TYPE"), Value: []byte("text/xml")})
 		checkAll(t, f, yes("~tq xml"), no("~ts xml"))
 	})
 	t.Run("header patterns see the raw block line by line", func(t *testing.T) {

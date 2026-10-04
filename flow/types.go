@@ -8,7 +8,7 @@ import (
 
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/dns"
-	"github.com/zchee/mitmproxy-go/http"
+	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/internal/state"
 	"github.com/zchee/mitmproxy-go/tcp"
 	"github.com/zchee/mitmproxy-go/udp"
@@ -24,9 +24,9 @@ const baseKeys = 13
 type HTTPFlow struct {
 	Base
 	// Request is the client's request.
-	Request *http.Request
+	Request *httpmsg.Request
 	// Response is the server's response, nil until one exists.
-	Response *http.Response
+	Response *httpmsg.Response
 	// WebSocket holds the WebSocket data when the flow upgraded to a
 	// WebSocket connection, and is nil otherwise.
 	WebSocket *websocket.Data
@@ -77,18 +77,18 @@ func (f *HTTPFlow) GetState() *state.Map {
 func (f *HTTPFlow) SetState(m *state.Map) error {
 	d := state.NewDecoder(m, "HTTPFlow")
 	var (
-		req  *http.Request
-		resp *http.Response
+		req  *httpmsg.Request
+		resp *httpmsg.Response
 		ws   *websocket.Data
 		err  error
 	)
 	if r := d.Dict("request"); r != nil {
-		if req, err = http.RequestFromState(r); err != nil {
+		if req, err = httpmsg.RequestFromState(r); err != nil {
 			d.Fail(fmt.Errorf("field %q: %w", "request", err))
 		}
 	}
 	if r := d.OptDict("response"); r != nil {
-		if resp, err = http.ResponseFromState(r); err != nil {
+		if resp, err = httpmsg.ResponseFromState(r); err != nil {
 			d.Fail(fmt.Errorf("field %q: %w", "response", err))
 		}
 	}

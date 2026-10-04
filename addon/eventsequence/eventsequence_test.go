@@ -19,7 +19,7 @@ import (
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/dns"
 	"github.com/zchee/mitmproxy-go/flow"
-	"github.com/zchee/mitmproxy-go/http"
+	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/internal/state"
 	"github.com/zchee/mitmproxy-go/options"
 	"github.com/zchee/mitmproxy-go/tcp"
@@ -40,7 +40,7 @@ func server() *connection.Server { return &connection.Server{} }
 func httpFlow(t *testing.T, response, ws, failed bool) *flow.HTTPFlow {
 	t.Helper()
 	f := flow.NewHTTPFlow(client(), server(), false)
-	req, err := http.MakeRequest("GET", "http://example.com/chat", nil, nil)
+	req, err := httpmsg.MakeRequest("GET", "http://example.com/chat", nil, nil)
 	if err != nil {
 		t.Fatalf("MakeRequest: %v", err)
 	}
@@ -50,7 +50,7 @@ func httpFlow(t *testing.T, response, ws, failed bool) *flow.HTTPFlow {
 		if ws {
 			status = 101
 		}
-		resp, err := http.MakeResponse(status, nil, nil)
+		resp, err := httpmsg.MakeResponse(status, nil, nil)
 		if err != nil {
 			t.Fatalf("MakeResponse: %v", err)
 		}

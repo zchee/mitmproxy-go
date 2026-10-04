@@ -5,16 +5,16 @@ package testflow
 
 import (
 	"github.com/zchee/mitmproxy-go/dns"
-	"github.com/zchee/mitmproxy-go/http"
+	"github.com/zchee/mitmproxy-go/httpmsg"
 )
 
 // TReq returns the HTTP request of upstream's tutils.treq: GET
 // http://address:22/path over HTTP/1.1 with the body "content".
 // Change its fields to get upstream's keyword overrides.
-func TReq() *http.Request {
-	return &http.Request{
+func TReq() *httpmsg.Request {
+	return &httpmsg.Request{
 		HTTPVersion:    "HTTP/1.1",
-		Headers:        http.Headers{{Name: []byte("header"), Value: []byte("qvalue")}, {Name: []byte("content-length"), Value: []byte("7")}},
+		Headers:        httpmsg.Headers{{Name: []byte("header"), Value: []byte("qvalue")}, {Name: []byte("content-length"), Value: []byte("7")}},
 		RawContent:     []byte("content"),
 		TimestampStart: 946681200,
 		TimestampEnd:   new(946681201.0),
@@ -28,10 +28,10 @@ func TReq() *http.Request {
 
 // TResp returns the HTTP response of upstream's tutils.tresp: 200 OK over
 // HTTP/1.1 with the body "message".
-func TResp() *http.Response {
-	return &http.Response{
+func TResp() *httpmsg.Response {
+	return &httpmsg.Response{
 		HTTPVersion:    "HTTP/1.1",
-		Headers:        http.Headers{{Name: []byte("header-response"), Value: []byte("svalue")}, {Name: []byte("content-length"), Value: []byte("7")}},
+		Headers:        httpmsg.Headers{{Name: []byte("header-response"), Value: []byte("svalue")}, {Name: []byte("content-length"), Value: []byte("7")}},
 		RawContent:     []byte("message"),
 		TimestampStart: 946681202,
 		TimestampEnd:   new(946681203.0),

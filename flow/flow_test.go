@@ -18,7 +18,7 @@ import (
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/dns"
 	"github.com/zchee/mitmproxy-go/flowio/tnetstring"
-	"github.com/zchee/mitmproxy-go/http"
+	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/internal/state"
 	"github.com/zchee/mitmproxy-go/internal/testutil"
 	"github.com/zchee/mitmproxy-go/tcp"
@@ -53,10 +53,10 @@ func tServerConn() *connection.Server {
 	return s
 }
 
-func tReq() *http.Request {
-	return &http.Request{
+func tReq() *httpmsg.Request {
+	return &httpmsg.Request{
 		HTTPVersion: "HTTP/1.1",
-		Headers: http.Headers{
+		Headers: httpmsg.Headers{
 			{Name: []byte("header"), Value: []byte("qvalue")},
 			{Name: []byte("content-length"), Value: []byte("7")},
 		},
@@ -67,10 +67,10 @@ func tReq() *http.Request {
 	}
 }
 
-func tResp() *http.Response {
-	return &http.Response{
+func tResp() *httpmsg.Response {
+	return &httpmsg.Response{
 		HTTPVersion: "HTTP/1.1",
-		Headers: http.Headers{
+		Headers: httpmsg.Headers{
 			{Name: []byte("header-response"), Value: []byte("svalue")},
 			{Name: []byte("content-length"), Value: []byte("7")},
 		},

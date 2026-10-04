@@ -1,7 +1,7 @@
 // Copyright 2026 The mitmproxy-go Authors.
 // SPDX-License-Identifier: MIT
 
-package http
+package httpmsg
 
 // HTTP status codes upstream names: the official codes plus nginx's 444 No
 // Response and 499 Client Closed Request.

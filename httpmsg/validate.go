@@ -1,7 +1,7 @@
 // Copyright 2026 The mitmproxy-go Authors.
 // SPDX-License-Identifier: MIT
 
-package http
+package httpmsg
 
 import (
 	"fmt"

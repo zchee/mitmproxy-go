@@ -4,14 +4,20 @@
 package http
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/zchee/mitmproxy-go/internal/netutil/encoding"
+	"golang.org/x/text/encoding"
+	"golang.org/x/text/encoding/htmlindex"
+	"golang.org/x/text/encoding/ianaindex"
+
+	netencoding "github.com/zchee/mitmproxy-go/internal/netutil/encoding"
 )
 
 // ErrContentEncoding is returned when a message names a Content-Encoding
@@ -20,7 +26,7 @@ var ErrContentEncoding = errors.New("invalid content-encoding")
 
 // decodeContent removes the content coding enc from data.
 func decodeContent(data []byte, enc string) ([]byte, error) {
-	out, err := encoding.Decode(data, enc)
+	out, err := netencoding.Decode(data, enc)
 	if err != nil {
 		return nil, fmt.Errorf("%w %q: %w", ErrContentEncoding, enc, err)
 	}
@@ -29,7 +35,7 @@ func decodeContent(data []byte, enc string) ([]byte, error) {
 
 // encodeContent applies the content coding enc to data.
 func encodeContent(data []byte, enc string) ([]byte, error) {
-	out, err := encoding.Encode(data, enc)
+	out, err := netencoding.Encode(data, enc)
 	if err != nil {
 		return nil, fmt.Errorf("%w %q: %w", ErrContentEncoding, enc, err)
 	}
@@ -136,7 +142,7 @@ func decodeText(b []byte, enc string) (string, error) {
 		}
 		return s.String(), nil
 	}
-	return "", fmt.Errorf("unsupported character set %q", enc)
+	return decodeLegacy(b, enc)
 }
 
 // byteOrder picks the byte order for a UTF-16 or UTF-32 codec name. The
@@ -171,6 +177,11 @@ func encodeText(s, enc string) ([]byte, error) {
 	cs := normalizeCharset(enc)
 	fail := func() ([]byte, error) {
 		return nil, fmt.Errorf("cannot encode text as %s", enc)
+	}
+	// Bytes that are not valid UTF-8 stand for the surrogate escapes
+	// Python uses for undecodable input, which no codec encodes strictly.
+	if !utf8.ValidString(s) {
+		return fail()
 	}
 	switch cs {
 	case "utf-8":
@@ -217,5 +228,88 @@ func encodeText(s, enc string) ([]byte, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("unsupported character set %q", enc)
+	return encodeLegacy(s, enc)
+}
+
+// pythonAliases maps Python codec spellings that neither the IANA nor the
+// WHATWG index knows to a label they do.
+var pythonAliases = map[string]string{
+	"cp932": "windows-31j", "ms932": "windows-31j", "mskanji": "windows-31j", "ms-kanji": "windows-31j",
+	"cp936": "gbk", "ms936": "gbk",
+	"cp949": "euc-kr", "ms949": "euc-kr", "uhc": "euc-kr",
+	"cp950": "big5", "ms950": "big5",
+}
+
+// iso8859RE matches Python's spellings of ISO 8859 parts, such as
+// "iso8859_7" or "iso_8859-2".
+var iso8859RE = regexp.MustCompile(`^iso[-_]?8859[-_](\d+)$`)
+
+// windowsCPRE matches Python's "cp125x" names for the Windows code pages.
+var windowsCPRE = regexp.MustCompile(`^cp(125\d)$`)
+
+// lookupCharset resolves a character set label to an encoding: first
+// through the IANA registry, then through the WHATWG labels browsers use,
+// trying the label as given and in the spellings Python's codec registry
+// accepts. It reports false when no index knows the label.
+func lookupCharset(label string) (encoding.Encoding, bool) {
+	l := strings.ToLower(strings.TrimSpace(label))
+	candidates := []string{l, strings.ReplaceAll(l, "_", "-")}
+	if a, ok := pythonAliases[candidates[1]]; ok {
+		candidates = append(candidates, a)
+	}
+	if m := iso8859RE.FindStringSubmatch(l); m != nil {
+		candidates = append(candidates, "iso-8859-"+m[1])
+	}
+	if m := windowsCPRE.FindStringSubmatch(l); m != nil {
+		candidates = append(candidates, "windows-"+m[1])
+	}
+	for _, c := range candidates {
+		// The IANA index returns a nil encoding without an error for names
+		// it knows but cannot convert, such as UTF-7.
+		if e, err := ianaindex.IANA.Encoding(c); err == nil && e != nil {
+			return e, true
+		}
+	}
+	for _, c := range candidates {
+		if e, err := htmlindex.Get(c); err == nil && e != nil {
+			return e, true
+		}
+	}
+	return nil, false
+}
+
+// decodeLegacy decodes b in a character set from the encoding indexes,
+// strictly. The x/text decoders substitute U+FFFD for invalid input where
+// Python's strict codecs raise, so a result containing U+FFFD is accepted
+// only when encoding it again reproduces b.
+func decodeLegacy(b []byte, label string) (string, error) {
+	e, ok := lookupCharset(label)
+	if !ok {
+		return "", fmt.Errorf("unsupported character set %q", label)
+	}
+	out, err := e.NewDecoder().Bytes(b)
+	if err != nil {
+		return "", fmt.Errorf("cannot decode body as %s: %w", label, err)
+	}
+	if bytes.ContainsRune(out, utf8.RuneError) {
+		again, err := e.NewEncoder().Bytes(out)
+		if err != nil || !bytes.Equal(again, b) {
+			return "", fmt.Errorf("cannot decode body as %s", label)
+		}
+	}
+	return string(out), nil
+}
+
+// encodeLegacy encodes s in a character set from the encoding indexes,
+// failing when s holds a character the set cannot represent.
+func encodeLegacy(s, label string) ([]byte, error) {
+	e, ok := lookupCharset(label)
+	if !ok {
+		return nil, fmt.Errorf("unsupported character set %q", label)
+	}
+	out, err := e.NewEncoder().Bytes([]byte(s))
+	if err != nil {
+		return nil, fmt.Errorf("cannot encode text as %s: %w", label, err)
+	}
+	return out, nil
 }

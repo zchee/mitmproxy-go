@@ -10,6 +10,5 @@ require (
 	go.uber.org/goleak v1.3.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/net v0.59.0
+	golang.org/x/text v0.42.0
 )
-
-require golang.org/x/text v0.42.0 // indirect

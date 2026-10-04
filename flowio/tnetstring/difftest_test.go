@@ -1,8 +1,6 @@
 // Copyright 2026 The mitmproxy-go Authors.
 // SPDX-License-Identifier: MIT
 
-//go:build difftest
-
 package tnetstring
 
 import (
@@ -10,14 +8,12 @@ import (
 	"fmt"
 	"math"
 	rand "math/rand/v2"
-	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
-)
 
-// pinnedMitmproxy is the upstream revision this package is checked against.
-const pinnedMitmproxy = "mitmproxy @ git+https://github.com/mitmproxy/mitmproxy@3368a0a"
+	"github.com/zchee/mitmproxy-go/internal/difftest"
+)
 
 // diffScript reads float64 bit patterns as hex, one per line, and writes
 // tnetstring.dumps of each float on its own line, followed by the dumps of a
@@ -58,22 +54,12 @@ func randomFloats(n int) []float64 {
 }
 
 func TestDifferentialFloats(t *testing.T) {
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv is not installed")
-	}
 	floats := randomFloats(1000)
 	var in strings.Builder
 	for _, f := range floats {
 		fmt.Fprintf(&in, "%016x\n", math.Float64bits(f))
 	}
-	cmd := exec.CommandContext(t.Context(), "uv", "run", "--quiet", "--with", pinnedMitmproxy, "python", "-c", diffScript)
-	cmd.Stdin = strings.NewReader(in.String())
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("running the pinned mitmproxy: %v\n%s", err, stderr.String())
-	}
+	out := difftest.Python(t, diffScript, []byte(in.String()))
 
 	lines := bytes.SplitN(out, []byte("\n"), len(floats)+1)
 	if len(lines) != len(floats)+1 {

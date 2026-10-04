@@ -1,40 +1,16 @@
 // Copyright 2026 The mitmproxy-go Authors.
 // SPDX-License-Identifier: MIT
 
-//go:build difftest
-
 package flowio
 
 import (
 	"bytes"
-	"os/exec"
-	"strings"
 	"testing"
 
 	"github.com/zchee/mitmproxy-go/flowio/tnetstring"
+	"github.com/zchee/mitmproxy-go/internal/difftest"
 	"github.com/zchee/mitmproxy-go/internal/testutil"
 )
-
-// pinnedMitmproxy is the upstream revision flowio is checked against.
-const pinnedMitmproxy = "mitmproxy @ git+https://github.com/mitmproxy/mitmproxy@3368a0a"
-
-// runPython runs script with the pinned mitmproxy, feeding it stdin, and
-// returns its standard output.
-func runPython(t *testing.T, script string, stdin []byte) []byte {
-	t.Helper()
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv is not installed")
-	}
-	cmd := exec.CommandContext(t.Context(), "uv", "run", "--quiet", "--with", pinnedMitmproxy, "python", "-c", script)
-	cmd.Stdin = bytes.NewReader(stdin)
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("running the pinned mitmproxy: %v\n%s", err, stderr.String())
-	}
-	return out
-}
 
 // migrateScript migrates every flow on stdin with mitmproxy's
 // compat.migrate_flow and writes the migrated dictionaries.
@@ -53,7 +29,7 @@ while src.tell() < len(src.getbuffer()):
 func TestDifferentialMigrate(t *testing.T) {
 	for rel := range olderFixtures {
 		t.Run(rel, func(t *testing.T) {
-			want := runPython(t, migrateScript, testutil.Fixture(t, rel))
+			want := difftest.Python(t, migrateScript, testutil.Fixture(t, rel))
 			var got bytes.Buffer
 			for i, m := range rawFlows(t, rel) {
 				if err := migrate(m); err != nil {
@@ -96,11 +72,11 @@ func TestDifferentialWrite(t *testing.T) {
 				t.Fatal(err)
 			}
 			got := writeAll(t, flows)
-			want := runPython(t, rewriteScript, src)
+			want := difftest.Python(t, rewriteScript, src)
 			if !bytes.Equal(want, got) {
 				t.Errorf("Write(Read(file)) differs from mitmproxy's FlowWriter(FlowReader(file)) (Go %d bytes, Python %d bytes)", len(got), len(want))
 			}
-			if back := runPython(t, rewriteScript, got); !bytes.Equal(back, got) {
+			if back := difftest.Python(t, rewriteScript, got); !bytes.Equal(back, got) {
 				t.Errorf("mitmproxy re-wrote the file mitmproxy-go wrote differently (Go %d bytes, Python %d bytes)", len(got), len(back))
 			}
 		})

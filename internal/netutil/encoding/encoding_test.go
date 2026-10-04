@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	rand "math/rand/v2"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -68,8 +69,87 @@ func TestUnknownEncoding(t *testing.T) {
 				t.Fatalf("error %T is not *Error", err)
 			}
 			want := &Error{Op: tt.wantOp, Encoding: tt.encoding, Prefix: []byte("string"), Err: ErrUnknownEncoding}
-			if diff := cmp.Diff(*want, *e, cmpopts.EquateErrors()); diff != "" {
+			if diff := cmp.Diff(*want, *e, cmpopts.EquateErrors(), cmpopts.IgnoreUnexported(Error{})); diff != "" {
 				t.Errorf("error mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestErrorText checks the error text against what mitmproxy's
+// encoding.decode and encode raise for the same input (CPython 3.14 with the
+// brotli package). Everything up to the exception message matches; the
+// message of a codec failure comes from the Go decoder, so only its start is
+// compared.
+func TestErrorText(t *testing.T) {
+	tests := map[string]struct {
+		data     string
+		encoding string
+		call     func([]byte, string) ([]byte, error)
+		// want is the whole text when exact, else its expected prefix.
+		want  string
+		exact bool
+	}{
+		"error: unknown encoding on decode": {
+			data: "foobar", encoding: "nonexistent encoding", call: Decode, exact: true,
+			want: `LookupError when decoding b'foobar' with 'nonexistent encoding': LookupError('unknown encoding: nonexistent encoding')`,
+		},
+		"error: unknown encoding on encode": {
+			data: "string", encoding: "nonexistent encoding", call: Encode, exact: true,
+			want: `LookupError when encoding b'string' with 'nonexistent encoding': LookupError('unknown encoding: nonexistent encoding')`,
+		},
+		"error: unknown encoding with empty input": {
+			data: "", encoding: "Nonexistent", call: Decode, exact: true,
+			want: `LookupError when decoding b'' with 'nonexistent': LookupError('unknown encoding: nonexistent')`,
+		},
+		"error: gzip": {
+			data: "foobar", encoding: "GZIP", call: Decode,
+			want: `ValueError when decoding b'foobar' with 'gzip': ValueError('Decompression failed: `,
+		},
+		"error: deflate": {
+			data: "foobar", encoding: "deflate", call: Decode,
+			want: `error when decoding b'foobar' with 'deflate': error('`,
+		},
+		"error: deflateraw": {
+			data: "foobar", encoding: "deflateraw", call: Decode,
+			want: `error when decoding b'foobar' with 'deflateraw': error('`,
+		},
+		"error: brotli": {
+			data: "foobar", encoding: "br", call: Decode,
+			want: `error when decoding b'foobar' with 'br': error('`,
+		},
+		"error: zstd": {
+			data: "foobar", encoding: "zstd", call: Decode,
+			want: `ZstdError when decoding b'foobar' with 'zstd': ZstdError('`,
+		},
+		"error: repr is cut after ten characters and escapes quotes": {
+			data: `it's "x" data`, encoding: "br", call: Decode,
+			want: `error when decoding b'it\'s "x with 'br': error('`,
+		},
+		"error: repr switches quotes when only single quotes occur": {
+			data: "it's data", encoding: "br", call: Decode,
+			want: `error when decoding b"it's dat with 'br': error('`,
+		},
+		"error: repr escapes control bytes": {
+			data: "\n\t\\abcdefgh", encoding: "zstd", call: Decode,
+			want: `ZstdError when decoding b'\n\t\\ab with 'zstd': ZstdError('`,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := tt.call([]byte(tt.data), tt.encoding)
+			if err == nil {
+				t.Fatalf("call(%q, %q) succeeded, want error", tt.data, tt.encoding)
+			}
+			got := err.Error()
+			if tt.exact {
+				if diff := cmp.Diff(tt.want, got); diff != "" {
+					t.Errorf("error text mismatch (-want +got):\n%s", diff)
+				}
+				return
+			}
+			if !strings.HasPrefix(got, tt.want) || !strings.HasSuffix(got, "')") {
+				t.Errorf("error text = %q, want prefix %q and suffix %q", got, tt.want, "')")
 			}
 		})
 	}

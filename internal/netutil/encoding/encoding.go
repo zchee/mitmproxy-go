@@ -26,6 +26,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/flate"
@@ -48,11 +50,57 @@ type Error struct {
 	Prefix []byte
 	// Err is the underlying error.
 	Err error
+
+	// inputRepr is the start of the Python repr of the whole input. The
+	// quote character of a bytes repr depends on every byte, so it is
+	// computed while the whole input is still at hand.
+	inputRepr string
 }
 
 // Error implements the error interface.
+//
+// The text has the shape of the ValueError mitmproxy's encoding.decode and
+// encode raise, "<type> when decoding b'<input>' with '<encoding>':
+// <type>('<message>')": the input is the first ten characters of its Python
+// repr, and the type is the name of the exception upstream's codec raises
+// for that encoding (LookupError for an unknown encoding, ValueError for
+// gzip, error for deflate and brotli, ZstdError for zstd). The message of an
+// unknown encoding matches upstream's; any other message is the Go
+// decoder's.
 func (e *Error) Error() string {
-	return fmt.Sprintf("error when %s %q with %q: %v", e.Op, e.Prefix, e.Encoding, e.Err)
+	input := e.inputRepr
+	if input == "" {
+		input = bytesReprPrefix(e.Prefix, e.Prefix)
+	}
+	name, msg := e.pyException()
+	return fmt.Sprintf("%s when %s %s with %s: %s(%s)", name, e.Op, input, strRepr(e.Encoding), name, strRepr(msg))
+}
+
+// pyException returns the name of the exception upstream raises for e and
+// the message it carries.
+func (e *Error) pyException() (name, msg string) {
+	if errors.Is(e.Err, ErrUnknownEncoding) {
+		// codecs.lookup's message, which names the lowercased encoding.
+		return "LookupError", "unknown encoding: " + e.Encoding
+	}
+	if e.Err != nil {
+		msg = e.Err.Error()
+	}
+	switch e.Encoding {
+	case "gzip":
+		if e.Op == "decoding" {
+			// decode_gzip re-raises zlib.error as this ValueError.
+			msg = "Decompression failed: " + msg
+		}
+		return "ValueError", msg
+	case "deflate", "deflateraw", "br":
+		// zlib.error and brotli.error are both named "error".
+		return "error", msg
+	case "zstd":
+		return "ZstdError", msg
+	default:
+		return "ValueError", msg
+	}
 }
 
 // Unwrap returns the underlying error.
@@ -141,7 +189,87 @@ func Encode(data []byte, encoding string) ([]byte, error) {
 }
 
 func newError(op, encoding string, data []byte, err error) *Error {
-	return &Error{Op: op, Encoding: encoding, Prefix: slices.Clone(data[:min(len(data), 10)]), Err: err}
+	prefix := slices.Clone(data[:min(len(data), 10)])
+	return &Error{Op: op, Encoding: encoding, Prefix: prefix, Err: err, inputRepr: bytesReprPrefix(prefix, data)}
+}
+
+// reprLimit is how many characters of the input's repr an error shows, as
+// upstream's repr(encoded)[:10].
+const reprLimit = 10
+
+// bytesReprPrefix returns the first reprLimit characters of the Python repr
+// of all, whose first bytes are prefix. prefix must hold at least the first
+// reprLimit-2 bytes of all, or all of it: every byte takes at least one
+// character after the two-character b' opening.
+func bytesReprPrefix(prefix, all []byte) string {
+	var b strings.Builder
+	q := reprQuote(bytes.IndexByte(all, '\'') >= 0, bytes.IndexByte(all, '"') >= 0)
+	b.WriteByte('b')
+	b.WriteByte(q)
+	for _, c := range prefix {
+		switch {
+		case c == q || c == '\\':
+			b.WriteByte('\\')
+			b.WriteByte(c)
+		case c == '\t':
+			b.WriteString(`\t`)
+		case c == '\n':
+			b.WriteString(`\n`)
+		case c == '\r':
+			b.WriteString(`\r`)
+		case c < 0x20 || c >= 0x7f:
+			fmt.Fprintf(&b, `\x%02x`, c)
+		default:
+			b.WriteByte(c)
+		}
+		if b.Len() >= reprLimit {
+			break
+		}
+	}
+	b.WriteByte(q)
+	s := b.String()
+	return s[:min(len(s), reprLimit)]
+}
+
+// strRepr returns the Python repr of s.
+func strRepr(s string) string {
+	var b strings.Builder
+	q := reprQuote(strings.Contains(s, "'"), strings.Contains(s, `"`))
+	b.WriteByte(q)
+	for _, r := range s {
+		switch {
+		case r == rune(q) || r == '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&b, `\x%02x`, r)
+		case r < utf8.RuneSelf || unicode.IsPrint(r):
+			b.WriteRune(r)
+		case r <= 0xff:
+			fmt.Fprintf(&b, `\x%02x`, r)
+		case r <= 0xffff:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			fmt.Fprintf(&b, `\U%08x`, r)
+		}
+	}
+	b.WriteByte(q)
+	return b.String()
+}
+
+// reprQuote picks the quote Python's repr uses: a single quote unless the
+// text contains a single quote and no double quote.
+func reprQuote(hasSingle, hasDouble bool) byte {
+	if hasSingle && !hasDouble {
+		return '"'
+	}
+	return '\''
 }
 
 // truncated reports whether err signals that the input ended early.

@@ -459,11 +459,19 @@ func NewID() string {
 	return string(s[:])
 }
 
-// Equal reports whether two state values are equal under Python's ==:
-// dictionaries compare without regard to key order, lists element by
-// element, and integers equal floats of the same value. Bytes never equal
-// strings, as in Python 3.
+// Equal reports whether two state values are equal under Python's ==.
+//
+// Dictionaries compare without regard to key order and lists element by
+// element. Integers compare by value whether held as int or int64, and
+// equal floats of the same value. Bytes never equal strings, as in Python
+// 3. Values of any other type are never equal.
 func Equal(a, b any) bool {
+	if n, ok := a.(int); ok {
+		a = int64(n)
+	}
+	if n, ok := b.(int); ok {
+		b = int64(n)
+	}
 	switch x := a.(type) {
 	case nil:
 		return b == nil

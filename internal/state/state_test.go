@@ -173,6 +173,11 @@ func TestEqual(t *testing.T) {
 		"success: nil differs from empty bytes":         {a: nil, b: []byte{}, want: false},
 		"success: list length differs":                  {a: []any{int64(1)}, b: []any{}, want: false},
 		"success: bool differs from str":                {a: true, b: "true", want: false},
+		"success: int equals int64":                     {a: 1, b: int64(1), want: true},
+		"success: int64 equals int":                     {a: int64(1), b: 1, want: true},
+		"success: int equals float":                     {a: 2, b: 2.0, want: true},
+		"success: float equals int":                     {a: 2.0, b: 2, want: true},
+		"success: int differs from int64":               {a: 1, b: int64(2), want: false},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

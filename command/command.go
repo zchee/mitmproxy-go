@@ -352,6 +352,17 @@ func (m *Manager) Register(name string, fn any, opts ...Option) error {
 	return nil
 }
 
+// Unregister removes the command registered under name and reports whether
+// there was one. The addon manager uses it to take an addon's commands away
+// when the addon is removed, so that loading the addon again can register
+// them again.
+func (m *Manager) Unregister(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.commands.Pop(name)
+	return ok
+}
+
 // Call invokes the command registered under name with native Go arguments
 // and returns its result, which is nil for a command that returns nothing.
 //

@@ -560,3 +560,42 @@ func TestManagerConcurrentUse(t *testing.T) {
 		t.Errorf("registered %d commands, want %d", count, want)
 	}
 }
+
+func TestUnregister(t *testing.T) {
+	m := command.NewManager()
+	for _, n := range []string{"a", "b", "c"} {
+		if err := m.Register(n, func() string { return "first " + n }); err != nil {
+			t.Fatalf("Register(%q): %v", n, err)
+		}
+	}
+
+	if !m.Unregister("b") {
+		t.Fatal("Unregister(b) = false, want true for a registered command")
+	}
+	if m.Unregister("b") {
+		t.Error("second Unregister(b) = true, want false")
+	}
+	if m.Unregister("nonexistent") {
+		t.Error("Unregister(nonexistent) = true, want false")
+	}
+	if _, err := m.Call(t.Context(), "b"); !errors.Is(err, command.ErrUnknownCommand) {
+		t.Errorf("Call(b) after Unregister error = %v, want ErrUnknownCommand", err)
+	}
+
+	// The name is free again: registering it succeeds and the new function
+	// is the one called; it goes to the end of the order.
+	if err := m.Register("b", func() string { return "second b" }); err != nil {
+		t.Fatalf("Register(b) after Unregister: %v", err)
+	}
+	got, err := m.Call(t.Context(), "b")
+	if err != nil || got != "second b" {
+		t.Errorf("Call(b) = %v, %v; want the second registration", got, err)
+	}
+	var names []string
+	for n := range m.Commands() {
+		names = append(names, n)
+	}
+	if diff := cmp.Diff([]string{"a", "c", "b"}, names); diff != "" {
+		t.Errorf("Commands order (-want +got):\n%s", diff)
+	}
+}

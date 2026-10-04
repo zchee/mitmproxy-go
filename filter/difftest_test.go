@@ -10,7 +10,6 @@ import (
 	json "encoding/json/v2"
 	"math/big"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -20,6 +19,7 @@ import (
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/flow/state"
 	"github.com/zchee/mitmproxy-go/flowio/tnetstring"
+	"github.com/zchee/mitmproxy-go/internal/difftest"
 	"github.com/zchee/mitmproxy-go/internal/testutil"
 )
 
@@ -32,18 +32,7 @@ import (
 //	uv run --python 3.13 --script filter/testdata/parse_oracle.py \
 //	    filter/testdata/parse_corpus.json > filter/testdata/parse_golden.json
 func TestGoldenIsCurrent(t *testing.T) {
-	uv, err := exec.LookPath("uv")
-	if err != nil {
-		t.Skip("uv is not installed")
-	}
-	cmd := exec.CommandContext(t.Context(), uv, "run", "-q", "--python", "3.13", "--script",
-		filepath.Join("testdata", "parse_oracle.py"), filepath.Join("testdata", "parse_corpus.json"))
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	got, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("parse_oracle.py: %v\n%s", err, stderr.Bytes())
-	}
+	got := difftest.Script(t, filepath.Join("testdata", "parse_oracle.py"), filepath.Join("testdata", "parse_corpus.json"))
 	want, err := os.ReadFile(filepath.Join("testdata", "parse_golden.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -106,10 +95,6 @@ var classExprs = []string{
 // flows come from testdata/match_oracle.py, which writes them to one flow
 // file in the current format; Go loads that file through flow.FromState.
 func TestMatchMatchesUpstream(t *testing.T) {
-	uv, err := exec.LookPath("uv")
-	if err != nil {
-		t.Skip("uv is not installed")
-	}
 	t.Setenv("MITMPROXY_CASE_SENSITIVE_FILTERS", "")
 	dir := t.TempDir()
 	matchExprs := slices.Concat(operatorExprs, dollarExprs, extraExprs, classExprs)
@@ -122,17 +107,7 @@ func TestMatchMatchesUpstream(t *testing.T) {
 		t.Fatal(err)
 	}
 	flowsPath := filepath.Join(dir, "flows.mitm")
-	cmd := exec.CommandContext(t.Context(), uv, "run", "-q", "--python", "3.13", "--script",
-		filepath.Join("testdata", "match_oracle.py"), testutil.FixturePath(t, "mitmproxy"), exprsPath, flowsPath)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("match_oracle.py: %v\n%s", err, stderr.Bytes())
-	}
-	if stderr.Len() > 0 {
-		t.Logf("match_oracle.py: %s", stderr.Bytes())
-	}
+	out := difftest.Script(t, filepath.Join("testdata", "match_oracle.py"), testutil.FixturePath(t, "mitmproxy"), exprsPath, flowsPath)
 	var want struct {
 		Flows   int     `json:"flows"`
 		Results [][]int `json:"results"`

@@ -8,7 +8,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -282,9 +281,6 @@ func writeFile(t *testing.T, path, content string) {
 // configuration file are resolved relative to that file, other sequence
 // options are left alone.
 func TestLoadPathsScripts(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("the expected paths use POSIX separators")
-	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Skip(err)
@@ -298,7 +294,17 @@ func TestLoadPathsScripts(t *testing.T) {
 	if err := m.LoadPaths(t.Context(), conf); err != nil {
 		t.Fatal(err)
 	}
-	wantScripts := []string{home + "/abc", dir + "/abc", dir + "/../abc", "/abc"}
+	// pathlib keeps ".." components, so the expectations are joined by hand
+	// rather than with filepath.Join, which would clean them away. "/abc" is
+	// rooted but has no drive on Windows, so it lands on the drive of the
+	// configuration file, as pathlib's join does.
+	sep := string(filepath.Separator)
+	wantScripts := []string{
+		home + sep + "abc",
+		dir + sep + "abc",
+		dir + sep + ".." + sep + "abc",
+		filepath.VolumeName(dir) + sep + "abc",
+	}
 	if diff := gocmp.Diff(wantScripts, m.Seq("scripts")); diff != "" {
 		t.Errorf("scripts (-want +got):\n%s", diff)
 	}
@@ -308,10 +314,12 @@ func TestLoadPathsScripts(t *testing.T) {
 }
 
 // TestRelativePath ports test_relative_path.
+//
+// The expectations are written with the platform separator. A path such as
+// "/abc" is absolute on POSIX but only rooted on Windows, where pathlib puts
+// it on the drive of the working directory ("D:\abc"); root is "/" on POSIX
+// and that drive's root on Windows.
 func TestRelativePath(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("the expected paths use POSIX separators")
-	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Skip(err)
@@ -320,22 +328,25 @@ func TestRelativePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sep := string(filepath.Separator)
+	root := filepath.VolumeName(wd) + sep
+	join := func(elem ...string) string { return strings.Join(elem, sep) }
 	tests := map[string]struct {
 		script, relativeTo, want string
 	}{
-		"success: home, dot":           {script: "~/abc", relativeTo: ".", want: home + "/abc"},
-		"success: absolute, dot":       {script: "/abc", relativeTo: ".", want: "/abc"},
-		"success: relative, dot":       {script: "abc", relativeTo: ".", want: wd + "/abc"},
-		"success: parent, dot":         {script: "../abc", relativeTo: ".", want: wd + "/../abc"},
-		"success: home, absolute":      {script: "~/abc", relativeTo: "/tmp", want: home + "/abc"},
-		"success: absolute, absolute":  {script: "/abc", relativeTo: "/tmp", want: "/abc"},
-		"success: relative, absolute":  {script: "abc", relativeTo: "/tmp", want: "/tmp/abc"},
-		"success: parent, absolute":    {script: "../abc", relativeTo: "/tmp", want: "/tmp/../abc"},
-		"success: home, relative":      {script: "~/abc", relativeTo: "foo", want: home + "/abc"},
-		"success: absolute, relative":  {script: "/abc", relativeTo: "foo", want: "/abc"},
-		"success: relative, relative":  {script: "abc", relativeTo: "foo", want: wd + "/foo/abc"},
-		"success: parent, relative":    {script: "../abc", relativeTo: "foo", want: wd + "/foo/../abc"},
-		"success: dot components drop": {script: "./a//b/./c", relativeTo: "/tmp/", want: "/tmp/a/b/c"},
+		"success: home, dot":           {script: "~/abc", relativeTo: ".", want: join(home, "abc")},
+		"success: absolute, dot":       {script: "/abc", relativeTo: ".", want: root + "abc"},
+		"success: relative, dot":       {script: "abc", relativeTo: ".", want: join(wd, "abc")},
+		"success: parent, dot":         {script: "../abc", relativeTo: ".", want: join(wd, "..", "abc")},
+		"success: home, absolute":      {script: "~/abc", relativeTo: "/tmp", want: join(home, "abc")},
+		"success: absolute, absolute":  {script: "/abc", relativeTo: "/tmp", want: root + "abc"},
+		"success: relative, absolute":  {script: "abc", relativeTo: "/tmp", want: root + join("tmp", "abc")},
+		"success: parent, absolute":    {script: "../abc", relativeTo: "/tmp", want: root + join("tmp", "..", "abc")},
+		"success: home, relative":      {script: "~/abc", relativeTo: "foo", want: join(home, "abc")},
+		"success: absolute, relative":  {script: "/abc", relativeTo: "foo", want: root + "abc"},
+		"success: relative, relative":  {script: "abc", relativeTo: "foo", want: join(wd, "foo", "abc")},
+		"success: parent, relative":    {script: "../abc", relativeTo: "foo", want: join(wd, "foo", "..", "abc")},
+		"success: dot components drop": {script: "./a//b/./c", relativeTo: "/tmp/", want: root + join("tmp", "a", "b", "c")},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

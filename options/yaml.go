@@ -359,26 +359,56 @@ func relativePath(script, relativeTo string) string {
 }
 
 // pyJoin joins b onto a the way pathlib's "/" operator does: an absolute b
-// replaces a.
+// replaces a. On Windows, where a path can have a drive without a root
+// ("C:x") or a root without a drive (`\x`), it follows ntpath.join: a b on
+// another drive replaces a, a b on the same drive is joined onto a's
+// directory, and a rooted b keeps only a's drive.
 func pyJoin(a, b string) string {
 	if filepath.IsAbs(b) {
 		return pyNormalize(b)
+	}
+	volA, volB := filepath.VolumeName(a), filepath.VolumeName(b)
+	switch {
+	case volB != "" && !strings.EqualFold(volA, volB):
+		return pyNormalize(b)
+	case volB != "":
+		return pyNormalize(volB + a[len(volA):] + string(filepath.Separator) + b[len(volB):])
+	case isRooted(b):
+		return pyNormalize(volA + b)
 	}
 	return pyNormalize(a + string(filepath.Separator) + b)
 }
 
 // pyAbsolute is pathlib's Path.absolute: it prefixes the working directory
-// to a relative path without normalising "..".
+// to a relative path without normalising "..". On Windows a rooted path
+// without a drive gets the working directory's drive, and a path with a
+// drive but no root is resolved against that drive's working directory.
 func pyAbsolute(p string) string {
 	if filepath.IsAbs(p) {
 		return pyNormalize(p)
+	}
+	if vol := filepath.VolumeName(p); vol != "" {
+		// filepath.Abs of a bare drive asks the system for the working
+		// directory of that drive, as os.path.abspath does.
+		base, err := filepath.Abs(vol)
+		if err != nil {
+			return pyNormalize(p)
+		}
+		return pyNormalize(base + string(filepath.Separator) + p[len(vol):])
 	}
 	wd, err := os.Getwd()
 	if err != nil {
 		return pyNormalize(p)
 	}
+	if isRooted(p) {
+		return pyNormalize(filepath.VolumeName(wd) + p)
+	}
 	return pyNormalize(wd + string(filepath.Separator) + p)
 }
+
+// isRooted reports whether p starts with a path separator. Such a path is
+// absolute on POSIX but not on Windows, where it has no drive.
+func isRooted(p string) bool { return p != "" && os.IsPathSeparator(p[0]) }
 
 // pyNormalize applies pathlib's lexical normalisation: repeated separators
 // and "." components are removed, ".." components are kept.

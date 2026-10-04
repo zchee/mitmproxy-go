@@ -26,7 +26,7 @@ import sys
 import orjson
 
 os.environ.pop("MITMPROXY_CASE_SENSITIVE_FILTERS", None)
-from mitmproxy import flowfilter  # noqa: E402
+from mitmproxy import flowfilter
 
 
 def tree(flt: flowfilter.TFilter) -> list:
@@ -64,6 +64,9 @@ def main() -> None:
     """Write the golden records for the corpus named on the command line."""
     with open(sys.argv[1], "rb") as f:
         corpus = orjson.loads(f.read())
+    # flowfilter reads the variable at import time.
+    os.environ.pop("MITMPROXY_CASE_SENSITIVE_FILTERS", None)
+    importlib.reload(flowfilter)
     records = [record(expr) for expr in corpus]
 
     os.environ["MITMPROXY_CASE_SENSITIVE_FILTERS"] = "1"
@@ -74,7 +77,9 @@ def main() -> None:
 
     help_table = [list(row) for row in flowfilter.help]
     sys.stdout.buffer.write(
-        orjson.dumps({"help": help_table, "records": records}, option=orjson.OPT_INDENT_2)
+        orjson.dumps(
+            {"help": help_table, "records": records}, option=orjson.OPT_INDENT_2
+        )
     )
     sys.stdout.buffer.write(b"\n")
 

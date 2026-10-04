@@ -18,6 +18,14 @@
 //   - ! (not) binds tightest, then & (and), then | (or); parentheses
 //     group. Expressions written next to each other at the top level are
 //     joined with an implicit and; inside parentheses they are an error.
+//   - Tabs are expanded to spaces before parsing, as pyparsing's
+//     parse_string does with str.expandtabs, so a tab inside a quoted
+//     argument reaches the pattern as spaces.
+//   - In a quoted argument \t, \n, \f and \r become control characters,
+//     \0 becomes NUL, and any other backslash is dropped, so \d is "d".
+//     \x41 stays the text "x41": pyparsing 3.3's QuotedString writes its
+//     numeric-escape regex in an f-string, which turns {2} and {4} into
+//     the literal digits 2 and 4, so only \xH2 and \uH4 are decoded.
 //   - Patterns are case-insensitive unless the environment variable
 //     MITMPROXY_CASE_SENSITIVE_FILTERS is "1". ~h, ~hq, ~hs, ~meta and
 //     ~comment compile with MULTILINE, ~b, ~bq and ~bs with DOTALL. See

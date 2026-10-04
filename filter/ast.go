@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/zchee/mitmproxy-go/filter/regex"
+	"github.com/zchee/mitmproxy-go/flow"
 )
 
 // Expr is a parsed filter expression.
@@ -21,6 +22,8 @@ type Expr interface {
 	// Describe returns the English rendering mitmproxy prints for the
 	// expression, such as "url matches /foo/i and response code is 200".
 	Describe() string
+	// Match reports whether the flow matches the expression.
+	Match(f flow.Flow) bool
 
 	isExpr()
 }
@@ -72,6 +75,17 @@ func (*Int) isExpr()   {}
 func (*And) isExpr()   {}
 func (*Or) isExpr()    {}
 func (*Not) isExpr()   {}
+
+// Equal reports whether r and o are the same operator with the same
+// pattern. The compiled pattern is not compared: it follows from the two
+// and the environment at parse time. go-cmp uses this method, which keeps
+// it from failing on the unexported field.
+func (r *Rex) Equal(o *Rex) bool {
+	if r == nil || o == nil {
+		return r == o
+	}
+	return r.Token == o.Token && r.Pattern == o.Pattern
+}
 
 // Regexp returns the compiled pattern. It is nil for a Rex that was not
 // built by Parse.

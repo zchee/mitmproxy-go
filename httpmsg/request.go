@@ -6,7 +6,7 @@ package httpmsg
 import (
 	"strings"
 
-	"github.com/zchee/mitmproxy-go/internal/state"
+	"github.com/zchee/mitmproxy-go/flow/state"
 )
 
 // Request is an HTTP request.

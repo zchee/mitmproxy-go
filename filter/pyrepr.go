@@ -10,8 +10,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/zchee/mitmproxy-go/flow/state"
 	"github.com/zchee/mitmproxy-go/flowio/tnetstring"
-	"github.com/zchee/mitmproxy-go/internal/state"
 )
 
 // pyStr formats a state value the way Python's str() formats the object it

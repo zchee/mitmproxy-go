@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zchee/mitmproxy-go/internal/state"
+	"github.com/zchee/mitmproxy-go/flow/state"
 )
 
 // Cookie handling follows upstream's deliberately permissive parser: it

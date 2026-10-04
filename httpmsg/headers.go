@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/zchee/mitmproxy-go/internal/state"
+	"github.com/zchee/mitmproxy-go/flow/state"
 )
 
 // Field is one raw header field: name and value exactly as they were

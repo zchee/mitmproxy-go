@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/zchee/mitmproxy-go/flow/state"
 	"github.com/zchee/mitmproxy-go/internal/human"
-	"github.com/zchee/mitmproxy-go/internal/state"
 )
 
 // State is the state of the underlying socket, as a set of flags.

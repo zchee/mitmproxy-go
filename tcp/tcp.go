@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/zchee/mitmproxy-go/internal/state"
+	"github.com/zchee/mitmproxy-go/flow/state"
 )
 
 // Message is one chunk of a TCP stream.

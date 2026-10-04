@@ -9,7 +9,7 @@ import (
 
 	gocmp "github.com/google/go-cmp/cmp"
 
-	"github.com/zchee/mitmproxy-go/internal/state"
+	"github.com/zchee/mitmproxy-go/flow/state"
 )
 
 // tWebSocket mirrors upstream's mitmproxy.test.tflow.twebsocket.

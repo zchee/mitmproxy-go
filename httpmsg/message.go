@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/zchee/mitmproxy-go/internal/state"
+	"github.com/zchee/mitmproxy-go/flow/state"
 )
 
 // Message holds the fields requests and responses share.

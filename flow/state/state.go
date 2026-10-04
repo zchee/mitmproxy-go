@@ -1,18 +1,32 @@
 // Copyright 2026 The mitmproxy-go Authors.
 // SPDX-License-Identifier: MIT
 
-// Package state holds the helpers every flow model uses to convert itself to
-// and from mitmproxy's serialised state dictionaries.
+// Package state is the serialised-state vocabulary of flows.
+//
+// mitmproxy saves a flow as its state: a tree of Python dicts, lists and
+// scalars produced by get_state and consumed by set_state, which the flow
+// file codec writes as tnetstrings. In Go, every flow, connection and
+// message model has GetState and SetState methods that produce and consume
+// the same tree, and free-form data such as flow metadata is held in it
+// directly.
+//
+// A state dictionary is a [Map]: an insertion-ordered map from the
+// github.com/zchee/mitmproxy-go/omap package, so that keys are written back
+// in the order mitmproxy writes them. Each key is either text (Python str,
+// added with [omap.Map.Set]) or a byte string (Python bytes, added with
+// [omap.Map.SetBytesKey]); a flow file can hold both.
 //
 // A state value is one of the types the flow file codec can carry: nil (for
 // Python None), bool, int64, float64, string (Python str), []byte (Python
-// bytes), []any (Python list or tuple) and *omap.Map[any] (Python dict). An
-// integer that does not fit in an int64 is a *big.Int. Free-form state such
-// as flow metadata keeps it and writes it back unchanged; the typed
-// accessors refuse it, since the models hold integers as int64.
-// Models build their state with [omap.NewWithCapacity] and read it back with
-// a [Decoder], which consumes the dictionary key by key so that whatever is
-// left afterwards is reported as unexpected, as upstream's set_state does.
+// bytes), []any (Python list or tuple) and *Map (Python dict). An integer
+// that does not fit in an int64 is a *big.Int. Free-form state such as flow
+// metadata keeps it and writes it back unchanged; the typed accessors refuse
+// it, since the models hold integers as int64. The accessors also accept a
+// Go int where an integer is expected.
+//
+// Models build their state with [NewMap] and read it back with a [Decoder],
+// which consumes the dictionary key by key so that whatever is left
+// afterwards is reported as unexpected, as upstream's set_state does.
 package state
 
 import (

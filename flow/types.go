@@ -8,8 +8,8 @@ import (
 
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/dns"
+	"github.com/zchee/mitmproxy-go/flow/state"
 	"github.com/zchee/mitmproxy-go/httpmsg"
-	"github.com/zchee/mitmproxy-go/internal/state"
 	"github.com/zchee/mitmproxy-go/tcp"
 	"github.com/zchee/mitmproxy-go/udp"
 	"github.com/zchee/mitmproxy-go/websocket"

@@ -15,7 +15,7 @@ import (
 	"slices"
 	"unicode/utf8"
 
-	"github.com/zchee/mitmproxy-go/internal/state"
+	"github.com/zchee/mitmproxy-go/flow/state"
 )
 
 // Opcode is a WebSocket frame opcode as defined by RFC 6455, section 5.2.

@@ -18,8 +18,8 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/flow"
+	"github.com/zchee/mitmproxy-go/flow/state"
 	"github.com/zchee/mitmproxy-go/flowio/tnetstring"
-	"github.com/zchee/mitmproxy-go/internal/state"
 	"github.com/zchee/mitmproxy-go/internal/testutil"
 )
 

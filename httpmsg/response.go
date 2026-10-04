@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/zchee/mitmproxy-go/flow/state"
 	"github.com/zchee/mitmproxy-go/internal/human"
-	"github.com/zchee/mitmproxy-go/internal/state"
 )
 
 // Response is an HTTP response.

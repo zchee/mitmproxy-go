@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/zchee/mitmproxy-go/internal/state"
+	"github.com/zchee/mitmproxy-go/flow/state"
 )
 
 // QuotePlus is [Quote] with an empty safe set, except that spaces become

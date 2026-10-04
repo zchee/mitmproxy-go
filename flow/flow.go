@@ -18,7 +18,7 @@ import (
 	"sync"
 
 	"github.com/zchee/mitmproxy-go/connection"
-	"github.com/zchee/mitmproxy-go/internal/state"
+	"github.com/zchee/mitmproxy-go/flow/state"
 )
 
 // FormatVersion is the flow format version this package reads and writes.

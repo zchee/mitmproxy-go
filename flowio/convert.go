@@ -4,8 +4,8 @@
 package flowio
 
 import (
+	"github.com/zchee/mitmproxy-go/flow/state"
 	"github.com/zchee/mitmproxy-go/flowio/tnetstring"
-	"github.com/zchee/mitmproxy-go/internal/state"
 )
 
 // fromTnetstring converts a decoded tnetstring value into a state value:

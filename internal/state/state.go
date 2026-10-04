@@ -437,3 +437,63 @@ func NewID() string {
 	}
 	return string(s[:])
 }
+
+// Equal reports whether two state values are equal under Python's ==:
+// dictionaries compare without regard to key order, lists element by
+// element, and integers equal floats of the same value. Bytes never equal
+// strings, as in Python 3.
+func Equal(a, b any) bool {
+	switch x := a.(type) {
+	case nil:
+		return b == nil
+	case bool:
+		y, ok := b.(bool)
+		return ok && x == y
+	case int64:
+		switch y := b.(type) {
+		case int64:
+			return x == y
+		case float64:
+			return float64(x) == y
+		}
+		return false
+	case float64:
+		switch y := b.(type) {
+		case float64:
+			return x == y
+		case int64:
+			return x == float64(y)
+		}
+		return false
+	case string:
+		y, ok := b.(string)
+		return ok && x == y
+	case []byte:
+		y, ok := b.([]byte)
+		return ok && string(x) == string(y)
+	case []any:
+		y, ok := b.([]any)
+		if !ok || len(x) != len(y) {
+			return false
+		}
+		for i := range x {
+			if !Equal(x[i], y[i]) {
+				return false
+			}
+		}
+		return true
+	case *Map:
+		y, ok := b.(*Map)
+		if !ok || x.Len() != y.Len() {
+			return false
+		}
+		for k, v := range x.All() {
+			w, ok := y.Get(k)
+			if !ok || !Equal(v, w) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}

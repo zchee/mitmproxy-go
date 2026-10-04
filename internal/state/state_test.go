@@ -148,3 +148,37 @@ func TestNewID(t *testing.T) {
 		seen[id] = true
 	}
 }
+
+func TestEqual(t *testing.T) {
+	t.Parallel()
+
+	ab := NewMap(2)
+	ab.Set("a", int64(1))
+	ab.Set("b", []any{[]byte("x")})
+	ba := NewMap(2)
+	ba.Set("b", []any{[]byte("x")})
+	ba.Set("a", 1.0)
+	other := NewMap(2)
+	other.Set("a", int64(1))
+	other.Set("b", []any{"x"})
+
+	tests := map[string]struct {
+		a, b any
+		want bool
+	}{
+		"success: dict order ignored, int equals float": {a: ab, b: ba, want: true},
+		"success: bytes differ from str":                {a: ab, b: other, want: false},
+		"success: nil equals nil":                       {a: nil, b: nil, want: true},
+		"success: nil differs from empty bytes":         {a: nil, b: []byte{}, want: false},
+		"success: list length differs":                  {a: []any{int64(1)}, b: []any{}, want: false},
+		"success: bool differs from str":                {a: true, b: "true", want: false},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if got := Equal(tt.a, tt.b); got != tt.want {
+				t.Errorf("Equal(%v, %v) = %v, want %v", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}

@@ -510,29 +510,6 @@ func TestResponseString(t *testing.T) {
 	}
 }
 
-func TestPrettySize(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		size int
-		want string
-	}{
-		"success: bytes":           {size: 100, want: "100b"},
-		"success: kilobytes":       {size: 1024, want: "1.0k"},
-		"success: large kilobytes": {size: 1024 * 100, want: "100k"},
-		"success: megabytes":       {size: 1024 * 1024 * 5, want: "5.0m"},
-		"success: terabytes cap":   {size: 1 << 52, want: "4096t"},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			if got := prettySize(tt.size); got != tt.want {
-				t.Errorf("prettySize(%d) = %q, want %q", tt.size, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestMessageContent(t *testing.T) {
 	t.Parallel()
 

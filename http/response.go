@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/zchee/mitmproxy-go/internal/human"
 	"github.com/zchee/mitmproxy-go/internal/state"
 )
 
@@ -54,26 +55,7 @@ func (r *Response) String() string {
 	if !ok {
 		ct = "unknown content type"
 	}
-	return fmt.Sprintf("Response(%d, %s, %s)", r.StatusCode, ct, prettySize(len(r.RawContent)))
-}
-
-// prettySize formats a byte count in at most five characters, as upstream's
-// human.pretty_size does.
-func prettySize(size int) string {
-	if size < 1024 {
-		return strconv.Itoa(size) + "b"
-	}
-	s := float64(size)
-	for _, suffix := range []string{"k", "m", "g", "t"} {
-		s /= 1024
-		if s < 99.95 {
-			return strconv.FormatFloat(s, 'f', 1, 64) + suffix
-		}
-		if s < 1024 || suffix == "t" {
-			return strconv.FormatFloat(s, 'f', 0, 64) + suffix
-		}
-	}
-	panic("unreachable")
+	return fmt.Sprintf("Response(%d, %s, %s)", r.StatusCode, ct, human.PrettySize(int64(len(r.RawContent))))
 }
 
 func itoa(i int) string { return strconv.Itoa(i) }

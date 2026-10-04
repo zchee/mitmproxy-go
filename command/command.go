@@ -1,0 +1,378 @@
+// Copyright 2026 The mitmproxy-go Authors.
+// SPDX-License-Identifier: MIT
+
+// Package command manages typed commands that addons register and that the
+// frontends invoke by name.
+//
+// A command is an ordinary Go function. Its parameter and result types are
+// checked when it is registered: every parameter must map to a command type
+// identity ([Type]), and so must the result, mirroring the annotation checks
+// mitmproxy performs when it builds a Command.
+package command
+
+import (
+	"context"
+	"fmt"
+	"iter"
+	"reflect"
+	"strings"
+	"sync"
+
+	"github.com/zchee/mitmproxy-go/internal/omap"
+)
+
+// Param describes one parameter of a command.
+type Param struct {
+	// Name is the parameter name shown in signature help.
+	Name string
+	// Type is the parameter's type identity. For a variadic parameter it is
+	// the identity of each element.
+	Type Type
+	// Variadic reports whether the parameter takes any number of trailing
+	// arguments, like Python's *args.
+	Variadic bool
+}
+
+// String returns the parameter as signature help prints it: the name,
+// prefixed with "*" when the parameter is variadic.
+func (p Param) String() string {
+	if p.Variadic {
+		return "*" + p.Name
+	}
+	return p.Name
+}
+
+// Command is a registered command.
+type Command struct {
+	// Name is the name the command is called by, for example "view.flows.add".
+	Name string
+	// Help is the command's help text; it is empty when none was given.
+	Help string
+	// Params lists the command's parameters in call order. A leading
+	// context.Context parameter of the function is not listed.
+	Params []Param
+	// Return is the identity of the command's result, or nil when the
+	// command returns nothing.
+	Return Type
+
+	fn       reflect.Value
+	takesCtx bool
+	hasValue bool // fn returns a value before the optional error
+	hasErr   bool // fn's last result is an error
+}
+
+// SignatureHelp returns the one-line signature mitmproxy prints for the
+// command, for example "varargs one *var -> str[]".
+func (c *Command) SignatureHelp() string {
+	params := make([]string, len(c.Params))
+	for i, p := range c.Params {
+		params[i] = p.String()
+	}
+	var ret string
+	if c.Return != nil {
+		ret = " -> " + c.Return.Display()
+	}
+	return c.Name + " " + strings.Join(params, " ") + ret
+}
+
+// Option configures a command at registration.
+type Option func(*options)
+
+type argumentOverride struct {
+	name string
+	typ  Type
+}
+
+type options struct {
+	help      string
+	names     []string
+	overrides []argumentOverride
+}
+
+// WithHelp sets the command's help text. Surrounding whitespace is removed.
+func WithHelp(help string) Option {
+	return func(o *options) { o.help = strings.TrimSpace(help) }
+}
+
+// WithParams names the command's parameters in order, excluding a leading
+// context.Context parameter. Go functions carry no parameter names at run
+// time, so without this option the parameters are named arg0, arg1 and so
+// on. Registration fails when the number of names differs from the number of
+// parameters, or when a name is empty or repeated.
+func WithParams(names ...string) Option {
+	return func(o *options) { o.names = names }
+}
+
+// WithArgument sets the type identity of the parameter called name, for
+// identities that the parameter's Go type does not determine on its own,
+// such as [Choice]. The parameter's Go type must be the one the identity
+// binds to. It is the counterpart of mitmproxy's command.argument decorator.
+func WithArgument(name string, t Type) Option {
+	return func(o *options) { o.overrides = append(o.overrides, argumentOverride{name: name, typ: t}) }
+}
+
+var (
+	contextType = reflect.TypeFor[context.Context]()
+	errorType   = reflect.TypeFor[error]()
+)
+
+// newCommand builds a Command from fn, checking its signature.
+func newCommand(name string, fn any, opts ...Option) (*Command, error) {
+	if name == "" {
+		return nil, fmt.Errorf("%w: empty command name", ErrSignature)
+	}
+	fv := reflect.ValueOf(fn)
+	if fv.Kind() != reflect.Func || fv.IsNil() {
+		return nil, fmt.Errorf("%w: command %s: %T is not a function", ErrSignature, name, fn)
+	}
+	ft := fv.Type()
+
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	c := &Command{Name: name, Help: o.help, fn: fv}
+
+	first := 0
+	if ft.NumIn() > 0 && ft.In(0) == contextType {
+		c.takesCtx = true
+		first = 1
+	}
+	n := ft.NumIn() - first
+	if o.names != nil && len(o.names) != n {
+		return nil, fmt.Errorf("%w: command %s: %d parameter names for %d parameters", ErrSignature, name, len(o.names), n)
+	}
+
+	c.Params = make([]Param, n)
+	index := make(map[string]int, n)
+	for i := range n {
+		pname := fmt.Sprintf("arg%d", i)
+		if o.names != nil {
+			pname = o.names[i]
+		}
+		if pname == "" {
+			return nil, fmt.Errorf("%w: command %s: parameter %d has an empty name", ErrSignature, name, i)
+		}
+		if _, dup := index[pname]; dup {
+			return nil, fmt.Errorf("%w: command %s: parameter name %q is repeated", ErrSignature, name, pname)
+		}
+		index[pname] = i
+		c.Params[i] = Param{Name: pname, Variadic: ft.IsVariadic() && i == n-1}
+	}
+
+	// Explicit identities replace the ones derived from the Go types, so they
+	// are applied first and the derived identity is looked up only for the
+	// parameters left without one.
+	for _, ov := range o.overrides {
+		i, ok := index[ov.name]
+		if !ok {
+			return nil, fmt.Errorf("%w: command %s: no parameter named %q", ErrSignature, name, ov.name)
+		}
+		if ov.typ == nil {
+			return nil, fmt.Errorf("%w: command %s: nil type for parameter %s", ErrSignature, name, ov.name)
+		}
+		pt := paramGoType(ft, first+i, c.Params[i].Variadic)
+		if want := goTypeOf(ov.typ); want == nil || want != pt {
+			return nil, fmt.Errorf("%w: command %s: parameter %s has Go type %v, which cannot carry type %s", ErrSignature, name, ov.name, pt, ov.typ.Name())
+		}
+		c.Params[i].Type = ov.typ
+	}
+	for i := range c.Params {
+		if c.Params[i].Type != nil {
+			continue
+		}
+		pt := paramGoType(ft, first+i, c.Params[i].Variadic)
+		t, err := TypeFor(pt)
+		if err != nil {
+			return nil, fmt.Errorf("command %s: argument %s has an unknown type: %w", name, c.Params[i].Name, err)
+		}
+		c.Params[i].Type = t
+	}
+
+	if err := c.setReturn(ft); err != nil {
+		return nil, fmt.Errorf("command %s: %w", name, err)
+	}
+	return c, nil
+}
+
+// paramGoType returns the Go type of the in-th parameter of ft, or its
+// element type when the parameter is variadic.
+func paramGoType(ft reflect.Type, in int, variadic bool) reflect.Type {
+	if variadic {
+		return ft.In(in).Elem()
+	}
+	return ft.In(in)
+}
+
+// setReturn derives the command's result identity. A function may return
+// nothing, an error, a value, or a value and an error.
+func (c *Command) setReturn(ft reflect.Type) error {
+	switch ft.NumOut() {
+	case 0:
+		return nil
+	case 1:
+		if ft.Out(0) == errorType {
+			c.hasErr = true
+			return nil
+		}
+	case 2:
+		if ft.Out(1) != errorType {
+			return fmt.Errorf("%w: second result must be error, not %v", ErrSignature, ft.Out(1))
+		}
+		c.hasErr = true
+	default:
+		return fmt.Errorf("%w: %d results; want at most a value and an error", ErrSignature, ft.NumOut())
+	}
+	t, err := TypeFor(ft.Out(0))
+	if err != nil {
+		return fmt.Errorf("return type has an unknown type: %w", err)
+	}
+	c.Return = t
+	c.hasValue = true
+	return nil
+}
+
+// call invokes the command with native Go arguments, checking their number
+// and types first so that a mismatch is an error instead of a panic.
+func (c *Command) call(ctx context.Context, args []any) (any, error) {
+	ft := c.fn.Type()
+	n := len(c.Params)
+	variadic := n > 0 && c.Params[n-1].Variadic
+	if (!variadic && len(args) != n) || (variadic && len(args) < n-1) {
+		return nil, fmt.Errorf("%w: %s takes %s, got %d", ErrArgumentMismatch, c.Name, arity(n, variadic), len(args))
+	}
+
+	first := 0
+	in := make([]reflect.Value, 0, len(args)+1)
+	if c.takesCtx {
+		// Going through a pointer keeps the interface type, so a nil ctx is
+		// passed as a nil context.Context instead of an invalid Value.
+		in = append(in, reflect.ValueOf(&ctx).Elem())
+		first = 1
+	}
+	for i, arg := range args {
+		pi := min(i, n-1)
+		pt := paramGoType(ft, first+pi, variadic && pi == n-1)
+		v, err := argValue(arg, pt)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s argument %s: %w", ErrArgumentMismatch, c.Name, c.Params[pi].Name, err)
+		}
+		in = append(in, v)
+	}
+
+	out := c.fn.Call(in)
+	var (
+		ret any
+		err error
+	)
+	if c.hasValue {
+		ret = out[0].Interface()
+	}
+	if c.hasErr {
+		if e := out[len(out)-1]; !e.IsNil() {
+			err = e.Interface().(error)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+// argValue converts arg to a reflect.Value usable as a parameter of type pt.
+func argValue(arg any, pt reflect.Type) (reflect.Value, error) {
+	if arg == nil {
+		switch pt.Kind() {
+		case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+			return reflect.Zero(pt), nil
+		default:
+			return reflect.Value{}, fmt.Errorf("nil is not a %v", pt)
+		}
+	}
+	v := reflect.ValueOf(arg)
+	if !v.Type().AssignableTo(pt) {
+		return reflect.Value{}, fmt.Errorf("%T is not a %v", arg, pt)
+	}
+	return v, nil
+}
+
+// arity describes how many arguments a command takes.
+func arity(n int, variadic bool) string {
+	switch {
+	case variadic:
+		return fmt.Sprintf("at least %d arguments", n-1)
+	case n == 1:
+		return "1 argument"
+	default:
+		return fmt.Sprintf("%d arguments", n)
+	}
+}
+
+// Manager holds the registered commands. It is safe for concurrent use.
+type Manager struct {
+	mu       sync.RWMutex
+	commands omap.Map[*Command]
+}
+
+// NewManager returns an empty Manager.
+func NewManager() *Manager {
+	return &Manager{}
+}
+
+// Register checks the signature of fn and registers it under name.
+//
+// fn must be a function. An optional first parameter of type
+// context.Context receives the context passed to [Manager.Call] and is not a
+// command parameter. Every other parameter type, and the result type, must
+// map to a command type identity (see [TypeFor]); a variadic final
+// parameter maps on its element type. fn may return nothing, an error, a
+// value, or a value and an error.
+//
+// Unlike mitmproxy, which silently replaces a command registered twice,
+// Register refuses a name that is already taken, so that two addons claiming
+// the same command are reported instead of one shadowing the other.
+func (m *Manager) Register(name string, fn any, opts ...Option) error {
+	c, err := newCommand(name, fn, opts...)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.commands.Has(name) {
+		return fmt.Errorf("%w: %s", ErrDuplicateCommand, name)
+	}
+	m.commands.Set(name, c)
+	return nil
+}
+
+// Call invokes the command registered under name with native Go arguments
+// and returns its result, which is nil for a command that returns nothing.
+//
+// ctx is passed to a command that declares a leading context.Context
+// parameter. The Manager's lock is not held while the command runs, so a
+// command may call other commands.
+func (m *Manager) Call(ctx context.Context, name string, args ...any) (any, error) {
+	m.mu.RLock()
+	c, ok := m.commands.Get(name)
+	m.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrUnknownCommand, name)
+	}
+	return c.call(ctx, args)
+}
+
+// Commands returns an iterator over the registered commands in registration
+// order. It iterates over a snapshot taken when iteration starts.
+func (m *Manager) Commands() iter.Seq2[string, *Command] {
+	return func(yield func(string, *Command) bool) {
+		m.mu.RLock()
+		snapshot := m.commands.Clone()
+		m.mu.RUnlock()
+		for name, c := range snapshot.All() {
+			if !yield(name, c) {
+				return
+			}
+		}
+	}
+}

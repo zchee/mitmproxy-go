@@ -527,3 +527,9 @@ TLS and protocol layers:
 | `export` returns a Unicode string after surrogateescape encoding and backslashreplace decoding (`mitmproxy/addons/export.py:226-232`). | Returns UTF-8 bytes, replacing each invalid UTF-8 byte with the literal `\xNN`; file exports retain raw bytes. | Go bytes have no surrogate code points; this preserves the upstream display conversion with the command's byte result type. |
 | Clipboard support is always imported and runtime failures are logged (`mitmproxy/addons/export.py:207-216`). | `export.clip` is always registered, but without the `clipboard` build tag returns `export.clip: clipboard support is not compiled in (build with -tags clipboard)`. Tagged builds use golang.design/x/clipboard and log runtime errors. | Keep default builds independent of desktop clipboard support. |
 | File and clipboard errors contain Python's OS/library diagnostics (`mitmproxy/addons/export.py:205,216`). | Log Go OS/library diagnostics. | Error details come from the runtime and clipboard library in use. |
+## addons/modifyheaders
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `ModifySpec.read_replacement` reads an `@` file without a size limit (`mitmproxy/addons/modifyheaders.py:21-33`). | Replacement files larger than 16 MiB are rejected during configure and on each later read. | Bound memory retained under the addon dispatch lock; file changes still take effect immediately. |
+| Invalid file diagnostics include Python's `OSError` details; invalid subject patterns include Python's `re.error` details (`mitmproxy/addons/modifyheaders.py:36-53`). | The `Invalid file path:` and `Invalid regular expression` prefixes are retained; details come from Go's filesystem and the shared Python-syntax regex compiler. | Diagnostics belong to the implementation in use. |

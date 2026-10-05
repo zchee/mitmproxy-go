@@ -356,6 +356,31 @@ func TestCompileOverlapDoesNotBacktrack(t *testing.T) {
 	}
 }
 
+// TestTranslateClassesLinear checks that the translation reads a pattern
+// in one pass. Looking ahead to the end of the pattern from every group
+// takes seconds on these 2 MB patterns; one pass takes milliseconds.
+func TestTranslateClassesLinear(t *testing.T) {
+	tests := map[string]struct {
+		unit string
+	}{
+		"success: lookaheads":            {unit: "(?=a)"},
+		"success: unclosed flag letters": {unit: "(?i"},
+		"success: named groups":          {unit: "(?P<n>a)"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			body := strings.Repeat(tt.unit, 2<<20/len(tt.unit))
+			start := time.Now()
+			if _, err := translateClasses(body, Unicode, true, false); err != nil {
+				t.Fatalf("translateClasses() error = %v", err)
+			}
+			if elapsed := time.Since(start); elapsed > time.Second {
+				t.Errorf("translateClasses() on %d bytes took %v; the scan is not linear", len(body), elapsed)
+			}
+		})
+	}
+}
+
 // BenchmarkMatchOverlappingClass matches \b[\w_]+Z on a URL followed by a
 // run of underscores that ends in a near miss. The time per byte stays the
 // same as the run grows only if the regexp2 translation of [\w_] gives the

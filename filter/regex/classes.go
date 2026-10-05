@@ -572,8 +572,13 @@ func flagGroup(rest string) (on, off string, n int, ok bool) {
 	if !found {
 		return "", "", 0, false
 	}
-	end := strings.IndexByte(body, ':')
-	if end < 0 {
+	// Read only the flag letters, so that the scan of a pattern stays
+	// linear however many groups it opens.
+	end := 0
+	for end < len(body) && strings.IndexByte("aiLmsux-", body[end]) >= 0 {
+		end++
+	}
+	if end == len(body) || body[end] != ':' {
 		return "", "", 0, false
 	}
 	on, off, _ = strings.Cut(body[:end], "-")

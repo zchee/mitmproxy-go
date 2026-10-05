@@ -378,6 +378,14 @@ increments it.
 |---|---|---|
 | Reverse retargeting of a manually constructed HTTP flow without a request raises `AttributeError` (`mitmproxy/master.py`). | `LoadFlow` returns an error. | Invalid Go values must not panic; flow files contain requests. |
 
+## addons/apphost
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Hosts ASGI/WSGI callables with an ASGI scope (`mitmproxy/addons/asgiapp.py`). | Hosts `http.Handler` with a private `http.Request` snapshot, outside the dispatch lock. Paths, queries, headers and compressed response bytes follow `net/http` conventions; request paths that `net/url` rejects produce the app-error response. Headers use Go's canonical names and deterministic alphabetical name order; repeated values retain their order. | The approved Go interface is the standard HTTP handler, not a Python application protocol. |
+| Response fields are updated while the async app sends events (`mitmproxy/addons/asgiapp.py`). | The response becomes visible atomically after the handler returns and the dispatch lock is reacquired. | Other goroutines must not see partial response construction or race with the handler. |
+| The registration name changes if `host` changes (`mitmproxy/addons/asgiapp.py`). | The registration name remains fixed; `SetHost` changes matching only. | Addon removal must use the name recorded at registration. |
+
 ## Decided for code that is not written yet
 
 These differences are settled in the work plan ([docs/plans/mitmproxy-go-port.md](plans/mitmproxy-go-port.md): the

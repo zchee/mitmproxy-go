@@ -175,6 +175,17 @@ work on its event loop.
 | `encoding.decode` and `encode` fall back to Python's text codecs for names that are not content codings, such as `utf8`, and cache the last result (`mitmproxy/net/encoding.py`). | `encoding.Decode` and `Encode` accept only the content codings (`none`, `identity`, `gzip`, `deflate`, `deflateraw`, `br`, `zstd`); other names are errors. There is no result cache. | A text codec is not a Content-Encoding. |
 | A failed `encoding.decode` or `encode` raises `ValueError` with the text `<type> when decoding b'<input>' with '<encoding>': <type>('<message>')`, whose message comes from zlib, brotli or libzstd, for example `error('Error -3 while decompressing data: invalid block type')` (`mitmproxy/net/encoding.py`). | `encoding.Error` has the same text up to the message, with the same type names (`LookupError`, `ValueError` with `Decompression failed: ` for a gzip codec failure, `error`, `ZstdError`) and the same ten-character input repr; the text for an unknown encoding is identical. The message of a codec failure is the Go decoder's, for example `error('flate: corrupt input before offset 1')`. | The messages belong to the C libraries upstream binds; the Go decoders word their failures differently. |
 
+## internal/proxy/modespec
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Listen-port digits and macOS TUN-name digits follow the running Python's Unicode database (`mitmproxy/proxy/mode_specs.py`). | They follow Go's `unicode` tables, accepting decimal digits added after the reference Python's Unicode version. | Each runtime supplies its Unicode database; the differential test checks every decimal digit known to the reference Python. |
+| Parsed modes are frozen dataclass objects, cached by the original specification (`mitmproxy/proxy/mode_specs.py`). | Parsed modes are comparable value structs, returned independently on each call. Callers treat shared values as immutable; changing a copy does not change the original. `String` and `Parse` provide the saved-state round trip. | Value semantics avoid a global cache and shared mutable references. |
+
+Reproduced on purpose: listen hosts keep IPv6 brackets and explicit empty hosts; listen ports accept Python's decimal
+integer syntax, including Unicode digits, signs, whitespace and single underscores between digits. The default
+4300-digit conversion limit is retained. The macOS TUN-name check accepts one final newline, as Python's `$` does.
+
 ## Decided for code that is not written yet
 
 These differences are settled in the work plan ([docs/plans/mitmproxy-go-port.md](plans/mitmproxy-go-port.md): the

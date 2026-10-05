@@ -46,6 +46,8 @@ func TestParseErrors(t *testing.T) {
 		"hexadecimal port":                                 {"regular@0x50", "invalid port: 0x50"},
 		"fractional port":                                  {"regular@80.0", "invalid port: 80.0"},
 		"sign without digits":                              {"regular@+", "invalid port: +"},
+		"nondecimal numeric character":                     {"regular@²", "invalid port: ²"},
+		"missing upstream target":                          {"upstream", "Invalid server specification: "},
 		"ASCII record separator is not integer whitespace": {"regular@\x1c80", "invalid port: \x1c80"},
 		"integer digit limit":                              {"regular@" + strings.Repeat("0", 4301), "invalid port: " + strings.Repeat("0", 4301)},
 		"regular takes no data":                            {"regular:configuration", "mode takes no arguments"},

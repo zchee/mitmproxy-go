@@ -1758,3 +1758,61 @@ func TestLoadHookWithoutLoader(t *testing.T) {
 		})
 	}
 }
+
+// commandKid adds one command named after itself on load.
+type commandKid struct{ name string }
+
+func (k *commandKid) Name() string { return k.name }
+
+func (k *commandKid) Load(_ context.Context, l *Loader) error {
+	return l.AddCommand(k.name+".cmd", func(context.Context) {})
+}
+
+// selfRegisteringParent registers its sub-addon itself during its load and
+// also lists it as a sub-addon, so registration loads the sub-addon twice.
+type selfRegisteringParent struct {
+	m   *Manager
+	kid *commandKid
+}
+
+func (p *selfRegisteringParent) Name() string  { return "parent" }
+func (p *selfRegisteringParent) Addons() []any { return []any{p.kid} }
+
+func (p *selfRegisteringParent) Load(ctx context.Context, l *Loader) error {
+	if err := l.AddCommand("parent.cmd", func(context.Context) {}); err != nil {
+		return err
+	}
+	return p.m.Register(ctx, p.kid)
+}
+
+// TestFailedLoadKeepsCommandsOfRegisteredAddons registers a sub-addon from
+// its parent's load and then loads it again as the parent's sub-addon,
+// where its command is a duplicate and the load fails. The take-back must
+// remove only the commands of the addons that end up unregistered: the
+// sub-addon stays registered by the nested Register and keeps its command,
+// which goes when the sub-addon is removed.
+func TestFailedLoadKeepsCommandsOfRegisteredAddons(t *testing.T) {
+	e := newEnv(t)
+	kid := &commandKid{name: "kid"}
+	parent := &selfRegisteringParent{m: e.m, kid: kid}
+
+	if err := e.m.Add(t.Context(), parent); !errors.Is(err, command.ErrDuplicateCommand) {
+		t.Fatalf("Add error = %v, want %v from the second load of the sub-addon", err, command.ErrDuplicateCommand)
+	}
+	if e.m.Get("parent") != nil {
+		t.Error("the addon whose load failed is registered")
+	}
+	if e.m.Get("kid") != kid {
+		t.Fatal("the sub-addon registered by the nested Register is not registered")
+	}
+	if diff := cmp.Diff([]string{"kid.cmd"}, commandNames(e.cmds)); diff != "" {
+		t.Errorf("commands after the failed load (-want +got):\n%s", diff)
+	}
+
+	if err := e.m.Remove(t.Context(), kid); err != nil {
+		t.Fatalf("Remove(kid): %v", err)
+	}
+	if names := commandNames(e.cmds); len(names) != 0 {
+		t.Errorf("commands left after removing the sub-addon: %v", names)
+	}
+}

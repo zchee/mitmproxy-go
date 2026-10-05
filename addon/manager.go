@@ -278,8 +278,13 @@ func (m *Manager) register(ctx context.Context, addon any) error {
 			// addons whose load ran have a Loader, and a load may have
 			// dropped one of them from the tree, so they are the ones
 			// recorded here rather than the ones the tree yields now.
+			// A load may also have registered one of them on its own,
+			// through a nested Register; that one stays registered, and
+			// its commands leave when it is removed.
 			for _, a := range loaded {
-				m.unregisterCommands(a)
+				if !m.registered(a) {
+					m.unregisterCommands(a)
+				}
 			}
 			return err
 		}
@@ -644,6 +649,22 @@ func (l *Loader) AddCommand(name string, fn any, opts ...command.Option) error {
 	l.m.commands[l.addon] = append(l.m.commands[l.addon], name)
 	l.m.mu.Unlock()
 	return nil
+}
+
+// registered reports whether addon itself, not only another addon of its
+// name, is registered.
+func (m *Manager) registered(addon any) bool {
+	// Comparing two interface values that hold the same uncomparable type
+	// panics, and the lookup can hold such a sub-addon, which a load added
+	// after the registration checks ran.
+	if addon == nil || !reflect.ValueOf(addon).Comparable() {
+		return false
+	}
+	name := addonName(addon) // addon code, so outside mu
+	m.mu.RLock()
+	r, ok := m.lookup[name]
+	m.mu.RUnlock()
+	return ok && reflect.ValueOf(r).Comparable() && r == addon
 }
 
 // unregisterCommands removes the commands addon added through its Loader.

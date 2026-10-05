@@ -345,6 +345,13 @@ increments it.
 | `ReadFileStdin` reads `sys.stdin.buffer` and leaves it open; the reading task is abandoned to the event loop on shutdown (`mitmproxy/addons/readfile.py`). | `-` reads the stream configured as `Config.Stdin` (`os.Stdin` by default) and owns it: the done hook closes it to release a blocked read and joins the loading goroutine, and loading closes it when the stream ends. | A goroutine blocked in a read cannot be abandoned like a cancelled asyncio task; it must be unblocked and joined before shutdown completes. |
 | `Cannot load flows:` is followed by Python's `OSError` text (`mitmproxy/addons/readfile.py`). | The same prefix is followed by Go's `*os.PathError` text. | The failure detail belongs to each runtime, as with the flow-file error texts under [flowio](#flowio-and-flowiotnetstring). |
 
+## addons/keepserving
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `keepgoing` calls the replay and connection commands unconditionally, so it needs their addons loaded (`mitmproxy/addons/keepserving.py`). | Unregistered commands and options count as idle and unconfigured; a `keepgoing` command failure also counts as idle. | mitmdump must exit after a file read before the replay addons exist in the port. |
+| The watch task is abandoned to the event loop on shutdown (`mitmproxy/addons/keepserving.py`). | The done hook cancels the watcher and joins it outside dispatch. | Goroutines must not leak past shutdown. |
+
 ## master flow loading
 
 | Upstream | Go | Reason |

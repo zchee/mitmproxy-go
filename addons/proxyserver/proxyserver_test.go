@@ -12,6 +12,7 @@ import (
 	"net"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -286,6 +287,87 @@ func TestSelfConnect(t *testing.T) {
 			}
 		})
 	}
+}
+
+// localInterfaceAddr returns a non-loopback address of a local interface,
+// or "" when the machine has none.
+func localInterfaceAddr(t *testing.T) string {
+	t.Helper()
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, addr := range addrs {
+		if prefix, ok := addr.(*net.IPNet); ok && !prefix.IP.IsLoopback() && !prefix.IP.IsLinkLocalUnicast() {
+			return prefix.IP.String()
+		}
+	}
+	return ""
+}
+
+// TestSelfConnectAddresses compares destinations as addresses: every
+// spelling of a loopback or unspecified address, and for a wildcard listener
+// every local interface address, reaches this proxy's own listener.
+func TestSelfConnectAddresses(t *testing.T) {
+	const refused = "Request destination unknown. Unable to figure out where this request should be forwarded to."
+	tests := map[string]struct {
+		listenHost string
+		host       func(t *testing.T) string
+		blocked    bool
+	}{
+		"blocked: IPv4-mapped loopback":             {listenHost: "127.0.0.1", host: literal("::ffff:127.0.0.1"), blocked: true},
+		"blocked: uncompressed IPv6 loopback":       {listenHost: "127.0.0.1", host: literal("0:0:0:0:0:0:0:1"), blocked: true},
+		"blocked: upper-case localhost":             {listenHost: "127.0.0.1", host: literal("LOCALHOST"), blocked: true},
+		"blocked: other IPv4 loopback":              {listenHost: "127.0.0.1", host: literal("127.0.0.2"), blocked: true},
+		"blocked: unspecified IPv4":                 {listenHost: "127.0.0.1", host: literal("0.0.0.0"), blocked: true},
+		"blocked: unspecified IPv6":                 {listenHost: "127.0.0.1", host: literal("::"), blocked: true},
+		"blocked: zoned IPv6 loopback":              {listenHost: "127.0.0.1", host: literal("::1%lo0"), blocked: true},
+		"allowed: documentation address":            {listenHost: "127.0.0.1", host: literal("192.0.2.1")},
+		"allowed: interface address, loopback bind": {listenHost: "127.0.0.1", host: localInterfaceAddr},
+		"blocked: interface address, wildcard bind": {listenHost: "", host: localInterfaceAddr, blocked: true},
+		"blocked: mapped loopback, wildcard bind":   {listenHost: "", host: literal("::ffff:127.0.0.1"), blocked: true},
+		"allowed: documentation, wildcard bind":     {listenHost: "", host: literal("192.0.2.1")},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			host := tt.host(t)
+			if host == "" {
+				t.Skip("no non-loopback interface address")
+			}
+			m, ps, _, _ := fixture(t, false)
+			update(t, m, map[string]any{"listen_host": tt.listenHost})
+			if err := ps.SetupServers(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			port := ps.ListenAddrs()[0].Port
+			server := connection.NewServer(&connection.Address{Host: host, Port: port})
+			if err := m.Do(t.Context(), func(ctx context.Context) error {
+				return ps.ServerConnect(ctx, &hookdata.ServerConnection{Server: server})
+			}); err != nil {
+				t.Fatal(err)
+			}
+			var want *string
+			if tt.blocked {
+				want = new(refused)
+			}
+			if diff := gocmp.Diff(want, server.Error); diff != "" {
+				t.Fatalf("listen %q, destination %s (-want +got):\n%s", tt.listenHost, net.JoinHostPort(host, strconv.Itoa(port)), diff)
+			}
+			other := connection.NewServer(&connection.Address{Host: host, Port: port + 1})
+			if err := m.Do(t.Context(), func(ctx context.Context) error {
+				return ps.ServerConnect(ctx, &hookdata.ServerConnection{Server: other})
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if other.Error != nil {
+				t.Fatalf("another port was refused: %q", *other.Error)
+			}
+		})
+	}
+}
+
+func literal(host string) func(*testing.T) string {
+	return func(*testing.T) string { return host }
 }
 
 func TestStartStop(t *testing.T) {

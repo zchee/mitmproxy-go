@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -313,13 +315,53 @@ func (p *ProxyServer) ServerConnect(_ context.Context, data *hookdata.ServerConn
 		return nil
 	}
 	for _, addr := range p.ListenAddrs() {
-		host := server.Address.Host
-		if server.Address.Port == addr.Port && (host == "localhost" || host == "127.0.0.1" || host == "::1" || host == addr.Host) {
+		if server.Address.Port == addr.Port && isListenerHost(server.Address.Host, addr.Host) {
 			server.Error = new("Request destination unknown. Unable to figure out where this request should be forwarded to.")
 			return nil
 		}
 	}
 	return nil
+}
+
+// isListenerHost reports whether a connection to host reaches a listener
+// bound to listenHost on the same port. Addresses are compared as addresses,
+// not strings, so that "::ffff:127.0.0.1" or "0:0:0:0:0:0:0:1" cannot loop
+// the proxy into itself: a loopback or unspecified destination always reaches
+// this host, and a wildcard listener is reached through every local interface
+// address. Only the wildcard case asks the system for its interface addresses.
+func isListenerHost(host, listenHost string) bool {
+	host = strings.TrimSuffix(host, ".")
+	if strings.EqualFold(host, "localhost") || host == listenHost {
+		return true
+	}
+	dest, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	dest = dest.WithZone("").Unmap()
+	if dest.IsLoopback() || dest.IsUnspecified() {
+		return true
+	}
+	listen, err := netip.ParseAddr(listenHost)
+	if err != nil {
+		return false
+	}
+	listen = listen.WithZone("").Unmap()
+	if !listen.IsUnspecified() {
+		return dest == listen
+	}
+	locals, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, local := range locals {
+		if prefix, ok := local.(*net.IPNet); ok {
+			if addr, ok := netip.AddrFromSlice(prefix.IP); ok && addr.Unmap() == dest {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 var _ master.ServerSetup = (*ProxyServer)(nil)

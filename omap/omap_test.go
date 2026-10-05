@@ -4,9 +4,12 @@
 package omap
 
 import (
+	"encoding/json/jsontext"
 	json "encoding/json/v2"
+	"errors"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	gocmp "github.com/google/go-cmp/cmp"
@@ -487,6 +490,68 @@ func TestMapJSONMarshalStructField(t *testing.T) {
 	want := `{"meta":{"y":1,"x":2},"plain":{"b":3,"a":4}}`
 	if diff := gocmp.Diff(want, string(got)); diff != "" {
 		t.Errorf("json.Marshal() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestMapJSONKeyKind pins what JSON does with byte-string keys today: the
+// kind is dropped, and a key that is not valid UTF-8 fails unless the
+// encoder allows invalid UTF-8. Changing either is a decision for the code
+// that first serves flows as JSON, and must show up here.
+func TestMapJSONKeyKind(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		in      *Map[any]
+		opts    []json.Options
+		want    string
+		wantErr bool
+	}{
+		"success: byte-string key is written like a text key": {
+			in:   bytesKeyMap("k", 1),
+			want: `{"k":1}`,
+		},
+		"success: byte-string and text keys are indistinguishable": {
+			in: func() *Map[any] {
+				m := bytesKeyMap("b", 1)
+				m.Set("t", 2)
+				return m
+			}(),
+			want: `{"b":1,"t":2}`,
+		},
+		"error: byte-string key that is not UTF-8": {
+			in:      bytesKeyMap("a\xffb", 1),
+			wantErr: true,
+		},
+		"error: text key that is not UTF-8": {
+			in:      anyMap("a\xffb", 1),
+			wantErr: true,
+		},
+		"success: invalid UTF-8 allowed by the encoder becomes U+FFFD": {
+			in:   bytesKeyMap("a\xffb", 1),
+			opts: []json.Options{jsontext.AllowInvalidUTF8(true)},
+			want: "{\"a�b\":1}",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := json.Marshal(tt.in, tt.opts...)
+			if tt.wantErr {
+				serr, ok := errors.AsType[*jsontext.SyntacticError](err)
+				if !ok || !strings.Contains(serr.Error(), "invalid UTF-8") {
+					t.Fatalf("json.Marshal() error = %v, want a *jsontext.SyntacticError reporting invalid UTF-8", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("json.Marshal() error = %v", err)
+			}
+			if diff := gocmp.Diff(tt.want, string(got)); diff != "" {
+				t.Errorf("json.Marshal() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

@@ -15,7 +15,9 @@
 //     flow file can hold, so that a key read as Python bytes is written back
 //     as bytes. [Map.Set] adds a text key and [Map.SetBytesKey] a byte-string
 //     key, which need not be valid UTF-8. A key is identified by its bytes
-//     alone, whatever its kind, so one map never holds the same bytes twice.
+//     alone, whatever its kind, so one map never holds the same bytes twice:
+//     Set never changes the kind of an existing key, and SetBytesKey makes it
+//     a byte string.
 //   - The zero value is an empty map ready to use, and every read-only
 //     method accepts a nil *Map and treats it as empty.
 //   - A Map is not safe for concurrent use. Concurrent reads are fine, but a
@@ -100,7 +102,10 @@ func (m *Map[V]) buildIndex() {
 //
 // A new key is appended at the end of the order, as a text key. Overwriting
 // an existing key keeps its original position, as assignment to a Python
-// dict does, and its kind.
+// dict does. Set never changes the kind of an existing key: after
+// SetBytesKey("k", w), Set("k", v) replaces the value and "k" stays a
+// byte-string key. In Python, d["k"] = v after d[b"k"] = w adds a second,
+// text key instead, since "k" and b"k" are different keys there.
 func (m *Map[V]) Set(k string, v V) {
 	if i := m.find(k); i >= 0 {
 		m.entries[i].val = v
@@ -112,6 +117,10 @@ func (m *Map[V]) Set(k string, v V) {
 // SetBytesKey associates v with k and makes k a byte-string key, which need
 // not be valid UTF-8. Like [Map.Set], it appends a new key and keeps an
 // existing key in place.
+//
+// An existing text key becomes a byte-string key: after Set("k", w),
+// SetBytesKey("k", v) leaves the single key b"k". In Python, d[b"k"] = v
+// after d["k"] = w adds a second key instead.
 func (m *Map[V]) SetBytesKey(k string, v V) {
 	if i := m.find(k); i >= 0 {
 		m.entries[i].val = v
@@ -319,7 +328,15 @@ func (m *Map[V]) String() string {
 }
 
 // MarshalJSONTo encodes m as a JSON object whose members appear in insertion
-// order. It implements [json.MarshalerTo].
+// order. It implements [json.MarshalerTo]. A nil map is written as null.
+//
+// JSON has no byte-string names, so the key kind is dropped: a byte-string
+// key is written as the JSON string of its bytes, exactly like a text key
+// with the same bytes, and cannot be told apart when read back. A key that
+// is not valid UTF-8, which a byte-string key read from a flow file can be,
+// makes marshalling fail with a [*jsontext.SyntacticError] reporting invalid
+// UTF-8, unless the encoder was created with [jsontext.AllowInvalidUTF8], in
+// which case each invalid byte is written as U+FFFD.
 func (m *Map[V]) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if m == nil {
 		return enc.WriteToken(jsontext.Null)

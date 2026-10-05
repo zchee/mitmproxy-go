@@ -7,14 +7,14 @@ package certs_test
 // commit. Each upstream test function maps to one Go case, or is listed
 // as not applicable with the reason.
 //
-//	TestCertStore.test_create_explicit               -> TestFromStore/"success: creating then loading keeps the CA"
+//	TestCertStore.test_create_explicit               -> TestFromStoreCreate (creating then reloading keeps the CA)
 //	TestCertStore.test_create_no_common_name         -> TestStoreCacheIdentity
-//	TestCertStore.test_chain_file                    -> TestFromStore/"success: chain file only when more than one certificate"
+//	TestCertStore.test_chain_file                    -> TestFromStoreChainFile
 //	TestCertStore.test_sans                          -> TestStoreGeneratedNamesAreNotAliases
 //	TestCertStore.test_sans_change                   -> TestStoreGeneratedNamesAreNotAliases
 //	TestCertStore.test_expire                        -> TestStoreExpire
-//	TestCertStore.test_create_dhparams               -> TestFromStore/"success: missing dhparam file is recreated"
-//	TestCertStore.test_umask_secret                  -> TestFromStoreFileModes (unix-only; Windows has no file mode bits, so the mode assertions are skipped there and the file contents are still checked)
+//	TestCertStore.test_create_dhparams               -> TestFromFilesMissingDHParam
+//	TestCertStore.test_umask_secret                  -> TestFromStoreCreate (unix-only mode assertions; Windows has no Unix permission bits, so they are skipped there and the file contents are still checked)
 //	TestCertStore.test_asterisk_forms                -> TestStoreLookupOrder (wildcard forms tested through selection)
 //	TestDummyCert.test_validity_period               -> TestDummyCert (every successful case)
 //	TestDummyCert.test_with_ca                       -> TestDummyCert/"success: upstream with CA"

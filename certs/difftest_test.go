@@ -157,3 +157,38 @@ sys.stdout.buffer.write(leaf.to_cryptography().public_bytes(serialization.Encodi
 		})
 	}
 }
+
+func TestFromStorePython(t *testing.T) {
+	dir := t.TempDir()
+	store, err := FromStore(dir, "mitmproxy", 2048, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := json.Marshal(struct {
+		Dir string
+	}{dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	der := difftest.Python(t, `
+import json
+import sys
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
+from mitmproxy import certs
+
+values = json.load(sys.stdin)
+store = certs.CertStore.from_store(values["Dir"], "mitmproxy", 2048)
+entry = store.get_cert("example.test", [x509.DNSName("example.test")])
+sys.stdout.buffer.write(entry.cert.to_cryptography().public_bytes(serialization.Encoding.DER))
+`, input)
+	pythonLeaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(store.DefaultCA().X509())
+	if _, err := pythonLeaf.Verify(x509.VerifyOptions{Roots: roots, DNSName: "example.test", KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
+		t.Errorf("Python leaf issued from the Go-written directory does not verify under the Go CA: %v", err)
+	}
+}

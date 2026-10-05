@@ -320,14 +320,16 @@ func isShorthand(c byte) bool {
 // boundary returns \b or \B for regexp2 as lookarounds on the word set of
 // the mode. Python's \B does not match in an empty input (CPython 3.13
 // sre: SRE_AT_NON_BOUNDARY fails when the input is empty), while a plain
-// "neither side is a word character" would.
+// "neither side is a word character" would. No two branches can hold at
+// the same position, so that regexp2 never retries a boundary that has
+// already matched.
 func boundary(c byte, uni bool) string {
 	w := shorthandExpr([]byte{'w'}, uni).String()
 	if c == 'b' {
 		return "(?-i:(?:(?<=" + w + ")(?!" + w + ")|(?<!" + w + ")(?=" + w + ")))"
 	}
 	const anyRune = `[\x{0}-\x{10ffff}]`
-	return "(?-i:(?:(?<=" + w + ")(?=" + w + ")|(?<!" + w + ")(?!" + w + ")(?:(?<=" + anyRune + ")|(?=" + anyRune + "))))"
+	return "(?-i:(?:(?<=" + w + ")(?=" + w + ")|(?<!" + w + ")(?!" + w + ")(?:(?<=" + anyRune + ")|(?<!" + anyRune + ")(?=" + anyRune + "))))"
 }
 
 // hasClassEscape reports whether pattern contains \d, \D, \w, \W, \s, \S,
@@ -418,8 +420,10 @@ func (t *classTranslator) both(s string) {
 // Each class escape becomes an explicit class with case folding turned
 // off. In a character class that has other members, RE2 gets one class
 // holding the union, computed with the case folding in force at that
-// point; regexp2 gets an alternation or, for a negated class, a lookahead,
-// so that it keeps interpreting the other members itself. RE2 keeps \b in
+// point; regexp2 gets one class where nothing folds, otherwise an
+// alternation whose branches cannot match the same character or, for a
+// negated class, a lookahead, so that it keeps interpreting the other
+// members itself. RE2 keeps \b in
 // ASCII classes, where its ASCII word boundary is Python's; compileRE2
 // sends every other \b and \B to regexp2, where they become lookarounds.
 func translateClasses(body string, flags Flags, str, verbose bool) (translation, error) {
@@ -729,10 +733,20 @@ func (t *classTranslator) class(i int, cur scope) (int, error) {
 	}
 
 	others := rest.String()
-	if neg {
+	switch {
+	case neg:
 		t.bt.WriteString("(?:(?![" + others + "])" + sh.negate().backtrackExact() + ")")
-	} else {
-		t.bt.WriteString("(?:[" + others + "]|" + sh.backtrackExact() + ")")
+	case !cur.fold && strings.HasPrefix(sh.text, "[") && !strings.HasPrefix(sh.text, "[^"):
+		// Nothing folds, so one bracket expression holds both. The
+		// property body goes first: a member such as \x4 could otherwise
+		// run into the digits that start it.
+		t.bt.WriteString(sh.text[:len(sh.text)-1] + others + "]")
+	default:
+		// The members fold and the escape must not, so they are two
+		// branches. The second refuses what the first matches: branches
+		// that overlap, under a quantifier, make regexp2 try every way of
+		// splitting a run between them before it gives up.
+		t.bt.WriteString("(?:" + sh.backtrackExact() + "|(?!" + sh.exact() + ")[" + others + "])")
 	}
 	if !t.re2OK {
 		return j, nil

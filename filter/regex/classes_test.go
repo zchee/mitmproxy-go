@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	gocmp "github.com/google/go-cmp/cmp"
 )
@@ -229,6 +230,106 @@ func TestCompileClassFoldScope(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestCompileOverlapDoesNotBacktrack checks that what the translation emits
+// for regexp2 never offers two ways to match the same text: a class whose
+// members overlap its class escape, such as [\w_], and a run of \B. Under a
+// quantifier, or in a sequence, every extra way multiplies the work on a
+// near miss, so the match would run into MatchTimeout and report no match.
+// want is what Python 3.13 gives with re.search, str patterns on str
+// subjects and bytes patterns on bytes; every case runs on regexp2.
+func TestCompileOverlapDoesNotBacktrack(t *testing.T) {
+	tests := map[string]struct {
+		pattern string
+		flags   Flags
+		input   string
+		want    bool
+	}{
+		`success: \b[\w_]+Z after a URL, str, ignore case`: {
+			pattern: `\b[\w_]+Z`, flags: Unicode | IgnoreCase,
+			input: "http://example.com/" + strings.Repeat("_", 30) + "!aZ", want: true,
+		},
+		`success: [\w_]+ before a lookahead, bytes, ignore case`: {
+			pattern: `[\w_]+(?=Z)`, flags: IgnoreCase,
+			input: strings.Repeat("_", 30) + "!aZ", want: true,
+		},
+		`success: [\w_]+ before a lookahead, str`: {
+			pattern: `[\w_]+(?=Z)`, flags: Unicode,
+			input: strings.Repeat("_", 30) + "!aZ", want: true,
+		},
+		`success: [_\w.-]+, str, ignore case`: {
+			pattern: `[_\w.-]+(?=Z)`, flags: Unicode | IgnoreCase,
+			input: strings.Repeat("_.-", 10) + "!aZ", want: true,
+		},
+		`success: [\da-f0-9]+, bytes`: {
+			pattern: `[\da-f0-9]+(?=Z)`,
+			input:   strings.Repeat("1", 30) + "!aZ", want: true,
+		},
+		`success: [\sa ]+, str`: {
+			pattern: `[\sa ]+(?=Z)`, flags: Unicode,
+			input: strings.Repeat(" ", 30) + "!aZ", want: true,
+		},
+		`success: [\W!]+, str`: {
+			pattern: `[\W!]+(?=Z)`, flags: Unicode,
+			input: strings.Repeat("!", 30) + "a!Z", want: true,
+		},
+		`success: scoped ignore case around [\d1]+, bytes`: {
+			pattern: `(?i:[\d1]+)(?=Z)`,
+			input:   strings.Repeat("1", 30) + "!aZ", want: false,
+		},
+		`success: a run of \B between spaces, str`: {
+			pattern: " " + strings.Repeat(`\B`, 25) + "x", flags: Unicode,
+			input: "   ", want: false,
+		},
+		`success: a run of \B between spaces, bytes`: {
+			pattern: " " + strings.Repeat(`\B`, 25) + "x",
+			input:   "   ", want: false,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			m, err := Compile(tt.pattern, tt.flags)
+			if err != nil {
+				t.Fatalf("Compile(%q) error = %v", tt.pattern, err)
+			}
+			if !IsBacktracking(m) {
+				t.Fatalf("Compile(%q) runs on RE2; the case needs regexp2", tt.pattern)
+			}
+			start := time.Now()
+			got := m.MatchString(tt.input)
+			// A linear match takes microseconds; the bound leaves room
+			// for the race detector and stays well below MatchTimeout.
+			if elapsed := time.Since(start); elapsed > MatchTimeout/4 {
+				t.Errorf("MatchString(%q) took %v; the translation backtracks", tt.input, elapsed)
+			}
+			if got != tt.want {
+				t.Errorf("MatchString(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// BenchmarkMatchOverlappingClass matches \b[\w_]+Z on a URL followed by a
+// run of underscores that ends in a near miss. The time per byte stays the
+// same as the run grows only if the regexp2 translation of [\w_] gives the
+// engine one way to match each underscore.
+func BenchmarkMatchOverlappingClass(b *testing.B) {
+	m, err := Compile(`\b[\w_]+Z`, Unicode|IgnoreCase)
+	if err != nil {
+		b.Fatal(err)
+	}
+	for _, n := range []int{1_000, 10_000} {
+		input := "http://example.com/" + strings.Repeat("_", n) + "!aZ"
+		b.Run(fmt.Sprintf("run=%d", n), func(b *testing.B) {
+			b.SetBytes(int64(len(input)))
+			for b.Loop() {
+				if !m.MatchString(input) {
+					b.Fatal("no match")
+				}
+			}
+		})
 	}
 }
 

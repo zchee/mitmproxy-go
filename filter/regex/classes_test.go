@@ -405,6 +405,47 @@ func BenchmarkMatchOverlappingClass(b *testing.B) {
 	}
 }
 
+// TestCompileUserRangeCaseTable pins the regexp2 difference listed in
+// docs/compat.md: regexp2 lowercases a class range with a case table that
+// lacks some case pairs, so a folded range misses such a letter and a
+// case-sensitive range cannot start a match at one when the pattern can
+// also start with a case-insensitive part. Python 3.13 finds a match in
+// every case below with a str pattern; the cases marked documented differ.
+// The Go engines behave the same in both modes.
+func TestCompileUserRangeCaseTable(t *testing.T) {
+	const kelvin = "\u212a"
+	tests := map[string]struct {
+		pattern      string
+		input        string
+		backtracking bool
+		want         bool
+	}{
+		"success: range at the start on regexp2 misses (documented)": {pattern: `(?i)x(?=)|(?-i:[\x{212a}-\x{212b}])`, input: kelvin, backtracking: true, want: false},
+		"success: single character at the start on regexp2":          {pattern: `(?i)x(?=)|(?-i:[\x{212a}])`, input: kelvin, backtracking: true, want: true},
+		"success: range after a literal on regexp2":                  {pattern: `(?=)a(?:(?i:x)|[\x{212a}-\x{212b}])`, input: "a" + kelvin, backtracking: true, want: true},
+		"success: range at the start on RE2":                         {pattern: `(?i)x|(?-i:[\x{212a}-\x{212b}])`, input: kelvin, want: true},
+		"success: folded range on regexp2 misses (documented)":       {pattern: `(?i)(?=)[\x{13a0}-\x{13a1}]`, input: "\u13a0", backtracking: true, want: false},
+		"success: folded single character on regexp2":                {pattern: `(?i)(?=)\x{13a0}`, input: "\uab70", backtracking: true, want: true},
+		"success: folded range on RE2":                               {pattern: `(?i)[\x{13a0}-\x{13a1}]`, input: "\uab70", want: true},
+	}
+	for name, tt := range tests {
+		for _, mode := range []Flags{0, Unicode} {
+			t.Run(fmt.Sprintf("%s/unicode=%v", name, mode != 0), func(t *testing.T) {
+				m, err := Compile(tt.pattern, mode)
+				if err != nil {
+					t.Fatalf("Compile(%q) error = %v", tt.pattern, err)
+				}
+				if got := IsBacktracking(m); got != tt.backtracking {
+					t.Errorf("IsBacktracking() = %v, want %v", got, tt.backtracking)
+				}
+				if got := m.MatchString(tt.input); got != tt.want {
+					t.Errorf("MatchString(%+q) = %v, want %v", tt.input, got, tt.want)
+				}
+			})
+		}
+	}
+}
+
 // TestCompileClassRangeError checks that a range with a class escape at
 // either end is an error, as Python reports "bad character range".
 func TestCompileClassRangeError(t *testing.T) {

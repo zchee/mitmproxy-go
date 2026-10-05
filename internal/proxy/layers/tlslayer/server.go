@@ -164,7 +164,7 @@ func (p *serverTLSPool) setup(ctx context.Context, conn layer.Conn, srv *connect
 	}, addon.TLSEstablishedServerHook{Data: data}); err != nil {
 		return nil, err
 	}
-	return &tlsConn{Conn: tc, raw: conn}, nil
+	return &tlsConn{Conn: tc, raw: conn, srv: srv}, nil
 }
 
 // hookContext returns the hook-visible context for a handshake with srv:

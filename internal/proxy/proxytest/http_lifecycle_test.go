@@ -22,10 +22,11 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/proxy/proxytest"
 )
 
-// TestHTTPStartStop ports test_proxyserver.test_start_stop over a regular proxy.
+// TestHTTPStartStop ports test_proxyserver.test_start_stop over regular and upstream proxies.
 func TestHTTPStartStop(t *testing.T) {
 	tests := map[string]struct{ upstream bool }{
-		"success: regular": {},
+		"success: regular":  {},
+		"success: upstream": {upstream: true},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -104,7 +105,8 @@ func TestHTTPStartStop(t *testing.T) {
 // TestCONNECTInjection ports test_proxyserver.test_inject with real sockets.
 func TestCONNECTInjection(t *testing.T) {
 	tests := map[string]struct{ upstream bool }{
-		"success: regular": {},
+		"success: regular":  {},
+		"success: upstream": {upstream: true},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -352,12 +352,13 @@ func hasScannedEscape(pattern string) bool {
 }
 
 // foreignEscape returns Python's error for the escape that starts with the
-// backslash at src[i], with i+1 < len(src), when both Go engines accept it
-// and Python does not: the property classes \p and \P, and \x{...}, where
-// Python reads \x and then no hex digit.
+// backslash at src[i], with i+1 < len(src), when a Go engine accepts it and
+// Python does not: the property classes \p and \P, regexp2's \k<name>,
+// \cX, \e and \G, RE2's \Q, and \x{...}, where Python reads \x and then no
+// hex digit. \z stays accepted: Python 3.14 reads it as \Z.
 func foreignEscape(src string, i int) error {
 	switch e := src[i+1]; {
-	case e == 'p' || e == 'P' || e == 'k':
+	case strings.IndexByte("pPkceGQ", e) >= 0:
 		return fmt.Errorf(`bad escape \%c`, e)
 	case e == 'x' && i+2 < len(src) && src[i+2] == '{':
 		return errors.New(`incomplete escape \x`)

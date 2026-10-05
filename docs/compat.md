@@ -76,6 +76,7 @@ No behavioural differences.
 | `\d`, `\w` and `\s` in a `str` pattern follow the Unicode database of the Python that runs mitmproxy (15.1 for Python 3.13). | They follow Go's `unicode` package (17.0 for Go 1.27). | Go has no copy of Python's database. The two agree on every code point Unicode 15.1 assigns; only code points assigned later differ. |
 | A character class matches each of its members, with or without `re.IGNORECASE`, wherever a match starts (Python `re`). | On `regexp2`, a class range holding an uppercase letter whose lowercase `regexp2`'s case table lacks (several hundred code points, among them the Cherokee, Georgian Mtavruli, Glagolitic and Deseret capitals and the Kelvin, Ohm and Angstrom signs) does not match that letter when the range folds case, and does not let a match start at it when the range is case-sensitive but the pattern can also start with a case-insensitive part: `(?i)(?=)[\u13a0-\u13a1]` does not find U+13A0, and `(?i)x(?=)\|(?-i:[\u212a-\u212b])` does not find the Kelvin sign. Single characters and patterns on RE2 are not affected. | `regexp2` lowercases a range with a case table older than the Unicode version of Go's `unicode` package. The classes the translation writes for `\d`, `\w` and `\s` never fold and avoid the start-character lookup where it would miss; doing the same for every written class would mean rewriting each range for `regexp2`. |
 | A `str` pattern may name a character with `\N{...}`, such as `\N{DIGIT ZERO}` (Python `re`). | `\N{...}` is a compile error. | Go's standard library has no table from character names to code points, and Python's lookup also accepts name aliases. |
+| Python 3.13 rejects `\z` in a pattern (`bad escape \z`); Python 3.14 reads it as `\Z`, the end of the input. | `\z` is the end of the input. | Upstream runs on Python 3.12 to 3.14; accepting the 3.14 spelling keeps a filter written for it working. |
 | `MITMPROXY_CASE_SENSITIVE_FILTERS` is read once, when `flowfilter` is imported (`mitmproxy/flowfilter.py`). | It is read on every `Parse` call. | No import-time state. |
 | `parse` raises `ValueError("Empty filter expression")` or `ValueError("Invalid filter expression: '<expr>'")` (`mitmproxy/flowfilter.py`). | `Parse` returns a `*ParseError` reading `empty filter expression` or `invalid filter expression "<expr>": <reason> at offset <n>`. | The error says where parsing failed. |
 
@@ -106,6 +107,7 @@ Reproduced on purpose (compatibility, not differences):
   know, such as `(?<name>...)` and `(?'name'...)`. A group name is checked with Go's Unicode letter, mark, digit and
   connector categories, where Python uses the XID properties; they differ only on a few characters that NFKC
   normalisation changes.
+- Python's `bad escape` for the escapes only a Go engine knows: `\cX`, `\e`, `\G`, `\k<name>` and `\Q`.
 - Python's `nothing to repeat` for a quantifier on a position rather than an item, such as `^*`, `a$?`, `\A*` or `\b+`,
   which both Go engines accept.
 - pyparsing's grammar as mitmproxy uses it: `a&b` is one bare word, expressions side by side inside parentheses are an

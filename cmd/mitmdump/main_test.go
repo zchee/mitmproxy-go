@@ -57,6 +57,9 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	binaryPath = filepath.Join(dir, "mitmdump")
+	if runtime.GOOS == "windows" {
+		binaryPath += ".exe"
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	cmd := exec.CommandContext(ctx, "go", "build", "-race", "-o", binaryPath, ".")
 	output, err := cmd.CombinedOutput()

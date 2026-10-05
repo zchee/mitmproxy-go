@@ -378,6 +378,13 @@ increments it.
 |---|---|---|
 | Reverse retargeting of a manually constructed HTTP flow without a request raises `AttributeError` (`mitmproxy/master.py`). | `LoadFlow` returns an error. | Invalid Go values must not panic; flow files contain requests. |
 
+## addons/onboardingapp
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Certificate and cached Magisk files are read without a size limit (`mitmproxy/addons/onboardingapp/__init__.py`). | Download files larger than 8 MiB return 500. | Bound memory when reading configuration-directory files for an HTTP request. |
+| Flask supplies route, missing-file and method-error pages (`mitmproxy/addons/onboardingapp/__init__.py`). | `net/http` supplies routing and plain-text error pages; successful certificate bytes, download filenames and content types are unchanged. | No embedded Flask runtime. |
+
 ## addons/apphost
 
 | Upstream | Go | Reason |

@@ -15,6 +15,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
+
+	timefmt "github.com/itchyny/timefmt-go"
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/command"
@@ -38,6 +41,7 @@ type Save struct {
 	stderr      io.Writer
 	fatal       func(error)
 	fatalOnce   sync.Once
+	clock       func() time.Time
 }
 
 // New returns a storage addon using opts. A failure to write the stream file
@@ -47,7 +51,7 @@ type Save struct {
 // the master's fatal shutdown here. A nil fatal drops the notification; the
 // failure is still returned to the dispatcher.
 func New(opts *options.Manager, fatal func(error)) *Save {
-	return &Save{options: opts, active: make(map[flow.Flow]struct{}), stderr: os.Stderr, fatal: fatal}
+	return &Save{options: opts, active: make(map[flow.Flow]struct{}), stderr: os.Stderr, fatal: fatal, clock: time.Now}
 }
 
 // Load registers the stream options and save.file command.
@@ -123,12 +127,20 @@ func pathMode(spec string) (string, int) {
 	return spec, flag
 }
 
+// Upstream formats a naive datetime, so timezone directives render empty.
+// Match escaped percent pairs first to preserve literal "%z" and "%Z".
+var naiveTimezone = strings.NewReplacer("%%", "%%", "%z", "", "%Z", "")
+
 func (s *Save) rotate() error {
 	spec := s.options.OptStr("save_stream_file")
 	if spec == nil || *spec == "" {
 		return nil
 	}
 	path, mode := pathMode(*spec)
+	// The path promises Python strftime formatting in local time, as
+	// upstream's datetime.today().strftime does; a new file is opened
+	// every time the formatted string changes.
+	path = timefmt.Format(s.clock(), naiveTimezone.Replace(path))
 	if s.currentPath == path && s.stream != nil {
 		return nil
 	}

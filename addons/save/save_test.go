@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	gocmp "github.com/google/go-cmp/cmp"
 
@@ -261,6 +262,92 @@ func TestRotateStream(t *testing.T) {
 	}
 	if n := len(readFlows(t, second)); n != 1 {
 		t.Fatalf("second: %d", n)
+	}
+}
+
+// TestStrftimeRotation drives the clock behind the strftime path: each tick
+// changes the formatted name, so the addon closes the finished file, creates
+// the dated directory and opens the next file, as the option help promises.
+func TestStrftimeRotation(t *testing.T) {
+	s, m := setup(t, nil)
+	clock := time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC)
+	s.clock = func() time.Time { return clock }
+	root := t.TempDir()
+	if err := configure(t, m, map[string]any{"save_stream_file": new(filepath.Join(root, "%Y-%m-%d", "%H-%M-%S.mitm"))}); err != nil {
+		t.Fatal(err)
+	}
+	f := testflow.TFlow(testflow.WithResponse)
+	if err := s.Response(t.Context(), f); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(time.Second)
+	if err := s.Response(t.Context(), f); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Done(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"03-04-05.mitm", "03-04-06.mitm"} {
+		if n := len(readFlows(t, filepath.Join(root, "2000-01-02", name))); n != 1 {
+			t.Fatalf("%s: %d flows", name, n)
+		}
+	}
+}
+
+// TestStrftimeSamePathKeepsFile writes twice within the same formatted name;
+// the file stays open and holds both flows.
+func TestStrftimeSamePathKeepsFile(t *testing.T) {
+	s, m := setup(t, nil)
+	clock := time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC)
+	s.clock = func() time.Time { return clock }
+	root := t.TempDir()
+	if err := configure(t, m, map[string]any{"save_stream_file": new(filepath.Join(root, "%Y-%m-%d.mitm"))}); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := s.Response(t.Context(), testflow.TFlow(testflow.WithResponse)); err != nil {
+			t.Fatal(err)
+		}
+		clock = clock.Add(time.Second)
+	}
+	if err := s.Done(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(readFlows(t, filepath.Join(root, "2000-01-02.mitm"))); n != 2 {
+		t.Fatalf("got %d flows, want 2", n)
+	}
+}
+
+func TestStrftimePath(t *testing.T) {
+	tests := map[string]struct {
+		format string
+		want   string
+	}{
+		"local wall clock":      {format: "%Y-%m-%d_%H-%M-%S", want: "2000-01-02_03-04-05"},
+		"microseconds":          {format: "%f", want: "123456"},
+		"naive timezone":        {format: "a%zb%Zc", want: "abc"},
+		"escaped percent":       {format: "%%", want: "%"},
+		"escaped timezone":      {format: "%%z_%%Z", want: "%z_%Z"},
+		"odd percent count":     {format: "%%%z_%%%Z", want: "%_%"},
+		"even percent count":    {format: "%%%%z_%%%%Z", want: "%%z_%%Z"},
+		"mixed directives":      {format: "%Y%%z%z%%Z%Z%f", want: "2000%z%Z123456"},
+		"unsupported modifiers": {format: "%EC_%Ey_%EY_%Od_%Om", want: "%EC_%Ey_%EY_%Od_%Om"},
+		"unsupported directive": {format: "%q", want: "%q"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			s, m := setup(t, nil)
+			s.clock = func() time.Time {
+				return time.Date(2000, 1, 2, 3, 4, 5, 123456000, time.FixedZone("local", 9*60*60))
+			}
+			root := t.TempDir()
+			if err := configure(t, m, map[string]any{"save_stream_file": new(filepath.Join(root, tt.format+".mitm"))}); err != nil {
+				t.Fatal(err)
+			}
+			if diff := gocmp.Diff(filepath.Join(root, tt.want+".mitm"), s.currentPath); diff != "" {
+				t.Fatalf("formatted stream path (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

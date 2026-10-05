@@ -64,6 +64,12 @@ Anything not listed here is meant to behave as upstream does; a difference that 
 | DNS answers render through `ResourceRecord.__str__`: A/AAAA addresses, NS/CNAME/PTR domain names, TXT text, HTTPS record JSON, hexadecimal for other types (`mitmproxy/dns.py:74,153-169`). | A, AAAA and TXT render as upstream's do, and unknown types render as hexadecimal; NS, CNAME, PTR and HTTPS records render as their type name instead of their data. | Their data needs the DNS wire codec (compressed domain names, HTTPS record fields), which is ported with the DNS protocol work; the type-name placeholder stands in until that codec lands. |
 | Message content chunks are coloured by syntax-highlight tag through `CONTENTVIEW_STYLES` (`mitmproxy/addons/dumper.py:38-45,130-140`). | Message content is printed uncoloured; request, status, header and trailer styles are emitted as upstream's are. | The syntax highlighter behind the tags is ported with the content-view highlighting work; on a pipe, where the differential runs, upstream emits no colour either, so the compared output is identical. |
 
+## addons/save
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| Stream paths use local, naive `datetime.today().strftime`, including the host C library's locale and directive extensions (`mitmproxy/addons/save.py`). | Uses timefmt-go v0.1.9 with local wall-clock fields; bare `%z` and `%Z` render empty and `%%` remains escaped. `E`/`O` modifiers are not interpreted: `%EC`, `%Ey`, `%EY`, `%Od` and `%Om` remain literal. Unsupported directives such as `%q` also remain literal, including `%`; Python's result is platform-dependent. Month/day names and composite formats use timefmt-go's English/C-style output rather than the process locale. Other modifiers and extensions follow timefmt-go. | Use the pure-Go formatter without recreating platform-specific libc strftime. `TestStrftimePath` checks the naive timezone rules, escaped percents and literal unsupported directives. |
+
 ## connection
 
 No behavioural differences.

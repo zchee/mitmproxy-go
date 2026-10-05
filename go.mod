@@ -7,6 +7,7 @@ require (
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/go-ldap/ldap/v3 v3.4.14
 	github.com/google/go-cmp v0.7.0
+	github.com/itchyny/timefmt-go v0.1.9
 	github.com/klauspost/compress v1.20.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10

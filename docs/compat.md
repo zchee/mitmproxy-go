@@ -196,16 +196,26 @@ Options that only the Go port has (`testdata/options-go-only.txt`; not registere
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
+| `content_decode_limit` | str | `256m` | Upper bound on the decoded size of a message body (parsed as a byte size). A body that would decode to more counts as undecodable: `Content` and `Text` fail and `ContentOrRaw`/`TextOrRaw` return the raw bytes. Upstream decodes without a bound. |
 | `local_redirector_path` | str | `""` | Path to the local mode redirector; empty means it is downloaded into the configuration directory on first use. |
 | `otel_exporter_endpoint` | str | `""` | OTLP endpoint for OpenTelemetry traces and metrics; empty disables the exporter. |
 | `pprof_addr` | str | `""` | Loopback address that serves `net/http/pprof`; empty disables it. |
 | `script_max_steps` | int | `0` | Maximum Starlark execution steps per script hook call; 0 means no limit. |
+
+HTTP/1 + TLS proxy core:
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `make_error_response` sends `Server: mitmproxy <version>` (`mitmproxy/proxy/layers/http/_http1.py`). | The error page sends `Server: mitmproxy-go <version>`; status, the other headers and the body are unchanged. | The proxy is a different program, as in the flow-file error texts above. |
+| `next_layer` sniffs client data without a size bound (`mitmproxy/addons/next_layer.py`). | Sniffing stops at 64 KiB of client data for the HTTP host search, and at the ClientHello's declared length capped at 64 KiB. Beyond the cap the connection is relayed as raw TCP and the decision is logged. | Every re-ask of `next_layer` runs under the global dispatch lock, so an unbounded sniff buffer re-scanned on each read would stall every hook. |
+| Message bodies are decoded without a size bound (`mitmproxy/net/encoding.py`). | Decoding on every `Content`/`Text` path is bounded by `content_decode_limit` (table above). The bound is published process-globally (`httpmsg.SetDecodeLimit`): two Masters in one process share it and the last `configure` wins; the `core` addon's `done` restores the 256 MiB default. | A compression bomb decoded under the dispatch lock would stall every hook; the decode paths are package-level functions, so the bound cannot be per-Master. |
 
 TLS and protocol layers:
 
 | Upstream | Go | Reason |
 |---|---|---|
 | pyOpenSSL can talk to servers that only offer finite-field DHE, SSLv3, RC4, 3DES or export cipher suites, and honours `@SECLEVEL=0`. | Go's `crypto/tls` supports none of these, so `ssl_insecure` interception of such legacy or IoT servers fails. `mitmproxy-dhparam.pem` is written only to keep the configuration directory layout and is never used. | The port uses the standard TLS stack. An OpenSSL- or utls-backed layer is a possible follow-up. |
+| Both passwordless `.p12` files are written by `cryptography`'s `serialize_key_and_certificates(…, NoEncryption())`: an HMAC-SHA-256 MAC keyed from the empty password with 2048 iterations, and `friendlyName` `mitmproxy` on every bag (`mitmproxy/certs.py`). | Both files are written with go-pkcs12's `Passwordless` encoder: no MAC, the key file's bags carry `localKeyID` but no `friendlyName`, and the cert-only bag carries the Java trust-store attribute `2.16.840.1.113894.746875.1.1`. Python's `pkcs12.load_pkcs12` reads both files and recovers the same certificate and key. | go-pkcs12 is the maintained Go encoder, and its `Encoder` fields are unexported, so no configuration reproduces `cryptography`'s exact structure; what matters is that Python reads the files. |
 | — | Go processes ECH before the proxy sees the ClientHello, so without the origin's ECH key only the outer `public_name` SNI is visible. Clients that attempt ECH fail unless `strip_ech` (default true) removed the `ech` parameter from the HTTPS records they resolved through the proxy. | Behaviour of Go's `crypto/tls`. |
 | HTTP/2 windows are 2^31−1 and data is acknowledged at once (`mitmproxy/proxy/layers/http/_http_h2.py`, `_http2.py`). | Bounded windows: 100 concurrent streams, a 1 MiB initial stream window growing to 16 MiB, and a 128 MiB budget for granted windows; a stream's window is returned only when its data has been consumed. | Memory per connection stays bounded under slow readers. |
 | TLS connections are half-closed with a bare TCP FIN (`mitmproxy/proxy/layers/tls.py`). | The proxy sends `close_notify`, then FIN. | Go's `tls.Conn.CloseWrite` sends `close_notify`; peers see a clean TLS shutdown. |

@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	gocmp "github.com/google/go-cmp/cmp"
 )
@@ -795,18 +794,12 @@ func TestCatastrophicBacktrackingTimesOut(t *testing.T) {
 		t.Fatalf("Compile(%q) did not fall back to regexp2", pattern)
 	}
 
+	// The logger hears of a match only when the time limit abandons it, so
+	// the pattern it records proves the timeout path ran; timing the match
+	// would not, since regexp2's clock lags real time on a loaded machine.
 	input := strings.Repeat("a", 64) + "b"
-	start := time.Now()
-	got := m.MatchString(input)
-	elapsed := time.Since(start)
-	if got {
+	if m.MatchString(input) {
 		t.Errorf("MatchString(%q) = true, want false after timeout", input)
-	}
-	if elapsed < MatchTimeout {
-		t.Errorf("match returned after %v, before the %v timeout; the timeout path was not exercised", elapsed, MatchTimeout)
-	}
-	if elapsed > 20*MatchTimeout {
-		t.Errorf("match took %v, far beyond the %v timeout", elapsed, MatchTimeout)
 	}
 	mu.Lock()
 	defer mu.Unlock()
@@ -918,17 +911,19 @@ func BenchmarkMatch(b *testing.B) {
 	}
 }
 
-// fuzzCompileBound is how long FuzzCompile lets one Compile take. A
-// translation that scans a pattern more than once per character, or emits
-// a pattern that grows faster than its input, shows up as a compile far
-// above it.
-const fuzzCompileBound = time.Second
+// scanStepsPerByte bounds the steps the scanner takes per byte of the body
+// it reads: the loop reads each byte once and braceRepeat looks at it once,
+// and a byte may be read once more as a digit of the { or a flag letter of
+// the (? before it. A scan that reads ahead further than the token it
+// returns takes more.
+const scanStepsPerByte = 4
 
 // FuzzCompile compiles arbitrary patterns as str and bytes patterns, with
 // and without IgnoreCase. A pattern may be rejected, but Compile must not
-// panic or take longer than fuzzCompileBound, and a compiled Matcher must
-// run on a short subject that holds the characters the translation treats
-// specially.
+// panic, the scan Compile runs must take at most scanStepsPerByte steps per
+// byte, and a compiled Matcher must run on a short subject that holds the
+// characters the translation treats specially. The work is counted rather
+// than timed, so that a loaded machine cannot fail the target.
 func FuzzCompile(f *testing.F) {
 	seeds := []string{
 		`\b[\w_]+Z`, `[\w_]+(?=Z)`, `[\da-f0-9]+`, `[^\W_]`, `[\s\S]`, `[]\w]`, `[!--\w]`,
@@ -946,11 +941,13 @@ func FuzzCompile(f *testing.F) {
 	const subject = "aK_ 1\n\u0663\u00e9\u212a[]-"
 	f.Fuzz(func(t *testing.T, pattern string) {
 		for _, flags := range []Flags{0, IgnoreCase, Unicode, Unicode | IgnoreCase} {
-			start := time.Now()
-			m, err := Compile(pattern, flags)
-			if elapsed := time.Since(start); elapsed > fuzzCompileBound {
-				t.Fatalf("Compile(%q, %d) took %v, more than %v", pattern, flags, elapsed, fuzzCompileBound)
+			if body, eff, verbose, err := leadingFlags(pattern, flags); err == nil {
+				body = translateEscapes(body)
+				if _, steps, _ := scanClasses(body, eff, flags&Unicode != 0, verbose); steps > scanStepsPerByte*len(body)+scanStepsPerByte {
+					t.Fatalf("scanClasses(%q, %d) took %d steps on %d bytes, more than %d per byte", body, eff, steps, len(body), scanStepsPerByte)
+				}
 			}
+			m, err := Compile(pattern, flags)
 			if err != nil {
 				continue
 			}

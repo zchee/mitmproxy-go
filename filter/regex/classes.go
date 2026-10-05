@@ -421,12 +421,12 @@ func repeatText(s string) (string, error) {
 }
 
 // braceRepeat returns the length of the {m,n} repeat at the start of s, or
-// 0 when s does not start with one. As in Python, m and n may be empty, so
-// that {,} is a repeat, while {} and a { that no } closes after the digits
-// are literal text.
-func braceRepeat(s string) int {
+// 0 when s does not start with one, and how many bytes it read to decide.
+// As in Python, m and n may be empty, so that {,} is a repeat, while {}
+// and a { that no } closes after the digits are literal text.
+func braceRepeat(s string) (n, scanned int) {
 	if !strings.HasPrefix(s, "{") || strings.HasPrefix(s, "{}") {
-		return 0
+		return 0, 1
 	}
 	j := 1
 	for j < len(s) && '0' <= s[j] && s[j] <= '9' {
@@ -439,9 +439,20 @@ func braceRepeat(s string) int {
 		}
 	}
 	if j < len(s) && s[j] == '}' {
-		return j + 1
+		return j + 1, j + 1
 	}
-	return 0
+	return 0, j
+}
+
+// flagLetters returns the length of the run of letters and dashes at the
+// start of s. checkGlobalFlags reads that far after "(?", and flagGroup,
+// which takes only the flag letters, no further.
+func flagLetters(s string) int {
+	n := 0
+	for n < len(s) && (s[n] == '-' || 'a' <= s[n] && s[n] <= 'z' || 'A' <= s[n] && s[n] <= 'Z') {
+		n++
+	}
+	return n
 }
 
 // scope is the state of the inline flags that the class translation needs
@@ -502,6 +513,11 @@ type classTranslator struct {
 	open     []bool
 	names    map[string]int
 	condRefs []int
+	// steps counts the scanner's work: one per token and per class
+	// member, plus every byte a helper reads beyond the token it
+	// returns. TestTranslateClassesLinear checks that it grows linearly
+	// with the pattern.
+	steps int
 }
 
 // openGroup numbers a new capturing group and marks it open.
@@ -622,6 +638,13 @@ func (t *classTranslator) both(s string) {
 }
 
 // translateClasses gives \d, \D, \w, \W, \s, \S, \b and \B the meaning
+// Python's re gives them; see scanClasses.
+func translateClasses(body string, flags Flags, str, verbose bool) (translation, error) {
+	tr, _, err := scanClasses(body, flags, str, verbose)
+	return tr, err
+}
+
+// scanClasses gives \d, \D, \w, \W, \s, \S, \b and \B the meaning
 // Python's re gives them: Unicode where flags has Unicode or a scoped (?u:
 // group says so, ASCII elsewhere. str says whether the pattern is a str
 // pattern, which decides which scoped a, u and L flags are errors.
@@ -641,13 +664,14 @@ func (t *classTranslator) both(s string) {
 // members itself. RE2 keeps \b in
 // ASCII classes, where its ASCII word boundary is Python's; compileRE2
 // sends every other \b and \B to regexp2, where they become lookarounds.
-func translateClasses(body string, flags Flags, str, verbose bool) (translation, error) {
+// It also returns the steps it took; see classTranslator.steps.
+func scanClasses(body string, flags Flags, str, verbose bool) (translation, int, error) {
 	// A class can hold a [ only if the body has two of them. Verbose
 	// whitespace can stand between two quantifiers, a { may start a repeat
 	// to rewrite, and a + after a quantifier makes it possessive.
 	possessive := strings.Contains(body, "*+") || strings.Contains(body, "++") || strings.Contains(body, "?+")
 	if !verbose && !possessive && !quantifiedAnchor(body) && !hasScannedEscape(body) && !strings.ContainsAny(body, "{") && !strings.Contains(body, "(?") && strings.Count(body, "[") < 2 {
-		return translation{re2: body, re2OK: true, backtrack: body}, nil
+		return translation{re2: body, re2OK: true, backtrack: body}, len(body), nil
 	}
 	t := &classTranslator{src: body, str: str, re2OK: true}
 	t.re2.Grow(len(body))
@@ -668,6 +692,7 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 	var repeat, gap, open, suffixed, header bool
 	atom := -1
 	for i := 0; i < len(src); {
+		t.steps++
 		cur := stack[len(stack)-1]
 		c := src[i]
 		switch {
@@ -675,14 +700,15 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			c == '#' && cur.verbose, cur.verbose && strings.IndexByte(" \t\n\r\v\f", c) >= 0:
 			gap, open = true, false
 		default:
-			n := braceRepeat(src[i:])
+			n, scanned := braceRepeat(src[i:])
+			t.steps += scanned
 			if c == '*' || c == '+' || c == '?' && !open {
 				n = 1
 			}
 			if n > 0 && repeat {
 				// Only a ? or + right after a quantifier is its suffix.
 				if gap || suffixed || n > 1 || c == '*' {
-					return translation{}, errors.New("multiple repeat")
+					return translation{}, t.steps, errors.New("multiple repeat")
 				}
 				suffixed = true
 				i++
@@ -691,7 +717,7 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 					continue
 				}
 				if atom < 0 {
-					return translation{}, errors.New("nothing to repeat")
+					return translation{}, t.steps, errors.New("nothing to repeat")
 				}
 				t.atomic = append(t.atomic, atom)
 				t.bt.WriteByte(')')
@@ -701,7 +727,7 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			if n > 0 && atom < 0 {
 				// Python repeats an item, never a position such as ^, $,
 				// \A, \Z, \b or \B, while both Go engines accept a*$?.
-				return translation{}, errors.New("nothing to repeat")
+				return translation{}, t.steps, errors.New("nothing to repeat")
 			}
 			repeat, gap, open, suffixed = n > 0, false, c == '(', false
 			if n > 0 {
@@ -709,7 +735,7 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 				if c == '{' {
 					var err error
 					if text, err = repeatText(text); err != nil {
-						return translation{}, err
+						return translation{}, t.steps, err
 					}
 				}
 				t.both(text)
@@ -725,14 +751,14 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 				continue
 			}
 			if err := foreignEscape(src, i); err != nil {
-				return translation{}, err
+				return translation{}, t.steps, err
 			}
 			atom = t.bt.Len()
 			switch e := src[i+1]; {
 			case '1' <= e && e <= '9':
 				text, end, err := t.numberEscape(src, i)
 				if err != nil {
-					return translation{}, err
+					return translation{}, t.steps, err
 				}
 				t.re2.WriteString(src[i:end])
 				t.bt.WriteString(text)
@@ -742,7 +768,7 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			case e == 'u' || e == 'U':
 				text, end, err := codePointEscape(src, i, str)
 				if err != nil {
-					return translation{}, err
+					return translation{}, t.steps, err
 				}
 				t.both(text)
 				i = end
@@ -771,7 +797,7 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			atom = t.bt.Len()
 			end, err := t.class(i, cur)
 			if err != nil {
-				return translation{}, err
+				return translation{}, t.steps, err
 			}
 			i = end
 		case c == '(' && strings.HasPrefix(src[i:], "(?#"):
@@ -782,7 +808,7 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			// comment: a(?#c)* is a*.
 			rest := skipIgnored(src[i:], cur.verbose)
 			if strings.HasPrefix(rest, "(?#") {
-				return translation{}, errors.New("missing ), unterminated comment")
+				return translation{}, t.steps, errors.New("missing ), unterminated comment")
 			}
 			if rest == "" || strings.IndexByte("*+?{", rest[0]) < 0 {
 				t.both("(?:)")
@@ -792,17 +818,17 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			// A named backreference, which regexp2 spells \k<name>.
 			name, end, err := groupName(src, i+4, ')')
 			if err != nil {
-				return translation{}, err
+				return translation{}, t.steps, err
 			}
 			if err := checkGroupName(name, str); err != nil {
-				return translation{}, err
+				return translation{}, t.steps, err
 			}
 			gid, ok := t.names[name]
 			if !ok {
-				return translation{}, fmt.Errorf("unknown group name %s", groupNameRepr(name, str))
+				return translation{}, t.steps, fmt.Errorf("unknown group name %s", groupNameRepr(name, str))
 			}
 			if err := t.groupRef(gid); err != nil {
-				return translation{}, err
+				return translation{}, t.steps, err
 			}
 			atom, open = t.bt.Len(), false
 			t.re2.WriteString(src[i:end])
@@ -813,13 +839,13 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			// A named group, which regexp2 spells (?<name>...).
 			name, end, err := groupName(src, i+4, '>')
 			if err != nil {
-				return translation{}, err
+				return translation{}, t.steps, err
 			}
 			if err := checkGroupName(name, str); err != nil {
-				return translation{}, err
+				return translation{}, t.steps, err
 			}
 			if was, ok := t.names[name]; ok {
-				return translation{}, fmt.Errorf("redefinition of group name %s as group %d; was group %d", groupNameRepr(name, str), t.groups+1, was)
+				return translation{}, t.steps, fmt.Errorf("redefinition of group name %s as group %d; was group %d", groupNameRepr(name, str), t.groups+1, was)
 			}
 			if t.names == nil {
 				t.names = map[string]int{}
@@ -837,23 +863,23 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			// the numbers once the pattern is read, the names now.
 			cond, end, err := groupName(src, i+3, ')')
 			if err != nil {
-				return translation{}, err
+				return translation{}, t.steps, err
 			}
 			if strings.Trim(cond, "0123456789") == "" {
 				gid, err := strconv.Atoi(cond)
 				switch {
 				case err != nil:
-					return translation{}, fmt.Errorf("invalid group reference %s", cond)
+					return translation{}, t.steps, fmt.Errorf("invalid group reference %s", cond)
 				case gid == 0:
-					return translation{}, errors.New("bad group number")
+					return translation{}, t.steps, errors.New("bad group number")
 				}
 				t.condRefs = append(t.condRefs, gid)
 			} else {
 				if err := checkGroupName(cond, str); err != nil {
-					return translation{}, err
+					return translation{}, t.steps, err
 				}
 				if _, ok := t.names[cond]; !ok {
-					return translation{}, fmt.Errorf("unknown group name %s", groupNameRepr(cond, str))
+					return translation{}, t.steps, fmt.Errorf("unknown group name %s", groupNameRepr(cond, str))
 				}
 			}
 			next := cur
@@ -869,18 +895,23 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			if r == 'P' || r == '<' {
 				r2, _ := utf8.DecodeRuneInString(src[i+3:])
 				if i+3 >= len(src) {
-					return translation{}, errors.New("unexpected end of pattern")
+					return translation{}, t.steps, errors.New("unexpected end of pattern")
 				}
-				return translation{}, fmt.Errorf("unknown extension ?%c%c", r, r2)
+				return translation{}, t.steps, fmt.Errorf("unknown extension ?%c%c", r, r2)
 			}
-			return translation{}, fmt.Errorf("unknown extension ?%c", r)
+			return translation{}, t.steps, fmt.Errorf("unknown extension ?%c", r)
 		case c == '(':
+			// checkGlobalFlags and flagGroup read the flag letters after
+			// "(?", which the loop reads again when they are not a header.
+			if strings.HasPrefix(src[i:], "(?") {
+				t.steps += flagLetters(src[i+2:])
+			}
 			if err := checkGlobalFlags(src[i:]); err != nil {
-				return translation{}, err
+				return translation{}, t.steps, err
 			}
 			next, err := scopedFlags(src[i+1:], cur, str)
 			if err != nil {
-				return translation{}, err
+				return translation{}, t.steps, err
 			}
 			next.start, next.gid, next.cond, next.bar = t.bt.Len(), 0, false, false
 			if !strings.HasPrefix(src[i+1:], "?") {
@@ -956,10 +987,10 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 	}
 	for _, gid := range t.condRefs {
 		if gid > t.groups {
-			return translation{}, fmt.Errorf("invalid group reference %d", gid)
+			return translation{}, t.steps, fmt.Errorf("invalid group reference %d", gid)
 		}
 	}
-	return translation{re2: t.re2.String(), re2OK: t.re2OK, backtrack: openAtomic(t.bt.String(), t.atomic), unicodeBoundary: t.uniBoundary}, nil
+	return translation{re2: t.re2.String(), re2OK: t.re2OK, backtrack: openAtomic(t.bt.String(), t.atomic), unicodeBoundary: t.uniBoundary}, t.steps, nil
 }
 
 // quantifiedAnchor reports whether a ^ or $ in s is followed by a
@@ -1059,10 +1090,7 @@ func checkGlobalFlags(rest string) error {
 	if !ok {
 		return nil
 	}
-	j := 0
-	for j < len(body) && (body[j] == '-' || 'a' <= body[j] && body[j] <= 'z' || 'A' <= body[j] && body[j] <= 'Z') {
-		j++
-	}
+	j := flagLetters(body)
 	if j > 0 && j < len(body) && body[j] == ')' {
 		return fmt.Errorf("global flags %s not at the start of the expression", rest[:j+3])
 	}
@@ -1245,6 +1273,7 @@ func (t *classTranslator) class(i int, cur scope) (int, error) {
 		shorts []byte
 	)
 	for first := true; ; first = false {
+		t.steps++
 		if j >= len(src) {
 			t.both(src[i:])
 			return len(src), nil

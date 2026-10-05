@@ -365,31 +365,58 @@ func TestCompileOverlapDoesNotBacktrack(t *testing.T) {
 	}
 }
 
-// TestTranslateClassesLinear checks that the translation reads a pattern
-// in one pass. Looking ahead to the end of the pattern from every group
-// takes 6 s or more on these 2 MB patterns; one pass takes milliseconds,
-// and the bound leaves room for the race detector on a slow runner.
+// TestTranslateClassesLinear checks that the scanner's work grows linearly
+// with the pattern, for each kind of input it reads. It counts the steps
+// the scanner reports, one per token and class member plus every byte a
+// helper reads beyond the token it returns, rather than timing the scan, so
+// a loaded machine cannot fail it: a pattern four times longer must take
+// at most five times the steps, where a scan that looks ahead to the end
+// of the pattern from every group takes sixteen times as many.
 func TestTranslateClassesLinear(t *testing.T) {
+	const (
+		size  = 4 << 10
+		ratio = 4
+		slack = 64
+	)
 	tests := map[string]struct {
 		prefix, unit string
+		verbose      bool
 	}{
 		"success: lookaheads":            {unit: "(?=a)"},
 		"success: unclosed flag letters": {unit: "(?i"},
+		"success: flag groups":           {unit: "(?i:a)"},
+		"success: charset flag groups":   {unit: "(?a:a)"},
 		"success: named backreferences":  {prefix: "(?P<n>a)", unit: "(?P=n)"},
 		"success: numbered groups":       {unit: `(a)\1`},
+		"success: conditionals":          {prefix: "(a)", unit: "(?(1)b|c)"},
 		"success: comments":              {unit: "a(?#)"},
+		"success: verbose comments":      {unit: "a #c\n", verbose: true},
 		"success: possessive repeats":    {unit: "a*+"},
 		"success: possessive groups":     {unit: "(a)++"},
+		"success: repeats":               {unit: "a{2,3}"},
+		"success: literal braces":        {unit: "a{1"},
+		"success: classes":               {unit: `[\w_]`},
+		"success: class ranges":          {unit: `[\x41-\x5a\d]`},
+		"success: class escapes":         {unit: `\d\W\s`},
+		"success: code points":           {unit: `\u0041`},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			body := tt.prefix + strings.Repeat(tt.unit, 2<<20/len(tt.unit))
-			start := time.Now()
-			if _, err := translateClasses(body, Unicode, true, false); err != nil {
-				t.Fatalf("translateClasses() error = %v", err)
+			steps := func(n int) int {
+				body := tt.prefix + strings.Repeat(tt.unit, n/len(tt.unit))
+				_, got, err := scanClasses(body, Unicode, true, tt.verbose)
+				if err != nil {
+					t.Fatalf("scanClasses() on %d bytes: %v", len(body), err)
+				}
+				return got
 			}
-			if elapsed := time.Since(start); elapsed > 3*time.Second {
-				t.Errorf("translateClasses() on %d bytes took %v; the scan is not linear", len(body), elapsed)
+			small, large := steps(size), steps(ratio*size)
+			t.Logf("%d steps for %d bytes, %d for %d bytes", small, size, large, ratio*size)
+			if small == 0 {
+				t.Fatalf("scanClasses() reported no steps; the counter is not wired")
+			}
+			if large > (ratio+1)*small+slack {
+				t.Errorf("scanClasses() took %d steps on %d bytes and %d on %d; the scan is not linear", small, size, large, ratio*size)
 			}
 		})
 	}

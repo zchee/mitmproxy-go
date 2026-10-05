@@ -121,7 +121,7 @@ func (c *http1Client) sendHead(ctx context.Context, request *httpmsg.Request) er
 	addonChanged := false
 	if entry := c.wire.takeRequest(id); entry != nil {
 		original = entry.head
-		addonChanged = requestChanged(entry.pristine, request)
+		addonChanged = entry.addonChanged
 	}
 	raw := http1.AssembleRequestHead(request, original, addonChanged, c.fidelity)
 	if err := c.writeCtx(ctx, raw); err != nil {
@@ -325,7 +325,7 @@ func (c *http1Client) readHead(ctx context.Context) error {
 	status := head.Response.StatusCode
 	if status >= 100 && status < 200 && status != 101 {
 		// An informational response is forwarded; the final head follows.
-		c.wire.putResponse(id, &responseWire{head: &head, pristine: pristine})
+		c.wire.putResponse(id, &responseWire{head: &head})
 		c.queue = append(c.queue, ResponseHeaders{ID: id, Response: head.Response, EndStream: true})
 		return nil
 	}
@@ -341,7 +341,7 @@ func (c *http1Client) readHead(ctx context.Context) error {
 		})
 		return nil
 	}
-	c.wire.putResponse(id, &responseWire{head: &head, pristine: pristine})
+	c.wire.putResponse(id, &responseWire{head: &head})
 	c.mu.Lock()
 	c.response = pristine
 	c.state = http1Body

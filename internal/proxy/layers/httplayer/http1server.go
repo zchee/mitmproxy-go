@@ -141,7 +141,7 @@ func (s *http1Server) readHead(ctx context.Context) error {
 			RequestProtocolError{ID: id, Code: GenericClientError, Message: errorMessage(err)})
 		return nil
 	}
-	s.wire.putRequest(id, &requestWire{head: &head, pristine: pristine})
+	s.wire.putRequest(id, &requestWire{head: &head})
 	s.mu.Lock()
 	s.request = pristine
 	s.mu.Unlock()
@@ -366,7 +366,7 @@ func (s *http1Server) sendHead(ctx context.Context, response *httpmsg.Response) 
 	addonChanged := false
 	if entry := s.wire.takeResponse(s.streamID()); entry != nil {
 		original = entry.head
-		addonChanged = responseChanged(entry.pristine, response)
+		addonChanged = entry.addonChanged
 	}
 	raw := http1.AssembleResponseHead(response, original, addonChanged, s.fidelity)
 	if err := s.writeCtx(ctx, raw); err != nil {

@@ -5,25 +5,26 @@ package httplayer
 
 import (
 	"bytes"
+	"context"
 	"sync"
 
+	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/internal/http1"
+	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 )
 
-// requestWire pairs a parsed request head with a pristine copy of the parsed
-// message, taken before any handler could change it. The head preserves the
-// exact wire bytes for re-assembly; the pristine copy tells the sending
-// endpoint whether the message it emits still means what was read.
+// requestWire retains the parsed wire bytes and records addon head edits
+// separately from the proxy's own target and header rewrites.
 type requestWire struct {
-	head     *http1.RequestHead
-	pristine *httpmsg.Request
+	head         *http1.RequestHead
+	addonChanged bool
 }
 
 // responseWire is requestWire for a response head.
 type responseWire struct {
-	head     *http1.ResponseHead
-	pristine *httpmsg.Response
+	head         *http1.ResponseHead
+	addonChanged bool
 }
 
 // wireStore carries parsed heads from the endpoint that read them to the
@@ -101,11 +102,48 @@ func headersEqual(a, b httpmsg.Headers) bool {
 	return true
 }
 
-// requestChanged reports whether a request's head no longer matches the
-// pristine parse. Host and Port are metadata, not wire bytes, and are not
-// compared. A changed head is excluded from fidelity accounting because the
-// difference was made deliberately, by a handler or by the proxy's own
-// target or Host rewriting, and is not a normalization.
+// fireHook captures heads after proxy preparation but before addons run.
+// Only head fields are copied: buffered bodies may be large and do not affect
+// head assembly. Once a streaming head was emitted, later hooks cannot change
+// its already-recorded fidelity count.
+func (s *httpStream) fireHook(ctx context.Context, prepare func(context.Context) error, hook addon.Hook) (*layer.Snapshot, error) {
+	var request *httpmsg.Request
+	var response *httpmsg.Response
+	snapshot, err := s.c.Hooks.FireFunc(ctx, func(ctx context.Context) error {
+		if prepare != nil {
+			if err := prepare(ctx); err != nil {
+				return err
+			}
+		}
+		if s.wire != nil {
+			if s.flow.Request != nil {
+				request = new(*s.flow.Request)
+				request.Headers = request.Headers.Clone()
+			}
+			if s.flow.Response != nil {
+				response = new(*s.flow.Response)
+				response.Headers = response.Headers.Clone()
+			}
+		}
+		return nil
+	}, hook)
+	if err != nil || s.wire == nil {
+		return snapshot, err
+	}
+	s.wire.mu.Lock()
+	defer s.wire.mu.Unlock()
+	if entry := s.wire.requests[s.id]; entry != nil && request != nil && snapshot.Request != nil {
+		entry.addonChanged = entry.addonChanged || requestChanged(request, snapshot.Request)
+	}
+	if queue := s.wire.responses[s.id]; len(queue) != 0 && response != nil && snapshot.Response != nil {
+		entry := queue[len(queue)-1]
+		entry.addonChanged = entry.addonChanged || responseChanged(response, snapshot.Response)
+	}
+	return snapshot, nil
+}
+
+// requestChanged reports whether a hook changed the request's emitted head.
+// Host and Port are routing metadata rather than wire fields.
 func requestChanged(pristine, current *httpmsg.Request) bool {
 	return pristine.Method != current.Method ||
 		pristine.Scheme != current.Scheme ||

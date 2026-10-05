@@ -113,7 +113,7 @@ func (l *httpLayer) Run(ctx context.Context, c *layer.Context) error {
 	// survive into the next exchange that reuses the pooled connection.
 	endpoints := make(map[layer.Conn]*http1Client)
 	for {
-		stream := &httpStream{c: c, id: client.streamID(), route: l.exchangeRoute(c)}
+		stream := &httpStream{c: c, id: client.streamID(), route: l.exchangeRoute(c), wire: wire}
 		server := &lazyServer{ready: make(chan struct{})}
 		server.acquire = func(ctx context.Context, request *httpmsg.Request) (ServerEndpoint, error) {
 			return l.connect(ctx, c, stream, request, wire, endpoints, setup)

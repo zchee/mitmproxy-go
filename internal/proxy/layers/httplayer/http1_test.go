@@ -1008,12 +1008,13 @@ func TestHTTP1Fidelity(t *testing.T) {
 			wantWire:  "GET /x HTTP/1.1\r\nX-Long: a\r\n b\r\n\r\n",
 			wantCount: 1,
 		},
-		"success: handler change assembles canonically without counting": {
+		"success: proxy header rewrite counts once": {
 			raw: "GET /x HTTP/1.1\r\nX-Foo:  padded\r\nX-Keep: k\r\n\r\n",
 			mutate: func(r *httpmsg.Request) {
 				r.Headers.Set("X-Foo", "changed")
 			},
-			wantWire: "GET /x HTTP/1.1\r\nX-Foo: changed\r\nX-Keep: k\r\n\r\n",
+			wantWire:  "GET /x HTTP/1.1\r\nX-Foo: changed\r\nX-Keep: k\r\n\r\n",
+			wantCount: 1,
 		},
 	}
 	for name, tt := range tests {

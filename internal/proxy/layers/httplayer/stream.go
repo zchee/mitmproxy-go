@@ -45,6 +45,7 @@ type httpStream struct {
 	c        *layer.Context
 	id       StreamID
 	route    routeConfig
+	wire     *wireStore
 	flow     *flow.HTTPFlow
 	snapshot *layer.Snapshot
 	request  streamBody
@@ -121,7 +122,7 @@ func (s *httpStream) requestHeaders(ctx context.Context, event RequestHeaders) (
 		// The head parsed, so handlers see the flow before the refusal, as
 		// upstream registers it with the requestheaders hook first.
 		var err error
-		s.snapshot, err = s.c.Hooks.FireFunc(ctx, func(context.Context) error {
+		s.snapshot, err = s.fireHook(ctx, func(context.Context) error {
 			s.flow.Request = event.Request
 			s.flow.Request.RawContent = nil
 			return nil
@@ -161,7 +162,7 @@ func (s *httpStream) requestHeaders(ctx context.Context, event RequestHeaders) (
 	if err != nil {
 		return streamOutput{}, err
 	}
-	s.snapshot, err = s.c.Hooks.FireFunc(ctx, func(context.Context) error {
+	s.snapshot, err = s.fireHook(ctx, func(context.Context) error {
 		s.flow.Request = event.Request
 		s.flow.Request.RawContent = nil
 		if stream && !event.EndStream {
@@ -214,7 +215,7 @@ func (s *httpStream) responseHeaders(ctx context.Context, event ResponseHeaders)
 	if err != nil {
 		return streamOutput{}, err
 	}
-	s.snapshot, err = s.c.Hooks.FireFunc(ctx, func(context.Context) error {
+	s.snapshot, err = s.fireHook(ctx, func(context.Context) error {
 		s.flow.Response = event.Response
 		s.flow.Response.RawContent = nil
 		if stream && !event.EndStream {
@@ -371,7 +372,7 @@ func (s *httpStream) finish(ctx context.Context, request bool) (streamOutput, er
 		s.responseHook = true
 	}
 	var err error
-	s.snapshot, err = s.c.Hooks.FireFunc(ctx, func(context.Context) error {
+	s.snapshot, err = s.fireHook(ctx, func(context.Context) error {
 		message := &s.flow.Request.Message
 		if !request {
 			message = &s.flow.Response.Message
@@ -469,7 +470,7 @@ func (s *httpStream) fail(ctx context.Context, message string, code ErrorCode) (
 	if s.flow != nil && !s.errorHook && !s.responseHook {
 		s.errorHook = true
 		var err error
-		s.snapshot, err = s.c.Hooks.FireFunc(ctx, func(context.Context) error {
+		s.snapshot, err = s.fireHook(ctx, func(context.Context) error {
 			s.flow.Error = flow.NewError(message)
 			return nil
 		}, addon.ErrorHook{Flow: s.flow})

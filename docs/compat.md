@@ -199,6 +199,9 @@ integer syntax, including Unicode digits, signs, whitespace and single underscor
 |---|---|---|
 | A failed explicitly selected view displays the Python exception and a trimmed traceback (`mitmproxy/contentviews/__init__.py`). | The display keeps the `Couldn't parse as <view>:` heading and shows the Go error without a Python exception class or traceback. | Go errors have no Python traceback. Automatic selection still falls back to Raw with the same description. |
 | `prettify_message` returns the entire rendered text; its callers apply the line cutoff (`mitmproxy/addons/dumper.py`). | `PrettifyMessage` optionally applies the caller's positive line cutoff and reports `Truncated`; a nonpositive cutoff keeps all text. | The shared entry point prevents callers from disagreeing about the cutoff. |
+| The JSON view is bounded by Python's recursion limit, which includes the caller's stack (`mitmproxy/contentviews/_view_json.py`). | JSON nesting is limited to 1024 containers. | An explicit limit bounds recursive parsing and formatting independently of the calling goroutine's stack. |
+| JSON strings may contain lone UTF-16 surrogates (`mitmproxy/contentviews/_view_json.py`, `json.loads` and `json.dumps(ensure_ascii=False)`). | Such strings retain the surrogate's WTF-8 bytes, including in object keys; ordinary text remains UTF-8. | Go strings store bytes rather than Python code points. This preserves the value without silently substituting U+FFFD. |
+
 ## tlsparse
 
 | Upstream | Go | Reason |

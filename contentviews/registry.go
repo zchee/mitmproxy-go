@@ -36,6 +36,7 @@ func NewRegistry() *Registry {
 	r.Register(Raw{})
 	r.Register(HexDump{})
 	r.Register(HexStream{})
+	r.Register(JSON{})
 	return r
 }
 
@@ -71,7 +72,7 @@ func (r *Registry) Register(view View) {
 	}
 }
 
-// Subscribe registers a change notification and returns an idempotent unsubscribe.
+// Subscribe registers an upstream on_change notification and returns an idempotent unsubscribe.
 // Notifications are synchronous and may call back into the registry.
 func (r *Registry) Subscribe(notify func(View)) func() {
 	r.mu.Lock()

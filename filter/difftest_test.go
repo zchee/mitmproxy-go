@@ -61,14 +61,16 @@ var dollarExprs = []string{
 // marked ":red:\n" as well.
 const markerDollarExpr = `~marker "red:$"`
 
-// extraExprs take the regexp2 path, pin value formatting, or combine
-// operators.
+// extraExprs take the regexp2 path, pin value formatting, combine
+// operators, or use a repeat such as {,2} that both Go engines would read
+// as text.
 var extraExprs = []string{
 	`~bs "two$\n"`, `~bs "(?:two$)+"`, `~b "hello(?!x)"`, `~h "^content-length: 7\r$"`,
 	`~meta "^b: string$"`, `~meta "'key': 'value'"`, `~meta "^d: b\"by'tes\"$"`, `~meta "\[1, 2.5, None, True\]"`,
 	`~comment "^needs$"`, "~d example.org", `~u "^http://example.org:8443/path$"`, `~src "^::1:443$"`,
 	"~dst example.com:443", "~c 404", "~bq compressed", "~bq not.gzip", "~b dns.google", "~bs 8.8.4.4", "~u dns.google",
 	"~http & !~s", "~tcp | ~udp", "!(~q | ~s ) & ~http", "~websocket & ~bs me", "~b binary ~http",
+	`~b "hel{,2}o"`,
 }
 
 // classExprs use \d, \w, \s, \b and their complements on the oracle's

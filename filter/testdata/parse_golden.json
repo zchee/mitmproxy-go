@@ -5326,6 +5326,47 @@
     {
       "expr": "~b \"\\\\P{L}\"",
       "ok": false
+    },
+    {
+      "expr": "~u \"\\\\u0041\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "\\u0041"
+      ],
+      "describe": "url matches /\\u0041/i",
+      "dump": "FUrl\\u0041\n",
+      "describe_case_sensitive": "url matches /\\u0041/"
+    },
+    {
+      "expr": "~b \"\\\\u0041\"",
+      "ok": false
+    },
+    {
+      "expr": "~u \"\\\\U00000041\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "\\U00000041"
+      ],
+      "describe": "url matches /\\U00000041/i",
+      "dump": "FUrl\\U00000041\n",
+      "describe_case_sensitive": "url matches /\\U00000041/"
+    },
+    {
+      "expr": "~u \"a{,2}\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a{,2}"
+      ],
+      "describe": "url matches /a{,2}/i",
+      "dump": "FUrla{,2}\n",
+      "describe_case_sensitive": "url matches /a{,2}/"
+    },
+    {
+      "expr": "~u \"a{2,1}\"",
+      "ok": false
     }
   ]
 }

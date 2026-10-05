@@ -324,6 +324,8 @@ func TestCompileError(t *testing.T) {
 		"error: ungreedy flag":            {pattern: "(?U)a+"},
 		// Python accepts \N{...} in a str pattern; see docs/compat.md.
 		"error: named character": {pattern: `\N{DIGIT ZERO}`},
+		// Python: "nothing to repeat".
+		"error: {,} after an open group": {pattern: `(?:{,})`},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -399,6 +401,7 @@ func TestCompilePythonRejects(t *testing.T) {
 		"error: \\p{...}":                          {pattern: `\p{L}`, wantErr: `bad escape \p`},
 		"error: \\p{...} in a class with \\d":      {pattern: `[\d\p{L}]`, wantErr: `bad escape \p`},
 		"error: \\P{...} in a class":               {pattern: `[\P{L}]`, wantErr: `bad escape \P`},
+		"error: minimum above maximum":             {pattern: `a{2,1}`, wantErr: "min repeat greater than max repeat"},
 		"error: \\p without braces in a class":     {pattern: `[\pL]`, wantErr: `bad escape \p`},
 		"success: comment before a quantifier":     {pattern: `a(?#c)?`},
 		"success: lazy quantifiers":                {pattern: `a*?b+?`},
@@ -429,6 +432,119 @@ func TestCompilePythonRejects(t *testing.T) {
 				}
 				if !strings.Contains(err.Error(), tt.wantErr) {
 					t.Errorf("Compile(%q) error = %q, want it to contain %q", tt.pattern, err, tt.wantErr)
+				}
+			})
+		}
+	}
+}
+
+// TestCompileBraceRepeat checks the {m,n} forms against Python 3.13's
+// re.search: a missing minimum is 0 and a missing maximum is unbounded, so
+// {,} and {,n} repeat, while any { that does not start digits, an optional
+// comma and digits closed by } is literal text, also in verbose mode. Each
+// pattern runs as written and, behind a (?=) that only regexp2 can run, on
+// regexp2, in str and bytes mode.
+func TestCompileBraceRepeat(t *testing.T) {
+	type probe struct {
+		input string
+		want  bool
+	}
+	tests := map[string]struct {
+		pattern string
+		probes  []probe
+	}{
+		"success: {,} repeats from 0 up":       {pattern: `^a{,}$`, probes: []probe{{"", true}, {"a", true}, {"aaaa", true}, {"a{,}", false}}},
+		"success: {,n} repeats from 0 to n":    {pattern: `^a{,2}$`, probes: []probe{{"", true}, {"aa", true}, {"aaa", false}, {"a{,2}", false}}},
+		"success: {n,} repeats from n up":      {pattern: `^a{2,}$`, probes: []probe{{"a", false}, {"aa", true}, {"aaaaa", true}}},
+		"success: leading zeros":               {pattern: `^a{00,01}$`, probes: []probe{{"", true}, {"a", true}, {"aa", false}}},
+		"success: lazy {,}":                    {pattern: `^a{,}?b`, probes: []probe{{"b", true}, {"aab", true}}},
+		"success: lazy {,n}":                   {pattern: `^a{,2}?$`, probes: []probe{{"aa", true}, {"aaa", false}}},
+		"success: {,n} at RE2's limit":         {pattern: `^x{,1000}$`, probes: []probe{{"", true}, {"xxx", true}}},
+		"success: {,n} past RE2's limit":       {pattern: `^x{,1001}$`, probes: []probe{{"", true}, {"xxx", true}}},
+		"success: space before the comma":      {pattern: `^a{ ,}$`, probes: []probe{{"a{ ,}", true}, {"a", false}}},
+		"success: letter in braces":            {pattern: `^a{a}$`, probes: []probe{{"a{a}", true}, {"a", false}}},
+		"success: unterminated brace":          {pattern: `^a{$`, probes: []probe{{"a{", true}, {"a", false}}},
+		"success: unterminated count":          {pattern: `^a{,2$`, probes: []probe{{"a{,2", true}, {"aa", false}}},
+		"success: empty braces":                {pattern: `^a{}$`, probes: []probe{{"a{}", true}, {"a", false}}},
+		"success: space before the count":      {pattern: `^a{ 2}$`, probes: []probe{{"a{ 2}", true}, {"aa", false}}},
+		"success: verbose space in the braces": {pattern: `(?x)^a{ 2}$`, probes: []probe{{"a{2}", true}, {"aa", false}, {"a{ 2}", false}}},
+		"success: verbose space after {,n":     {pattern: `(?x)^a{,2 }$`, probes: []probe{{"a{,2}", true}, {"aa", false}, {"", false}}},
+		"success: verbose {,n}":                {pattern: `(?x)^a{,2}$`, probes: []probe{{"", true}, {"aa", true}, {"a{,2}", false}}},
+		"success: braces in a class":           {pattern: `[a{,}]`, probes: []probe{{"{", true}, {",", true}, {"b", false}}},
+		"success: escaped brace":               {pattern: `^a\{,}$`, probes: []probe{{"a{,}", true}, {"a", false}}},
+	}
+	for name, tt := range tests {
+		variants := map[string]string{"as written": tt.pattern}
+		if !strings.HasPrefix(tt.pattern, "(?x)") {
+			variants["regexp2"] = "(?=)" + tt.pattern
+		}
+		for variant, pattern := range variants {
+			for _, mode := range []Flags{0, Unicode} {
+				t.Run(fmt.Sprintf("%s/%s/unicode=%v", name, variant, mode != 0), func(t *testing.T) {
+					m, err := Compile(pattern, mode)
+					if err != nil {
+						t.Fatalf("Compile(%q) error = %v", pattern, err)
+					}
+					if variant == "regexp2" && !IsBacktracking(m) {
+						t.Fatalf("Compile(%q) runs on RE2", pattern)
+					}
+					for _, p := range tt.probes {
+						if got := m.MatchString(p.input); got != p.want {
+							t.Errorf("Compile(%q).MatchString(%q) = %v, want %v", pattern, p.input, got, p.want)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestCompileCodePointEscapes checks \u and \U against Python 3.13. A str
+// pattern takes exactly four or eight hex digits and a code point up to
+// U+10FFFF; a bytes pattern has neither escape. wantStr empty means the
+// str pattern compiles and matches probe; wantBytes is always an error.
+func TestCompileCodePointEscapes(t *testing.T) {
+	tests := map[string]struct {
+		pattern   string
+		probe     string
+		wantStr   string
+		wantBytes string
+	}{
+		"success: \\u":                 {pattern: `^\u0041$`, probe: "A", wantBytes: `bad escape \u`},
+		"success: \\u in a class":      {pattern: `^[\u0041-\u0043]$`, probe: "B", wantBytes: `bad escape \u`},
+		"success: \\u beside \\w":      {pattern: `^[\w\u00e9]$`, probe: "\u00e9", wantBytes: `bad escape \u`},
+		"success: \\U":                 {pattern: `^\U0001F600$`, probe: "\U0001F600", wantBytes: `bad escape \U`},
+		"success: \\U in a class":      {pattern: `^[\U00000041-\U00000043]$`, probe: "B", wantBytes: `bad escape \U`},
+		"error: three digits":          {pattern: `\u004`, wantStr: `incomplete escape \u004`, wantBytes: `bad escape \u`},
+		"error: no digits":             {pattern: `\u`, wantStr: `incomplete escape \u`, wantBytes: `bad escape \u`},
+		"error: a letter after digits": {pattern: `\u004g`, wantStr: `incomplete escape \u004`, wantBytes: `bad escape \u`},
+		"error: three digits in class": {pattern: `[\u004]`, wantStr: `incomplete escape \u004`, wantBytes: `bad escape \u`},
+		"error: seven digits":          {pattern: `\U0000004`, wantStr: `incomplete escape \U0000004`, wantBytes: `bad escape \U`},
+		"error: no digits after \\U":   {pattern: `\U`, wantStr: `incomplete escape \U`, wantBytes: `bad escape \U`},
+		"error: beyond U+10FFFF":       {pattern: `\U00110000`, wantStr: `bad escape \U00110000`, wantBytes: `bad escape \U`},
+	}
+	for name, tt := range tests {
+		for _, mode := range []Flags{0, Unicode} {
+			t.Run(fmt.Sprintf("%s/unicode=%v", name, mode != 0), func(t *testing.T) {
+				want := tt.wantBytes
+				if mode == Unicode {
+					want = tt.wantStr
+				}
+				m, err := Compile(tt.pattern, mode)
+				if want == "" {
+					if err != nil {
+						t.Fatalf("Compile(%q) error = %v, Python accepts it", tt.pattern, err)
+					}
+					if !m.MatchString(tt.probe) {
+						t.Errorf("Compile(%q).MatchString(%q) = false, want true", tt.pattern, tt.probe)
+					}
+					return
+				}
+				if err == nil {
+					t.Fatalf("Compile(%q) = %v, want error %q", tt.pattern, m, want)
+				}
+				if !strings.HasSuffix(err.Error(), ": "+want) {
+					t.Errorf("Compile(%q) error = %q, want it to end in %q", tt.pattern, err, want)
 				}
 			})
 		}
@@ -601,7 +717,7 @@ func FuzzCompile(f *testing.F) {
 		`[[:alpha:]]`, `x[[:digit:]\d]`, `[\w.-[]`, `[^[\d]`,
 		`(?ias:x)`, `(?sai:x)`, `(?a)(?u:\d)`, `(?L:\w)`, `(?ai-s:\w)`,
 		`(?#a\)b)c`, `a(?#c)*b`, `(a)\1(?#c)0`, "(?x) (?i)a", "(?x)a # (?i)\nb", `(?i-i:a)`, `(?a-:x)`, `\N{DIGIT ZERO}`,
-		"(?i)x(?=)|(?-i:[\u212a-\u212b])", `a*(?#c)?`, `(?x)a* ?`, `[\w\x{41}]`, `[\d\p{L}]`, `\.js$`, `(a$)+`, `a\Z`, `\B`, `(?=a)(a+)+$`,
+		"(?i)x(?=)|(?-i:[\u212a-\u212b])", `a*(?#c)?`, `(?x)a* ?`, `a{,2}`, `a{00,}`, `a{2,1}`, `\u0041`, `[\U0001F600]`, `\u004`, `[\w\x{41}]`, `[\d\p{L}]`, `\.js$`, `(a$)+`, `a\Z`, `\B`, `(?=a)(a+)+$`,
 		strings.Repeat("(?=a)", 64), strings.Repeat(`\B`, 32),
 	}
 	for _, s := range seeds {

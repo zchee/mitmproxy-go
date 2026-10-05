@@ -333,15 +333,15 @@ func boundary(c byte, uni bool) string {
 }
 
 // hasScannedEscape reports whether pattern contains an escape the scanner
-// rewrites or refuses: \d, \D, \w, \W, \s, \S, \b, \B, \p, \P or \x{,
-// possibly inside a character class.
+// rewrites or refuses: \d, \D, \w, \W, \s, \S, \b, \B, \u, \U, \p, \P or
+// \x{, possibly inside a character class.
 func hasScannedEscape(pattern string) bool {
 	for i := 0; i+1 < len(pattern); i++ {
 		if pattern[i] != '\\' {
 			continue
 		}
 		i++
-		if c := pattern[i]; isShorthand(c) || c == 'b' || c == 'B' || foreignEscape(pattern, i-1) != nil {
+		if c := pattern[i]; isShorthand(c) || c == 'b' || c == 'B' || c == 'u' || c == 'U' || foreignEscape(pattern, i-1) != nil {
 			return true
 		}
 	}
@@ -360,6 +360,60 @@ func foreignEscape(src string, i int) error {
 		return errors.New(`incomplete escape \x`)
 	}
 	return nil
+}
+
+// codePointEscape reads the \u or \U escape that starts with the backslash
+// at src[i], with i+1 < len(src), and returns it as \x{...}, which both
+// engines read, and the index after it: RE2 knows neither escape and
+// regexp2 lacks \U. Like Python it takes exactly four or eight hex digits
+// and a code point up to U+10FFFF in a str pattern, and rejects both
+// escapes in a bytes pattern.
+func codePointEscape(src string, i int, str bool) (string, int, error) {
+	e := src[i+1]
+	if !str {
+		return "", 0, fmt.Errorf(`bad escape \%c`, e)
+	}
+	n := 4
+	if e == 'U' {
+		n = 8
+	}
+	j := i + 2
+	for j < len(src) && j-i-2 < n && isHex(src[j]) {
+		j++
+	}
+	if j-i-2 < n {
+		return "", 0, fmt.Errorf("incomplete escape %s", src[i:j])
+	}
+	if v, err := strconv.ParseUint(src[i+2:j], 16, 32); err != nil || v > unicode.MaxRune {
+		return "", 0, fmt.Errorf("bad escape %s", src[i:j])
+	}
+	return `\x{` + src[i+2:j] + `}`, j, nil
+}
+
+// repeatText returns the {m,n} repeat s, which braceRepeat has found, in a
+// form both engines read as Python does: they take {,n} and {,} as literal
+// text, and RE2 also a count with a leading zero, where Python repeats from
+// 0. It rejects a minimum above the maximum with Python's message.
+func repeatText(s string) (string, error) {
+	count := func(d string) string {
+		if d = strings.TrimLeft(d, "0"); d == "" {
+			return "0"
+		}
+		return d
+	}
+	lo, hi, comma := strings.Cut(s[1:len(s)-1], ",")
+	lo = count(lo)
+	switch {
+	case !comma:
+		return "{" + lo + "}", nil
+	case hi == "":
+		return "{" + lo + ",}", nil
+	}
+	hi = count(hi)
+	if len(lo) > len(hi) || len(lo) == len(hi) && lo > hi {
+		return "", errors.New("min repeat greater than max repeat")
+	}
+	return "{" + lo + "," + hi + "}", nil
 }
 
 // braceRepeat returns the length of the {m,n} repeat at the start of s, or
@@ -467,8 +521,9 @@ func (t *classTranslator) both(s string) {
 // sends every other \b and \B to regexp2, where they become lookarounds.
 func translateClasses(body string, flags Flags, str, verbose bool) (translation, error) {
 	// A class can hold a [ only if the body has two of them. Verbose
-	// whitespace can stand between two quantifiers.
-	if !verbose && !hasScannedEscape(body) && !strings.Contains(body, "(?") && strings.Count(body, "[") < 2 {
+	// whitespace can stand between two quantifiers, and a { may start a
+	// repeat to rewrite.
+	if !verbose && !hasScannedEscape(body) && !strings.ContainsAny(body, "{") && !strings.Contains(body, "(?") && strings.Count(body, "[") < 2 {
 		return translation{re2: body, re2OK: true, backtrack: body}, nil
 	}
 	t := &classTranslator{src: body, str: str, re2OK: true}
@@ -501,7 +556,14 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			}
 			repeat, gap, open = n > 0, false, c == '('
 			if n > 0 {
-				t.both(src[i : i+n])
+				text := src[i : i+n]
+				if c == '{' {
+					var err error
+					if text, err = repeatText(text); err != nil {
+						return translation{}, err
+					}
+				}
+				t.both(text)
 				i += n
 				continue
 			}
@@ -517,6 +579,14 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 				return translation{}, err
 			}
 			switch e := src[i+1]; {
+			case e == 'u' || e == 'U':
+				text, end, err := codePointEscape(src, i, str)
+				if err != nil {
+					return translation{}, err
+				}
+				t.both(text)
+				i = end
+				continue
 			case isShorthand(e):
 				c := shorthandExpr([]byte{e}, cur.uni)
 				t.re2.WriteString(c.exact())
@@ -766,8 +836,12 @@ func (t *classTranslator) readItem(i int) (classItem, int, bool, error) {
 	if err := foreignEscape(src, i); err != nil {
 		return classItem{}, i, false, err
 	}
-	if e := src[i+1]; isShorthand(e) {
+	switch e := src[i+1]; {
+	case isShorthand(e):
 		return classItem{text: src[i : i+2], short: e}, i + 2, true, nil
+	case e == 'u' || e == 'U':
+		text, end, err := codePointEscape(src, i, t.str)
+		return classItem{text: text}, end, err == nil, err
 	}
 	end := escapeEnd(src, i)
 	return classItem{text: src[i:end]}, end, true, nil
@@ -775,7 +849,7 @@ func (t *classTranslator) readItem(i int) (classItem, int, bool, error) {
 
 // escapeEnd returns the index after the escape that starts with the
 // backslash at src[i], with i+1 < len(src). foreignEscape has refused \p,
-// \P and \x{ before.
+// \P and \x{, and codePointEscape reads \u and \U.
 func escapeEnd(src string, i int) int {
 	j := i + 2
 	digits := func(n int, ok func(byte) bool) int {
@@ -797,10 +871,6 @@ func escapeEnd(src string, i int) int {
 	switch e := src[i+1]; {
 	case e == 'x':
 		return digits(2, isHex)
-	case e == 'u':
-		return digits(4, isHex)
-	case e == 'U':
-		return digits(8, isHex)
 	case e == 'N':
 		if k, ok := braced(); ok {
 			return k

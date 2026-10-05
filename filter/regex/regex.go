@@ -49,6 +49,12 @@
 //     "(a$|b$)", becomes "\n?\z" for RE2, which is the same thing for a
 //     search. A $ anywhere else, such as in "a$\n" or "(a$)+", sends the
 //     pattern to regexp2, whose $ already has Python's meaning.
+//   - A repeat without a minimum, {,n} or {,}, repeats from 0, as in
+//     Python; both engines would read it as text. A count with leading
+//     zeros, which RE2 would read as text, loses them.
+//   - \uXXXX and \UXXXXXXXX in a str pattern become \x{...}: RE2 knows
+//     neither and regexp2 lacks \U. A bytes pattern rejects both, as Python
+//     does.
 //
 // A known difference that is not translated: Python's bytes patterns treat
 // input as Latin-1 bytes and fold case for ASCII only, while both Go engines

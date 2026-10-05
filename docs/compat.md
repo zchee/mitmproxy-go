@@ -91,7 +91,11 @@ Reproduced on purpose (compatibility, not differences):
 - Python's errors for patterns both Go engines would accept: `\p`, `\P` and `\x{...}`, which they read as a property
   class and a code point (`bad escape \p`, `incomplete escape \x`), and a quantifier after a repeat with a comment or
   verbose whitespace between them, as in `a*(?#c)?` or `(?x)a* ?`, which they read as a lazy repeat
-  (`multiple repeat`).
+  (`multiple repeat`). Likewise `\u` and `\U` in a bytes pattern (`bad escape \u`), a `\u` or `\U` with too few hex
+  digits (`incomplete escape \u004`), and a repeat whose minimum exceeds its maximum (`min repeat greater than max
+  repeat`).
+- Python's repeats without a minimum, `{,n}` and `{,}`, which repeat from 0 where both Go engines read them as text, and
+  `\uXXXX` and `\UXXXXXXXX` in `str` patterns, which neither Go engine reads as Python does.
 - pyparsing's grammar as mitmproxy uses it: `a&b` is one bare word, expressions side by side inside parentheses are an
   error, tabs are expanded before parsing, and an operator name must be followed by whitespace, a non-ASCII character
   or the end of the input.

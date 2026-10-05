@@ -4,7 +4,6 @@
 package httplayer
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -411,6 +410,7 @@ func (s *http1Server) sendEnd(ctx context.Context) error {
 func (s *http1Server) sendError(ctx context.Context, event ResponseProtocolError) error {
 	s.mu.Lock()
 	writable := !s.writeClosed
+	responseDone := s.responseDone
 	s.state = http1Done
 	id := s.id
 	s.kick()
@@ -419,7 +419,7 @@ func (s *http1Server) sendError(ctx context.Context, event ResponseProtocolError
 	if !writable {
 		return nil
 	}
-	if status, ok := event.Code.HTTPStatusCode(); ok && !s.sentHead {
+	if status, ok := event.Code.HTTPStatusCode(); ok && !s.sentHead && !responseDone {
 		response, err := makeErrorResponse(status, event.Message)
 		if err != nil {
 			return err
@@ -481,33 +481,4 @@ func (s *http1Server) markDoneLocked(request, response, onReceive bool) {
 	s.id += 2
 	s.state = http1Headers
 	s.kick()
-}
-
-// takeover retires the endpoint and returns the bytes it consumed beyond the
-// finished exchange, stripped of superfluous leading newlines, so the routing
-// layer can hand them with the transport to a child layer. The receive side
-// must not be running concurrently.
-func (s *http1Server) takeover() []byte {
-	s.mu.Lock()
-	s.state = http1Done
-	buffered := s.waitBuf
-	s.waitBuf = nil
-	s.mu.Unlock()
-	for {
-		n := s.br.Buffered()
-		if n == 0 {
-			break
-		}
-		chunk, err := s.br.Peek(n)
-		if err != nil {
-			break
-		}
-		buffered = append(buffered, chunk...)
-		if _, err := s.br.Discard(n); err != nil {
-			break
-		}
-	}
-	buffered = append(buffered, s.src.prefix...)
-	s.src.prefix = nil
-	return bytes.TrimLeft(buffered, "\r\n")
 }

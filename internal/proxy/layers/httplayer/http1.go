@@ -282,6 +282,34 @@ func (c *http1Conn) drainBuffered() error {
 	}
 }
 
+// takeover retires an endpoint and returns bytes consumed beyond the finished
+// exchange, stripping the superfluous leading newlines as upstream does at a
+// pipe switch. Both endpoint workers must have stopped before this is called.
+func (c *http1Conn) takeover() []byte {
+	c.mu.Lock()
+	c.state = http1Done
+	buffered := c.waitBuf
+	c.waitBuf = nil
+	c.mu.Unlock()
+	for {
+		n := c.br.Buffered()
+		if n == 0 {
+			break
+		}
+		chunk, err := c.br.Peek(n)
+		if err != nil {
+			break
+		}
+		buffered = append(buffered, chunk...)
+		if _, err := c.br.Discard(n); err != nil {
+			break
+		}
+	}
+	buffered = append(buffered, c.src.prefix...)
+	c.src.prefix = nil
+	return bytes.TrimLeft(buffered, "\r\n")
+}
+
 // errorMessage renders err the way upstream embeds it in protocol errors and
 // error pages: without Go's unexpected-EOF wrapping suffix, and without the
 // parser's sentinel prefix, which upstream's bare ValueError does not carry.

@@ -15,6 +15,8 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layers/tlslayer"
 	"github.com/zchee/mitmproxy-go/internal/proxy/modespec"
+
+	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/tcplayer"
 )
 
 func init() {
@@ -104,6 +106,19 @@ func (l *httpLayer) Run(ctx context.Context, c *layer.Context) error {
 		}
 		if stream.connectEstablished {
 			return l.tunnel(ctx, c, client, stream)
+		}
+		if stream.snapshot != nil && stream.snapshot.Response != nil && stream.snapshot.Response.StatusCode == 101 {
+			if endpoint, ok := server.endpoint.(*http1Client); ok {
+				c.Client = c.Record(prefixed(client.takeover(), client.conn))
+				c.Server = c.Record(prefixed(endpoint.takeover(), endpoint.conn))
+				// Non-HTTP upgrade bytes pass through unchanged; they are not a
+				// second HTTP exchange or a separately observed TCP flow.
+				child, err := layer.Build(ctx, c, hookdata.LayerStack{{Kind: hookdata.LayerTCP, Ignore: true}})
+				if err != nil {
+					return err
+				}
+				return child.Run(ctx, c)
+			}
 		}
 		if client.done() {
 			return nil
@@ -220,6 +235,10 @@ type lazyServer struct {
 	failure  *ResponseProtocolError
 	done     bool
 	ready    chan struct{}
+
+	// responseComplete belongs to the receiving goroutine. Once it sees the
+	// end event, later bytes must stay buffered until routing takes over.
+	responseComplete bool
 }
 
 var _ ServerEndpoint = (*lazyServer)(nil)
@@ -276,7 +295,14 @@ func (s *lazyServer) Receive(ctx context.Context) (ResponseEvent, error) {
 	if endpoint == nil {
 		return nil, io.EOF
 	}
-	return endpoint.Receive(ctx)
+	if endpoint, ok := endpoint.(*http1Client); ok && s.responseComplete {
+		return endpoint.receive(ctx, true)
+	}
+	event, err := endpoint.Receive(ctx)
+	if _, end := event.(ResponseEndOfMessage); end {
+		s.responseComplete = true
+	}
+	return event, err
 }
 
 // prefixed returns conn preceded by the given bytes, so a handover preserves

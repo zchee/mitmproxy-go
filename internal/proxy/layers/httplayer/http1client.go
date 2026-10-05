@@ -159,6 +159,12 @@ func (c *http1Client) sendEnd(ctx context.Context) error {
 
 // Receive returns the next response event. See ServerEndpoint.
 func (c *http1Client) Receive(ctx context.Context) (ResponseEvent, error) {
+	return c.receive(ctx, false)
+}
+
+// receive can monitor a completed exchange for an origin disconnect without
+// interpreting later bytes. The next exchange or upgrade owns those bytes.
+func (c *http1Client) receive(ctx context.Context, completed bool) (ResponseEvent, error) {
 	for {
 		if len(c.queue) != 0 {
 			event := c.queue[0]
@@ -173,14 +179,16 @@ func (c *http1Client) Receive(ctx context.Context) (ResponseEvent, error) {
 		state := c.state
 		c.mu.Unlock()
 		var err error
-		switch state {
-		case http1Headers:
+		switch {
+		case completed:
+			err = c.readWait(ctx, true)
+		case state == http1Headers:
 			err = c.readHead(ctx)
-		case http1Body:
+		case state == http1Body:
 			err = c.readBody(ctx)
-		case http1Wait:
-			err = c.readWait(ctx)
-		case http1Pipe:
+		case state == http1Wait:
+			err = c.readWait(ctx, false)
+		case state == http1Pipe:
 			err = c.readPipe(ctx)
 		default:
 			return nil, io.EOF
@@ -196,10 +204,10 @@ func (c *http1Client) Receive(ctx context.Context) (ResponseEvent, error) {
 // outcome, a raw relay after an upgrade, and are buffered uninterpreted. A
 // server close here is a connection-level end that the caller maps to the
 // stream's failure, as the server refused to wait for the rest of the upload.
-func (c *http1Client) readWait(ctx context.Context) error {
+func (c *http1Client) readWait(ctx context.Context, completed bool) error {
 	for {
 		c.mu.Lock()
-		if c.state != http1Wait {
+		if c.state != http1Wait && !completed {
 			// readHead and readPipe claim the buffered bytes themselves.
 			c.mu.Unlock()
 			return nil
@@ -245,7 +253,7 @@ func (c *http1Client) readWait(ctx context.Context) error {
 			// A kick: re-check the state with a cleared deadline.
 			_ = c.conn.SetReadDeadline(time.Time{})
 		case errors.Is(err, io.EOF):
-			if state == http1Pipe {
+			if state == http1Pipe && !completed {
 				continue
 			}
 			c.finish()

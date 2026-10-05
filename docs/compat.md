@@ -24,6 +24,7 @@ Anything not listed here is meant to behave as upstream does; a difference that 
 |---|---|---|
 | `Cert.cn` and `Cert.organization` return `None` when absent (`mitmproxy/certs.py`). | `CN()` and `Organization()` return an empty string. The certificate's `String()` still distinguishes an absent CN (`None`) from an explicitly empty one (`''`). | The Go accessors return strings. |
 | SAN values include cryptography's specialised objects for every GeneralName type (`mitmproxy/certs.py`). | DNS, IP, URI and email names have typed constructors. Other types retain their complete DER as an opaque comparable value and render as hex, rather than Python object text. | Opaque names can be retained without recreating cryptography's object model. |
+| Certificate generation starts from naive local `datetime.now()`, which cryptography treats as UTC (`mitmproxy/certs.py`). | Generation uses the current UTC instant, backdated by two days. | Validity must not move with the host's configured time zone. |
 
 ## connection
 

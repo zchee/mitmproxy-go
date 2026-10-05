@@ -265,11 +265,6 @@ obs-fold continuation, a changed non-framing header block, and each changed fram
 `Transfer-Encoding`) separately. The framing families are excluded from the general header-block count. Unchanged
 raw bytes, generated heads without an original, and messages changed by an addon do not increment it; parsing never
 increments it.
-## internal/proxy
-
-| Upstream | Go | Reason |
-|---|---|---|
-| The pending events of `NextLayer` and TLS receive buffers have no explicit recording limit (`mitmproxy/proxy/layer.py`, `mitmproxy/proxy/layers/tls.py`). | A recording connection retains at most 128 KiB before handover, and refuses a larger lookahead. After recording stops it replays every retained byte and streams without a body-size bound. | Protocol detection must not retain an unbounded amount of network input; protocol-specific sniff limits may be smaller. |
 
 ## internal/proxy
 

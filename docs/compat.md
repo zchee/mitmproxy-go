@@ -330,12 +330,20 @@ increments it.
 |---|---|---|
 | Reverse mode accepts `udp` and `dtls` targets (`mitmproxy/proxy/layers/modes.py`, `mitmproxy/addons/next_layer.py`). | Building the reverse top layer rejects these schemes with an error naming the scheme and the required datagram transport support. | UDP and DTLS layers are not available yet. |
 | Reverse mode accepts `http3`, `quic`, and `dns` targets (`mitmproxy/proxy/layers/modes.py`, `mitmproxy/addons/next_layer.py`). | Building the reverse top layer rejects these schemes with an error naming the scheme and the required QUIC and DNS protocol support. | QUIC, HTTP/3, and DNS protocol layers are not available yet. |
+
 ## addons/errorcheck
 
 | Upstream | Go | Reason |
 |---|---|---|
 | The constructor installs a process-global Python logging handler (`mitmproxy/addons/errorcheck.py`). | The application explicitly composes `LogHandler()` into its logger. Collection is synchronous and mutex-protected, independent of the bounded `add_log` queue. | Embedders own logger configuration, and dropping a startup error could allow an invalid startup to succeed. |
 | Repeated errors use Python's log formatter, and terminal summaries may use red ANSI text (`mitmproxy/addons/errorcheck.py`). | Summaries are plain text; repeated messages preserve their text and append any structured slog attributes in text-handler format. | No Python logging formatter or implicit terminal capability detection in the library. |
+
+## addons/readfile
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `ReadFileStdin` reads `sys.stdin.buffer` and leaves it open; the reading task is abandoned to the event loop on shutdown (`mitmproxy/addons/readfile.py`). | `-` reads the stream configured as `Config.Stdin` (`os.Stdin` by default) and owns it: the done hook closes it to release a blocked read and joins the loading goroutine, and loading closes it when the stream ends. | A goroutine blocked in a read cannot be abandoned like a cancelled asyncio task; it must be unblocked and joined before shutdown completes. |
+| `Cannot load flows:` is followed by Python's `OSError` text (`mitmproxy/addons/readfile.py`). | The same prefix is followed by Go's `*os.PathError` text. | The failure detail belongs to each runtime, as with the flow-file error texts under [flowio](#flowio-and-flowiotnetstring). |
 
 ## master flow loading
 

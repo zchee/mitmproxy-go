@@ -626,3 +626,10 @@ Replay API: `proxy.Replay` takes a `ReplayRunner` supplied as `httplayer.Replay`
 | Content-Type comes from Python's `mimetypes.guess_type` (`mitmproxy/addons/maplocal.py:134`). | Uses Go's `mime.TypeByExtension`, including the host's MIME database and charset parameters for textual formats. | Use the standard maintained MIME database; host mappings may differ. |
 | Synthetic responses identify the server as mitmproxy (`mitmproxy/addons/maplocal.py:133`). | Uses `mitmproxy-go <version>`. | Identify the program serving the local file. |
 | Regex and missing-path errors contain Python exception details (`mitmproxy/addons/maplocal.py:31,36`). | Preserves the prefixes and configured subject/path, with Go compiler/filesystem details. Patterns and searched URLs inherit filter/regex's documented bounds and differences. | Resource limits and diagnostics belong to the implementation in use. |
+
+## addons/blocklist
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Status codes are parsed with Python arbitrary-precision integers (`mitmproxy/addons/blocklist.py:31`). | Preserves Python decimal syntax, but codes must fit Go native int; Unicode digits follow Go tables. | The HTTP response model stores an int; no meaningful HTTP status needs arbitrary precision. |
+| Synthetic responses identify the server as mitmproxy (`mitmproxy/addons/blocklist.py:80`). | Uses `mitmproxy-go <version>`. | Identify the program blocking the request. |

@@ -22,6 +22,24 @@ import (
 	"github.com/zchee/mitmproxy-go/tlsparse"
 )
 
+// Upstream test functions of py:test/mitmproxy/proxy/layers/test_tls.py that
+// have no Go case in this package, with the reason:
+//
+//	test_record_contents, test_record_contents_err, test_get_client_hello,
+//	test_parse_client_hello                 ported in package tlsparse
+//	TestServerTLS.test_repr                 Python object repr; no wire or
+//	                                        hook counterpart, the layer kind
+//	                                        is covered by registry tests
+//	TestServerTLS.test_post_handshake_authentication
+//	                                        Go's crypto/tls rejects a
+//	                                        post-handshake CertificateRequest
+//	                                        in TLS 1.3; the server connection
+//	                                        fails with the native error (see
+//	                                        docs/compat.md)
+//	test_dtls_record_contents, test__dtls_record_contents_err,
+//	test_dtls_get_client_hello, test_dtls_parse_client_hello
+//	                                        DTLS is deferred with the DTLS
+//	                                        proxy work
 func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
 func await[T any](t testing.TB, ch <-chan T) T {

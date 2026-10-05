@@ -48,7 +48,12 @@ func (l *serverTLS) Run(ctx context.Context, c *layer.Context) error {
 	}); err != nil {
 		return err
 	}
-	if derived.Server != nil {
+	// An already open transport is upgraded eagerly, unless the direct
+	// child terminates TLS with the client: then the hello's SNI and ALPN
+	// should shape the server handshake, so the child starts it
+	// (upstream's wait_for_clienthello).
+	_, deferToClientHello := l.child.(*clientTLS)
+	if derived.Server != nil && !deferToClientHello {
 		var metadata *connection.Server
 		if err := c.Do(ctx, func(context.Context) error {
 			metadata = c.Data.Server

@@ -13,6 +13,7 @@ import (
 	"slices"
 
 	"github.com/zchee/mitmproxy-go/flow/state"
+	"github.com/zchee/mitmproxy-go/internal/stateutil"
 )
 
 // Message is one chunk of a TCP stream.
@@ -27,7 +28,7 @@ type Message struct {
 
 // NewMessage returns a message created now.
 func NewMessage(fromClient bool, content []byte) *Message {
-	return &Message{FromClient: fromClient, Content: content, Timestamp: state.Now()}
+	return &Message{FromClient: fromClient, Content: content, Timestamp: stateutil.Now()}
 }
 
 // String formats m as an arrow for the direction ("->" from the client,
@@ -44,7 +45,7 @@ func (m *Message) String() string {
 // GetState returns the message as a (from_client, content, timestamp)
 // state tuple.
 func (m *Message) GetState() []any {
-	return []any{m.FromClient, state.Bytes(m.Content), m.Timestamp}
+	return []any{m.FromClient, stateutil.Bytes(m.Content), m.Timestamp}
 }
 
 // SetState replaces m's fields from a state tuple. On error m is left

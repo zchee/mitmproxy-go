@@ -10,6 +10,7 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/flow/state"
+	"github.com/zchee/mitmproxy-go/internal/stateutil"
 )
 
 // clientKeys and serverKeys are the key orders upstream's get_state produces
@@ -200,7 +201,7 @@ func TestClientState(t *testing.T) {
 	}
 
 	c3 := c.Clone()
-	c3.ID = state.NewID()
+	c3.ID = stateutil.NewID()
 	if gocmp.Equal(c3.GetState(), c.GetState()) {
 		t.Error("states with different IDs compare equal")
 	}

@@ -19,6 +19,7 @@ import (
 
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/flow/state"
+	"github.com/zchee/mitmproxy-go/internal/stateutil"
 )
 
 // FormatVersion is the flow format version this package reads and writes.
@@ -76,7 +77,7 @@ type Error struct {
 
 // NewError returns an Error that happened now.
 func NewError(msg string) *Error {
-	return &Error{Msg: msg, Timestamp: state.Now()}
+	return &Error{Msg: msg, Timestamp: stateutil.Now()}
 }
 
 // Error returns the message.
@@ -144,11 +145,11 @@ type Base struct {
 
 func newBase(client *connection.Client, server *connection.Server, live bool) Base {
 	return Base{
-		ID:               state.NewID(),
+		ID:               stateutil.NewID(),
 		ClientConn:       client,
 		ServerConn:       server,
 		Metadata:         state.NewMap(0),
-		TimestampCreated: state.Now(),
+		TimestampCreated: stateutil.Now(),
 		Live:             live,
 	}
 }
@@ -265,7 +266,7 @@ func (b *Base) putState(m *state.Map, typ string) {
 	m.Set("client_conn", b.client().GetState())
 	m.Set("server_conn", b.server().GetState())
 	m.Set("intercepted", b.Intercepted())
-	m.Set("is_replay", state.Opt(b.IsReplay))
+	m.Set("is_replay", stateutil.Opt(b.IsReplay))
 	m.Set("marked", b.Marked)
 	metadata := state.CopyMap(b.Metadata)
 	if metadata == nil {
@@ -443,7 +444,7 @@ func (b *Base) modified(f Flow) bool {
 // flow that is not live.
 func copyFlow(f Flow) Flow {
 	s := state.CopyMap(f.GetState())
-	s.Set("id", state.NewID())
+	s.Set("id", stateutil.NewID())
 	c, err := FromState(s)
 	if err != nil {
 		// A flow's own state always decodes; failure means a bug in a

@@ -17,6 +17,7 @@ import (
 
 	"github.com/zchee/mitmproxy-go/flow/state"
 	"github.com/zchee/mitmproxy-go/internal/human"
+	"github.com/zchee/mitmproxy-go/internal/stateutil"
 )
 
 // State is the state of the underlying socket, as a set of flags.
@@ -236,12 +237,12 @@ func (c *Connection) putState(m *state.Map) {
 	m.Set("sockname", optAddressState(c.Sockname))
 	m.Set("id", c.ID)
 	m.Set("transport_protocol", string(c.TransportProtocol))
-	m.Set("error", state.Opt(c.Error))
+	m.Set("error", stateutil.Opt(c.Error))
 	m.Set("tls", c.TLS)
-	m.Set("certificate_list", state.BytesList(c.CertificateList))
-	m.Set("alpn", state.OptBytes(c.ALPN))
-	m.Set("alpn_offers", state.BytesList(c.ALPNOffers))
-	m.Set("cipher", state.Opt(c.Cipher))
+	m.Set("certificate_list", stateutil.BytesList(c.CertificateList))
+	m.Set("alpn", stateutil.OptBytes(c.ALPN))
+	m.Set("alpn_offers", stateutil.BytesList(c.ALPNOffers))
+	m.Set("cipher", stateutil.Opt(c.Cipher))
 	cipherList := make([]any, len(c.CipherList))
 	for i, name := range c.CipherList {
 		cipherList[i] = name
@@ -252,10 +253,10 @@ func (c *Connection) putState(m *state.Map) {
 	} else {
 		m.Set("tls_version", string(c.TLSVersion))
 	}
-	m.Set("sni", state.Opt(c.SNI))
-	m.Set("timestamp_start", state.Opt(c.TimestampStart))
-	m.Set("timestamp_end", state.Opt(c.TimestampEnd))
-	m.Set("timestamp_tls_setup", state.Opt(c.TimestampTLSSetup))
+	m.Set("sni", stateutil.Opt(c.SNI))
+	m.Set("timestamp_start", stateutil.Opt(c.TimestampStart))
+	m.Set("timestamp_end", stateutil.Opt(c.TimestampEnd))
+	m.Set("timestamp_tls_setup", stateutil.Opt(c.TimestampTLSSetup))
 }
 
 // readState reads the shared fields into c. The State field is kept.
@@ -379,7 +380,7 @@ func NewClient(peername, sockname Address, timestampStart float64) *Client {
 	return &Client{
 		Peername:          &peername,
 		Sockname:          &sockname,
-		ID:                state.NewID(),
+		ID:                stateutil.NewID(),
 		TransportProtocol: TCP,
 		TimestampStart:    &timestampStart,
 		ProxyMode:         "regular",
@@ -396,7 +397,7 @@ func (c *Client) String() string {
 func (c *Client) GetState() *state.Map {
 	m := state.NewMap(19)
 	c.putState(m)
-	m.Set("mitmcert", state.OptBytes(c.MitmCert))
+	m.Set("mitmcert", stateutil.OptBytes(c.MitmCert))
 	m.Set("proxy_mode", c.ProxyMode)
 	return m
 }
@@ -491,7 +492,7 @@ type Server struct {
 // ID. A nil address means the target is not known yet.
 func NewServer(address *Address) *Server {
 	return &Server{
-		ID:                state.NewID(),
+		ID:                stateutil.NewID(),
 		TransportProtocol: TCP,
 		Address:           cloneAddress(address),
 	}
@@ -512,7 +513,7 @@ func (s *Server) GetState() *state.Map {
 	m := state.NewMap(20)
 	s.putState(m)
 	m.Set("address", optAddressState(s.Address))
-	m.Set("timestamp_tcp_setup", state.Opt(s.TimestampTCPSetup))
+	m.Set("timestamp_tcp_setup", stateutil.Opt(s.TimestampTCPSetup))
 	m.Set("via", s.Via.state())
 	return m
 }

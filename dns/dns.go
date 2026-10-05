@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/zchee/mitmproxy-go/flow/state"
+	"github.com/zchee/mitmproxy-go/internal/stateutil"
 )
 
 // DefaultTTL is the TTL, in seconds, upstream gives records it creates.
@@ -135,7 +136,7 @@ func (r *ResourceRecord) GetState() *state.Map {
 	m.Set("type", int64(r.Type))
 	m.Set("class_", int64(r.Class))
 	m.Set("ttl", int64(r.TTL))
-	m.Set("data", state.Bytes(r.Data))
+	m.Set("data", stateutil.Bytes(r.Data))
 	return m
 }
 
@@ -279,7 +280,7 @@ func (m *Message) Succeed(answers []ResourceRecord) *Message {
 }
 
 func (m *Message) respond(rcode int, recursionAvailable bool, answers []ResourceRecord) *Message {
-	now := state.Now()
+	now := stateutil.Now()
 	return &Message{
 		Timestamp:          &now,
 		ID:                 m.ID,
@@ -314,7 +315,7 @@ func (m *Message) GetState() *state.Map {
 	s.Set("answers", recordsState(m.Answers))
 	s.Set("authorities", recordsState(m.Authorities))
 	s.Set("additionals", recordsState(m.Additionals))
-	s.Set("timestamp", state.Opt(m.Timestamp))
+	s.Set("timestamp", stateutil.Opt(m.Timestamp))
 	return s
 }
 

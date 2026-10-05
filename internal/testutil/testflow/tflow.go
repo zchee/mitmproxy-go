@@ -26,8 +26,8 @@ import (
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/dns"
 	"github.com/zchee/mitmproxy-go/flow"
-	"github.com/zchee/mitmproxy-go/flow/state"
 	"github.com/zchee/mitmproxy-go/httpmsg"
+	"github.com/zchee/mitmproxy-go/internal/stateutil"
 	"github.com/zchee/mitmproxy-go/tcp"
 	"github.com/zchee/mitmproxy-go/udp"
 	"github.com/zchee/mitmproxy-go/websocket"
@@ -213,7 +213,7 @@ func TClientConn() *connection.Client {
 		Peername:          &connection.Address{Host: "127.0.0.1", Port: 22},
 		Sockname:          &connection.Address{Host: "", Port: 0},
 		State:             connection.Open,
-		ID:                state.NewID(),
+		ID:                stateutil.NewID(),
 		TransportProtocol: connection.TCP,
 		CertificateList:   [][]byte{},
 		ALPN:              []byte("http/1.1"),
@@ -237,7 +237,7 @@ func TServerConn() *connection.Server {
 		Peername:          &connection.Address{Host: "192.168.0.1", Port: 22},
 		Sockname:          &connection.Address{Host: "address", Port: 22},
 		State:             connection.Closed,
-		ID:                state.NewID(),
+		ID:                stateutil.NewID(),
 		TransportProtocol: connection.TCP,
 		CertificateList:   [][]byte{},
 		ALPNOffers:        [][]byte{},

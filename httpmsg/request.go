@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/zchee/mitmproxy-go/flow/state"
+	"github.com/zchee/mitmproxy-go/internal/stateutil"
 )
 
 // Request is an HTTP request.
@@ -39,7 +40,7 @@ type Request struct {
 // MakeRequest builds an HTTP/1.1 request for url with the given body and
 // headers, setting Content-Length, as upstream's Request.make does.
 func MakeRequest(method, url string, content []byte, headers Headers) (*Request, error) {
-	now := state.Now()
+	now := stateutil.Now()
 	r := &Request{
 		HTTPVersion:    "HTTP/1.1",
 		Headers:        headers,

@@ -6,7 +6,6 @@ package state
 import (
 	"math"
 	"math/big"
-	"regexp"
 	"testing"
 
 	gocmp "github.com/google/go-cmp/cmp"
@@ -132,23 +131,6 @@ func TestCopy(t *testing.T) {
 func mustGet(m *Map, k string) any {
 	v, _ := m.Get(k)
 	return v
-}
-
-func TestNewID(t *testing.T) {
-	t.Parallel()
-
-	re := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
-	seen := map[string]bool{}
-	for range 100 {
-		id := NewID()
-		if !re.MatchString(id) {
-			t.Fatalf("NewID() = %q, not a version 4 UUID", id)
-		}
-		if seen[id] {
-			t.Fatalf("NewID() repeated %q", id)
-		}
-		seen[id] = true
-	}
 }
 
 func TestEqual(t *testing.T) {

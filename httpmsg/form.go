@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/zchee/mitmproxy-go/flow/state"
+	"github.com/zchee/mitmproxy-go/internal/stateutil"
 )
 
 // QuotePlus is [Quote] with an empty safe set, except that spaces become
@@ -319,7 +319,7 @@ func (r *Response) SetCookies(cookies []SetCookie) {
 // since the response started. A zero now means the current time.
 func (r *Response) Refresh(now float64) {
 	if now == 0 {
-		now = state.Now()
+		now = stateutil.Now()
 	}
 	delta := now - r.TimestampStart
 	for _, h := range []string{"date", "expires", "last-modified"} {

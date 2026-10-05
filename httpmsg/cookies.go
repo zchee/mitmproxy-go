@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zchee/mitmproxy-go/flow/state"
+	"github.com/zchee/mitmproxy-go/internal/stateutil"
 )
 
 // Cookie handling follows upstream's deliberately permissive parser: it
@@ -365,7 +365,7 @@ func CookieExpiration(attrs CookieAttrs) (float64, bool) {
 		if err != nil {
 			return 0, false
 		}
-		return state.Now() + float64(maxAge), true
+		return stateutil.Now() + float64(maxAge), true
 	}
 	return 0, false
 }
@@ -374,7 +374,7 @@ func CookieExpiration(attrs CookieAttrs) (float64, bool) {
 // expired. A cookie without expiration information never expires.
 func CookieExpired(attrs CookieAttrs) bool {
 	ts, ok := CookieExpiration(attrs)
-	return ok && ts <= state.Now()
+	return ok && ts <= stateutil.Now()
 }
 
 // cookieParams are the attribute names GroupCookies keeps with the

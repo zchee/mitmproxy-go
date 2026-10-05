@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/zchee/mitmproxy-go/flow/state"
+	"github.com/zchee/mitmproxy-go/internal/stateutil"
 )
 
 // Field is one raw header field: name and value exactly as they were
@@ -197,7 +198,7 @@ func (h Headers) Clone() Headers {
 func (h Headers) state() []any {
 	out := make([]any, len(h))
 	for i, f := range h {
-		out[i] = []any{state.Bytes(f.Name), state.Bytes(f.Value)}
+		out[i] = []any{stateutil.Bytes(f.Name), stateutil.Bytes(f.Value)}
 	}
 	return out
 }

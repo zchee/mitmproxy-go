@@ -16,6 +16,7 @@ import (
 	"strconv"
 
 	"github.com/zchee/mitmproxy-go/flow/state"
+	"github.com/zchee/mitmproxy-go/internal/stateutil"
 )
 
 // Message holds the fields requests and responses share.
@@ -179,10 +180,10 @@ func (m *Message) Encode(enc string) error {
 func (m *Message) putState(s *state.Map) {
 	s.Set("http_version", []byte(m.HTTPVersion))
 	s.Set("headers", m.Headers.state())
-	s.Set("content", state.OptBytes(m.RawContent))
+	s.Set("content", stateutil.OptBytes(m.RawContent))
 	s.Set("trailers", optHeadersState(m.Trailers))
 	s.Set("timestamp_start", m.TimestampStart)
-	s.Set("timestamp_end", state.Opt(m.TimestampEnd))
+	s.Set("timestamp_end", stateutil.Opt(m.TimestampEnd))
 }
 
 // readState reads the shared fields.

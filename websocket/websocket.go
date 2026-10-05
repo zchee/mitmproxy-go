@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/zchee/mitmproxy-go/flow/state"
+	"github.com/zchee/mitmproxy-go/internal/stateutil"
 )
 
 // Opcode is a WebSocket frame opcode as defined by RFC 6455, section 5.2.
@@ -80,7 +81,7 @@ type Message struct {
 
 // NewMessage returns a message created now.
 func NewMessage(typ Opcode, fromClient bool, content []byte) *Message {
-	return &Message{Type: typ, FromClient: fromClient, Content: content, Timestamp: state.Now()}
+	return &Message{Type: typ, FromClient: fromClient, Content: content, Timestamp: stateutil.Now()}
 }
 
 // IsText reports whether the message was assembled from Text frames.
@@ -136,7 +137,7 @@ func (m *Message) formatted() []byte {
 // GetState returns the message as upstream's state tuple
 // (opcode, from_client, content, timestamp, dropped, injected).
 func (m *Message) GetState() []any {
-	return []any{int64(m.Type), m.FromClient, state.Bytes(m.Content), m.Timestamp, m.Dropped, m.Injected}
+	return []any{int64(m.Type), m.FromClient, stateutil.Bytes(m.Content), m.Timestamp, m.Dropped, m.Injected}
 }
 
 // SetState replaces m's fields from a state tuple. On error m is left
@@ -235,14 +236,14 @@ func (d *Data) GetState() *state.Map {
 	}
 	m := state.NewMap(5)
 	m.Set("messages", msgs)
-	m.Set("closed_by_client", state.Opt(d.ClosedByClient))
+	m.Set("closed_by_client", stateutil.Opt(d.ClosedByClient))
 	var closeCode any // None, not a typed nil, when no close code was sent.
 	if d.CloseCode != nil {
 		closeCode = int64(*d.CloseCode)
 	}
 	m.Set("close_code", closeCode)
-	m.Set("close_reason", state.Opt(d.CloseReason))
-	m.Set("timestamp_end", state.Opt(d.TimestampEnd))
+	m.Set("close_reason", stateutil.Opt(d.CloseReason))
+	m.Set("timestamp_end", stateutil.Opt(d.TimestampEnd))
 	return m
 }
 

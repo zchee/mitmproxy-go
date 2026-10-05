@@ -9,6 +9,7 @@ import (
 
 	"github.com/zchee/mitmproxy-go/flow/state"
 	"github.com/zchee/mitmproxy-go/internal/human"
+	"github.com/zchee/mitmproxy-go/internal/stateutil"
 )
 
 // Response is an HTTP response.
@@ -26,7 +27,7 @@ type Response struct {
 // headers, setting the standard reason phrase and Content-Length, as
 // upstream's Response.make does.
 func MakeResponse(statusCode int, content []byte, headers Headers) (*Response, error) {
-	now := state.Now()
+	now := stateutil.Now()
 	r := &Response{
 		HTTPVersion:    "HTTP/1.1",
 		Headers:        headers,

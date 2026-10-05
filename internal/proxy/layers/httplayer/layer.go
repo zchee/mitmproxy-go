@@ -5,6 +5,7 @@ package httplayer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -151,6 +152,9 @@ func (l *httpLayer) Run(ctx context.Context, c *layer.Context) error {
 		driver := &streamDriver{stream: stream, client: client, server: server, beforeRequest: stopIdle}
 		err := driver.run(ctx)
 		stopIdle()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}

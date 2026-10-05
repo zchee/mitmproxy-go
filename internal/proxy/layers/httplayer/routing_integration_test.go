@@ -9,6 +9,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"runtime/pprof"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -257,13 +260,85 @@ func TestLayerCloseDuringConnectHook(t *testing.T) {
 	if data, err := io.ReadAll(client); err != nil || len(data) != 0 {
 		t.Fatalf("paused CONNECT closure = (%q, %v), want EOF without a response", data, err)
 	}
-	if err := p.Master.Do(t.Context(), func(context.Context) error { f.Resume(); return nil }); err != nil {
-		t.Fatal(err)
-	}
-	await(t, addon.clientClosed)
+	assertClosedWithoutResume(t, p, addon, f)
 	select {
 	case server := <-addon.connected:
 		t.Fatalf("origin opened after client closed during CONNECT hook: %s", server.ID)
 	default:
+	}
+}
+
+func TestLayerCloseDuringRequestHook(t *testing.T) {
+	originClosed := make(chan struct{})
+	origin := proxytest.StartOrigin(t, func(conn net.Conn) {
+		data, err := io.ReadAll(conn)
+		if err != nil || len(data) != 0 {
+			t.Errorf("origin received paused request: (%q, %v), want EOF", data, err)
+		}
+		close(originClosed)
+	})
+	addon := &interceptHTTPAddon{held: make(chan *flow.HTTPFlow, 1), connected: make(chan *connection.Server, 1), disconnected: make(chan *connection.Server, 1), clientClosed: make(chan struct{})}
+	p := proxytest.Start(t, proxytest.WithOrigin("origin.test", origin), proxytest.WithAddons(addon), proxytest.WithOptions(map[string]any{"connection_strategy": "eager"}))
+	client := dialHTTPPeer(t, p.Addr)
+	// Establish a pooled origin before pausing the request so its release is
+	// observable independently of client_disconnected.
+	sendHTTPBytes(t, client, "CONNECT origin.test:80 HTTP/1.1\r\n\r\n")
+	expectRead(t, client, "HTTP/1.1 200 Connection established\r\n\r\n")
+	server := await(t, addon.connected)
+	sendHTTPBytes(t, client, "GET / HTTP/1.1\r\nHost: origin.test\r\n\r\n")
+	f := await(t, addon.held)
+	if err := client.(*net.TCPConn).CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := io.ReadAll(client); err != nil || len(data) != 0 {
+		t.Fatalf("paused request closure = (%q, %v), want EOF without a response", data, err)
+	}
+	assertClosedWithoutResume(t, p, addon, f)
+	if closed := await(t, addon.disconnected); closed.ID != server.ID {
+		t.Fatalf("released origin = %s, want %s", closed.ID, server.ID)
+	}
+	await(t, originClosed)
+}
+
+func assertClosedWithoutResume(t *testing.T, p *proxytest.Proxy, a *interceptHTTPAddon, f *flow.HTTPFlow) {
+	t.Helper()
+	deadline := time.NewTimer(layertest.Timeout)
+	defer deadline.Stop()
+	select {
+	case <-a.clientClosed:
+	case <-deadline.C:
+		var stacks strings.Builder
+		_ = pprof.Lookup("goroutine").WriteTo(&stacks, 2)
+		t.Fatalf("client_disconnected requires an explicit resume:\n%s", stacks.String())
+	}
+	// The handler removes its registry entry after disconnect hooks and pool
+	// shutdown; observing zero proves that cleanup completed, not just started.
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for p.Server.ActiveConnections(t.Context()) != 0 {
+		select {
+		case <-ticker.C:
+		case <-deadline.C:
+			var stacks strings.Builder
+			_ = pprof.Lookup("goroutine").WriteTo(&stacks, 2)
+			t.Fatalf("closed connection retained in registry:\n%s", stacks.String())
+		}
+	}
+	for _, hook := range p.Recorder.Hooks() {
+		if slices.Contains([]string{"responseheaders", "response", "error", "http_connect_error"}, hook) {
+			t.Errorf("closed intercepted flow fired %s", hook)
+		}
+	}
+	if err := p.Master.Do(t.Context(), func(context.Context) error {
+		if f.Live {
+			t.Error("closed intercepted flow remains live")
+		}
+		f.Resume()
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Server.ActiveConnections(t.Context()); got != 0 {
+		t.Fatalf("late resume revived %d connections", got)
 	}
 }

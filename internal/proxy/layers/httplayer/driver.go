@@ -54,12 +54,20 @@ type streamDriver struct {
 	beforeRequest func()
 }
 
-func (d *streamDriver) run(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
+func (d *streamDriver) run(ctx context.Context) (err error) {
+	ctx, cancel := context.WithCancelCause(ctx)
 	var workers sync.WaitGroup
 	defer func() {
-		cancel()
+		cancel(nil)
 		workers.Wait()
+		if errors.Is(context.Cause(ctx), io.EOF) {
+			// The reader only cancels the owner. Retire shared flow state here,
+			// under dispatch, without waiting on another intercepted hook.
+			err = io.EOF
+			if d.stream.flow != nil {
+				err = errors.Join(err, d.stream.notLive(context.WithoutCancel(ctx)))
+			}
+		}
 	}()
 	reads := [2]chan driverRead{make(chan driverRead), make(chan driverRead)}
 	writes := [2]chan driverWrite{make(chan driverWrite), make(chan driverWrite)}
@@ -67,7 +75,7 @@ func (d *streamDriver) run(ctx context.Context) error {
 	failures := make(chan driverFailure, 2)
 	requestEnds := make(chan driverRead, 1)
 	requestReads, responseReads := reads[0], reads[1]
-	workers.Go(func() { readRequests(ctx, d.client, requestReads, requestEnds, failures) })
+	workers.Go(func() { readRequests(ctx, cancel, d.client, requestReads, requestEnds, failures) })
 	workers.Go(func() { readResponses(ctx, d.server, responseReads, failures) })
 	workers.Go(func() {
 		writeEvents(ctx, writes[0], written[0], func(ctx context.Context, event Event) error {
@@ -270,7 +278,7 @@ func writeEvents(ctx context.Context, input <-chan driverWrite, output chan<- dr
 	}
 }
 
-func readRequests(ctx context.Context, endpoint ClientEndpoint, out, ends chan<- driverRead, failures chan<- driverFailure) {
+func readRequests(ctx context.Context, cancel context.CancelCauseFunc, endpoint ClientEndpoint, out, ends chan<- driverRead, failures chan<- driverFailure) {
 	for {
 		event, err := endpoint.Receive(ctx)
 		if _, failed := event.(RequestProtocolError); failed || err != nil {
@@ -288,6 +296,12 @@ func readRequests(ctx context.Context, endpoint ClientEndpoint, out, ends chan<-
 					failure = client.queue[0]
 					client.queue[0] = nil
 					client.queue = client.queue[1:]
+				}
+				if closed, ok := failure.(RequestProtocolError); ok && closed.Code == ClientDisconnected {
+					// A queued event cannot wake an owner in WaitForResume.
+					// Cancel the same stream context that protects the hook wait.
+					cancel(io.EOF)
+					return
 				}
 				if failure != nil || err != nil {
 					failures <- driverFailure{source: 0, result: driverRead{event: failure, err: err}}

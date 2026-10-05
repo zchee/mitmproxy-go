@@ -8,18 +8,18 @@ package certs_test
 // as not applicable with the reason.
 //
 //	TestCertStore.test_create_explicit               -> TestFromStore/"success: creating then loading keeps the CA"
-//	TestCertStore.test_create_no_common_name         -> TestStoreGetCert/"success: no common name"
+//	TestCertStore.test_create_no_common_name         -> TestStoreCacheIdentity
 //	TestCertStore.test_chain_file                    -> TestFromStore/"success: chain file only when more than one certificate"
-//	TestCertStore.test_sans                          -> TestStoreGetCert/"success: sans do not alias unrelated names"
-//	TestCertStore.test_sans_change                   -> TestStoreGetCert/"success: new sans generate a new certificate"
+//	TestCertStore.test_sans                          -> TestStoreGeneratedNamesAreNotAliases
+//	TestCertStore.test_sans_change                   -> TestStoreGeneratedNamesAreNotAliases
 //	TestCertStore.test_expire                        -> TestStoreExpire
 //	TestCertStore.test_create_dhparams               -> TestFromStore/"success: missing dhparam file is recreated"
 //	TestCertStore.test_umask_secret                  -> TestFromStoreFileModes (unix-only; Windows has no file mode bits, so the mode assertions are skipped there and the file contents are still checked)
-//	TestCertStore.test_asterisk_forms                -> TestAsteriskForms
-//	TestDummyCert.test_validity_period               -> TestDummyCert/"success: validity period"
-//	TestDummyCert.test_with_ca                       -> TestDummyCert/"success: names, organization and crl"
-//	TestDummyCert.test_aki_copies_issuer_ski_non_sha1 -> TestDummyCert/"success: aki copies a non-sha1 issuer ski"
-//	TestDummyCert.test_aki_falls_back_when_issuer_has_no_ski -> TestDummyCert/"success: aki from public key when the issuer has no ski"
+//	TestCertStore.test_asterisk_forms                -> TestStoreLookupOrder (wildcard forms tested through selection)
+//	TestDummyCert.test_validity_period               -> TestDummyCert (every successful case)
+//	TestDummyCert.test_with_ca                       -> TestDummyCert/"success: upstream with CA"
+//	TestDummyCert.test_aki_copies_issuer_ski_non_sha1 -> TestDummyCertAuthorityKeyIdentifier/"success: copies custom stored SKI"
+//	TestDummyCert.test_aki_falls_back_when_issuer_has_no_ski -> TestDummyCertAuthorityKeyIdentifier/"success: missing SKI falls back to SHA-1"
 //	TestCert.test_simple                             -> TestCertSimple
 //	TestCert.test_convert                            -> TestCertConvert (the pyOpenSSL round trip is not applicable: the port has no pyOpenSSL objects; the PEM and state round trips are ported)
 //	TestCert.test_keyinfo                            -> TestCertKeyInfo

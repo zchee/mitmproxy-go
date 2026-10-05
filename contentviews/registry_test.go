@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"errors"
 	"log/slog"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -167,6 +169,68 @@ func TestPrettifyMessage(t *testing.T) {
 			}
 			got := PrettifyMessage(&httpmsg.Message{RawContent: tt.data}, nil, tt.selected, r, tt.cutoff)
 			if diff := cmp.Diff(tt.want, got, cmpopts.EquateErrors()); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+type reentrantNameView struct {
+	exampleView
+	registry *Registry
+	calls    int
+}
+
+// Name returns the view name after subscribing and unsubscribing from its registry.
+func (v *reentrantNameView) Name() string {
+	v.calls++
+	unsubscribe := v.registry.Subscribe(func(View) {})
+	unsubscribe()
+	return v.name
+}
+
+func TestRegistryCachesReentrantName(t *testing.T) {
+	tests := map[string]struct {
+		run      func(*Registry)
+		replaced bool
+	}{
+		"register":        {run: func(r *Registry) { r.Register(Raw{}) }},
+		"replace":         {run: func(r *Registry) { r.Register(exampleView{name: "EXAMPLE"}) }, replaced: true},
+		"get":             {run: func(r *Registry) { r.Get("EXAMPLE") }},
+		"available_views": {run: func(r *Registry) { r.AvailableViews() }},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			r := &Registry{}
+			view := &reentrantNameView{name: "Example", registry: r}
+			r.Register(view)
+			view.name = "Changed"
+			done := make(chan struct{})
+			go func() {
+				tt.run(r)
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				stack := make([]byte, 1<<20)
+				t.Fatalf("registry operation deadlocked in Name:\n%s", stack[:runtime.Stack(stack, true)])
+			}
+			if view.calls != 1 {
+				t.Fatalf("Name called %d times, want once at registration", view.calls)
+			}
+			got, ok := r.Get("EXAMPLE")
+			if !ok || (got == view) == tt.replaced {
+				t.Fatalf("cached name lookup: view=%v found=%v replaced=%v", got, ok, tt.replaced)
+			}
+			if _, ok := r.Get("Changed"); ok {
+				t.Fatal("changing a view name changed its registered key")
+			}
+			want := []string{"auto", "example"}
+			if name == "register" {
+				want = append(want, "raw")
+			}
+			if diff := cmp.Diff(want, r.AvailableViews()); diff != "" {
 				t.Fatal(diff)
 			}
 		})

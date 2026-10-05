@@ -20,9 +20,14 @@ var ErrNoView = errors.New("at least one view needs to have a working render pri
 // Operations are concurrency-safe; view and subscriber calls run without its lock.
 type Registry struct {
 	mu          sync.RWMutex
-	views       []View
+	views       []registeredView
 	subscribers []subscription
 	nextID      uint64
+}
+
+type registeredView struct {
+	name string
+	view View
 }
 
 type subscription struct {
@@ -53,21 +58,24 @@ var DefaultRegistry = NewRegistry()
 // Register adds or replaces a view, retaining its position when replaced.
 // It panics for a nil view or an empty name.
 func (r *Registry) Register(view View) {
-	if view == nil || view.Name() == "" {
+	if view == nil {
 		panic("contentviews: a view needs a name")
 	}
 	name := strings.ToLower(view.Name())
+	if name == "" {
+		panic("contentviews: a view needs a name")
+	}
 	r.mu.Lock()
 	replaced := false
 	for i, v := range r.views {
-		if strings.ToLower(v.Name()) == name {
-			r.views[i] = view
+		if v.name == name {
+			r.views[i].view = view
 			replaced = true
 			break
 		}
 	}
 	if !replaced {
-		r.views = append(r.views, view)
+		r.views = append(r.views, registeredView{name: name, view: view})
 	}
 	subscribers := slices.Clone(r.subscribers)
 	r.mu.Unlock()
@@ -96,11 +104,12 @@ func (r *Registry) Subscribe(notify func(View)) func() {
 
 // Get looks up a name case-insensitively.
 func (r *Registry) Get(name string) (View, bool) {
+	name = strings.ToLower(name)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, v := range r.views {
-		if strings.EqualFold(v.Name(), name) {
-			return v, true
+		if v.name == name {
+			return v.view, true
 		}
 	}
 	return nil, false
@@ -111,7 +120,7 @@ func (r *Registry) AvailableViews() []string {
 	r.mu.RLock()
 	names := make([]string, 0, len(r.views)+1)
 	for _, v := range r.views {
-		names = append(names, strings.ToLower(v.Name()))
+		names = append(names, v.name)
 	}
 	r.mu.RUnlock()
 	slices.Sort(names)
@@ -134,9 +143,9 @@ func (r *Registry) GetView(data []byte, metadata Metadata, name string) (View, e
 	var best View
 	var highest float64
 	for _, v := range views {
-		priority, ok := renderPriority(v, data, metadata)
+		priority, ok := renderPriority(v.view, data, metadata)
 		if ok && (best == nil || priority > highest) {
-			best, highest = v, priority
+			best, highest = v.view, priority
 		}
 	}
 	if best == nil {

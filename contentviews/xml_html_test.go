@@ -4,13 +4,13 @@
 package contentviews
 
 import (
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/httpmsg"
+	"github.com/zchee/mitmproxy-go/internal/testutil"
 )
 
 // TestXMLHTML ports test__view_xml_html.py's simple and message-text cases.
@@ -80,16 +80,10 @@ func TestXMLHTMLFixtures(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			path := "testdata/xml_html/" + tt.filename
-			input, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatal(err)
-			}
+			path := "mitmproxy/contentviews/xml_html/" + tt.filename
+			input := testutil.Fixture(t, path)
 			base, ext, _ := strings.CutLast(path, ".")
-			want, err := os.ReadFile(base + "-formatted." + ext)
-			if err != nil {
-				t.Fatal(err)
-			}
+			want := testutil.Fixture(t, base+"-formatted."+ext)
 			got, err := (XMLHTML{}).Prettify(input, Metadata{})
 			if err != nil {
 				t.Fatal(err)

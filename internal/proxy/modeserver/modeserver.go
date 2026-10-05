@@ -136,7 +136,7 @@ func (i *Instance) Start(ctx context.Context) error {
 			host = "*"
 		}
 		var hint string
-		if errors.Is(err, syscall.EADDRINUSE) && !i.mode.Common().HasCustomListenPort {
+		if isAddrInUse(err) && !i.mode.Common().HasCustomListenPort {
 			hint = fmt.Sprintf("\nTry specifying a different port by using `--mode %s@%d`.", i.mode, i.port+2)
 		}
 		err = fmt.Errorf("%s failed to listen on %s:%d with %w%s", i.mode.Description(), host, i.port, err, hint)
@@ -211,7 +211,7 @@ func (i *Instance) listen(ctx context.Context) ([]net.Listener, error) {
 	}
 	port := ipv4.Addr().(*net.TCPAddr).Port
 	ipv6, err := i.listenTCP(ctx, "tcp6", net.JoinHostPort("::", strconv.Itoa(port)))
-	if i.port == 0 && errors.Is(err, syscall.EADDRINUSE) {
+	if i.port == 0 && isAddrInUse(err) {
 		i.logger.Debug("Failed to listen on a single port, falling back to default behavior.", "error", err)
 		ipv6, err = i.listenTCP(ctx, "tcp6", "[::]:0")
 	}

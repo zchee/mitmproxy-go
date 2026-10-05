@@ -100,29 +100,84 @@ func (m *Master) Call(ctx context.Context, name string, args ...any) (any, error
 	return m.Addons.Call(ctx, name, args...)
 }
 
-// Run fires the running hook, waits until ctx is done or [Master.Shutdown]
-// is called, fires the done hook and then closes the master (see
-// [Master.Close]). The done hook runs even when the running hook returned
-// an error, as mitmproxy fires done whenever it fired running. Run returns
-// the first error of the running hook, the done hook and Close.
-func (m *Master) Run(ctx context.Context) error {
-	err := m.Addons.Trigger(ctx, addon.RunningHook{})
-	if err == nil {
-		select {
-		case <-ctx.Done():
-		case <-m.shutdown:
+// Run checks startup errors, sets up servers outside dispatch, fires running,
+// checks startup errors again and finishes error collection, then waits for ctx
+// or Shutdown. The named "errorcheck" and "proxyserver" addons may implement
+// ErrorCheck and ServerSetup respectively; either addon may be absent.
+//
+// The done hook runs whenever running was invoked, even if it failed. Run
+// always closes the master, including on a pre-running startup failure, and
+// returns the first startup, running, done or Close error. Run must be called
+// outside dispatch and at most once per Master.
+func (m *Master) Run(ctx context.Context) (err error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	defer func() {
+		if cerr := m.Close(context.WithoutCancel(ctx)); err == nil {
+			err = cerr
+		}
+	}()
+
+	ec, _ := m.Addons.Get("errorcheck").(ErrorCheck)
+	if ec != nil {
+		if err := ec.ShutdownIfErrored(ctx); err != nil {
+			return err
 		}
 	}
+	if ps, ok := m.Addons.Get("proxyserver").(ServerSetup); ok {
+		setup := make(chan error, 1)
+		go func() { setup <- ps.SetupServers(ctx) }()
+		select {
+		case err = <-setup:
+			if err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			cancel()
+			<-setup
+			return nil
+		case <-m.shutdown:
+			cancel()
+			<-setup
+			return nil
+		}
+		if ec != nil {
+			if err := ec.ShutdownIfErrored(ctx); err != nil {
+				return err
+			}
+		}
+	}
+	select {
+	case <-ctx.Done():
+		return nil
+	case <-m.shutdown:
+		return nil
+	default:
+	}
+
 	// The done hook and the final log delivery must happen even though ctx
-	// may be cancelled.
-	stopCtx := context.WithoutCancel(ctx)
-	if derr := m.Addons.Trigger(stopCtx, addon.DoneHook{}); err == nil {
-		err = derr
+	// may be cancelled. Install this before running, which may fail.
+	defer func() {
+		if derr := m.Addons.Trigger(context.WithoutCancel(ctx), addon.DoneHook{}); err == nil {
+			err = derr
+		}
+	}()
+	if err := m.Addons.Trigger(ctx, addon.RunningHook{}); err != nil {
+		return err
 	}
-	if cerr := m.Close(stopCtx); err == nil {
-		err = cerr
+	if ec != nil {
+		if err := ec.ShutdownIfErrored(ctx); err != nil {
+			return err
+		}
+		if err := ec.Finish(ctx); err != nil {
+			return err
+		}
 	}
-	return err
+	select {
+	case <-ctx.Done():
+	case <-m.shutdown:
+	}
+	return nil
 }
 
 // Close stops firing configure for option changes, delivers the log

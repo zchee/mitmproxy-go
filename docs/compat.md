@@ -306,6 +306,13 @@ increments it.
 | Shutdown can leave an asyncio server-setup task pending for the event loop to cancel (`mitmproxy/master.py`). | Shutdown cancels and joins the setup goroutine outside dispatch before returning. | Goroutines have no event-loop teardown and must not leak. |
 | An event-loop exception handler reports unhandled task errors (`mitmproxy/master.py`). | Addon errors and panics are handled by the addon manager; there is no global goroutine panic handler. | Go has no equivalent of asyncio's task exception callback. |
 
+## internal/proxy/layers/tlslayer
+
+| Upstream | Go | Reason |
+|---|---|---|
+| TLS ClientHello receive buffers have no explicit byte cap (`mitmproxy/proxy/layers/tls.py`). | ClientHello collection is bounded independently at 128 KiB of wire bytes, including record headers, and 64 KiB of reassembled handshake bytes, including the handshake header. The collector returns a limit error when either bound is exceeded. | Bound retained network input even when a small handshake is fragmented into many records. |
+| TLS connections are half-closed with a bare TCP FIN (`mitmproxy/proxy/layers/tls.py`). | The TLS transport sends `close_notify`, then FIN; reads remain available. | Go's `tls.Conn.CloseWrite` sends `close_notify`; peers see a clean TLS shutdown. |
+
 ## Decided for code that is not written yet
 
 These differences are settled in the work plan ([docs/plans/mitmproxy-go-port.md](plans/mitmproxy-go-port.md): the
@@ -348,6 +355,5 @@ TLS and protocol layers:
 | pyOpenSSL can talk to servers that only offer finite-field DHE, SSLv3, RC4, 3DES or export cipher suites, and honours `@SECLEVEL=0`. | Go's `crypto/tls` supports none of these, so `ssl_insecure` interception of such legacy or IoT servers fails. `mitmproxy-dhparam.pem` is written only to keep the configuration directory layout and is never used. | The port uses the standard TLS stack. An OpenSSL- or utls-backed layer is a possible follow-up. |
 | — | Go processes ECH before the proxy sees the ClientHello, so without the origin's ECH key only the outer `public_name` SNI is visible. Clients that attempt ECH fail unless `strip_ech` (default true) removed the `ech` parameter from the HTTPS records they resolved through the proxy. | Behaviour of Go's `crypto/tls`. |
 | HTTP/2 windows are 2^31−1 and data is acknowledged at once (`mitmproxy/proxy/layers/http/_http_h2.py`, `_http2.py`). | Bounded windows: 100 concurrent streams, a 1 MiB initial stream window growing to 16 MiB, and a 128 MiB budget for granted windows; a stream's window is returned only when its data has been consumed. | Memory per connection stays bounded under slow readers. |
-| TLS connections are half-closed with a bare TCP FIN (`mitmproxy/proxy/layers/tls.py`). | The proxy sends `close_notify`, then FIN. | Go's `tls.Conn.CloseWrite` sends `close_notify`; peers see a clean TLS shutdown. |
 | Server connections are reused by address, TLS, `via` and transport protocol (`mitmproxy/proxy/layers/http/__init__.py`). | The SNI is part of the key as well. | A connection opened for one SNI is never reused for another. |
 | DTLS follows the `tls_version_*` options. | `pion/dtls` speaks DTLS 1.2 only: a version window that contains `TLS1_2` negotiates DTLS 1.2, any other window fails the DTLS connection. | Limit of the only maintained pure-Go DTLS implementation. |

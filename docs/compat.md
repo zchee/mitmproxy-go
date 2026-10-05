@@ -115,6 +115,13 @@ No differences beyond the message content rule listed under [flow](#flow).
 
 No behavioural differences.
 
+## flowio
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `flow_to_json` includes DNS request and response JSON (`mitmproxy/tools/web/app.py`). | `flowjson.Flow` returns `flowjson: dns flows are not supported yet`. | The DNS JSON view requires the HTTPS-record helpers that arrive with the DNS codec. |
+| Tornado's `json_encode` escapes non-ASCII characters in flow JSON, including invalid bytes represented by lone surrogateescape code points (`mitmproxy/tools/web/app.py`, `mitmproxy/http.py`). | Valid non-ASCII text may remain UTF-8; undecodable wire bytes are emitted as the same lone surrogate escapes through a per-string raw JSON encoder. | Escaping style differs, not the JSON string value; binary header values cannot break serialization of the flow list. |
+
 ## flowio and flowio/tnetstring
 
 | Upstream | Go | Reason |

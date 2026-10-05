@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -352,6 +353,89 @@ func TestRelativePath(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if got := relativePath(tt.script, tt.relativeTo); got != tt.want {
 				t.Errorf("relativePath(%q, %q) = %q, want %q", tt.script, tt.relativeTo, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPyJoinWindows checks the Windows branches of pyJoin against the
+// results of Python's PureWindowsPath(a) / b, which joins with ntpath.join
+// and then normalises separators.
+func TestPyJoinWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("drive letters and UNC volumes exist only on Windows")
+	}
+	tests := map[string]struct {
+		a, b, want string
+	}{
+		"success: relative":                        {a: `C:\dir`, b: `x`, want: `C:\dir\x`},
+		"success: parent kept":                     {a: `C:\dir`, b: `x\..\y`, want: `C:\dir\x\..\y`},
+		"success: absolute replaces":               {a: `C:\dir`, b: `D:\x`, want: `D:\x`},
+		"success: absolute on the same drive":      {a: `C:\dir`, b: `C:\x`, want: `C:\x`},
+		"success: drive-relative on another drive": {a: `C:\dir`, b: `D:x`, want: `D:x`},
+		"success: drive-relative on the same drive": {
+			a: `C:\dir`, b: `C:x`, want: `C:\dir\x`,
+		},
+		"success: drive letter case differs": {a: `C:\dir`, b: `c:x`, want: `c:\dir\x`},
+		"success: rooted keeps the drive":    {a: `C:\dir`, b: `\x`, want: `C:\x`},
+		"success: rooted with a slash":       {a: `C:\dir`, b: `/x`, want: `C:\x`},
+		"success: UNC rooted keeps the share": {
+			a: `\\host\share\dir`, b: `\x`, want: `\\host\share\x`,
+		},
+		"success: UNC relative":              {a: `\\host\share\dir`, b: `x`, want: `\\host\share\dir\x`},
+		"success: UNC then a drive":          {a: `\\host\share\dir`, b: `C:x`, want: `C:x`},
+		"success: relative then a drive":     {a: `foo`, b: `C:x`, want: `C:x`},
+		"success: relative then rooted":      {a: `foo`, b: `\x`, want: `\x`},
+		"success: drive-relative base":       {a: `C:foo`, b: `y`, want: `C:foo\y`},
+		"success: drive-relative both sides": {a: `C:foo`, b: `C:y`, want: `C:foo\y`},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := pyJoin(tt.a, tt.b); got != tt.want {
+				t.Errorf("pyJoin(%q, %q) = %q, want %q", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPyAbsoluteWindows checks pathlib's absolute() for the Windows paths
+// that have a drive or a root but not both: a rooted path takes the drive of
+// the working directory, and a drive-relative path on the working
+// directory's drive is joined onto the working directory, as
+// os.path.abspath("D:") returns it.
+func TestPyAbsoluteWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("drive letters exist only on Windows")
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	drive := filepath.VolumeName(wd)
+	if len(drive) != 2 || drive[1] != ':' {
+		t.Skipf("working directory %q is not on a drive letter", wd)
+	}
+	// A working directory at a drive root ends in a separator already.
+	wd = strings.TrimRight(wd, `\`)
+	tests := map[string]struct {
+		path, want string
+	}{
+		"success: rooted":               {path: `\abc`, want: drive + `\abc`},
+		"success: rooted with a parent": {path: `\abc\..\x`, want: drive + `\abc\..\x`},
+		"success: drive-relative":       {path: drive + `abc`, want: wd + `\abc`},
+		"success: absolute stays":       {path: drive + `\abc`, want: drive + `\abc`},
+		"success: relative":             {path: `abc`, want: wd + `\abc`},
+		"success: relativePath with a rooted script": {
+			path: relativePath(`\abc`, drive+`\tmp`), want: drive + `\abc`,
+		},
+		"success: relativePath with a drive-relative script": {
+			path: relativePath(drive+`abc`, drive+`\tmp`), want: drive + `\tmp\abc`,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := pyAbsolute(tt.path); got != tt.want {
+				t.Errorf("pyAbsolute(%q) = %q, want %q", tt.path, got, tt.want)
 			}
 		})
 	}

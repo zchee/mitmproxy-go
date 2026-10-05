@@ -363,6 +363,12 @@ func relativePath(script, relativeTo string) string {
 // ("C:x") or a root without a drive (`\x`), it follows ntpath.join: a b on
 // another drive replaces a, a b on the same drive is joined onto a's
 // directory, and a rooted b keeps only a's drive.
+//
+// a must not be a bare drive such as "C:": ntpath.join("C:", "y") gives
+// "C:y", a path relative to that drive's working directory, while pyJoin
+// puts a separator between them and gives "C:\y". The only caller of
+// relativePath passes the directory of an absolute file name, which always
+// has a root.
 func pyJoin(a, b string) string {
 	if filepath.IsAbs(b) {
 		return pyNormalize(b)

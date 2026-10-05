@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/andybalholm/brotli"
 	"github.com/google/go-cmp/cmp"
 	"github.com/klauspost/compress/zstd"
 )
@@ -34,10 +35,10 @@ func bomb(t testing.TB, enc string) []byte {
 // zstdStream encodes data as a zstd frame that does not declare its
 // content size, as a streaming compressor writes it, so that a decoder
 // cannot refuse it from the frame header.
-func zstdStream(t testing.TB, data []byte) []byte {
+func zstdStream(t testing.TB, data []byte, opts ...zstd.EOption) []byte {
 	t.Helper()
 	var buf bytes.Buffer
-	zw, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(zstd.SpeedFastest))
+	zw, err := zstd.NewWriter(&buf, append([]zstd.EOption{zstd.WithEncoderLevel(zstd.SpeedFastest)}, opts...)...)
 	if err != nil {
 		t.Fatalf("zstd.NewWriter error: %v", err)
 	}
@@ -159,28 +160,90 @@ func TestDecodeLimitMatchesDecode(t *testing.T) {
 	}
 }
 
-// TestDecodeLimitAllocations checks that a gzip bomb is refused without
-// allocating anything close to its decoded size.
+// raceEnabled reports whether the test binary was built with the race
+// detector, which changes how much some code allocates.
+var raceEnabled bool
+
+// brotliBomb returns bombSize zero bytes encoded with brotli's largest
+// window, 2^24, which sets the size of the decoder's ring buffer.
+func brotliBomb(t testing.TB) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	bw := brotli.NewWriterOptions(&buf, brotli.WriterOptions{Quality: 0, LGWin: 24})
+	if _, err := bw.Write(make([]byte, bombSize)); err != nil {
+		t.Fatalf("brotli write error: %v", err)
+	}
+	if err := bw.Close(); err != nil {
+		t.Fatalf("brotli close error: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// TestDecodeLimitAllocations checks that a bomb of each coding is refused
+// with allocations within the bounds DecodeLimit documents, far below the
+// 64 MiB that Decode allocates. Each input uses the largest window
+// DecodeLimit accepts at that limit, the worst case for the decoder.
 func TestDecodeLimitAllocations(t *testing.T) {
-	data := bomb(t, "gzip")
-	// Warm up lazily initialised state before measuring.
-	if _, err := DecodeLimit(data, "gzip", bombLimit); !errors.Is(err, ErrSizeLimit) {
-		t.Fatalf("DecodeLimit error = %v, want wrapping ErrSizeLimit", err)
+	const small = 1 << 10
+	deflateBomb := bomb(t, "deflate")
+	brBomb := brotliBomb(t)
+	// No content size in the frame header: a frame that declares one
+	// larger than the limit is refused before decoding.
+	zstdBomb := zstdStream(t, make([]byte, bombSize), zstd.WithWindowSize(8<<20))
+	// The race detector's instrumentation keeps the compiler from turning
+	// the append of a fresh slice in bytes.Buffer's growth into a single
+	// allocation, which doubles what the output buffer allocates.
+	growth := int64(1)
+	if raceEnabled {
+		growth = 2
 	}
-	const runs = 4
-	var before, after runtime.MemStats
-	runtime.ReadMemStats(&before)
-	for range runs {
-		_, _ = DecodeLimit(data, "gzip", bombLimit)
+	outputBound := func(limit int64) int64 { return growth*4*limit + 64<<10 }
+	brotliBound := func(limit int64) int64 { return 36<<20 + growth*3*limit }
+	zstdBound := func(limit int64) int64 { return 7 * max(limit, 8<<20) }
+	tests := map[string]struct {
+		data     []byte
+		encoding string
+		limit    int64
+		bound    func(limit int64) int64
+	}{
+		"error: gzip":        {data: bomb(t, "gzip"), encoding: "gzip", limit: bombLimit, bound: outputBound},
+		"error: deflate":     {data: deflateBomb, encoding: "deflate", limit: bombLimit, bound: outputBound},
+		"error: raw deflate": {data: deflateBomb[2:], encoding: "deflate", limit: bombLimit, bound: outputBound},
+		// Just above a power of two, the output buffer has doubled past
+		// the limit: the worst ratio for gzip and deflate.
+		"error: deflate with the limit just above 8 MiB": {
+			data: deflateBomb, encoding: "deflate", limit: 9 << 20, bound: outputBound,
+		},
+		"error: brotli with a small limit": {data: brBomb, encoding: "br", limit: small, bound: brotliBound},
+		"error: brotli":                    {data: brBomb, encoding: "br", limit: bombLimit, bound: brotliBound},
+		"error: brotli with a 16 MiB limit": {
+			data: brBomb, encoding: "br", limit: 16 << 20, bound: brotliBound,
+		},
+		"error: zstd with a small limit": {data: zstdBomb, encoding: "zstd", limit: small, bound: zstdBound},
+		"error: zstd with a 16 MiB limit": {
+			data: zstdBomb, encoding: "zstd", limit: 16 << 20, bound: zstdBound,
+		},
 	}
-	runtime.ReadMemStats(&after)
-	perRun := (after.TotalAlloc - before.TotalAlloc) / runs
-	// The output buffer may grow to twice the limit; the decoder itself
-	// keeps a 32 KiB window. Decode allocates the whole 64 MiB.
-	const maxPerRun = 4 * bombLimit
-	t.Logf("DecodeLimit allocated %d bytes per run for a %d-byte bomb with limit %d", perRun, bombSize, bombLimit)
-	if perRun > maxPerRun {
-		t.Errorf("DecodeLimit allocated %d bytes per run, want at most %d", perRun, maxPerRun)
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			// Warm up lazily initialised state before measuring.
+			if _, err := DecodeLimit(tt.data, tt.encoding, tt.limit); !errors.Is(err, ErrSizeLimit) {
+				t.Fatalf("DecodeLimit error = %v, want wrapping ErrSizeLimit", err)
+			}
+			const runs = 4
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			for range runs {
+				_, _ = DecodeLimit(tt.data, tt.encoding, tt.limit)
+			}
+			runtime.ReadMemStats(&after)
+			perRun := (after.TotalAlloc - before.TotalAlloc) / runs
+			maxPerRun := uint64(tt.bound(tt.limit))
+			t.Logf("DecodeLimit(%q) allocated %d bytes per run for a %d-byte bomb with limit %d (bound %d)", tt.encoding, perRun, bombSize, tt.limit, maxPerRun)
+			if perRun > maxPerRun {
+				t.Errorf("DecodeLimit(%q) allocated %d bytes per run with limit %d, want at most %d", tt.encoding, perRun, tt.limit, maxPerRun)
+			}
+		})
 	}
 }
 

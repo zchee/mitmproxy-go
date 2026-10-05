@@ -147,12 +147,22 @@ func Decode(data []byte, encoding string) ([]byte, error) {
 // limit is treated as zero. Under the limit the result is the same as
 // Decode's.
 //
-// The memory DecodeLimit uses grows with the output, not with the size the
-// input claims, and stays within a small multiple of limit. A zstd frame may
-// need its declared window before any output is produced, so for zstd the
-// bound is at least the 8 MiB window RFC 9659 lets HTTP senders use; a frame
-// whose window is larger than that and larger than limit is refused before it
-// is decoded, with an error wrapping both ErrSizeLimit and
+// What DecodeLimit allocates depends on the limit and on the window the
+// input declares, not on the decoded size the input claims. Measured per
+// call on decompression bombs, the totals are:
+//
+//   - gzip and deflate: up to about 4 * limit, for the growing output
+//     buffer, plus the decoder's 32 KiB window.
+//   - br: up to about 32 MiB + 3 * limit. The decoder allocates a ring
+//     buffer for the window the stream declares, up to 16 MiB, and grows it
+//     once on the way.
+//   - zstd: up to about 6 * max(limit, 8 MiB). A zstd frame may need its declared
+//     window before any output is produced, so the bound for zstd is at
+//     least the 8 MiB window RFC 9659 lets HTTP senders use, and the decoder
+//     fills its output up to that bound before it refuses it.
+//
+// A zstd frame whose window is larger than max(limit, 8 MiB) is refused
+// before it is decoded, with an error wrapping both ErrSizeLimit and
 // [zstd.ErrWindowSizeExceeded].
 func DecodeLimit(data []byte, encoding string, limit int64) ([]byte, error) {
 	return decode(data, encoding, max(limit, 0))

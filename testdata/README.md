@@ -10,6 +10,7 @@ path here by prefix:
 | Here | Upstream path |
 | --- | --- |
 | `mitmproxy/` | `test/mitmproxy/data/` in mitmproxy |
+| `mitmproxy-net/` | `test/mitmproxy/net/data/` in mitmproxy |
 | `wg-test-client/` | `test/wg-test-client/` in mitmproxy |
 | `mitmproxy-rs/contentviews/` | `mitmproxy-contentviews/testdata/` in mitmproxy_rs |
 | `mitmproxy-rs/network_tests.rs` | `src/network/tests.rs` in mitmproxy_rs |
@@ -44,6 +45,7 @@ v0.1.6; their licence (MIT) is `wg-test-client/LICENSE`.
 | `mitmproxy/clientcert/` | Client certificates (`client.pem`, `127.0.0.1.pem`) and the OpenSSL recipe (`make`, `client.cnf`) that produced them. |
 | `mitmproxy/addonscripts/` | Python addon scripts loaded by upstream's script tests; reference for the Starlark scripting tests. |
 | `mitmproxy/image_parser/` | PNG, GIF and JPEG samples for the image contentview parser; sources in `mitmproxy/image_parser/README.md`. |
+| `mitmproxy-net/` | Network-layer fixtures from `test/mitmproxy/net/data/`: text certificates (`text_cert*`, `dsa_cert.pem`, `ec_cert.pem`), the `verificationcerts/` chains the certificate tests load, HTTP exchange samples and the `tls/` ClientHello captures (`test/mitmproxy/net/test_tls.py`, `test/mitmproxy/test_certs.py`, `test/mitmproxy/addons/test_tlsconfig.py`). |
 | `mitmproxy/mitmproxy.pem` | Encrypted private key and certificate used by `test/mitmproxy/test_certs.py`. |
 | `mitmproxy/testkey.pem` | RSA private key and certificate used by `test/mitmproxy/test_certs.py` and `test/mitmproxy/test_proxy.py`. |
 | `mitmproxy/invalid-subject.pem` | Certificate with an invalid subject and no basic constraints (`test_certs.py`, `test_tlsconfig.py`). |
@@ -115,7 +117,8 @@ Then update the commit table above and regenerate the manifest from the
 repository root:
 
 ```sh
-git ls-files -z testdata/UPSTREAM_LICENSE testdata/mitmproxy testdata/mitmproxy-rs testdata/wg-test-client \
+git ls-files -z testdata/UPSTREAM_LICENSE testdata/cpython testdata/mitmproxy \
+  testdata/mitmproxy-net testdata/mitmproxy-rs testdata/wg-test-client \
   | LC_ALL=C sort -z | xargs -0 shasum -a 256 | sed 's#  testdata/#  #' >| testdata/SHA256SUMS
 ```
 
@@ -124,8 +127,8 @@ git ls-files -z testdata/UPSTREAM_LICENSE testdata/mitmproxy testdata/mitmproxy-
 [`SHA256SUMS`](SHA256SUMS) lists every imported file, relative to
 `testdata/`, with its SHA-256 digest; `shasum -a 256 -c SHA256SUMS` run in
 this directory verifies the copies. `internal/testutil/fixtures_test.go`
-checks that the files under `UPSTREAM_LICENSE`, `mitmproxy/`,
-`mitmproxy-rs/` and `wg-test-client/` are exactly the listed ones with the
+checks that the files under `UPSTREAM_LICENSE`, `cpython/`, `mitmproxy/`,
+`mitmproxy-net/`, `mitmproxy-rs/` and `wg-test-client/` are exactly the listed ones with the
 listed digests, and that every path in the first column of a table in this
 file exists. Tests read fixtures through `testutil.FixturePath` and
 `testutil.Fixture`, which take a path relative to `testdata/`.

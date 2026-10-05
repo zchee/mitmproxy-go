@@ -2,5 +2,6 @@
 # servercert PEM files), so line-ending normalisation must not touch them.
 UPSTREAM_LICENSE  -text
 mitmproxy/**      -text linguist-vendored
+mitmproxy-net/**  -text linguist-vendored
 mitmproxy-rs/**   -text linguist-vendored
 wg-test-client/** binary linguist-vendored

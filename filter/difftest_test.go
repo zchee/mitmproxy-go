@@ -8,7 +8,6 @@ package filter
 import (
 	"bytes"
 	json "encoding/json/v2"
-	"math/big"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,8 +16,7 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/flow"
-	"github.com/zchee/mitmproxy-go/flow/state"
-	"github.com/zchee/mitmproxy-go/flowio/tnetstring"
+	"github.com/zchee/mitmproxy-go/flowio"
 	"github.com/zchee/mitmproxy-go/internal/difftest"
 	"github.com/zchee/mitmproxy-go/internal/testutil"
 )
@@ -155,7 +153,8 @@ func TestMatchMatchesUpstream(t *testing.T) {
 	}
 }
 
-// loadFlows reads every flow of a flow file written by upstream.
+// loadFlows reads every flow of a flow file written by upstream, through
+// the same reader mitmproxy-go uses for flow files.
 func loadFlows(t *testing.T, path string) []flow.Flow {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -163,43 +162,11 @@ func loadFlows(t *testing.T, path string) []flow.Flow {
 		t.Fatal(err)
 	}
 	var flows []flow.Flow
-	for len(data) > 0 {
-		v, rest, err := tnetstring.Pop(data)
+	for f, err := range flowio.NewReader(bytes.NewReader(data)).All() {
 		if err != nil {
-			t.Fatalf("decode flow %d: %v", len(flows), err)
-		}
-		data = rest
-		m, ok := fromTnetstring(t, v).(*state.Map)
-		if !ok {
-			t.Fatalf("flow %d is %T, not a dict", len(flows), v)
-		}
-		f, err := flow.FromState(m)
-		if err != nil {
-			t.Fatalf("flow %d: FromState: %v", len(flows), err)
+			t.Fatalf("read flow %d: %v", len(flows), err)
 		}
 		flows = append(flows, f)
 	}
 	return flows
-}
-
-// fromTnetstring converts a decoded tnetstring value to a state value.
-func fromTnetstring(t *testing.T, v any) any {
-	t.Helper()
-	switch x := v.(type) {
-	case *tnetstring.Dict:
-		m := state.NewMap(x.Len())
-		for k, e := range x.All() {
-			m.Set(k, fromTnetstring(t, e))
-		}
-		return m
-	case []any:
-		out := make([]any, len(x))
-		for i, e := range x {
-			out[i] = fromTnetstring(t, e)
-		}
-		return out
-	case *big.Int:
-		t.Fatalf("integer %v does not fit int64", x)
-	}
-	return v
 }

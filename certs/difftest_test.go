@@ -74,6 +74,27 @@ print(json.dumps({
 	}
 }
 
+func TestPrivateKeyPython(t *testing.T) {
+	key, _, err := CreateCA("mitmproxy", "mitmproxy", 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded := difftest.Python(t, `
+import sys
+from cryptography.hazmat.primitives import serialization
+key = serialization.load_der_private_key(sys.stdin.buffer.read(), None)
+sys.stdout.buffer.write(key.private_bytes(serialization.Encoding.PEM,
+    serialization.PrivateFormat.PKCS8, serialization.BestAvailableEncryption(b"password")))
+`, x509.MarshalPKCS1PrivateKey(key))
+	loaded, err := loadPEMPrivateKey(encoded, []byte("password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !key.Equal(loaded) {
+		t.Error("Python-encrypted PKCS#8 lost private-key material")
+	}
+}
+
 func TestDummyCertPython(t *testing.T) {
 	key, ca, err := CreateCA("mitmproxy", "mitmproxy", 1024)
 	if err != nil {

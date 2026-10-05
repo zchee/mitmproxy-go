@@ -36,7 +36,8 @@ var idnaProfile = idna.New(idna.MapForLookup(), idna.Transitional(true), idna.St
 // or end with a hyphen.
 //
 // Unlike upstream, a host that ends in a newline is invalid; Python's "$"
-// regular expression anchor accepts one there.
+// regular expression anchor accepts one there. An IPv6 zone must also be an
+// RFC 6874 ZoneID, where upstream accepts any zone without "%" or "/".
 func IsValidHost[T string | []byte](host T) bool {
 	switch h := any(host).(type) {
 	case string:
@@ -66,8 +67,36 @@ func isValidHostBytes(host string) bool {
 	if allLabelsValid(host) {
 		return true
 	}
+	if _, zone, ok := strings.Cut(host, "%"); ok && !isZoneID(zone) {
+		return false
+	}
 	_, err := netip.ParseAddr(host)
 	return err == nil
+}
+
+// isZoneID reports whether zone matches RFC 6874's ZoneID, one or more
+// unreserved characters or percent-encoded octets. netip and Python's
+// ipaddress accept nearly any byte in a zone, but a host flows into names
+// such as the client certificate file of a server, where a path separator
+// or a NUL must never arrive from a peer.
+func isZoneID(zone string) bool {
+	if zone == "" {
+		return false
+	}
+	for i := 0; i < len(zone); i++ {
+		switch c := zone[i]; {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', strings.IndexByte("-._~", c) >= 0:
+		case c == '%' && i+2 < len(zone) && isHex(zone[i+1]) && isHex(zone[i+2]):
+			i += 2
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func isHex(c byte) bool {
+	return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
 }
 
 func allLabelsValid(host string) bool {

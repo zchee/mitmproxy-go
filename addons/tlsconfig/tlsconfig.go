@@ -363,7 +363,9 @@ func (t *TLSConfig) TLSStartServer(ctx context.Context, d *hookdata.TLS) error {
 
 // clientCertificate loads the client certificate for a server connection:
 // path itself when it is a file, or <path>/<server name>.pem when path is a
-// directory (py:mitmproxy/addons/tlsconfig.py:319-328).
+// directory (py:mitmproxy/addons/tlsconfig.py:319-328). The server name may
+// come from the client's SNI, so only a file directly inside the directory
+// is a candidate; any other name is treated as a missing file.
 func clientCertificate(path string, server *connection.Server) (*tls.Certificate, error) {
 	name := path
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
@@ -371,7 +373,11 @@ func clientCertificate(path string, server *connection.Server) (*tls.Certificate
 		if server.SNI != nil && *server.SNI != "" {
 			serverName = *server.SNI
 		}
-		name = filepath.Join(path, serverName+".pem")
+		file := serverName + ".pem"
+		if !filepath.IsLocal(file) || filepath.Base(file) != file || strings.ContainsRune(file, 0) {
+			return nil, nil
+		}
+		name = filepath.Join(path, file)
 		if _, err := os.Stat(name); err != nil {
 			return nil, nil
 		}

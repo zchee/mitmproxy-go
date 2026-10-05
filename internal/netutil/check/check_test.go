@@ -68,6 +68,17 @@ func TestIsValidHostBytes(t *testing.T) {
 		"valid: api- with a_":                     {host: "api-.a_.example.com", want: true},
 		"valid: api- with ab":                     {host: "api-.ab.example.com", want: true},
 		"valid: IPv6 with zone":                   {host: "fe80::1%eth0", want: true},
+		"valid: zone with unreserved punctuation": {host: "fe80::1%en0.1_a-b~c", want: true},
+		"valid: zone with percent-encoding":       {host: "fe80::1%eth%2F0", want: true},
+		"invalid: zone with slash traversal":      {host: "::1%a/../../secret", want: false},
+		"invalid: zone with absolute path":        {host: "fe80::1%/tmp/x", want: false},
+		"invalid: zone with backslash":            {host: "fe80::1%a\\b", want: false},
+		"invalid: zone with NUL":                  {host: "fe80::1%a\x00", want: false},
+		"invalid: zone with space":                {host: "fe80::1%a b", want: false},
+		"invalid: zone with colon":                {host: "fe80::1%a:b", want: false},
+		"invalid: zone with truncated escape":     {host: "fe80::1%a%4", want: false},
+		"invalid: zone with non-hex escape":       {host: "fe80::1%a%zz", want: false},
+		"invalid: empty zone":                     {host: "fe80::1%", want: false},
 		"valid: IPv4 leading zero is a name":      {host: "01.2.3.4", want: true},
 		"valid: IPv4-mapped IPv6":                 {host: "::ffff:1.2.3.4", want: true},
 		"valid: IPv4 with trailing dot":           {host: "127.0.0.1.", want: true},
@@ -132,6 +143,41 @@ func TestIsValidHostString(t *testing.T) {
 	}
 }
 
+// TestIsValidHostZoneVariantsAgree pins that a string and a byte slice agree
+// on IPv6 zones. A zone holds only RFC 6874 ZoneID characters, so a host
+// that names a zone can never carry a path separator into a file name.
+func TestIsValidHostZoneVariantsAgree(t *testing.T) {
+	tests := map[string]struct {
+		host string
+		want bool
+	}{
+		"valid: interface name":            {host: "fe80::1%eth0", want: true},
+		"valid: percent-encoded percent":   {host: "fe80::1%25eth0", want: true},
+		"valid: dotted interface":          {host: "fe80::1%en0.1", want: true},
+		"invalid: absolute path":           {host: "fe80::1%/tmp/x", want: false},
+		"invalid: parent path":             {host: "fe80::1%/../../x", want: false},
+		"invalid: trailing parent":         {host: "fe80::1%x/..", want: false},
+		"invalid: loopback traversal":      {host: "::1%a/../../b", want: false},
+		"invalid: IPv4 with zone":          {host: "1.2.3.4%x", want: false},
+		"invalid: backslash":               {host: "fe80::1%a\\b", want: false},
+		"invalid: NUL":                     {host: "fe80::1%a\x00", want: false},
+		"invalid: percent without escape":  {host: "fe80::1%a%", want: false},
+		"invalid: second zone":             {host: "fe80::1%a%eth0", want: false},
+		"invalid: non-ASCII zone":          {host: "fe80::1%\xc3\xa9", want: false},
+		"invalid: newline after zone":      {host: "fe80::1%eth0\n", want: false},
+		"invalid: zone on a plain name":    {host: "example.com%eth0", want: false},
+		"invalid: zone with question mark": {host: "fe80::1%a?b", want: false},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			gotString, gotBytes := IsValidHost(tt.host), IsValidHost([]byte(tt.host))
+			if gotString != tt.want || gotBytes != tt.want {
+				t.Errorf("IsValidHost(%q): string=%t bytes=%t, want %t", tt.host, gotString, gotBytes, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsValidPort(t *testing.T) {
 	tests := map[string]struct {
 		port int
@@ -165,14 +211,13 @@ func FuzzIsValidHost(f *testing.F) {
 		if len(host) > maxHostLen {
 			t.Fatalf("IsValidHost accepted %d bytes, more than %d", len(host), maxHostLen)
 		}
-		// Outside an IPv6 zone, which may hold any byte, a valid host is made
-		// of label characters, dots and the colons of an IPv6 address.
-		if strings.Contains(host, "%") {
-			return
-		}
+		// A valid host is made of label characters, dots and the colons of an
+		// IPv6 address; its zone adds only "~" and percent escapes, so no
+		// path separator, NUL or other control byte can pass.
 		for i := range len(host) {
 			switch c := host[i]; {
 			case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', strings.IndexByte("-_.:", c) >= 0:
+			case (c == '~' || c == '%') && strings.Contains(host, "%"):
 			default:
 				t.Fatalf("IsValidHost accepted %q with byte %q", host, c)
 			}

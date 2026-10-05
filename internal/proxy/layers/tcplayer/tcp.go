@@ -106,45 +106,63 @@ func (l *tcpLayer) relay(ctx context.Context, c *layer.Context, server layer.Con
 		_ = server.SetDeadline(time.Time{})
 	}()
 
+	inject := c.Inject
 	for remaining := 2; remaining > 0; {
+		var event received
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case event := <-incoming:
-			dst := server
-			if !event.fromClient {
-				dst = c.Client
+		case event = <-incoming:
+		case injected, ok := <-inject:
+			if !ok {
+				inject = nil
+				continue
 			}
-			if len(event.content) > 0 {
-				snapshot, err := c.Hooks.FireFunc(ctx, func(context.Context) error {
-					l.flow.Messages = append(l.flow.Messages, tcp.NewMessage(event.fromClient, event.content))
-					return nil
-				}, addon.TCPMessageHook{Flow: l.flow})
-				if err != nil {
-					return err
-				}
-				if snapshot.Killed() {
-					return nil
-				}
-				if snapshot.LastMessage != nil {
-					content := snapshot.LastMessage.Content
-					for len(content) > 0 {
-						n, err := dst.Write(content)
-						if err != nil {
-							return err
-						}
-						if n == 0 {
-							return io.ErrNoProgress
-						}
-						content = content[n:]
+			message, ok := injected.Message.(*tcp.Message)
+			if !ok || message == nil || injected.Flow != l.flow {
+				continue
+			}
+			if err := c.Do(ctx, func(context.Context) error {
+				event = received{fromClient: message.FromClient, content: slices.Clone(message.Content)}
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		dst := server
+		if !event.fromClient {
+			dst = c.Client
+		}
+		// Unlike socket reads, an injected message may have empty content.
+		if len(event.content) > 0 || event.err == nil {
+			snapshot, err := c.Hooks.FireFunc(ctx, func(context.Context) error {
+				l.flow.Messages = append(l.flow.Messages, tcp.NewMessage(event.fromClient, event.content))
+				return nil
+			}, addon.TCPMessageHook{Flow: l.flow})
+			if err != nil {
+				return err
+			}
+			if snapshot.Killed() {
+				return nil
+			}
+			if snapshot.LastMessage != nil {
+				content := snapshot.LastMessage.Content
+				for len(content) > 0 {
+					n, err := dst.Write(content)
+					if err != nil {
+						return err
 					}
+					if n == 0 {
+						return io.ErrNoProgress
+					}
+					content = content[n:]
 				}
 			}
-			if event.err != nil {
-				remaining--
-				if err := dst.CloseWrite(); err != nil {
-					return err
-				}
+		}
+		if event.err != nil {
+			remaining--
+			if err := dst.CloseWrite(); err != nil {
+				return err
 			}
 		}
 	}

@@ -334,6 +334,24 @@ obs-fold continuation, a changed non-framing header block, and each changed fram
 raw bytes, generated heads without an original, and messages changed by an addon do not increment it; parsing never
 increments it.
 
+## internal/proxy/layers/httplayer
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `make_error_response` sends `Server: mitmproxy <version>` (`mitmproxy/proxy/layers/http/_http1.py`). | The error page sends `Server: mitmproxy-go <version>`; status, the other headers and the body are unchanged. | The proxy is a different program, as in the flow-file error texts above. |
+| Bytes arriving while an HTTP exchange waits for its response, including pipelined requests and early tunnel data, have no explicit buffer limit (`mitmproxy/proxy/layers/http/_http1.py`). | Each endpoint retains at most `layer.MaxRecordBytes` (128 KiB) in this waiting state; excess terminates the exchange with a protocol error. This is separate from body streaming and its configured limits. | Bound memory while the other direction is stalled. |
+| Receiving HTTP/1 trailers raises `NotImplementedError`; sending trailer events is not implemented (`mitmproxy/proxy/layers/http/_http1.py`). | Chunked trailers are parsed, exposed to request/response hooks, and emitted after the final transformed body chunk. | The shared message and event contracts represent trailers, so HTTP/1 can preserve them rather than fail. |
+| A non-101 informational response is treated as the response for the exchange (`mitmproxy/proxy/layers/http/_http1.py`). | Informational heads are forwarded without completing the exchange; the final response is still awaited. | Informational responses do not replace the final response. Ordinary response hooks run for the final response only. |
+| The partial-response-head diagnostic includes a Python repr of buffered bytes (`mitmproxy/proxy/layers/http/_http1.py`). | The error identifies the incomplete response head without that buffered-byte repr. | Blocking readers do not expose the same receive-event buffer; parser errors retain their own details. |
+| Server connections are reused by address, TLS, `via` and transport protocol (`mitmproxy/proxy/layers/http/__init__.py`). | The SNI is part of the key as well. | A connection opened for one SNI is never reused for another. |
+| CONNECT request and response end-of-message events are suppressed; subsequent events carry tunnel bytes (`mitmproxy/proxy/layers/http/_http1.py`). | Every completed CONNECT HTTP message emits its directional end event, including a refused response. That event does not half-close a successful tunnel. Negotiated tunnel/upgrade transport EOF is `io.EOF`, not another HTTP end event. | Endpoint callers need one uniform HTTP completion contract and must distinguish it from transport closure before handing the connection to a child protocol. |
+| A successful WebSocket upgrade selects the WebSocket layer when the `websocket` option is enabled (`mitmproxy/proxy/layers/http/__init__.py`, `flow_done`). | Until the WebSocket protocol layer is implemented, WebSocket upgrades follow the same fallback as other HTTP 101 responses: `rawtcp=true` relays through observable TCP hooks and injection; otherwise the proxy logs `Sent HTTP 101 response, but no protocol is enabled to upgrade to.` and closes the client. HTTP flow WebSocket metadata remains unset. | The HTTP upgrade and raw TCP transport exist; WebSocket framing, message hooks and metadata belong to the later WebSocket protocol implementation. |
+
+Proxy target, Host and Expect rewrites contribute to the [HTTP/1 fidelity counter](#internalhttp1).
+Actual addon head edits are detected at hook boundaries after proxy preparation and exclude that head's emission from
+the counter. Editing a body does not by itself exclude its head; editing a head after it was streamed cannot change
+an earlier emission's count.
+
 ## internal/proxy
 
 | Upstream | Go | Reason |
@@ -463,7 +481,6 @@ HTTP/1 + TLS proxy core:
 
 | Upstream | Go | Reason |
 |---|---|---|
-| `make_error_response` sends `Server: mitmproxy <version>` (`mitmproxy/proxy/layers/http/_http1.py`). | The error page sends `Server: mitmproxy-go <version>`; status, the other headers and the body are unchanged. | The proxy is a different program, as in the flow-file error texts above. |
 | `next_layer` sniffs client data without a size bound (`mitmproxy/addons/next_layer.py`). | Sniffing stops at 64 KiB of client data for the HTTP host search, and at the ClientHello's declared length capped at 64 KiB. Beyond the cap the connection is relayed as raw TCP and the decision is logged. | Every re-ask of `next_layer` runs under the global dispatch lock, so an unbounded sniff buffer re-scanned on each read would stall every hook. |
 | `next_layer` host patterns run on Python's `re`, which has no time limit (`mitmproxy/addons/next_layer.py`). | A host match on the `regexp2` fallback that runs past its 100 ms limit is abandoned and logged once with the option, the pattern and the host. An abandoned `ignore_hosts` match counts as a match (the connection stays ignored), while an abandoned `allow_hosts`, `tcp_hosts` or `udp_hosts` match counts as no match. | The match runs under the global dispatch lock, so backtracking must be bounded; failing towards "ignored" never sends traffic through interception that a slow pattern meant to exclude, and failing towards "no match" keeps allow/tcp/udp lists from widening on a timeout. |
 | Message bodies are decoded without a size bound (`mitmproxy/net/encoding.py`). | Decoding on every `Content`/`Text` path is bounded by `content_decode_limit` (table above). The bound is published process-globally (`httpmsg.SetDecodeLimit`): two Masters in one process share it and the last `configure` wins; the `core` addon's `done` restores the 256 MiB default. | A compression bomb decoded under the dispatch lock would stall every hook; the decode paths are package-level functions, so the bound cannot be per-Master. |
@@ -475,7 +492,6 @@ TLS and protocol layers:
 | pyOpenSSL can talk to servers that only offer finite-field DHE, SSLv3, RC4, 3DES or export cipher suites, and honours `@SECLEVEL=0`. | Go's `crypto/tls` supports none of these, so `ssl_insecure` interception of such legacy or IoT servers fails. `mitmproxy-dhparam.pem` is written only to keep the configuration directory layout and is never used. | The port uses the standard TLS stack. An OpenSSL- or utls-backed layer is a possible follow-up. |
 | — | Go processes ECH before the proxy sees the ClientHello, so without the origin's ECH key only the outer `public_name` SNI is visible. Clients that attempt ECH fail unless `strip_ech` (default true) removed the `ech` parameter from the HTTPS records they resolved through the proxy. | Behaviour of Go's `crypto/tls`. |
 | HTTP/2 windows are 2^31−1 and data is acknowledged at once (`mitmproxy/proxy/layers/http/_http_h2.py`, `_http2.py`). | Bounded windows: 100 concurrent streams, a 1 MiB initial stream window growing to 16 MiB, and a 128 MiB budget for granted windows; a stream's window is returned only when its data has been consumed. | Memory per connection stays bounded under slow readers. |
-| Server connections are reused by address, TLS, `via` and transport protocol (`mitmproxy/proxy/layers/http/__init__.py`). | The SNI is part of the key as well. | A connection opened for one SNI is never reused for another. |
 | DTLS follows the `tls_version_*` options. | `pion/dtls` speaks DTLS 1.2 only: a version window that contains `TLS1_2` negotiates DTLS 1.2, any other window fails the DTLS connection. | Limit of the only maintained pure-Go DTLS implementation. |
 
 ## internal/proxy/modeserver

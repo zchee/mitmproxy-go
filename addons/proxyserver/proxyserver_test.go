@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -20,7 +21,9 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/zchee/mitmproxy-go/addon"
+	"github.com/zchee/mitmproxy-go/addon/addontest"
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
+	"github.com/zchee/mitmproxy-go/addons/errorcheck"
 	"github.com/zchee/mitmproxy-go/addons/nextlayer"
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/flow"
@@ -202,11 +205,47 @@ func TestStartupError(t *testing.T) {
 	m, ps, logs, _ := fixture(t, false)
 	port := listener.Addr().(*net.TCPAddr).Port
 	update(t, m, map[string]any{"listen_port": &port})
-	if err := ps.SetupServers(t.Context()); err == nil {
-		t.Fatal("occupied port accepted")
+	// A bind failure is logged, never returned: the startup error summary
+	// decides whether the proxy exits.
+	if err := ps.SetupServers(t.Context()); err != nil {
+		t.Fatalf("SetupServers must leave bind failures to the log: %v", err)
 	}
 	if !strings.Contains(logs.String(), "failed to listen") {
 		t.Fatal(logs.String())
+	}
+}
+
+func TestStartupErrorExitsRun(t *testing.T) {
+	t.Cleanup(func() { goleak.VerifyNone(t) })
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = listener.Close() }()
+	var stderr strings.Builder
+	check := errorcheck.New(errorcheck.Config{Stderr: &stderr})
+	logger := slog.New(check.LogHandler())
+	m := master.New(master.Config{Logger: logger})
+	ps, err := New(proxy.Config{Manager: m.Addons, Options: m.Options, Connections: new(proxy.Connections), Logger: logger})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := &addontest.Recorder{}
+	if err := m.Addons.Add(t.Context(), ps, check, recorder); err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	update(t, m, map[string]any{"listen_host": "127.0.0.1", "listen_port": &port})
+	err = m.Run(t.Context())
+	ps.workers.Wait()
+	if _, ok := errors.AsType[*master.ExitError](err); !ok {
+		t.Fatalf("Run error = %v, want *master.ExitError", err)
+	}
+	if !strings.Contains(stderr.String(), "Error logged during startup, exiting...") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	if slices.Contains(recorder.Hooks(), "running") {
+		t.Fatalf("running fired despite startup failure: %v", recorder.Hooks())
 	}
 }
 

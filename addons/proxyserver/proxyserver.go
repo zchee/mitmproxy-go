@@ -156,10 +156,12 @@ func (p *ProxyServer) Done(context.Context) error {
 	return nil
 }
 
-// SetupServers applies the current listener configuration synchronously. It
-// returns validation, listen or close errors, also logged as upstream does.
-// Call outside addon dispatch. The first call's context governs the listener
-// worker and accepted connections until canceled or Done is called.
+// SetupServers applies the current listener configuration synchronously.
+// Listener close and bind failures are logged, as upstream does, so startup
+// error collection decides whether the proxy exits; the returned error is
+// reserved for dispatch and lifetime failures. Call outside addon dispatch.
+// The first call's context governs the listener worker and accepted
+// connections until canceled or Done is called.
 func (p *ProxyServer) SetupServers(ctx context.Context) error {
 	p.startOnce.Do(func() {
 		context.AfterFunc(ctx, p.cancel)
@@ -254,20 +256,17 @@ func (p *ProxyServer) reconcile(ctx context.Context) error {
 		}
 	}
 	p.instances.Store(&serverState{instances: desired})
-	var errs []error
 	for _, instance := range old {
 		if err := instance.Stop(); err != nil {
 			p.logger.Error(err.Error())
-			errs = append(errs, err)
 		}
 	}
 	for _, instance := range start {
 		if err := instance.Start(p.lifetime); err != nil {
 			p.logger.Error(err.Error())
-			errs = append(errs, err)
 		}
 	}
-	return errors.Join(errs...)
+	return nil
 }
 
 // ListenAddrs returns a fresh list of bound addresses, safe to read in hooks.

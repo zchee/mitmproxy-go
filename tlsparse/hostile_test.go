@@ -11,6 +11,8 @@ import (
 	"slices"
 	"testing"
 
+	gocmp "github.com/google/go-cmp/cmp"
+
 	"github.com/zchee/mitmproxy-go/tlsparse"
 )
 
@@ -77,8 +79,8 @@ func checkHello(t *testing.T, ch *tlsparse.ClientHello) {
 		t.Errorf("SNI() = %q, want %q", got, "example.com")
 	}
 	want := [][]byte{[]byte("h2"), []byte("http/1.1")}
-	if got := ch.ALPNProtocols(); !slices.EqualFunc(got, want, bytes.Equal) {
-		t.Errorf("ALPNProtocols() = %q, want %q", got, want)
+	if diff := gocmp.Diff(want, ch.ALPNProtocols()); diff != "" {
+		t.Errorf("ALPNProtocols mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -261,23 +263,24 @@ func TestGetClientHelloIncompleteAllocation(t *testing.T) {
 	}
 }
 
-// TestNewClientHelloTruncated parses the hello truncated at every byte
-// offset: no panic, and every result is either a valid hello or an error
-// wrapping ErrMalformed.
+// TestNewClientHelloTruncated checks every byte offset. Upstream accepts
+// truncation only after the compression methods, extension-list length,
+// or a complete extension, because the declared extension length is ignored.
 func TestNewClientHelloTruncated(t *testing.T) {
 	t.Parallel()
 
 	body := buildHello(t, 700)
 	for i := range len(body) {
 		ch, err := tlsparse.NewClientHello(body[:i])
-		if err != nil {
-			if !errors.Is(err, tlsparse.ErrMalformed) {
-				t.Fatalf("NewClientHello(body[:%d]) error %v does not wrap ErrMalformed", i, err)
+		switch i {
+		case 43, 45, 65, 83:
+			if err != nil || ch == nil {
+				t.Fatalf("NewClientHello(body[:%d]) = %v, %v; want a complete prefix", i, ch, err)
 			}
-			continue
-		}
-		if ch == nil {
-			t.Fatalf("NewClientHello(body[:%d]) = nil, nil", i)
+		default:
+			if ch != nil || !errors.Is(err, tlsparse.ErrMalformed) {
+				t.Fatalf("NewClientHello(body[:%d]) = %v, %v; want nil, ErrMalformed", i, ch, err)
+			}
 		}
 	}
 }

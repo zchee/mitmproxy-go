@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"maps"
 	"net"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -58,13 +59,16 @@ func captureClientHello(t *testing.T, cfg *tls.Config) []byte {
 	t.Helper()
 
 	client, server := net.Pipe()
-	t.Cleanup(func() {
+	done := make(chan struct{})
+	defer func() {
 		client.Close()
 		server.Close()
-	})
+		<-done
+	}()
 	go func() {
+		defer close(done)
 		// The handshake can only fail: the server side never answers. It
-		// ends when the test closes the pipe.
+		// ends when the capture closes the pipe.
 		conn := tls.Client(client, cfg)
 		_ = conn.HandshakeContext(t.Context())
 	}()
@@ -78,7 +82,8 @@ func captureClientHello(t *testing.T, cfg *tls.Config) []byte {
 	for {
 		n, err := server.Read(buf)
 		if err != nil {
-			t.Fatalf("reading the ClientHello flight: %v (have %d bytes)", err, len(data))
+			stack := make([]byte, 1<<20)
+			t.Fatalf("reading the ClientHello flight: %v (have %d bytes)\n%s", err, len(data), stack[:runtime.Stack(stack, true)])
 		}
 		data = append(data, buf[:n]...)
 		msg, err := tlsparse.GetClientHello(data)
@@ -135,8 +140,9 @@ func TestDifferentialClientHello(t *testing.T) {
 		"upstream single record": cat(mustHex(t, "1603010065"), handshakeNoExtensions(t)),
 		"upstream split records": cat(mustHex(t, "1603010020"), handshakeNoExtensions(t)[:32],
 			mustHex(t, "1603010045"), handshakeNoExtensions(t)[32:]),
-		"upstream with extensions":        recordWithExtensions(t),
-		"incomplete split":                cat(mustHex(t, "1603010020"), handshakeNoExtensions(t)[:32])[:42],
+		"upstream with extensions": recordWithExtensions(t),
+		"incomplete split": cat(mustHex(t, "1603010020"), handshakeNoExtensions(t)[:32],
+			mustHex(t, "1603010045"), handshakeNoExtensions(t)[32:])[:42],
 		"4 KiB hello in three records":    inRecords(handshake(buildHello(t, 4800)), 1700),
 		"4 KiB hello in 512-byte records": inRecords(handshake(buildHello(t, 4800)), 512),
 		"length low byte 0xff":            inRecords(handshake(buildHello(t, 511)), 600),
@@ -180,6 +186,15 @@ func TestDifferentialClientHello(t *testing.T) {
 				[]byte("\x00\x10\x00\x06\x00\x05\x02h2\xff\xff")),
 		), 16384),
 		"empty message": inRecords([]byte{0x01, 0x00, 0x00, 0x00}, 16384),
+	}
+
+	body := buildHello(t, 700)
+	for i := 0; i <= len(body); i++ {
+		vectors[fmt.Sprintf("body prefix %d", i)] = inRecords(handshake(body[:i]), 16384)
+	}
+	wire := recordWithExtensions(t)
+	for i := range len(wire) {
+		vectors[fmt.Sprintf("wire prefix %d", i)] = wire[:i]
 	}
 
 	configs := map[string]*tls.Config{

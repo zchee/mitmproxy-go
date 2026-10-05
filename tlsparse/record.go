@@ -74,6 +74,8 @@ func HandshakeRecordContents(data []byte) iter.Seq2[[]byte, error] {
 
 // nextRecord reads the record at offset. It returns the record body and the
 // offset of the record after it, or next < 0 when the record is incomplete.
+// An incomplete body is returned as far as available, so its handshake
+// length can be checked before the rest of the record arrives.
 func nextRecord(data []byte, offset int) (body []byte, next int, err error) {
 	if len(data)-offset < recordHeaderLen {
 		return nil, -1, nil
@@ -88,7 +90,7 @@ func nextRecord(data []byte, offset int) (body []byte, next int, err error) {
 	}
 	start := offset + recordHeaderLen
 	if len(data)-start < size {
-		return nil, -1, nil
+		return data[start:], -1, nil
 	}
 	return data[start : start+size], start + size, nil
 }
@@ -116,7 +118,8 @@ func GetClientHello(data []byte) ([]byte, error) {
 		size   = -1
 		count  int
 	)
-	for body, err := range HandshakeRecordContents(data) {
+	for offset := 0; ; {
+		body, next, err := nextRecord(data, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -130,12 +133,15 @@ func GetClientHello(data []byte) ([]byte, error) {
 				}
 			}
 		}
+		if next < 0 {
+			return nil, nil
+		}
 		have += len(body)
 		if size >= 0 && have >= size {
 			return assemble(data, count, size), nil
 		}
+		offset = next
 	}
-	return nil, nil
 }
 
 // assemble copies the first size bytes of the bodies of the first count

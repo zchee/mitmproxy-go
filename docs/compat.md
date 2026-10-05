@@ -268,6 +268,7 @@ increments it.
 | Upstream | Go | Reason |
 |---|---|---|
 | The pending events of `NextLayer` and TLS receive buffers have no explicit recording limit (`mitmproxy/proxy/layer.py`, `mitmproxy/proxy/layers/tls.py`). | A recording connection retains at most 128 KiB before handover, and refuses a larger lookahead. After recording stops it replays every retained byte and streams without a body-size bound. | Protocol detection must not retain an unbounded amount of network input; protocol-specific sniff limits may be smaller. |
+| `TimeoutWatchdog.watch` checks whether it is armed before sleeping, but does not recheck after the sleep; a previously scheduled timeout can fire during a long hook (`mitmproxy/proxy/server.py`). | Disarming invalidates the pending timer. Expiry checks the disarm counter and timer generation again before cancelling the connection. | Hook execution and intercepted-flow waits must not count as connection idle time. |
 
 ## Decided for code that is not written yet
 

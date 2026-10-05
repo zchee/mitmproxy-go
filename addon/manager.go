@@ -445,9 +445,11 @@ func (m *Manager) trigger(ctx context.Context, hook Hook) error {
 
 // syncHook reports whether hook is one that mitmproxy dispatches only
 // synchronously, so that its handlers can never release the dispatch lock.
+// It decides by the hook's name, as the rest of the dispatch does, so that
+// a pointer to the hook, which is a [Hook] as well, is treated the same.
 func syncHook(hook Hook) bool {
-	switch hook.(type) {
-	case ConfigureHook, LoadHook:
+	switch hook.Name() {
+	case ConfigureHook{}.Name(), LoadHook{}.Name():
 		return true
 	}
 	return false

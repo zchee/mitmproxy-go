@@ -919,6 +919,21 @@ func TestConcurrentRefusedInSyncHooks(t *testing.T) {
 			wantMsg:   "load",
 			wantCalls: 2,
 		},
+		"error: configure fired through Trigger as a pointer": {
+			probe: "configure",
+			fire: func(t *testing.T, e *testEnv, _ *syncProbe) error {
+				return e.m.Trigger(t.Context(), &ConfigureHook{Updated: map[string]struct{}{"probe_flag": {}}})
+			},
+			wantMsg: "configure",
+		},
+		"error: load fired through Trigger as a pointer": {
+			probe: "load",
+			fire: func(t *testing.T, e *testEnv, _ *syncProbe) error {
+				return e.m.Trigger(t.Context(), &LoadHook{Loader: &Loader{m: e.m}})
+			},
+			wantMsg:   "load",
+			wantCalls: 2,
+		},
 		"error: configure fired through InvokeSync": {
 			probe: "configure",
 			fire: func(t *testing.T, e *testEnv, p *syncProbe) error {

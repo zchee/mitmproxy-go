@@ -390,8 +390,10 @@ func (m *Manager) Unregister(name string) bool {
 // Call invokes the command registered under name with native Go arguments
 // and returns its result, which is nil for a command that returns nothing.
 //
-// ctx is passed to the command as its first argument. The Manager's lock
-// is not held while the command runs, so a command may call other commands.
+// ctx is passed to the command as its first argument and must not be nil:
+// the Runner an addon manager installs derives the command's context from
+// it. The Manager's lock is not held while the command runs, so a command
+// may call other commands.
 //
 // Every call goes through the [Runner] installed with [Manager.SetRunner],
 // and the command is looked up inside it. A Manager that an addon manager

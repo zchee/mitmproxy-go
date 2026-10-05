@@ -231,18 +231,120 @@ func TestUpstreamPoolOpenSingleFlight(t *testing.T) {
 	expectRead(t, conn, "still-open")
 }
 
-func TestUpstreamPoolPlainUpgradeRefused(t *testing.T) {
-	pool, _, _ := newUpstreamPoolSession(t)
-	srv := upstreamOrigin("origin.test")
-	if _, _, err := pool.Open(t.Context(), srv, layer.OpenOptions{}); err != nil {
-		t.Fatal(err)
+func TestUpstreamPoolUpgradeSingleFlight(t *testing.T) {
+	tests := map[string]struct {
+		failure error
+	}{
+		"success: canceled waiter does not cancel upgrade": {},
+		"error: failed upgrade closes physical connection": {failure: io.ErrUnexpectedEOF},
 	}
-	_, _, err := pool.Upgrade(t.Context(), srv, func(context.Context, layer.Conn, *connection.Server) (layer.Conn, error) {
-		t.Error("setup must not be silently skipped by the physical pool")
-		return nil, io.ErrUnexpectedEOF
-	})
-	want := "httplayer: cannot upgrade an already-open plain upstream connection; supply setup when opening"
-	if err == nil || err.Error() != want {
-		t.Fatalf("Upgrade = %v, want %q", err, want)
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			pool, peers, observer := newUpstreamPoolSession(t)
+			srv := upstreamOrigin("origin.test")
+			original, _, err := pool.Open(t.Context(), srv, layer.OpenOptions{Reuse: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			peer := await(t, peers)
+			physical := await(t, observer.connected)
+			entered, release := make(chan struct{}), make(chan struct{})
+			var calls atomic.Int32
+			setup := func(ctx context.Context, conn layer.Conn, actual *connection.Server) (layer.Conn, error) {
+				if calls.Add(1) == 1 {
+					close(entered)
+				}
+				if actual != srv {
+					return nil, errors.New("upgrade received physical proxy metadata")
+				}
+				select {
+				case <-release:
+					if tt.failure != nil {
+						return nil, tt.failure
+					}
+					if err := pool.c.Do(ctx, func(context.Context) error {
+						actual.SNI = new("origin.test")
+						return nil
+					}); err != nil {
+						return nil, err
+					}
+					return prefixed([]byte("upgraded-prefix"), conn), nil
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			first := make(chan error, 1)
+			go func() {
+				_, _, err := pool.Upgrade(ctx, srv, setup)
+				first <- err
+			}()
+			select {
+			case <-entered:
+			case err := <-first:
+				t.Fatalf("upgrade returned without setup: %v", err)
+			}
+			if _, ok := pool.Lookup(srv); ok {
+				t.Error("Lookup exposed a transport during upgrade")
+			}
+			cancel()
+			if err := await(t, first); !errors.Is(err, context.Canceled) {
+				t.Fatalf("canceled upgrade waiter = %v", err)
+			}
+			type result struct {
+				conn layer.Conn
+				srv  *connection.Server
+				err  error
+			}
+			results := make(chan result, 8)
+			for i := range cap(results) {
+				go func() {
+					if i%2 == 0 {
+						conn, actual, err := pool.Open(t.Context(), srv, layer.OpenOptions{Reuse: true})
+						results <- result{conn, actual, err}
+						return
+					}
+					conn, actual, err := pool.Upgrade(t.Context(), srv, setup)
+					results <- result{conn, actual, err}
+				}()
+			}
+			close(release)
+			for range cap(results) {
+				got := await(t, results)
+				if tt.failure != nil {
+					if !errors.Is(got.err, tt.failure) {
+						t.Fatalf("upgrade failure = %v, want %v", got.err, tt.failure)
+					}
+				} else if got.err != nil || got.conn != original || got.srv != srv {
+					t.Fatalf("shared upgrade = %+v", got)
+				}
+			}
+			if calls.Load() != 1 || len(observer.connected) != 0 {
+				t.Fatalf("upgrade repeated setup or physical connected hook: calls=%d hooks=%d", calls.Load(), len(observer.connected))
+			}
+			if tt.failure != nil {
+				closed := await(t, observer.disconnected)
+				if closed.ID != physical.ID || closed.Error == nil || srv.State != connection.Closed || srv.Error == nil {
+					t.Fatalf("failed upgrade metadata: physical=%+v logical=%+v", closed, srv)
+				}
+				if _, ok := pool.Lookup(srv); ok {
+					t.Fatal("failed upgrade remains reusable")
+				}
+				return
+			}
+			expectRead(t, original, "upgraded-prefix")
+			write(t, peer, "current-data")
+			expectRead(t, original, "current-data")
+			found, ok := pool.Lookup(srv)
+			if !ok || found != original {
+				t.Fatalf("Lookup changed stable transport after upgrade: %v", ok)
+			}
+			if err := original.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if closed := await(t, observer.disconnected); closed.ID != physical.ID {
+				t.Fatalf("close lost physical owner: %+v", closed)
+			}
+		})
 	}
 }

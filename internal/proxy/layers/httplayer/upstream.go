@@ -12,6 +12,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"time"
 
 	"golang.org/x/net/idna"
 
@@ -57,13 +58,19 @@ type upstreamKey struct {
 }
 
 type upstreamEntry struct {
-	proxy    *connection.Server
-	srv      *connection.Server
-	key      upstreamKey
-	ready    chan struct{}
-	conn     layer.Conn
-	err      error
-	upgraded bool
+	proxy *connection.Server
+	srv   *connection.Server
+	key   upstreamKey
+	ready chan struct{}
+	conn  layer.Conn
+	err   error
+	wire  *upstreamConn
+
+	// The pool mutex protects publication of the logical upgrade flight.
+	// Its result is immutable once upgrade is closed.
+	upgraded   bool
+	upgrade    chan struct{}
+	upgradeErr error
 }
 
 func newUpstreamPool(ctx context.Context, c *layer.Context, base layer.ServerPool, connect bool) *upstreamPool {
@@ -132,8 +139,12 @@ func (p *upstreamPool) Open(ctx context.Context, srv *connection.Server, opts la
 		if pending := p.origins[srv]; entry == nil && pending != nil && opts.Reuse {
 			// A hook may already have changed the metadata while the setup
 			// flight has not yet published its new identity in entries.
+			ready := pending.ready
+			if pending.upgrade != nil {
+				ready = pending.upgrade
+			}
 			select {
-			case <-pending.ready:
+			case <-ready:
 			default:
 				entry = pending
 			}
@@ -238,7 +249,8 @@ func (p *upstreamPool) open(entry *upstreamEntry, opts layer.OpenOptions) {
 					return nil, errors.New("proxy: setup returned a nil connection")
 				}
 			}
-			return &upstreamConn{Conn: conn, c: p.c, srv: entry.srv}, nil
+			entry.wire = &upstreamConn{conn: conn, c: p.c, srv: entry.srv}
+			return entry.wire, nil
 		},
 	})
 	if entry.err == nil {
@@ -282,6 +294,19 @@ func (p *upstreamPool) await(ctx context.Context, entry *upstreamEntry) (layer.C
 	if entry.err != nil {
 		return nil, nil, entry.err
 	}
+	p.mu.Lock()
+	upgrade := entry.upgrade
+	p.mu.Unlock()
+	if upgrade != nil {
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case <-upgrade:
+		}
+		if entry.upgradeErr != nil {
+			return nil, nil, entry.upgradeErr
+		}
+	}
 	return entry.conn, entry.srv, nil
 }
 
@@ -296,6 +321,7 @@ func (p *upstreamPool) Lookup(srv *connection.Server) (layer.Conn, bool) {
 		p.mu.Unlock()
 		return p.base.Lookup(srv)
 	}
+	upgrade := entry.upgrade
 	p.mu.Unlock()
 	select {
 	case <-entry.ready:
@@ -304,6 +330,16 @@ func (p *upstreamPool) Lookup(srv *connection.Server) (layer.Conn, bool) {
 		}
 	default:
 		return nil, false
+	}
+	if upgrade != nil {
+		select {
+		case <-upgrade:
+			if entry.upgradeErr != nil {
+				return nil, false
+			}
+		default:
+			return nil, false
+		}
 	}
 	return p.base.Lookup(entry.proxy)
 }
@@ -321,9 +357,58 @@ func (p *upstreamPool) Upgrade(ctx context.Context, srv *connection.Server, setu
 	if _, _, err := p.await(ctx, entry); err != nil {
 		return nil, nil, err
 	}
-	if !entry.upgraded {
-		return nil, nil, errors.New("httplayer: cannot upgrade an already-open plain upstream connection; supply setup when opening")
+	if _, ok := p.base.Lookup(entry.proxy); !ok {
+		return nil, nil, net.ErrClosed
 	}
+	var key upstreamKey
+	if err := p.c.Do(ctx, func(context.Context) error {
+		key = upstreamIdentity(entry.srv)
+		return nil
+	}); err != nil {
+		return nil, nil, err
+	}
+	p.mu.Lock()
+	if p.closed || p.ctx.Err() != nil {
+		p.mu.Unlock()
+		return nil, nil, net.ErrClosed
+	}
+	if !entry.upgraded {
+		entry.upgraded = true
+		entry.upgrade = make(chan struct{})
+		entry.key = key
+		p.entries[key] = entry
+		p.workers.Go(func() {
+			defer close(entry.upgrade)
+			wrapped, err := setup(p.ctx, entry.wire.current(), entry.srv)
+			if err == nil {
+				err = p.ctx.Err()
+			}
+			if err == nil && wrapped == nil {
+				err = errors.New("proxy: setup returned a nil connection")
+			}
+			if err == nil {
+				err = p.refresh(entry)
+			}
+			if err != nil {
+				metadataErr := p.c.Do(context.WithoutCancel(p.ctx), func(context.Context) error {
+					entry.srv.Error = new(err.Error())
+					entry.proxy.Error = new(err.Error())
+					return nil
+				})
+				// The tracked physical connection owns closure and disconnection
+				// hooks even when the logical origin's handshake fails.
+				entry.upgradeErr = errors.Join(err, metadataErr, entry.conn.Close())
+				if wrapped != nil {
+					_ = wrapped.Close()
+				}
+				return
+			}
+			entry.wire.mu.Lock()
+			entry.wire.conn = wrapped
+			entry.wire.mu.Unlock()
+		})
+	}
+	p.mu.Unlock()
 	return p.await(ctx, entry)
 }
 
@@ -383,16 +468,31 @@ func (p *upstreamPool) establishTunnel(ctx context.Context, conn layer.Conn, pro
 	return prefixed(bytes.Clone(buffered), conn), nil
 }
 
-// upstreamConn mirrors logical-origin state while the physical pool retains
-// ownership of the transport and its connection lifecycle hooks.
+// upstreamConn is the stable transport owned by the physical pool. A logical
+// upgrade replaces only its inner transport, so handler closure always reaches
+// the current stream without repeating physical connection lifecycle hooks.
 type upstreamConn struct {
-	layer.Conn
-	c   *layer.Context
-	srv *connection.Server
+	mu   sync.Mutex
+	conn layer.Conn
+	c    *layer.Context
+	srv  *connection.Server
 }
 
+func (c *upstreamConn) current() layer.Conn {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn
+}
+
+func (c *upstreamConn) Write(b []byte) (int, error)        { return c.current().Write(b) }
+func (c *upstreamConn) LocalAddr() net.Addr                { return c.current().LocalAddr() }
+func (c *upstreamConn) RemoteAddr() net.Addr               { return c.current().RemoteAddr() }
+func (c *upstreamConn) SetDeadline(t time.Time) error      { return c.current().SetDeadline(t) }
+func (c *upstreamConn) SetReadDeadline(t time.Time) error  { return c.current().SetReadDeadline(t) }
+func (c *upstreamConn) SetWriteDeadline(t time.Time) error { return c.current().SetWriteDeadline(t) }
+
 func (c *upstreamConn) Read(b []byte) (int, error) {
-	n, err := c.Conn.Read(b)
+	n, err := c.current().Read(b)
 	if errors.Is(err, io.EOF) {
 		_ = c.c.Do(context.Background(), func(context.Context) error {
 			c.srv.State &^= connection.CanRead
@@ -404,7 +504,7 @@ func (c *upstreamConn) Read(b []byte) (int, error) {
 }
 
 func (c *upstreamConn) Close() error {
-	err := c.Conn.Close()
+	err := c.current().Close()
 	_ = c.c.Do(context.Background(), func(context.Context) error {
 		c.srv.State = connection.Closed
 		c.srv.TimestampEnd = new(stateutil.Now())
@@ -414,7 +514,7 @@ func (c *upstreamConn) Close() error {
 }
 
 func (c *upstreamConn) CloseWrite() error {
-	err := c.Conn.CloseWrite()
+	err := c.current().CloseWrite()
 	_ = c.c.Do(context.Background(), func(context.Context) error {
 		c.srv.State &^= connection.CanWrite
 		return nil

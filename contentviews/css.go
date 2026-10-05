@@ -31,7 +31,9 @@ var (
 type CSS struct{}
 
 // Name returns the registered view name.
-func (CSS) Name() string { return "CSS" }
+// The upstream class is named ViewCSS and inherits the name derived
+// from the class name, so that spelling is the registered name.
+func (CSS) Name() string { return "ViewCSS" }
 
 // SyntaxHighlight returns the view's highlighting language.
 func (CSS) SyntaxHighlight() string { return "css" }

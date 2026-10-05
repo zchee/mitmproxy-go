@@ -147,6 +147,7 @@ func TestCoreOptionValues(t *testing.T) {
 		"success: cert_passphrase":           {get: func() any { return m.OptStr("cert_passphrase") }, want: (*string)(nil)},
 		"success: http2_ping_keepalive":      {get: func() any { return m.Int("http2_ping_keepalive") }, want: 58},
 		"success: content_view_lines_cutoff": {get: func() any { return m.Int("content_view_lines_cutoff") }, want: ContentViewLinesCutoff},
+		"success: protobuf_definitions":      {get: func() any { return m.OptStr("protobuf_definitions") }, want: (*string)(nil)},
 		"success: key_size":                  {get: func() any { return m.Int("key_size") }, want: KeySize},
 		"success: tcp_timeout":               {get: func() any { return m.Int("tcp_timeout") }, want: 600},
 	}

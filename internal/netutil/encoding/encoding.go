@@ -157,10 +157,10 @@ func Decode(data []byte, encoding string) ([]byte, error) {
 //   - br: up to about 32 MiB + 3 * limit. The decoder allocates a ring
 //     buffer for the window the stream declares, up to 16 MiB, and grows it
 //     once on the way.
-//   - zstd: up to about 6 * max(limit, 8 MiB). A zstd frame may need its declared
-//     window before any output is produced, so the bound for zstd is at
-//     least the 8 MiB window RFC 9659 lets HTTP senders use, and the decoder
-//     fills its output up to that bound before it refuses it.
+//   - zstd: up to about 6 * max(limit, 8 MiB). A zstd frame may need its
+//     declared window before any output is produced, so the bound for zstd
+//     is at least the 8 MiB window RFC 9659 lets HTTP senders use, and the
+//     decoder fills its output up to that bound before it refuses it.
 //
 // A zstd frame whose window is larger than max(limit, 8 MiB) is refused
 // before it is decoded, with an error wrapping both ErrSizeLimit and

@@ -635,9 +635,9 @@ func (l *Loader) AddOption(ctx context.Context, name string, typ options.Type, d
 // Loader.add_command). See [command.Manager.Register] for the functions a
 // command may be; a function whose first parameter is not a
 // [context.Context] is refused with an error wrapping
-// [command.ErrSignature]. The command belongs to the addon whose load received l,
-// which may be a sub-addon, and is unregistered when that addon is
-// removed. A name another addon's command already has is refused with
+// [command.ErrSignature]. The command belongs to the addon whose load
+// received l, which may be a sub-addon, and is unregistered when that addon
+// is removed. A name another addon's command already has is refused with
 // [command.ErrDuplicateCommand].
 func (l *Loader) AddCommand(name string, fn any, opts ...command.Option) error {
 	// A sub-addon that its parent added during load was not checked at

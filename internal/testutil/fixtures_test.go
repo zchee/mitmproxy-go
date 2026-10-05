@@ -29,7 +29,7 @@ const manifestFile = "SHA256SUMS"
 
 // importedRoots are the testdata entries that hold only byte-exact upstream
 // copies; every file under them must be listed in the manifest.
-var importedRoots = []string{"UPSTREAM_LICENSE", "mitmproxy", "mitmproxy-rs", "wg-test-client"}
+var importedRoots = []string{"UPSTREAM_LICENSE", "cpython", "mitmproxy", "mitmproxy-rs", "wg-test-client"}
 
 // parseManifest parses shasum -a 256 output into a map from path to
 // hex-encoded digest.

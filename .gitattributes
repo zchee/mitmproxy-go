@@ -5,3 +5,6 @@
 
 go.sum       linguist-vendored
 go.work.sum  linguist-vendored
+
+# Byte-exact copy of a CPython file; no tool may rewrite it.
+testdata/cpython/** -text linguist-vendored

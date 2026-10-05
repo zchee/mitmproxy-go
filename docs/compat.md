@@ -70,6 +70,14 @@ No behavioural differences.
 | Undecodable body bytes returned by `get_text(strict=False)` are surrogate escapes (U+DC80 to U+DCFF) in a `str` (`mitmproxy/http.py`). | `TextOrRaw` returns those bytes unchanged inside the Go string, which is then not valid UTF-8. `SetText` with such text writes the same bytes upstream's `surrogateescape` fallback writes. | A Go string cannot hold lone surrogates; raw bytes play their role. |
 | A non-ASCII host is converted with Python's `idna` codec, which implements IDNA 2003 with nameprep tables fixed at Unicode 3.2 (`mitmproxy/net/http/url.py`). | Conversion uses UTS #46 transitional processing from `golang.org/x/net/idna`, which maps characters as nameprep does (`ß` becomes `ss`) but follows current Unicode tables, so rare characters can map differently. | Go has no IDNA 2003 implementation; UTS #46 transitional processing is the closest one. |
 
+The runtime streaming contract uses two fields rather than Python's bool-or-callable `stream` attribute
+(`mitmproxy/http.py:247-259`): `Stream` enables forwarding without buffering, and a non-nil
+`StreamFunc func([]byte) [][]byte` enables streaming and transforms chunks. Neither field is saved in flow state.
+A transform is called once more with an empty chunk at the end. It runs under the dispatch lock, acquired once per
+chunk, to preserve upstream's event-loop serialization. Unlike a hook, it receives no context and must not change
+options, call commands or fire hooks, which would wait for its own lock. A slow transform delays all connections'
+hooks; streaming with `Stream` alone does not acquire the lock per chunk.
+
 ## tcp, udp
 
 | Upstream | Go | Reason |

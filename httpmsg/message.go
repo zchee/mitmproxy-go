@@ -29,6 +29,21 @@ type Message struct {
 	// the body is missing, for example because it was streamed; an empty
 	// non-nil slice means a present but empty body.
 	RawContent []byte
+	// Stream forwards the body without buffering it. Set it in requestheaders
+	// or responseheaders; changing it in request or response is too late.
+	// Stream is runtime configuration and is not saved in the flow state.
+	Stream bool
+	// StreamFunc, when non-nil, enables streaming regardless of Stream and
+	// maps each received chunk to the chunks forwarded to the peer. Set it in
+	// requestheaders or responseheaders. It is called once more with an empty
+	// chunk at the end, allowing a transform to flush buffered data.
+	//
+	// The function runs under the dispatch lock, acquired once per chunk.
+	// It receives no context and must not change options, call commands or
+	// fire hooks: these operations would wait on the lock it already holds.
+	// Slow transforms delay hooks on all connections. Stream alone does not
+	// acquire the lock for body chunks. StreamFunc is not saved in flow state.
+	StreamFunc func(chunk []byte) [][]byte
 	// Trailers are the HTTP trailers. Nil means the message has none.
 	Trailers Headers
 	// TimestampStart is when the headers were received.

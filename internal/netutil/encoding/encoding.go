@@ -95,8 +95,9 @@ func (e *Error) pyException() (name, msg string) {
 	}
 	switch e.Encoding {
 	case "gzip":
-		if e.Op == "decoding" {
-			// decode_gzip re-raises zlib.error as this ValueError.
+		if e.Op == "decoding" && !errors.Is(e.Err, ErrSizeLimit) {
+			// decode_gzip re-raises zlib.error as this ValueError. A size
+			// limit is not a codec failure and has no upstream text.
 			msg = "Decompression failed: " + msg
 		}
 		return "ValueError", msg

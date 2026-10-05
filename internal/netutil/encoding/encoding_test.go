@@ -81,6 +81,21 @@ func TestUnknownEncoding(t *testing.T) {
 // brotli package). Everything up to the exception message matches; the
 // message of a codec failure comes from the Go decoder, so only its start is
 // compared.
+// decodeLimit3 is DecodeLimit with a limit of 3 bytes.
+func decodeLimit3(data []byte, encoding string) ([]byte, error) {
+	return DecodeLimit(data, encoding, 3)
+}
+
+// mustEncode encodes s with the named encoding.
+func mustEncode(t testing.TB, s, encoding string) []byte {
+	t.Helper()
+	b, err := Encode([]byte(s), encoding)
+	if err != nil {
+		t.Fatalf("Encode(%q, %q) error: %v", s, encoding, err)
+	}
+	return b
+}
+
 func TestErrorText(t *testing.T) {
 	tests := map[string]struct {
 		data     string
@@ -105,6 +120,14 @@ func TestErrorText(t *testing.T) {
 		"error: gzip": {
 			data: "foobar", encoding: "GZIP", call: Decode,
 			want: `ValueError when decoding b'foobar' with 'gzip': ValueError('Decompression failed: `,
+		},
+		"error: gzip size limit without the decompression failure prefix": {
+			data: string(mustEncode(t, "mitmproxy", "gzip")), encoding: "gzip", call: decodeLimit3, exact: true,
+			want: `ValueError when decoding b'\x1f\x8b with 'gzip': ValueError('decoded size exceeds the limit of 3 bytes')`,
+		},
+		"error: zlib in gzip size limit without the decompression failure prefix": {
+			data: string(mustEncode(t, "mitmproxy", "deflate")), encoding: "gzip", call: decodeLimit3, exact: true,
+			want: `ValueError when decoding b'x\x01\x0 with 'gzip': ValueError('decoded size exceeds the limit of 3 bytes')`,
 		},
 		"error: deflate": {
 			data: "foobar", encoding: "deflate", call: Decode,

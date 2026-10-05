@@ -37,6 +37,7 @@ func NewRegistry() *Registry {
 	r.Register(HexDump{})
 	r.Register(HexStream{})
 	r.Register(JSON{})
+	r.Register(XMLHTML{})
 	return r
 }
 

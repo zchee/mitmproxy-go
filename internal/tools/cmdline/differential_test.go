@@ -157,6 +157,7 @@ func TestDifferentialParsing(t *testing.T) {
 		"success: booleans":             {args: []string{"--no-rawtcp", "--ssl-insecure"}},
 		"success: optional string":      {args: []string{"--cert-passphrase", ""}},
 		"success: decimal integer":      {args: []string{"--listen-port", " +1_024 "}},
+		"success: Unicode integer":      {args: []string{"--listen-port", " +１_٢𝟛 "}},
 		"success: repeated integer":     {args: []string{"-p", "1", "-p", "2"}},
 		"success: sequence punctuation": {args: []string{"--ignore-hosts", "a,b", "--ignore-hosts", "\"quoted\""}},
 		"success: filter remainder":     {args: []string{"~u", "host", "--no-server"}},

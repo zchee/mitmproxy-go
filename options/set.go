@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Unparsed holds the raw values of a deferred "--set" specification whose
@@ -153,14 +154,34 @@ func parseSetVal(o *option, values []string) (any, error) {
 
 // pyInt parses s the way Python's int(s) does for base 10: surrounding
 // whitespace is ignored, an optional sign is allowed, and single underscores
-// may separate digits.
+// may separate Unicode decimal digits.
 func pyInt(s string) (int, bool) {
 	s = strings.TrimSpace(s)
 	digits := strings.TrimLeft(s, "+-")
 	if len(s)-len(digits) > 1 || digits == "" || digits[0] == '_' || digits[len(digits)-1] == '_' || strings.Contains(digits, "__") {
 		return 0, false
 	}
-	n, err := strconv.ParseInt(s[:len(s)-len(digits)]+strings.ReplaceAll(digits, "_", ""), 10, 0)
+	normalized := strings.Map(func(r rune) rune {
+		if r == '_' {
+			return -1
+		}
+		if r <= unicode.MaxASCII {
+			return r
+		}
+		// Each Unicode decimal range is one or more consecutive 0–9 sets.
+		for _, span := range unicode.Digit.R16 {
+			if uint32(r) >= uint32(span.Lo) && uint32(r) <= uint32(span.Hi) && (uint32(r)-uint32(span.Lo))%uint32(span.Stride) == 0 {
+				return '0' + rune((uint32(r)-uint32(span.Lo))/uint32(span.Stride)%10)
+			}
+		}
+		for _, span := range unicode.Digit.R32 {
+			if uint32(r) >= span.Lo && uint32(r) <= span.Hi && (uint32(r)-span.Lo)%span.Stride == 0 {
+				return '0' + rune((uint32(r)-span.Lo)/span.Stride%10)
+			}
+		}
+		return r
+	}, digits)
+	n, err := strconv.ParseInt(s[:len(s)-len(digits)]+normalized, 10, 0)
 	if err != nil {
 		return 0, false
 	}

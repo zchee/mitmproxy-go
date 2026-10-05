@@ -133,6 +133,7 @@ Reproduced on purpose (compatibility, not differences):
 | `save` creates a new file with the default mode, normally readable by everyone (`mitmproxy/optmanager.py`). | `Save` creates a new file with mode 0600; an existing file keeps its permissions. | The file can hold `cert_passphrase`. |
 | `serialize` adds options that are not yet in the file in the iteration order of a Python set (`opts.keys()`), which is not defined (`mitmproxy/optmanager.py`). | They are added in registration order. Keys already in the file keep their order, as upstream does. | Deterministic output. |
 | A type error reads `Expected <class 'bool'> for name, but got <class 'int'>.` (`mitmproxy/utils/typecheck.py`). | It reads `Expected bool for name, but got int.`, with the option type names of `--options` and Go type names. | Python class reprs have no Go counterpart. |
+| Integer option strings accept Unicode decimal digits from the running Python's Unicode database (`mitmproxy/optmanager.py`, `_parse_setval`). | They accept decimal digits from Go's `unicode` tables, including digits assigned after the reference Python's Unicode version. | Each runtime supplies its Unicode database; the differential test checks every decimal digit known to the reference Python. |
 
 ## command
 

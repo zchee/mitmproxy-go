@@ -493,10 +493,12 @@ func TestCallRefusesNilContext(t *testing.T) {
 			m := newTestManager(t)
 			var runs int
 			if tt.runner {
-				m.SetRunner(func(ctx context.Context, _ string, run func(context.Context) (any, error)) (any, error) {
+				if err := m.SetRunner(func(ctx context.Context, _ string, run func(context.Context) (any, error)) (any, error) {
 					runs++
 					return run(ctx)
-				})
+				}); err != nil {
+					t.Fatalf("SetRunner: %v", err)
+				}
 			}
 			var nilCtx context.Context
 			got, err := m.Call(nilCtx, "ctxvalue")
@@ -685,7 +687,7 @@ func TestSetRunner(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			m := newTestManager(t)
 			var calls []runnerCall
-			m.SetRunner(func(ctx context.Context, name string, run func(context.Context) (any, error)) (any, error) {
+			if err := m.SetRunner(func(ctx context.Context, name string, run func(context.Context) (any, error)) (any, error) {
 				res, err := run(context.WithValue(ctx, ctxKey{}, "from runner"))
 				c := runnerCall{Name: name, Result: res}
 				if err != nil {
@@ -693,7 +695,9 @@ func TestSetRunner(t *testing.T) {
 				}
 				calls = append(calls, c)
 				return res, err
-			})
+			}); err != nil {
+				t.Fatalf("SetRunner: %v", err)
+			}
 			got, err := m.Call(t.Context(), tt.name, tt.args...)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("Call(%q) error = %v, want %v", tt.name, err, tt.wantErr)
@@ -704,11 +708,39 @@ func TestSetRunner(t *testing.T) {
 			if diff := cmp.Diff(tt.calls, calls); diff != "" {
 				t.Errorf("runner calls (-want +got):\n%s", diff)
 			}
+		})
+	}
+}
 
-			m.SetRunner(nil)
-			calls = nil
-			if got, err := m.Call(t.Context(), "ctxvalue"); err != nil || got != "" || len(calls) != 0 {
-				t.Errorf("Call after SetRunner(nil) = %v, %v with %d runner calls; want a direct call", got, err, len(calls))
+// TestSetRunnerRefusesReplacement checks that a Runner, once installed,
+// stays: a second SetRunner, with another Runner or with nil, is refused
+// and calls keep going through the first one.
+func TestSetRunnerRefusesReplacement(t *testing.T) {
+	tests := map[string]struct {
+		second command.Runner
+	}{
+		"error: another runner": {
+			second: func(ctx context.Context, _ string, run func(context.Context) (any, error)) (any, error) {
+				return run(context.WithValue(ctx, ctxKey{}, "second"))
+			},
+		},
+		"error: nil runner": {},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			m := newTestManager(t)
+			first := func(ctx context.Context, _ string, run func(context.Context) (any, error)) (any, error) {
+				return run(context.WithValue(ctx, ctxKey{}, "first"))
+			}
+			if err := m.SetRunner(first); err != nil {
+				t.Fatalf("first SetRunner: %v", err)
+			}
+			if err := m.SetRunner(tt.second); !errors.Is(err, command.ErrRunnerSet) {
+				t.Fatalf("second SetRunner error = %v, want %v", err, command.ErrRunnerSet)
+			}
+			got, err := m.Call(t.Context(), "ctxvalue")
+			if err != nil || got != "first" {
+				t.Errorf("Call after a refused SetRunner = %v, %v; want %q from the first runner", got, err, "first")
 			}
 		})
 	}

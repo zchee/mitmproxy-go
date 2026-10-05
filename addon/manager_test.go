@@ -1652,3 +1652,44 @@ func TestInvokeSync(t *testing.T) {
 		}
 	})
 }
+
+// TestSecondManagerOnOneCommandRegistry creates a second Manager on a
+// command registry that already serves one. The second Manager must not
+// take over the commands, which would run them under its dispatch lock
+// instead of the first one's, and must not leave an option subscription
+// behind on its option registry.
+func TestSecondManagerOnOneCommandRegistry(t *testing.T) {
+	p1, p2 := &dispatchProbe{}, &dispatchProbe{}
+	cmds := command.NewManager()
+	m1 := NewManager(options.NewManager(), cmds, p1.config())
+	t.Cleanup(m1.Close)
+	if err := cmds.Register("probe.held", func(context.Context) bool { return p1.held.Load() }); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	opts2 := options.New()
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		NewManager(opts2, cmds, p2.config())
+	}()
+	err, ok := recovered.(error)
+	if !ok || !errors.Is(err, command.ErrRunnerSet) {
+		t.Fatalf("second NewManager on one command registry recovered %v, want a panic with an error wrapping %v", recovered, command.ErrRunnerSet)
+	}
+
+	got, err := m1.Call(t.Context(), "probe.held")
+	if err != nil || got != true {
+		t.Errorf("m1.Call = %v, %v; want true (run under m1's dispatch lock)", got, err)
+	}
+	if n1, n2 := p1.starts.Load(), p2.starts.Load(); n1 != 1 || n2 != 0 {
+		t.Errorf("dispatch locks taken: first manager %d, second %d; want 1 and 0", n1, n2)
+	}
+
+	if err := opts2.Set(t.Context(), "upstream_cert=false"); err != nil {
+		t.Fatalf("Set on the second option registry: %v", err)
+	}
+	if n := p2.starts.Load(); n != 0 {
+		t.Errorf("an option change took the refused manager's dispatch lock %d times; want 0 (no subscription left behind)", n)
+	}
+}

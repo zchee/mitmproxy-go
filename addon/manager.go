@@ -92,6 +92,12 @@ type Manager struct {
 // installs a [command.Runner] on cmds (see [command.Manager.SetRunner]) that
 // runs every command under the dispatch lock as a synchronous call; see
 // [Manager.Call].
+//
+// A command registry serves one Manager. NewManager panics with an error
+// wrapping [command.ErrRunnerSet] when cmds already has a Runner, such as
+// the one another Manager installed, because the commands would otherwise
+// run under this Manager's dispatch lock while the other one dispatches
+// hooks to their addons.
 func NewManager(opts *options.Manager, cmds *command.Manager, cfg Config) *Manager {
 	m := &Manager{
 		d:        dispatcher{onStart: cfg.OnDispatchStart, onEnd: cfg.OnDispatchEnd},
@@ -101,12 +107,16 @@ func NewManager(opts *options.Manager, cmds *command.Manager, cfg Config) *Manag
 		lookup:   make(map[string]any),
 		commands: make(map[any][]string),
 	}
+	// The Runner goes first, so that a refused registry leaves no option
+	// subscription behind.
+	if err := cmds.SetRunner(m.runCommand); err != nil {
+		panic(fmt.Errorf("addon: NewManager: %w", err))
+	}
 	m.unsubscribe = opts.Subscribe(func(ctx context.Context, updated map[string]struct{}) error {
 		return m.d.do(ctx, func(ctx context.Context) error {
 			return m.trigger(ctx, ConfigureHook{Updated: updated})
 		})
 	})
-	cmds.SetRunner(m.runCommand)
 	return m
 }
 

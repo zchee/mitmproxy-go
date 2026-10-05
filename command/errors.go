@@ -26,4 +26,8 @@ var (
 	// ErrArgumentMismatch reports a call whose arguments do not match the
 	// command's parameters in number or type.
 	ErrArgumentMismatch = errors.New("command argument mismatch")
+
+	// ErrRunnerSet reports a call to [Manager.SetRunner] on a Manager that
+	// already has a Runner.
+	ErrRunnerSet = errors.New("command runner already set")
 )

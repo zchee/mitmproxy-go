@@ -365,16 +365,24 @@ func (m *Manager) Register(name string, fn any, opts ...Option) error {
 	return nil
 }
 
-// SetRunner makes [Manager.Call] run every command through r; a nil r runs
-// commands directly on the caller's goroutine, which is the default.
-// [github.com/zchee/mitmproxy-go/addon.NewManager] installs a Runner that
-// runs each command under the addon dispatch lock as a synchronous call, so
-// a Manager serves one addon manager: installing a Runner replaces the one
-// installed before.
-func (m *Manager) SetRunner(r Runner) {
+// SetRunner makes [Manager.Call] run every command through r. A Manager
+// without a Runner runs commands directly on the caller's goroutine, which
+// is the default.
+//
+// SetRunner is for [github.com/zchee/mitmproxy-go/addon.NewManager], which
+// installs a Runner that runs each command under the addon dispatch lock as
+// a synchronous call. A Manager therefore serves one addon manager: a
+// Runner, once installed, stays, and a later SetRunner, with another Runner
+// or with nil, is refused with an error wrapping [ErrRunnerSet], because
+// replacing it would run the commands under another lock or under none.
+func (m *Manager) SetRunner(r Runner) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.runner != nil {
+		return ErrRunnerSet
+	}
 	m.runner = r
+	return nil
 }
 
 // Unregister removes the command registered under name and reports whether

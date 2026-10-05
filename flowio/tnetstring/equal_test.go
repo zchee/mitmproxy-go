@@ -10,14 +10,16 @@ import (
 	"github.com/zchee/mitmproxy-go/omap"
 )
 
-// Equal reports whether two tnetstring values are equal as Python compares
-// the decoded objects.
+// equal reports whether two decoded tnetstring values are the same value of
+// the same type. It is type-strict, unlike Python's ==: an integer never
+// equals a float (1 and 1.0 differ), and a text string never equals a byte
+// string.
 //
 // Lists compare element by element; dictionaries hold the same keys, of the
 // same kinds, with equal values, regardless of order; integers compare by
 // numeric value whether held as int64 or *big.Int; floats compare with IEEE
 // semantics, so a NaN is never equal to anything.
-func Equal(a, b any) bool {
+func equal(a, b any) bool {
 	switch a := a.(type) {
 	case nil:
 		return b == nil
@@ -55,7 +57,7 @@ func Equal(a, b any) bool {
 			return false
 		}
 		for i := range a {
-			if !Equal(a[i], b[i]) {
+			if !equal(a[i], b[i]) {
 				return false
 			}
 		}
@@ -73,7 +75,7 @@ func dictEqual(a, b *omap.Map[any]) bool {
 	}
 	for k, av := range a.All() {
 		bv, ok := b.Get(k)
-		if !ok || a.IsBytesKey(k) != b.IsBytesKey(k) || !Equal(av, bv) {
+		if !ok || a.IsBytesKey(k) != b.IsBytesKey(k) || !equal(av, bv) {
 			return false
 		}
 	}

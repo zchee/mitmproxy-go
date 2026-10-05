@@ -55,7 +55,7 @@ func FuzzLoads(f *testing.F) {
 		if err != nil {
 			t.Fatalf("Loads(Dumps(v)) failed: %v\nencoding %q", err, first)
 		}
-		if !bytes.Contains(first, []byte("nan^")) && !Equal(v, reversed) {
+		if !bytes.Contains(first, []byte("nan^")) && !equal(v, reversed) {
 			t.Fatalf("round trip changed the value of %q", data)
 		}
 		second, err := Dumps(reversed)
@@ -107,7 +107,7 @@ func FuzzRoundTrip(f *testing.F) {
 		if err != nil {
 			t.Fatalf("Loads(%q) failed: %v", enc, err)
 		}
-		if !math.IsNaN(x) && !Equal(v, got) {
+		if !math.IsNaN(x) && !equal(v, got) {
 			t.Fatalf("round trip changed the value:\nwant %v\ngot  %v", plain(v), plain(got))
 		}
 		popped, rest, err := Pop(append(enc, "OK"...))

@@ -145,7 +145,7 @@ func TestFormatExamples(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Pop(%q) error: %v", tt.data, err)
 			}
-			if len(rest) != 0 || !Equal(tt.want, v) {
+			if len(rest) != 0 || !equal(tt.want, v) {
 				t.Errorf("Pop(%q) = (%v, %q), want (%v, \"\")", tt.data, plain(v), rest, plain(tt.want))
 			}
 
@@ -160,7 +160,7 @@ func TestFormatExamples(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Loads(Dumps(%v)) error: %v", plain(tt.want), err)
 			}
-			if !Equal(tt.want, back) {
+			if !equal(tt.want, back) {
 				t.Errorf("Loads(Dumps(v)) = %v, want %v", plain(back), plain(tt.want))
 			}
 		})
@@ -190,7 +190,7 @@ func TestFileExamples(t *testing.T) {
 					if err != nil {
 						t.Fatalf("Load(%q) error: %v", data, err)
 					}
-					if !Equal(tt.want, got) {
+					if !equal(tt.want, got) {
 						t.Errorf("Load(%q) = %v, want %v", data, plain(got), plain(tt.want))
 					}
 					rest, err := io.ReadAll(r)
@@ -412,8 +412,8 @@ func TestEqual(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if got := Equal(tt.a, tt.b); got != tt.want {
-				t.Errorf("Equal(%v, %v) = %v, want %v", plain(tt.a), plain(tt.b), got, tt.want)
+			if got := equal(tt.a, tt.b); got != tt.want {
+				t.Errorf("equal(%v, %v) = %v, want %v", plain(tt.a), plain(tt.b), got, tt.want)
 			}
 		})
 	}
@@ -750,15 +750,15 @@ func TestRoundTripRandom(t *testing.T) {
 		if err != nil {
 			t.Fatalf("object %d: Loads(%q) error: %v", i, enc, err)
 		}
-		if !Equal(v, got) {
+		if !equal(v, got) {
 			t.Fatalf("object %d: round trip changed the value:\nwant %v\ngot  %v", i, plain(v), plain(got))
 		}
 		popped, rest, err := Pop(enc)
-		if err != nil || len(rest) != 0 || !Equal(v, popped) {
+		if err != nil || len(rest) != 0 || !equal(v, popped) {
 			t.Fatalf("object %d: Pop = (%v, %q, %v)", i, plain(popped), rest, err)
 		}
 		loaded, err := Load(bytes.NewReader(append(enc, "OK"...)))
-		if err != nil || !Equal(v, loaded) {
+		if err != nil || !equal(v, loaded) {
 			t.Fatalf("object %d: Load = (%v, %v)", i, plain(loaded), err)
 		}
 	}
@@ -784,7 +784,7 @@ func TestRoundTripBigInteger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dumps(-1557!) error: %v", err)
 	}
-	if got, err := Loads(enc); err != nil || !Equal(neg, got) {
+	if got, err := Loads(enc); err != nil || !equal(neg, got) {
 		t.Errorf("-1557! did not round-trip: %v", err)
 	}
 }

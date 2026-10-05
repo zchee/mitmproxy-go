@@ -223,6 +223,24 @@ invalid; an odd cipher suite length leaves its last byte to be read as the compr
 | A boolean flag accepts no attached value (`mitmproxy/optmanager.py`, `make_parser`). | Generated boolean flags also accept `=true`, meaning that flag was selected; for example, `--no-server=true` disables the server. Other attached values are rejected. | pflag sends the same value to a boolean flag for a bare occurrence and an explicit `=true`. Use the positive or negative flag to select the desired value. |
 | There is no `completion` subcommand (`mitmproxy/tools/cmdline.py`). | `completion bash`, `completion zsh`, `completion fish` and `completion powershell` generate scripts backed by Cobra's completion protocol. A filter beginning with the word `completion` must follow `--`. | Shell completion is an explicit addition to the Go CLI. |
 
+## internal/http1
+
+| Upstream | Go | Reason |
+|---|---|---|
+| The HTTP layer's head receive buffer has no total byte limit (`mitmproxy/proxy/layers/http/_http1.py`). | `MaxHeadBytes` limits each head to 1 MiB, including delimiters and leading empty lines; excess returns `ErrHeadTooLarge`. | Bound memory retained from network input. |
+| Head lines have no separate limit (`mitmproxy/net/http/http1/read.py`). | `MaxLineBytes` limits each physical head line to 64 KiB including its newline; excess returns `ErrLineTooLong`. | Bound allocations before a line delimiter arrives. |
+| The number of header fields is unlimited (`mitmproxy/net/http/http1/read.py`). | `MaxHeaderFields` permits 10,000 logical fields per head; excess returns `ErrTooManyHeaders`. Continuations count toward byte limits, not as new fields. | Bound per-field metadata. |
+| An empty head is ignored until the next receive event (`mitmproxy/proxy/layers/http/_http1.py`, h11's receive buffer). | The blocking request-head reader skips leading empty lines in the same call. They count toward `MaxHeadBytes` and remain in `Raw` and `Consumed`. | A blocking reader has no receive-event boundary; it must continue to the request or EOF. |
+| Every assembled head uses canonical spaces and CRLF (`mitmproxy/net/http/http1/assemble.py`). | Passing the original head to assembly preserves unchanged raw start lines and fields. Obs-folded fields use upstream's joined value. No original means canonical assembly. | Preserve byte fidelity where the proxy need not rewrite a field. |
+| Status integers use Python's unbounded `int` (`mitmproxy/net/http/http1/read.py`). | Signs and digit separators are accepted, but the value must fit Go's `int` (64 bits on supported targets). | The shared response model stores an `int`. |
+| Malformed head input raises `ValueError` with its input repr (`mitmproxy/net/http/http1/read.py`). | The same detail follows an `ErrInvalidHead` prefix; transport truncation is `io.ErrUnexpectedEOF`, and clean EOF is `io.EOF`. | Callers can distinguish syntax, transport, and each resource limit with `errors.Is`. |
+
+`FidelityCounter` is per proxy and safe for concurrent use. Assembly records an altered start line, each normalized
+obs-fold continuation, a changed non-framing header block, and each changed framing-header family (`Content-Length`,
+`Transfer-Encoding`) separately. The framing families are excluded from the general header-block count. Unchanged
+raw bytes, generated heads without an original, and messages changed by an addon do not increment it; parsing never
+increments it.
+
 ## Decided for code that is not written yet
 
 These differences are settled in the work plan ([docs/plans/mitmproxy-go-port.md](plans/mitmproxy-go-port.md): the

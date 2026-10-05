@@ -465,10 +465,23 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			}
 			i = end
 		case c == '(' && strings.HasPrefix(src[i:], "(?#"):
-			end := commentEnd(src, i+3)
-			t.both(src[i:end])
-			i = end
+			// Python ignores comments, so neither engine sees them: both
+			// would end one at the first ), escaped or not. An empty group
+			// keeps the text on either side apart, as in \1(?#c)0, except
+			// before a quantifier, which binds to what precedes the
+			// comment: a(?#c)* is a*.
+			rest := skipIgnored(src[i:], cur.verbose)
+			if strings.HasPrefix(rest, "(?#") {
+				return translation{}, errors.New("missing ), unterminated comment")
+			}
+			if rest == "" || strings.IndexByte("*+?{", rest[0]) < 0 {
+				t.both("(?:)")
+			}
+			i = len(src) - len(rest)
 		case c == '(':
+			if err := checkGlobalFlags(src[i:]); err != nil {
+				return translation{}, err
+			}
 			next, err := scopedFlags(src[i+1:], cur, str)
 			if err != nil {
 				return translation{}, err
@@ -514,30 +527,86 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 	return translation{re2: t.re2.String(), re2OK: t.re2OK, backtrack: t.bt.String(), unicodeBoundary: t.uniBoundary}, nil
 }
 
+// skipIgnored returns s without the text Python ignores at its start: (?#
+// comments and, when verbose is set, whitespace and # comments. An
+// unterminated (?# comment is left in place.
+func skipIgnored(s string, verbose bool) string {
+	for {
+		switch {
+		case strings.HasPrefix(s, "(?#"):
+			end, ok := commentEnd(s, 3)
+			if !ok {
+				return s
+			}
+			s = s[end:]
+		case verbose && s != "" && strings.IndexByte(" \t\n\r\v\f", s[0]) >= 0:
+			s = s[1:]
+		case verbose && strings.HasPrefix(s, "#"):
+			_, after, found := strings.Cut(s, "\n")
+			if !found {
+				return ""
+			}
+			s = after
+		default:
+			return s
+		}
+	}
+}
+
 // commentEnd returns the index after the ) that closes a (?# comment whose
-// text starts at i. Like Python, it skips the character after a backslash.
-func commentEnd(src string, i int) int {
+// text starts at i, and false when no ) closes it. Like Python, it skips
+// the character after a backslash.
+func commentEnd(src string, i int) (int, bool) {
 	for i < len(src) {
 		switch src[i] {
 		case '\\':
 			i += 2
 		case ')':
-			return i + 1
+			return i + 1, true
 		default:
 			i++
 		}
 	}
-	return len(src)
+	return len(src), false
+}
+
+// checkGlobalFlags rejects a flag group without a colon, such as (?i) or
+// (?-i), at the start of rest. leadingFlags has taken those at the start
+// of the pattern; Python 3.11 and later reject global flags anywhere else
+// and have no form that turns a flag off globally, while RE2 and regexp2
+// accept both and apply them to the rest of the pattern.
+func checkGlobalFlags(rest string) error {
+	body, ok := strings.CutPrefix(rest, "(?")
+	if !ok {
+		return nil
+	}
+	j := 0
+	for j < len(body) && (body[j] == '-' || 'a' <= body[j] && body[j] <= 'z' || 'A' <= body[j] && body[j] <= 'Z') {
+		j++
+	}
+	if j > 0 && j < len(body) && body[j] == ')' {
+		return fmt.Errorf("global flags %s not at the start of the expression", rest[:j+3])
+	}
+	return nil
 }
 
 // scopedFlags returns the scope inside a group whose text after "(" is
 // rest: cur changed by the flags of a (?flags-flags:...) group, or cur
-// itself for any other group. It rejects the a, u and L flags Python
-// rejects; str says whether the pattern is a str pattern.
+// itself for any other group. It rejects the flags Python rejects; str
+// says whether the pattern is a str pattern.
 func scopedFlags(rest string, cur scope, str bool) (scope, error) {
-	on, off, _, ok := flagGroup(rest)
+	on, off, n, ok := flagGroup(rest)
 	if !ok {
 		return cur, nil
+	}
+	_, after, dash := strings.Cut(rest[1:n-1], "-")
+	switch {
+	case dash && (after == "" || after[0] == '-'):
+		return cur, errors.New("missing flag")
+	case strings.Contains(after, "-"):
+		return cur, errors.New("missing : after the inline flags")
+	case off != "" && strings.ContainsAny(on, off):
+		return cur, errors.New("bad inline flags: flag turned on and off")
 	}
 	if err := checkCharsetFlags(on, off, str); err != nil {
 		return cur, err
@@ -566,7 +635,8 @@ func scopedFlags(rest string, cur scope, str bool) (scope, error) {
 
 // flagGroup reports whether rest, the text after a "(", opens a
 // (?flags-flags:...) group, and returns the letters before and after the
-// "-" and the length of the header up to and including the ":".
+// first "-" and the length of the header up to and including the ":".
+// The header may hold dashes Python rejects; scopedFlags checks them.
 func flagGroup(rest string) (on, off string, n int, ok bool) {
 	body, found := strings.CutPrefix(rest, "?")
 	if !found {
@@ -581,10 +651,10 @@ func flagGroup(rest string) (on, off string, n int, ok bool) {
 	if end == len(body) || body[end] != ':' {
 		return "", "", 0, false
 	}
-	on, off, _ = strings.Cut(body[:end], "-")
-	if strings.Trim(on, "aiLmsux") != "" || strings.Trim(off, "aiLmsux") != "" || on+off == "" {
+	if end == 0 {
 		return "", "", 0, false
 	}
+	on, off, _ = strings.Cut(body[:end], "-")
 	return on, off, end + 2, true
 }
 

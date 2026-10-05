@@ -161,7 +161,8 @@ func TestCompileClassEdges(t *testing.T) {
 		`success: scoped case-sensitive negation`:             {pattern: `(?-i:[^\dk])`, input: "K", str: true, bytes: true},
 		`success: scoped case-sensitive class`:                {pattern: `(?-i:[\dk])`, input: "K", str: false, bytes: false},
 		`success: verbose comment holding [`:                  {pattern: "(?x) a # [\n \\d", input: "a\u0663", str: true, bytes: false, strBT: true, bytesBT: true},
-		`success: comment group holding [`:                    {pattern: `(?#[)\d`, input: "\u0663", str: true, bytes: false, strBT: true, bytesBT: true},
+		`success: comment group holding [`:                    {pattern: `(?#[)\d`, input: "\u0663", str: true, bytes: false},
+		`success: comment group holding [ after a literal`:    {pattern: `x(?#[)\d`, input: "x\u0663", str: true, bytes: false},
 		`success: scoped verbose comment`:                     {pattern: "(?x:a # [\n\\d)", input: "a\u0663", str: true, bytes: false, strBT: true, bytesBT: true},
 		`success: \w under ignore case on Kelvin`:             {pattern: `(?i)\w`, input: "\u212a", str: true, bytes: false},
 		`success: [^\W] under ignore case`:                    {pattern: `(?i)[^\W]`, input: "\u212a", str: true, bytes: false},
@@ -366,6 +367,7 @@ func TestTranslateClassesLinear(t *testing.T) {
 		"success: lookaheads":            {unit: "(?=a)"},
 		"success: unclosed flag letters": {unit: "(?i"},
 		"success: named groups":          {unit: "(?P<n>a)"},
+		"success: comments":              {unit: "a(?#)"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

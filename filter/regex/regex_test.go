@@ -4,6 +4,7 @@
 package regex
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -209,6 +210,69 @@ func TestCompile(t *testing.T) {
 			pattern: "",
 			probes:  []probe{{"", true}, {"anything", true}},
 		},
+		// Python ends a comment at the first ) that no backslash escapes,
+		// and a comment binds to nothing: a(?#c)*b is a*b.
+		"success: comment with an escaped paren": {
+			pattern: `(?#a\)b)c`,
+			probes:  []probe{{"c", true}, {"b)", false}},
+		},
+		"success: comment before a quantifier": {
+			pattern: `a(?#c)*b`,
+			probes:  []probe{{"b", true}, {"aaab", true}, {"a", false}},
+		},
+		"success: comment between a back-reference and a digit": {
+			pattern:      `(a)\1(?#c)0`,
+			backtracking: true,
+			probes:       []probe{{"aa0", true}, {"a\b", false}},
+		},
+		"success: comment inside what looks like a repeat": {
+			pattern: `a{1(?#c),2}`,
+			probes:  []probe{{"a{1,2}", true}, {"aa", false}},
+		},
+		"success: comment holding a flag group": {
+			pattern: `(?#x(?i)a`,
+			probes:  []probe{{"a", true}, {"A", false}},
+		},
+		// Global flag groups may follow comments, and once one has turned
+		// on verbose, whitespace and # comments.
+		"success: comment before global flags": {
+			pattern:   `(?#c)(?i)a`,
+			wantFlags: IgnoreCase,
+			probes:    []probe{{"A", true}},
+		},
+		"success: comment between global flags": {
+			pattern:   `(?s)(?#c)(?i)a.`,
+			wantFlags: IgnoreCase | DotAll,
+			probes:    []probe{{"A\n", true}},
+		},
+		"success: whitespace after verbose before global flags": {
+			pattern:      `(?x) (?i)a`,
+			wantFlags:    IgnoreCase,
+			backtracking: true,
+			probes:       []probe{{"A", true}},
+		},
+		"success: verbose comment before global flags": {
+			pattern:      "(?x)# c\n(?i)a",
+			wantFlags:    IgnoreCase,
+			backtracking: true,
+			probes:       []probe{{"A", true}},
+		},
+		"success: whitespace between three global groups": {
+			pattern:      `(?x)(?i) (?s) a`,
+			wantFlags:    IgnoreCase | DotAll,
+			backtracking: true,
+			probes:       []probe{{"A", true}},
+		},
+		"success: verbose comment holding a flag group": {
+			pattern:      "(?x)a # (?i)\nb",
+			backtracking: true,
+			probes:       []probe{{"ab", true}, {"aB", false}},
+		},
+		"success: verbose comment before a quantifier": {
+			pattern:      "(?x)a #c\n*b",
+			backtracking: true,
+			probes:       []probe{{"b", true}, {"aaab", true}},
+		},
 		"success: non-ascii pattern": {
 			pattern:   "шгн",
 			flags:     IgnoreCase,
@@ -255,6 +319,8 @@ func TestCompileError(t *testing.T) {
 		"error: global flags mid-pattern": {pattern: "a(?i)"},
 		"error: negated global flags":     {pattern: "(?-i)a"},
 		"error: ungreedy flag":            {pattern: "(?U)a+"},
+		// Python accepts \N{...} in a str pattern; see docs/compat.md.
+		"error: named character": {pattern: `\N{DIGIT ZERO}`},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -266,6 +332,38 @@ func TestCompileError(t *testing.T) {
 				t.Errorf("error %q does not name the pattern %q", err, tt.pattern)
 			}
 		})
+	}
+}
+
+// TestCompileFlagGroupError checks inline flag groups and comments that
+// Python 3.13 rejects, with Python's message.
+func TestCompileFlagGroupError(t *testing.T) {
+	tests := map[string]struct {
+		pattern string
+		wantErr string
+	}{
+		"error: global flags after a space without verbose": {pattern: `(?i) (?x)a`, wantErr: "global flags (?x) not at the start"},
+		"error: global flags after an escaped space":        {pattern: `(?x)\ (?i)a`, wantErr: "global flags (?i) not at the start"},
+		"error: unterminated comment":                       {pattern: `(?#a`, wantErr: "missing ), unterminated comment"},
+		"error: flag turned on and off":                     {pattern: `(?i-i:a)`, wantErr: "bad inline flags: flag turned on and off"},
+		"error: dash without flags after a":                 {pattern: `(?a-:x)`, wantErr: "missing flag"},
+		"error: dash without any flags":                     {pattern: `(?-:x)`, wantErr: "missing flag"},
+		"error: dash without flags after i":                 {pattern: `(?i-:x)`, wantErr: "missing flag"},
+		"error: two dashes in a row":                        {pattern: `(?i--s:x)`, wantErr: "missing flag"},
+		"error: a second dash":                              {pattern: `(?i-s-m:x)`, wantErr: "missing :"},
+	}
+	for name, tt := range tests {
+		for _, mode := range []Flags{0, Unicode} {
+			t.Run(fmt.Sprintf("%s/unicode=%v", name, mode != 0), func(t *testing.T) {
+				m, err := Compile(tt.pattern, mode)
+				if err == nil {
+					t.Fatalf("Compile(%q) = %v, want error", tt.pattern, m)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("Compile(%q) error = %q, want it to contain %q", tt.pattern, err, tt.wantErr)
+				}
+			})
+		}
 	}
 }
 

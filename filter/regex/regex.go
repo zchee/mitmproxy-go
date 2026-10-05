@@ -161,9 +161,6 @@ func Compile(pattern string, flags Flags) (Matcher, error) {
 	if err != nil {
 		return nil, fmt.Errorf("regex: cannot compile %q: %w", pattern, err)
 	}
-	if err := checkFlagGroups(body); err != nil {
-		return nil, fmt.Errorf("regex: cannot compile %q: %w", pattern, err)
-	}
 	tr, err := translateClasses(translateEscapes(body), eff, str, verbose)
 	if err != nil {
 		return nil, fmt.Errorf("regex: cannot compile %q: %w", pattern, err)
@@ -301,14 +298,17 @@ func re2Prefix(f Flags) string {
 
 // leadingFlags strips the global inline flag groups, such as (?i) or (?sx),
 // from the start of pattern, where Python only accepts them, and returns
-// flags combined with them. (?a) turns Unicode off, as it makes a str
-// pattern's classes ASCII. The a, u and L letters are checked the way
-// Python checks them, also across groups.
+// flags combined with them. Like Python it skips comments before and
+// between them and, once a group has turned on verbose, whitespace. (?a)
+// turns Unicode off, as it makes a str pattern's classes ASCII. The a, u
+// and L letters are checked the way Python checks them, also across
+// groups.
 func leadingFlags(pattern string, flags Flags) (body string, eff Flags, verbose bool, err error) {
 	body, eff = pattern, flags
 	str := flags&Unicode != 0
 	var ascii, uni, locale bool
 	for {
+		body = skipIgnored(body, verbose)
 		rest, ok := strings.CutPrefix(body, "(?")
 		if !ok {
 			break
@@ -349,43 +349,6 @@ func leadingFlags(pattern string, flags Flags) (body string, eff Flags, verbose 
 		eff &^= Unicode
 	}
 	return body, eff, verbose, nil
-}
-
-// checkFlagGroups rejects a flag group without a colon, such as (?i) or
-// (?-i), anywhere but the start of the pattern. Python 3.11 and later reject
-// global flags that are not at the start and has no form that turns a flag
-// off globally, while RE2 and regexp2 accept both and apply them to the
-// rest of the pattern.
-func checkFlagGroups(body string) error {
-	inClass := false
-	for i := 0; i < len(body); i++ {
-		switch c := body[i]; {
-		case c == '\\':
-			i++
-		case inClass:
-			if c == ']' {
-				inClass = false
-			}
-		case c == '[':
-			inClass = true
-			// A ] right after [ or [^ is a literal member of the class.
-			if i+1 < len(body) && body[i+1] == '^' {
-				i++
-			}
-			if i+1 < len(body) && body[i+1] == ']' {
-				i++
-			}
-		case c == '(' && strings.HasPrefix(body[i:], "(?"):
-			j := i + 2
-			for j < len(body) && (body[j] == '-' || 'a' <= body[j] && body[j] <= 'z' || 'A' <= body[j] && body[j] <= 'Z') {
-				j++
-			}
-			if j > i+2 && j < len(body) && body[j] == ')' {
-				return fmt.Errorf("global flags %s not at the start of the expression", body[i:j+1])
-			}
-		}
-	}
-	return nil
 }
 
 // translateEscapes rewrites the escapes whose Python meaning differs from

@@ -1693,3 +1693,68 @@ func TestSecondManagerOnOneCommandRegistry(t *testing.T) {
 		t.Errorf("an option change took the refused manager's dispatch lock %d times; want 0 (no subscription left behind)", n)
 	}
 }
+
+// loaderUser adds an option in its load handler, which needs the Loader
+// that only registration provides.
+type loaderUser struct{ loads int }
+
+func (a *loaderUser) Load(ctx context.Context, l *Loader) error {
+	a.loads++
+	return l.AddOption(ctx, "loader_user", options.TypeBool, false, "An option.")
+}
+
+// TestLoadHookWithoutLoader fires a LoadHook built outside registration,
+// which has no Loader. Its handlers must not run with a nil Loader: the
+// dispatch refuses the hook with an error instead of panicking in the
+// first handler.
+func TestLoadHookWithoutLoader(t *testing.T) {
+	const refusal = "addon manager: the load hook has no Loader"
+	tests := map[string]struct {
+		fire      func(t *testing.T, e *testEnv, a *loaderUser) error
+		wantLoads int // load handler calls, registration included
+		wantLog   []string
+	}{
+		"error: InvokeSync returns the refusal": {
+			fire: func(t *testing.T, e *testEnv, a *loaderUser) error {
+				return e.m.InvokeSync(t.Context(), a, LoadHook{})
+			},
+		},
+		"error: Trigger logs the refusal instead of a panic": {
+			fire: func(t *testing.T, e *testEnv, a *loaderUser) error {
+				if err := e.m.Add(t.Context(), a); err != nil {
+					t.Fatalf("Add: %v", err)
+				}
+				if err := e.m.Trigger(t.Context(), LoadHook{}); err != nil {
+					t.Fatalf("Trigger: %v", err)
+				}
+				return nil
+			},
+			wantLoads: 1,
+			wantLog:   []string{"ERROR Addon error: " + refusal + "; only Register and Add fire it addon=loaderuser"},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t)
+			a := &loaderUser{}
+			var err error
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("firing a LoadHook without a Loader panicked: %v", r)
+					}
+				}()
+				err = tt.fire(t, e, a)
+			}()
+			if tt.wantLog == nil && (!errors.Is(err, ErrAddonManager) || !strings.Contains(err.Error(), refusal)) {
+				t.Errorf("error = %v, want an error wrapping %v containing %q", err, ErrAddonManager, refusal)
+			}
+			if a.loads != tt.wantLoads {
+				t.Errorf("load handler ran %d times, want %d", a.loads, tt.wantLoads)
+			}
+			if diff := cmp.Diff(tt.wantLog, e.log.got()); diff != "" {
+				t.Errorf("log records (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

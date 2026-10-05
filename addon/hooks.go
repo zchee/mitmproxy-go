@@ -5,6 +5,7 @@ package addon
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
@@ -32,6 +33,12 @@ type Hook interface {
 // LoadHook is mitmproxy's load hook: it runs once when an addon is
 // registered, before the addon receives any other hook. The addon adds its
 // options and commands through the [Loader].
+//
+// Only [Manager.Register] and [Manager.Add] fire it, each with a Loader of
+// the addon's own; a Loader cannot be built outside this package. A
+// LoadHook without a Loader is refused with an error wrapping
+// [ErrAddonManager] before any handler runs: [Manager.InvokeSync] returns
+// that error, and [Manager.Trigger] logs it as a handler error.
 type LoadHook struct{ Loader *Loader }
 
 // ConfigureHook is mitmproxy's configure hook: it runs after options
@@ -594,6 +601,9 @@ func (h LoadHook) invoke(ctx context.Context, a any) (bool, error) {
 	x, ok := a.(LoadHandler)
 	if !ok {
 		return false, nil
+	}
+	if h.Loader == nil {
+		return true, fmt.Errorf("%w: the load hook has no Loader; only Register and Add fire it", ErrAddonManager)
 	}
 	return true, x.Load(ctx, h.Loader)
 }

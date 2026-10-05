@@ -59,36 +59,13 @@ func TestColumnsTerminal(t *testing.T) {
 	}
 }
 
-func TestWidthFromZeroWidthTerminal(t *testing.T) {
+func TestColumnsZeroWidthTerminal(t *testing.T) {
 	t.Parallel()
 	_, slave := openPTYPair(t)
-	// A fresh pseudo-terminal reports a 0x0 window; Python's
-	// shutil.get_terminal_size falls back to 80 for a zero width.
-	if got := widthFrom("", slave); got != 80 {
-		t.Fatalf("widthFrom(%q, zero-width pty) = %d, want 80", "", got)
-	}
-}
-
-func TestWidthFromTerminal(t *testing.T) {
-	t.Parallel()
-	master, slave := openPTYPair(t)
-	ws := unix.Winsize{Row: 24, Col: 101}
-	if err := unix.IoctlSetWinsize(int(master.Fd()), unix.TIOCSWINSZ, &ws); err != nil {
-		t.Fatalf("set pty window size: %v", err)
-	}
-	tests := map[string]struct {
-		env  string
-		want int
-	}{
-		"success: terminal width used without COLUMNS": {env: "", want: 101},
-		"success: COLUMNS overrides the terminal":      {env: "66", want: 66},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			if got := widthFrom(tt.env, slave); got != tt.want {
-				t.Fatalf("widthFrom(%q, pty slave) = %d, want %d", tt.env, got, tt.want)
-			}
-		})
+	// A fresh pseudo-terminal reports a 0x0 window. Columns reports the
+	// zero truthfully; callers that need a usable width fall back on it.
+	n, ok := Columns(slave)
+	if !ok || n != 0 {
+		t.Fatalf("Columns(zero-width pty) = %d, %v, want 0, true", n, ok)
 	}
 }

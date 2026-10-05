@@ -80,38 +80,6 @@ func TestColumns(t *testing.T) {
 	})
 }
 
-func TestWidthFrom(t *testing.T) {
-	t.Parallel()
-
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
-	}
-	defer func() { _ = r.Close() }()
-	defer func() { _ = w.Close() }()
-
-	tests := map[string]struct {
-		env    string
-		stdout *os.File
-		want   int
-	}{
-		"success: positive COLUMNS wins":           {env: "120", stdout: w, want: 120},
-		"success: no COLUMNS, no terminal is 80":   {env: "", stdout: w, want: 80},
-		"error: zero COLUMNS falls through":        {env: "0", stdout: w, want: 80},
-		"error: negative COLUMNS falls through":    {env: "-3", stdout: w, want: 80},
-		"error: non-numeric COLUMNS falls through": {env: "wide", stdout: w, want: 80},
-		"error: nil stdout is 80":                  {env: "", stdout: nil, want: 80},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			if got := widthFrom(tt.env, tt.stdout); got != tt.want {
-				t.Fatalf("widthFrom(%q) = %d, want %d", tt.env, got, tt.want)
-			}
-		})
-	}
-}
-
 // TestStyleRender checks Render against the strings the vendored
 // click.style (mitmproxy/contrib/click) produces for the attribute
 // combinations the dumper uses.

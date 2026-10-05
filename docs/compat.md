@@ -57,6 +57,13 @@ Anything not listed here is meant to behave as upstream does; a difference that 
 | Flatpak discovery runs `flatpak info` synchronously before the command returns (`mitmproxy/addons/browser.py:19-32`). | Probes run outside dispatch; a launch or unsupported-platform alert can arrive after the command returns. Launch uses the current listen options when discovery completes. `Done` cancels pending probes and prevents their deferred launches. | Waiting for a child process cannot hold the shared addon dispatch lock. Direct filesystem lookup and process start remain synchronous. |
 | `done` kills browsers and removes temporary profiles immediately (`mitmproxy/addons/browser.py:227-233`). | `Done` kills without waiting; background reapers wait for each child and then remove its profile. Failed starts remove their unused profiles immediately. Cleanup errors are logged. | Reap children and avoid removing profiles while a terminating browser still uses them, without waiting under dispatch. |
 
+## addons/dumper
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| DNS answers render through `ResourceRecord.__str__`: A/AAAA addresses, NS/CNAME/PTR domain names, TXT text, HTTPS record JSON, hexadecimal for other types (`mitmproxy/dns.py:74,153-169`). | A, AAAA and TXT render as upstream's do, and unknown types render as hexadecimal; NS, CNAME, PTR and HTTPS records render as their type name instead of their data. | Their data needs the DNS wire codec (compressed domain names, HTTPS record fields), which is ported with the DNS protocol work; the type-name placeholder stands in until that codec lands. |
+| Message content chunks are coloured by syntax-highlight tag through `CONTENTVIEW_STYLES` (`mitmproxy/addons/dumper.py:38-45,130-140`). | Message content is printed uncoloured; request, status, header and trailer styles are emitted as upstream's are. | The syntax highlighter behind the tags is ported with the content-view highlighting work; on a pipe, where the differential runs, upstream emits no colour either, so the compared output is identical. |
+
 ## connection
 
 No behavioural differences.

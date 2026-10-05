@@ -4,8 +4,7 @@
 // Package vtcodes detects whether an output supports virtual terminal escape
 // codes and renders the ANSI styles mitmproxy prints with. It ports
 // mitmproxy's mitmproxy/utils/vt_codes.py and the attributes of its vendored
-// click.style (mitmproxy/contrib/click), together with the terminal-width
-// lookup behind Python's shutil.get_terminal_size that the dumper uses.
+// click.style (mitmproxy/contrib/click).
 package vtcodes
 
 import (
@@ -34,25 +33,6 @@ func Columns(f *os.File) (int, bool) {
 		return 0, false
 	}
 	return columns(f)
-}
-
-// Width returns the terminal width used for wrapping output, as Python's
-// shutil.get_terminal_size reports it: a positive integer in the COLUMNS
-// environment variable wins, then the width of the terminal attached to
-// standard output, then 80.
-func Width() int {
-	return widthFrom(os.Getenv("COLUMNS"), os.Stdout)
-}
-
-// widthFrom resolves the width from a COLUMNS value and a stdout file.
-func widthFrom(env string, stdout *os.File) int {
-	if n, err := strconv.Atoi(env); err == nil && n > 0 {
-		return n
-	}
-	if n, ok := Columns(stdout); ok && n > 0 {
-		return n
-	}
-	return 80
 }
 
 // colors are the ANSI foreground codes of click's color names.

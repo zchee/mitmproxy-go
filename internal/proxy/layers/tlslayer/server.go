@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"encoding/pem"
 	"errors"
+	"io"
 	"strings"
 	"sync/atomic"
 
@@ -71,12 +72,11 @@ func (l *serverTLS) Run(ctx context.Context, c *layer.Context) error {
 			pool.deferred, pool.deferredSrv = derived.Server, metadata
 			derived.Server = nil
 		} else {
-			// The handshake reads through the recorder, not the pool's raw
-			// transport, so bytes consumed before the upgrade replay into it.
+			// Replay the recorded bytes on the callback transport, which may
+			// be the inner tunnel of a wrapper the pool is about to replace.
 			raw := derived.Server
-			raw.StopRecording()
-			upgraded, _, err := c.Pool.Upgrade(ctx, metadata, func(ctx context.Context, _ layer.Conn, actual *connection.Server) (layer.Conn, error) {
-				return pool.setup(ctx, raw, actual)
+			upgraded, _, err := c.Pool.Upgrade(ctx, metadata, func(ctx context.Context, conn layer.Conn, actual *connection.Server) (layer.Conn, error) {
+				return pool.setup(ctx, replayServer(raw, conn), actual)
 			})
 			if err != nil {
 				return err
@@ -119,12 +119,11 @@ func (p *serverTLSPool) Open(ctx context.Context, srv *connection.Server, opts l
 	}
 	child := opts.Setup
 	if p.deferred != nil && srv == p.deferredSrv && !p.deferredDone.Load() {
-		return p.inner.Upgrade(ctx, srv, func(ctx context.Context, _ layer.Conn, actual *connection.Server) (layer.Conn, error) {
+		return p.inner.Upgrade(ctx, srv, func(ctx context.Context, conn layer.Conn, actual *connection.Server) (layer.Conn, error) {
 			defer p.deferredDone.Store(true)
 			// Rewind only inside the pool's single flight: a cancelled
 			// waiter must neither consume nor lose the pending recorder.
-			p.deferred.StopRecording()
-			wrapped, err := p.setup(ctx, p.deferred, actual)
+			wrapped, err := p.setup(ctx, replayServer(p.deferred, conn), actual)
 			if err != nil || child == nil {
 				return wrapped, err
 			}
@@ -140,6 +139,26 @@ func (p *serverTLSPool) Open(ctx context.Context, srv *connection.Server, opts l
 	}
 	return p.inner.Open(ctx, srv, opts)
 }
+
+// replayServer moves buffered reads onto the pool's supplied transport. The
+// limit prevents any read from reaching the recorder's previous transport,
+// which may become an outer wrapper around the newly negotiated TLS stream.
+// It is called only within the pool's single-flight upgrade callback.
+func replayServer(recorded layer.Recorder, conn layer.Conn) layer.Conn {
+	recorded.StopRecording()
+	buffered := recorded.Buffered()
+	if buffered == 0 {
+		return conn
+	}
+	return &serverReplayConn{Conn: conn, reader: io.MultiReader(io.LimitReader(recorded, int64(buffered)), conn)}
+}
+
+type serverReplayConn struct {
+	layer.Conn
+	reader io.Reader
+}
+
+func (c *serverReplayConn) Read(b []byte) (int, error) { return c.reader.Read(b) }
 
 // Upgrade implements [layer.ServerPool].
 func (p *serverTLSPool) Upgrade(ctx context.Context, srv *connection.Server, setup func(context.Context, layer.Conn, *connection.Server) (layer.Conn, error)) (layer.Conn, *connection.Server, error) {

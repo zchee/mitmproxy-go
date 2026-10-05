@@ -8,8 +8,11 @@ import (
 
 	gocmp "github.com/google/go-cmp/cmp"
 
+	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/httpmsg"
+	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
+	"github.com/zchee/mitmproxy-go/options"
 )
 
 func routeRequest(t *testing.T, method, target, version string, headers httpmsg.Headers) *httpmsg.Request {
@@ -88,6 +91,51 @@ func TestValidateRequest(t *testing.T) {
 			t.Parallel()
 			got := validateRequest(tt.mode, tt.request, tt.validate)
 			if got != tt.want {
+				t.Fatalf("validateRequest() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestInboundValidationDefault builds the layer as an assembly without the
+// proxyserver addon would: when nothing registers validate_inbound_headers,
+// ambiguous framing is still refused, as with upstream's default; only an
+// explicit false turns the check off.
+func TestInboundValidationDefault(t *testing.T) {
+	const refused = "Received message with both transfer-encoding and content-length headers from client, " +
+		"refusing to prevent request smuggling attacks. " +
+		"Disable the validate_inbound_headers option to skip this security check."
+	tests := map[string]struct {
+		register, value bool
+		want            string
+	}{
+		"error: unregistered option validates":      {want: refused},
+		"error: registered true validates":          {register: true, value: true, want: refused},
+		"success: registered false skips the check": {register: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			opts := options.New()
+			if tt.register {
+				if err := opts.Add(t.Context(), "validate_inbound_headers", options.TypeBool, tt.value, "Validate inbound headers."); err != nil {
+					t.Fatal(err)
+				}
+			}
+			c := &layer.Context{Data: &hookdata.Context{
+				Client:  connection.NewClient(connection.Address{}, connection.Address{}, 1),
+				Server:  connection.NewServer(nil),
+				Options: opts,
+			}}
+			l, err := newHTTPLayer(c, hookdata.LayerSpec{HTTPMode: hookdata.HTTPModeRegular}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			route := l.(*httpLayer).exchangeRoute(c)
+			request := routeRequest(t, "POST", "http://example.com/", "HTTP/1.1", httpmsg.Headers{
+				{Name: []byte("Transfer-Encoding"), Value: []byte("chunked")},
+				{Name: []byte("Content-Length"), Value: []byte("3")},
+			})
+			if got := validateRequest(route.mode, request, route.validateInboundHeaders); got != tt.want {
 				t.Fatalf("validateRequest() = %q, want %q", got, tt.want)
 			}
 		})

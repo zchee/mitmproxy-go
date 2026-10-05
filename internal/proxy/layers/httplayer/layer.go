@@ -37,7 +37,10 @@ type httpLayer struct {
 }
 
 func newHTTPLayer(c *layer.Context, spec hookdata.LayerSpec, child layer.Layer) (layer.Layer, error) {
-	route := routeConfig{}
+	// Without a registered validate_inbound_headers option, as in an assembly
+	// without the proxyserver addon, the smuggling check stays on: upstream's
+	// default, and the safe side of a missing option.
+	route := routeConfig{validateInboundHeaders: true}
 	switch spec.HTTPMode {
 	case hookdata.HTTPModeRegular:
 		route.mode = modeRegular

@@ -203,11 +203,13 @@ func (d *streamDriver) run(ctx context.Context) error {
 		if source < 0 || d.stream.failed {
 			continue
 		}
+		if d.stream.done() && !result.write {
+			// Endpoint retirement can report EOF as either an error or a
+			// protocol event, possibly under the next HTTP/1 stream ID.
+			continue
+		}
 		if result.err != nil {
 			reads[source] = nil
-			if d.stream.done() && !result.write {
-				continue
-			}
 			message := result.err.Error()
 			if source == 0 {
 				if errors.Is(result.err, io.EOF) {
@@ -242,6 +244,11 @@ func (d *streamDriver) acknowledge(direction int, ack driverWritten) (int, drive
 	ack.turn.output.events = ack.turn.output.events[1:]
 	if ack.err == nil || d.stream.failed {
 		return -1, driverRead{}
+	}
+	if direction == 0 {
+		if failure, ok := errors.AsType[*acquisitionError](ack.err); ok {
+			return 1, driverRead{event: ResponseProtocolError{ID: d.stream.id, Code: ConnectFailed, Message: failure.Error()}, write: true}
+		}
 	}
 	// A failed upload is a server error; a failed download is a client error.
 	return 1 - direction, driverRead{err: ack.err, write: true}

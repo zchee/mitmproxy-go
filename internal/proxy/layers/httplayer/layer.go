@@ -311,6 +311,12 @@ type lazyServer struct {
 
 var _ ServerEndpoint = (*lazyServer)(nil)
 
+// acquisitionError makes a failed connection attempt part of the send
+// acknowledgement, before the driver accepts further request events.
+type acquisitionError struct{ message string }
+
+func (e *acquisitionError) Error() string { return e.message }
+
 // Send implements [ServerEndpoint]. The first RequestHeaders acquires the
 // connection; events after a failed acquisition are consumed silently, as
 // upstream's errored stream consumes its remaining events.
@@ -336,6 +342,10 @@ func (s *lazyServer) Send(ctx context.Context, event RequestEvent) error {
 		}
 		endpoint = acquired
 		close(s.ready)
+		if err != nil {
+			s.mu.Unlock()
+			return &acquisitionError{message: err.Error()}
+		}
 	}
 	failed := s.done && s.endpoint == nil
 	s.mu.Unlock()

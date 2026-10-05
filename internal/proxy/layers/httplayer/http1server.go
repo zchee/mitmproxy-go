@@ -189,6 +189,9 @@ func (s *http1Server) readBody(ctx context.Context) error {
 		return err
 	default:
 		s.finish()
+		// Retire the client before publishing a body failure, as upstream
+		// closes the transport before the error hook can produce a response.
+		s.closeWrite()
 		s.queue = append(s.queue, RequestProtocolError{
 			ID: id, Code: GenericClientError,
 			Message: "HTTP/1 protocol error: " + errorMessage(err),
@@ -437,6 +440,9 @@ func (s *http1Server) sendError(ctx context.Context, event ResponseProtocolError
 // parser input; only that side may drain it at a pipe switch. The caller
 // holds mu.
 func (s *http1Server) markDoneLocked(request, response, onReceive bool) {
+	if s.state == http1Done {
+		return
+	}
 	if request {
 		s.requestDone = true
 	}

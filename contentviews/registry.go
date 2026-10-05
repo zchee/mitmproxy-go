@@ -42,6 +42,7 @@ func NewRegistry() *Registry {
 	r.Register(Query{})
 	r.Register(Multipart{})
 	r.Register(Image{})
+	r.Register(CSS{})
 	return r
 }
 

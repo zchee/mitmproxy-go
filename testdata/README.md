@@ -10,6 +10,7 @@ path here by prefix:
 | Here | Upstream path |
 | --- | --- |
 | `mitmproxy/` | `test/mitmproxy/data/` in mitmproxy, except the contentview fixtures below |
+| `mitmproxy/contentviews/css/` | `test/mitmproxy/contentviews/test_css_data/` in mitmproxy; the ten original/formatted CSS fixture pairs |
 | `mitmproxy/contentviews/xml_html/` | `test/mitmproxy/contentviews/test_xml_html_data/` in mitmproxy; the five original/formatted XML and HTML fixture pairs |
 | `mitmproxy-net/` | `test/mitmproxy/net/data/` in mitmproxy |
 | `wg-test-client/` | `test/wg-test-client/` in mitmproxy |

@@ -80,9 +80,9 @@ func TestRoutes(t *testing.T) {
 	}
 }
 
-func TestStaticChecksums(t *testing.T) {
+func TestAssetChecksums(t *testing.T) {
 	t.Parallel()
-	manifest, err := os.ReadFile("static.sha256")
+	manifest, err := os.ReadFile("assets.sha256")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,24 +99,28 @@ func TestStaticChecksums(t *testing.T) {
 		if diff := gocmp.Diff(digest, fmt.Sprintf("%x", sha256.Sum256(data))); diff != "" {
 			t.Errorf("%s: %s", name, diff)
 		}
-		w := httptest.NewRecorder()
-		New(options.New()).ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), "GET", "/"+name, nil))
-		if w.Code != 200 || !bytes.Equal(w.Body.Bytes(), data) {
-			t.Errorf("%s was not served byte-exact", name)
+		if strings.HasPrefix(name, "static/") {
+			w := httptest.NewRecorder()
+			New(options.New()).ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), "GET", "/"+name, nil))
+			if w.Code != 200 || !bytes.Equal(w.Body.Bytes(), data) {
+				t.Errorf("%s was not served byte-exact", name)
+			}
 		}
 		count++
 	}
 	files := 0
-	if err := fs.WalkDir(assets, "static", func(_ string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	for _, tree := range []string{"static", "templates/icons"} {
+		if err := fs.WalkDir(assets, tree, func(_ string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !entry.IsDir() {
+				files++
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
 		}
-		if !entry.IsDir() {
-			files++
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
 	}
 	if count != files {
 		t.Fatalf("manifest has %d entries for %d assets", count, files)

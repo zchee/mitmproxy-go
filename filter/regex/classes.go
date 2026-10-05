@@ -475,9 +475,14 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			}
 			stack = append(stack, next)
 			// Neither engine knows the a, u and L flags; drop them from
-			// the group's header.
+			// the group's header, wherever they stand in it.
 			if on, off, n, ok := flagGroup(src[i+1:]); ok && strings.ContainsAny(on, "auL") {
-				header := "(?" + strings.Trim(on, "auL")
+				header := "(?" + strings.Map(func(r rune) rune {
+					if strings.ContainsRune("auL", r) {
+						return -1
+					}
+					return r
+				}, on)
 				if off != "" {
 					header += "-" + off
 				}

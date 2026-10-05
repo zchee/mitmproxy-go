@@ -499,6 +499,11 @@ func TestCompileCharsetFlags(t *testing.T) {
 		"success: global a after another group": {pattern: `(?i)(?a)\d`, flags: Unicode, input: "\u0663", want: false, wantFlags: IgnoreCase},
 		"success: scoped u inside scoped a":     {pattern: `(?a:(?u:\w))`, flags: Unicode, input: "\u00e9", want: true, wantFlags: IgnoreCase | Unicode},
 		"success: scoped a with other flags":    {pattern: `(?ai-s:\w)`, flags: Unicode, input: "\u00e9", want: false, wantFlags: IgnoreCase | Unicode},
+		"success: scoped a between other flags": {pattern: `(?ias:\w)`, flags: Unicode, input: "\u00e9", want: false, wantFlags: IgnoreCase | Unicode},
+		"success: scoped a after other flags":   {pattern: `(?sia:\w)`, flags: Unicode, input: "a", want: true, wantFlags: IgnoreCase | Unicode},
+		"success: scoped u between other flags": {pattern: `(?ius-m:\w)`, flags: Unicode, input: "\u00e9", want: true, wantFlags: IgnoreCase | Unicode},
+		"success: scoped a between, bytes":      {pattern: `(?sai:x)`, input: "X", want: true, wantFlags: IgnoreCase},
+		"success: scoped L between, bytes":      {pattern: `(?iLs:x)`, input: "X", want: true, wantFlags: IgnoreCase},
 		// CPython's re.search misses this match, because it computes where
 		// a match can start with the global flags; re.match finds it, and
 		// the scoped flag is what the pattern says.

@@ -21,6 +21,7 @@ No behavioural differences.
 |---|---|---|
 | `Flow.kill()` clears `intercepted` but does not set the resume event, so a task in `wait_for_resume()` on a killed intercepted flow stays blocked until its connection is torn down (`mitmproxy/flow.py`). | `Kill` also releases every `WaitForResume` caller. | A blocked goroutine would leak; there is no event loop that tears it down with the connection. |
 | `Flow.set_state` stores `backup` as given, whatever its type (`mitmproxy/flow.py`). | `backup` must be a dictionary or null; anything else fails the load. | Flow state is decoded into typed Go fields, and a backup is used as a flow state later. |
+| Python's `==` on decoded state treats a bool as an integer: `True == 1` and `False == 0.0` are True. | `state.Equal` compares state values as Python's `==` does, except that a bool equals only a bool: `Equal(true, int64(1))` is false. | A flow file writes a bool (`!`) and an integer (`#`) as different tnetstring types, so two states that differ only there do not write the same file. |
 | Message content of TCP, UDP and WebSocket messages is stored as given by `from_state` (`mitmproxy/tcp.py`, `mitmproxy/udp.py`, `mitmproxy/websocket.py`). A WebSocket flow that mitmproxy migrated from a format older than 18 can hold text instead of bytes there, and keeps it when saved again; `~b` then raises `TypeError`. | Content must be bytes; a flow with text content fails to load. | Content is a `[]byte`. Rejecting the flow on load is clearer than failing later inside a filter. |
 
 ## httpmsg

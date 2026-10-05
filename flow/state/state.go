@@ -420,7 +420,9 @@ func CopyMap(m *Map) *Map {
 // compare by value whether held as int, int64 or *big.Int, and equal a
 // float only when the float has exactly their value, as in Python, where
 // 2**53+1 == 2.0**53 is False. Bytes never equal strings, as in Python 3.
-// Values of any other type are never equal.
+// A bool equals only a bool: Equal(true, int64(1)) is false, unlike
+// Python's True == 1, because a flow file writes a bool and an integer as
+// different tnetstring types. Values of any other type are never equal.
 func Equal(a, b any) bool {
 	if n, ok := a.(int); ok {
 		a = int64(n)

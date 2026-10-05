@@ -175,8 +175,24 @@ func TestEqual(t *testing.T) {
 		"success: int64 differs from nil big int":       {a: int64(0), b: (*big.Int)(nil), want: false},
 		"success: float differs from nil big int":       {a: 0.0, b: (*big.Int)(nil), want: false},
 		"success: big int differs from nil big int":     {a: two64(), b: (*big.Int)(nil), want: false},
-		"success: bytes key differs from text key":      {a: keyed(false), b: keyed(true), want: false},
-		"success: bytes keys equal":                     {a: keyed(true), b: keyed(true), want: true},
+		// Integers and floats compare exactly, as in Python, not after
+		// rounding the integer to a float; the expected values were
+		// recorded with Python 3.14.
+		"success: 2**53+1 differs from 2.0**53":        {a: int64(1<<53 + 1), b: float64(1 << 53), want: false},
+		"success: 2.0**53 differs from 2**53+1":        {a: float64(1 << 53), b: int64(1<<53 + 1), want: false},
+		"success: go int 2**53+1 differs from 2.0**53": {a: 1<<53 + 1, b: float64(1 << 53), want: false},
+		"success: 2**53 equals 2.0**53":                {a: int64(1 << 53), b: float64(1 << 53), want: true},
+		"success: -(2**53+1) differs from -(2.0**53)":  {a: -int64(1<<53 + 1), b: -float64(1 << 53), want: false},
+		"success: 2**63-1 differs from 2.0**63":        {a: int64(math.MaxInt64), b: 0x1p63, want: false},
+		"success: 2.0**63 differs from 2**63-1":        {a: 0x1p63, b: int64(math.MaxInt64), want: false},
+		"success: -2**63 equals -(2.0**63)":            {a: int64(math.MinInt64), b: -0x1p63, want: true},
+		"success: 2**62 equals 2.0**62":                {a: 0x1p62, b: int64(1 << 62), want: true},
+		"success: 1 differs from 1.5":                  {a: int64(1), b: 1.5, want: false},
+		"success: 0 differs from nan":                  {a: int64(0), b: math.NaN(), want: false},
+		"success: nan differs from 0":                  {a: math.NaN(), b: int64(0), want: false},
+		"success: 1 differs from infinity":             {a: int64(1), b: math.Inf(1), want: false},
+		"success: bytes key differs from text key":     {a: keyed(false), b: keyed(true), want: false},
+		"success: bytes keys equal":                    {a: keyed(true), b: keyed(true), want: true},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

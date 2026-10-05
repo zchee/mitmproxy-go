@@ -416,9 +416,11 @@ func CopyMap(m *Map) *Map {
 // Equal reports whether two state values are equal under Python's ==.
 //
 // Dictionaries compare without regard to key order, and a byte-string key
-// never equals a text key; lists compare element by element. Integers compare by value whether held as int, int64 or
-// *big.Int, and equal floats of the same value. Bytes never equal strings,
-// as in Python 3. Values of any other type are never equal.
+// never equals a text key; lists compare element by element. Integers
+// compare by value whether held as int, int64 or *big.Int, and equal a
+// float only when the float has exactly their value, as in Python, where
+// 2**53+1 == 2.0**53 is False. Bytes never equal strings, as in Python 3.
+// Values of any other type are never equal.
 func Equal(a, b any) bool {
 	if n, ok := a.(int); ok {
 		a = int64(n)
@@ -444,7 +446,7 @@ func Equal(a, b any) bool {
 		case int64:
 			return x == y
 		case float64:
-			return float64(x) == y
+			return intEqualFloat(x, y)
 		case *big.Int:
 			return y.IsInt64() && y.Int64() == x
 		}
@@ -454,7 +456,7 @@ func Equal(a, b any) bool {
 		case float64:
 			return x == y
 		case int64:
-			return x == float64(y)
+			return intEqualFloat(y, x)
 		case *big.Int:
 			return bigEqualFloat(y, x)
 		}
@@ -500,6 +502,14 @@ func Equal(a, b any) bool {
 		return true
 	}
 	return false
+}
+
+// intEqualFloat compares an integer with a float exactly, as Python does.
+// Converting i to a float instead would round it once it exceeds 2**53.
+// The bounds are exact powers of two, so the conversion of f is exact
+// whenever f is a whole number inside them; NaN fails every comparison.
+func intEqualFloat(i int64, f float64) bool {
+	return f >= -(1<<63) && f < 1<<63 && f == math.Trunc(f) && int64(f) == i
 }
 
 // bigEqualFloat compares an integer with a float exactly, as Python does.

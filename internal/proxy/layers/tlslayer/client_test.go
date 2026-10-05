@@ -26,6 +26,7 @@ type clientObserver struct {
 	config *tls.Config
 	hello  func(*hookdata.ClientHello)
 	check  func(string, *hookdata.TLS)
+	tcpEnd func()
 	events []string
 }
 
@@ -75,6 +76,9 @@ func (o *clientObserver) TCPError(context.Context, *flow.TCPFlow) error {
 
 func (o *clientObserver) TCPEnd(context.Context, *flow.TCPFlow) error {
 	o.events = append(o.events, "tcp_end")
+	if o.tcpEnd != nil {
+		o.tcpEnd()
+	}
 	return nil
 }
 

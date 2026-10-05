@@ -67,11 +67,16 @@ type pipePool struct {
 	setups      int
 	beforeOpen  func(*connection.Server)
 	beforeSetup func(context.Context, layer.Conn) error
+	reusable    layer.Conn
+	actual      *connection.Server
 }
 
 func (p *pipePool) Open(ctx context.Context, srv *connection.Server, opts layer.OpenOptions) (layer.Conn, *connection.Server, error) {
 	if p.beforeOpen != nil {
 		p.beforeOpen(srv)
+	}
+	if opts.Reuse && srv == p.actual && p.reusable != nil {
+		return p.reusable, p.actual, nil
 	}
 	conn := p.conn
 	if p.beforeSetup != nil {
@@ -88,6 +93,7 @@ func (p *pipePool) Open(ctx context.Context, srv *connection.Server, opts layer.
 		}
 		conn = wrapped
 	}
+	p.reusable, p.actual = conn, srv
 	return conn, srv, nil
 }
 
@@ -98,6 +104,7 @@ func (p *pipePool) Upgrade(ctx context.Context, srv *connection.Server, setup fu
 		_ = p.conn.Close()
 		return nil, nil, err
 	}
+	p.reusable, p.actual = wrapped, srv
 	return wrapped, srv, nil
 }
 

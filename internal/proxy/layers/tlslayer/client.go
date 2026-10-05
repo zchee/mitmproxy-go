@@ -13,7 +13,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"os"
 	"strings"
 	"time"
 
@@ -142,6 +141,11 @@ func (l *clientTLS) Run(ctx context.Context, c *layer.Context) error {
 	raw := c.Client
 	tc := tls.Server(raw, tlsData.Config)
 	if err := tc.HandshakeContext(ctx); err != nil {
+		if ctx.Err() != nil {
+			// The connection's handler is shutting down; nobody observes
+			// hooks or diagnostics for this handshake any more.
+			return ctx.Err()
+		}
 		explanation, level := clientHandshakeError(err, clientDest(ctx, c))
 		return l.handshakeFailed(ctx, c, tlsData, explanation, level)
 	}
@@ -158,7 +162,7 @@ func (l *clientTLS) Run(ctx context.Context, c *layer.Context) error {
 	}, addon.TLSEstablishedClientHook{Data: tlsData}); err != nil {
 		return err
 	}
-	c.Client = c.Record(&tlsConn{Conn: tc, raw: raw})
+	c.Client = c.Record(&tlsConn{Conn: tc, raw: raw, logger: c.Logger})
 	child := l.child
 	if child == nil {
 		var err error
@@ -173,10 +177,21 @@ func (l *clientTLS) Run(ctx context.Context, c *layer.Context) error {
 // returning early with the context's error when the connection's handler
 // shuts down while the client is still sending.
 func (l *clientTLS) collectClientHello(ctx context.Context, c *layer.Context) (*tlsparse.ClientHello, error) {
-	stop := context.AfterFunc(ctx, func() { _ = c.Client.SetReadDeadline(time.Now()) })
-	defer stop()
-	hello, err := readClientHello(c.Client)
-	if err != nil && ctx.Err() != nil && errors.Is(err, os.ErrDeadlineExceeded) {
+	conn := c.Client
+	interrupted := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = conn.SetReadDeadline(time.Now())
+		close(interrupted)
+	})
+	defer func() {
+		if !stop() {
+			// AfterFunc's stop does not wait for an executing callback.
+			// Join it before this recorder is handed to the TLS session.
+			<-interrupted
+		}
+	}()
+	hello, err := readClientHello(conn)
+	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 	return hello, err
@@ -208,6 +223,10 @@ func relayRaw(ctx context.Context, c *layer.Context) error {
 	relay := *c
 	if decorated, ok := relay.Pool.(*serverTLSPool); ok {
 		relay.Pool = decorated.inner
+		if decorated.deferred != nil && !decorated.deferredDone.Load() {
+			// Ignore is decided before any server handshake starts.
+			relay.Server = decorated.deferred
+		}
 	}
 	child, err := layer.Build(ctx, &relay, hookdata.LayerStack{{Kind: hookdata.LayerTCP, Ignore: true}})
 	if err != nil {
@@ -219,28 +238,15 @@ func relayRaw(ctx context.Context, c *layer.Context) error {
 // startServerTLS establishes TLS with the server before the client
 // handshake, so its certificate and ALPN can shape the client's: upstream's
 // ClientTLSLayer.start_server_tls. The caller has checked that the pool is
-// this package's decorator; an already open raw transport is upgraded in
-// place through the recorder that holds its consumed bytes.
+// this package's decorator, which also upgrades in place a raw transport
+// whose upgrade the parent server TLS layer deferred.
 func startServerTLS(ctx context.Context, c *layer.Context) error {
-	decorated := c.Pool.(*serverTLSPool)
 	var metadata *connection.Server
 	if err := c.Do(ctx, func(context.Context) error {
 		metadata = c.Data.Server
 		return nil
 	}); err != nil {
 		return err
-	}
-	if c.Server != nil {
-		raw := c.Server
-		raw.StopRecording()
-		upgraded, _, err := decorated.inner.Upgrade(ctx, metadata, func(ctx context.Context, _ layer.Conn, actual *connection.Server) (layer.Conn, error) {
-			return decorated.setup(ctx, raw, actual)
-		})
-		if err != nil {
-			return err
-		}
-		c.Server = c.Record(upgraded)
-		return nil
 	}
 	opened, actual, err := c.Pool.Open(ctx, metadata, layer.OpenOptions{})
 	if err != nil {

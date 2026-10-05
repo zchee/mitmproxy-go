@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"strings"
+	"sync/atomic"
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
@@ -50,10 +51,15 @@ func (l *serverTLS) Run(ctx context.Context, c *layer.Context) error {
 	}
 	// An already open transport is upgraded eagerly, unless the direct
 	// child terminates TLS with the client: then the hello's SNI and ALPN
-	// should shape the server handshake, so the child starts it
-	// (upstream's wait_for_clienthello).
+	// should shape the server handshake, so the transport is hidden from
+	// the child and upgraded when the child first asks the pool for this
+	// server, as upstream defers with wait_for_clienthello and begins the
+	// handshake only on the child's OpenConnection
+	// (py:mitmproxy/proxy/layers/tls.py:472-508), keeping the lazy
+	// connection strategy's promise that an upstream connection is deferred
+	// as long as possible (py:mitmproxy/addons/proxyserver.py:155-163).
 	_, deferToClientHello := l.child.(*clientTLS)
-	if derived.Server != nil && !deferToClientHello {
+	if derived.Server != nil {
 		var metadata *connection.Server
 		if err := c.Do(ctx, func(context.Context) error {
 			metadata = c.Data.Server
@@ -61,17 +67,22 @@ func (l *serverTLS) Run(ctx context.Context, c *layer.Context) error {
 		}); err != nil {
 			return err
 		}
-		// The handshake reads through the recorder, not the pool's raw
-		// transport, so bytes consumed before the upgrade replay into it.
-		raw := derived.Server
-		raw.StopRecording()
-		upgraded, _, err := c.Pool.Upgrade(ctx, metadata, func(ctx context.Context, _ layer.Conn, actual *connection.Server) (layer.Conn, error) {
-			return pool.setup(ctx, raw, actual)
-		})
-		if err != nil {
-			return err
+		if deferToClientHello {
+			pool.deferred, pool.deferredSrv = derived.Server, metadata
+			derived.Server = nil
+		} else {
+			// The handshake reads through the recorder, not the pool's raw
+			// transport, so bytes consumed before the upgrade replay into it.
+			raw := derived.Server
+			raw.StopRecording()
+			upgraded, _, err := c.Pool.Upgrade(ctx, metadata, func(ctx context.Context, _ layer.Conn, actual *connection.Server) (layer.Conn, error) {
+				return pool.setup(ctx, raw, actual)
+			})
+			if err != nil {
+				return err
+			}
+			derived.Server = c.Record(upgraded)
 		}
-		derived.Server = c.Record(upgraded)
 	}
 	child := l.child
 	if child == nil {
@@ -90,6 +101,13 @@ func (l *serverTLS) Run(ctx context.Context, c *layer.Context) error {
 type serverTLSPool struct {
 	inner layer.ServerPool
 	c     *layer.Context
+
+	// These identities are fixed before the child starts. Until the
+	// upgrade callback finishes, concurrent opens must join Upgrade's
+	// single flight rather than bypass it with a new Open.
+	deferred     layer.Recorder
+	deferredSrv  *connection.Server
+	deferredDone atomic.Bool
 }
 
 // Open implements [layer.ServerPool]. The connection is marked as destined
@@ -100,6 +118,19 @@ func (p *serverTLSPool) Open(ctx context.Context, srv *connection.Server, opts l
 		return nil, nil, err
 	}
 	child := opts.Setup
+	if p.deferred != nil && srv == p.deferredSrv && !p.deferredDone.Load() {
+		return p.inner.Upgrade(ctx, srv, func(ctx context.Context, _ layer.Conn, actual *connection.Server) (layer.Conn, error) {
+			defer p.deferredDone.Store(true)
+			// Rewind only inside the pool's single flight: a cancelled
+			// waiter must neither consume nor lose the pending recorder.
+			p.deferred.StopRecording()
+			wrapped, err := p.setup(ctx, p.deferred, actual)
+			if err != nil || child == nil {
+				return wrapped, err
+			}
+			return child(ctx, wrapped, actual)
+		})
+	}
 	opts.Setup = func(ctx context.Context, conn layer.Conn, actual *connection.Server) (layer.Conn, error) {
 		wrapped, err := p.setup(ctx, conn, actual)
 		if err != nil || child == nil {
@@ -169,7 +200,7 @@ func (p *serverTLSPool) setup(ctx context.Context, conn layer.Conn, srv *connect
 	}, addon.TLSEstablishedServerHook{Data: data}); err != nil {
 		return nil, err
 	}
-	return &tlsConn{Conn: tc, raw: conn, srv: srv}, nil
+	return &tlsConn{Conn: tc, raw: conn, srv: srv, logger: p.c.Logger}, nil
 }
 
 // hookContext returns the hook-visible context for a handshake with srv:

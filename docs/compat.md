@@ -319,6 +319,18 @@ increments it.
 |---|---|---|
 | Reverse mode accepts `udp` and `dtls` targets (`mitmproxy/proxy/layers/modes.py`, `mitmproxy/addons/next_layer.py`). | Building the reverse top layer rejects these schemes with an error naming the scheme and the required datagram transport support. | UDP and DTLS layers are not available yet. |
 | Reverse mode accepts `http3`, `quic`, and `dns` targets (`mitmproxy/proxy/layers/modes.py`, `mitmproxy/addons/next_layer.py`). | Building the reverse top layer rejects these schemes with an error naming the scheme and the required QUIC and DNS protocol support. | QUIC, HTTP/3, and DNS protocol layers are not available yet. |
+## addons/errorcheck
+
+| Upstream | Go | Reason |
+|---|---|---|
+| The constructor installs a process-global Python logging handler (`mitmproxy/addons/errorcheck.py`). | The application explicitly composes `LogHandler()` into its logger. Collection is synchronous and mutex-protected, independent of the bounded `add_log` queue. | Embedders own logger configuration, and dropping a startup error could allow an invalid startup to succeed. |
+| Repeated errors use Python's log formatter, and terminal summaries may use red ANSI text (`mitmproxy/addons/errorcheck.py`). | Summaries are plain text; repeated messages preserve their text and append any structured slog attributes in text-handler format. | No Python logging formatter or implicit terminal capability detection in the library. |
+
+## master flow loading
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Reverse retargeting of a manually constructed HTTP flow without a request raises `AttributeError` (`mitmproxy/master.py`). | `LoadFlow` returns an error. | Invalid Go values must not panic; flow files contain requests. |
 
 ## Decided for code that is not written yet
 

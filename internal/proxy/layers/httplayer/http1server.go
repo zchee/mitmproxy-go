@@ -256,6 +256,7 @@ func (s *http1Server) readWait(ctx context.Context) error {
 			}
 			// A peer that sent a FIN no longer wants our response.
 			s.finish()
+			s.closeWrite()
 			s.queue = append(s.queue, RequestProtocolError{ID: s.streamID(), Code: ClientDisconnected, Message: "Client disconnected."})
 			return nil
 		default:

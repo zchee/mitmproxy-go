@@ -113,13 +113,45 @@ func (l *httpLayer) Run(ctx context.Context, c *layer.Context) error {
 	// survive into the next exchange that reuses the pooled connection.
 	endpoints := make(map[layer.Conn]*http1Client)
 	for {
-		stream := &httpStream{c: c, id: client.streamID(), route: l.exchangeRoute(c), wire: wire}
+		stream := &httpStream{c: c, id: client.streamID(), route: l.exchangeRoute(c), wire: wire, clientClosed: client.done}
+		// Observe an inherited or previously used origin while request hooks
+		// are paused. A FIN must retire it before the pool selects a transport.
+		stopIdle := func() {}
+		if c.Server != nil {
+			var metadata *connection.Server
+			if err := c.Do(ctx, func(context.Context) error {
+				metadata = c.Data.Server
+				return nil
+			}); err != nil {
+				return err
+			}
+			if conn, ok := c.Pool.Lookup(metadata); ok {
+				endpoint := endpoints[conn]
+				if endpoint == nil {
+					c.Server.StopRecording()
+					endpoint = newHTTP1Client(c.Server, wire, c.HTTPFidelity)
+					endpoints[conn] = endpoint
+				}
+				idleCtx, cancel := context.WithCancel(ctx)
+				done := make(chan struct{})
+				go func() {
+					defer close(done)
+					_ = endpoint.readWait(idleCtx, true)
+					if idleCtx.Err() == nil {
+						endpoint.closeWrite()
+					}
+				}()
+				stopIdle = sync.OnceFunc(func() { cancel(); <-done })
+			}
+		}
 		server := &lazyServer{ready: make(chan struct{})}
 		server.acquire = func(ctx context.Context, request *httpmsg.Request) (ServerEndpoint, error) {
 			return l.connect(ctx, c, stream, request, wire, endpoints, setup)
 		}
-		driver := &streamDriver{stream: stream, client: client, server: server}
-		if err := driver.run(ctx); err != nil {
+		driver := &streamDriver{stream: stream, client: client, server: server, beforeRequest: stopIdle}
+		err := driver.run(ctx)
+		stopIdle()
+		if err != nil {
 			return err
 		}
 		if stream.connectEstablished {

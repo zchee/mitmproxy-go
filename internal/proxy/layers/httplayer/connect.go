@@ -33,6 +33,13 @@ func (s *httpStream) handleConnect(ctx context.Context, event RequestHeaders) (s
 	if err != nil {
 		return streamOutput{}, err
 	}
+	if s.clientClosed != nil && s.clientClosed() {
+		s.failed = true
+		if err := s.notLive(ctx); err != nil {
+			return streamOutput{}, err
+		}
+		return streamOutput{events: []Event{ResponseProtocolError{ID: s.id, Message: "Client disconnected.", Code: ClientDisconnected}}}, nil
+	}
 	if s.snapshot.Killed() {
 		// A killed CONNECT fires no error hook, as upstream's
 		// check_killed(False) after http_connect.

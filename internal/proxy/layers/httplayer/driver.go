@@ -48,6 +48,10 @@ type streamDriver struct {
 	stream *httpStream
 	client ClientEndpoint
 	server ServerEndpoint
+
+	// beforeRequest retires an idle origin reader on the owner goroutine,
+	// after hooks return and before the server writer acquires a transport.
+	beforeRequest func()
 }
 
 func (d *streamDriver) run(ctx context.Context) error {
@@ -61,8 +65,9 @@ func (d *streamDriver) run(ctx context.Context) error {
 	writes := [2]chan driverWrite{make(chan driverWrite), make(chan driverWrite)}
 	written := [2]chan driverWritten{make(chan driverWritten, 1), make(chan driverWritten, 1)}
 	failures := make(chan driverFailure, 2)
+	requestEnds := make(chan driverRead, 1)
 	requestReads, responseReads := reads[0], reads[1]
-	workers.Go(func() { readRequests(ctx, d.client, requestReads, failures) })
+	workers.Go(func() { readRequests(ctx, d.client, requestReads, requestEnds, failures) })
 	workers.Go(func() { readResponses(ctx, d.server, responseReads, failures) })
 	workers.Go(func() {
 		writeEvents(ctx, writes[0], written[0], func(ctx context.Context, event Event) error {
@@ -131,6 +136,10 @@ func (d *streamDriver) run(ctx context.Context) error {
 				inputs[i] = nil
 			}
 		}
+		ends := requestEnds
+		if inputs[0] == nil {
+			ends = nil
+		}
 		var destinations [2]chan driverWrite
 		var next [2]driverWrite
 		for _, turn := range turns {
@@ -143,6 +152,10 @@ func (d *streamDriver) run(ctx context.Context) error {
 				direction = 0
 			}
 			if active[direction] == nil && destinations[direction] == nil {
+				if _, headers := event.(RequestHeaders); headers && d.beforeRequest != nil {
+					d.beforeRequest()
+					d.beforeRequest = nil
+				}
 				destinations[direction] = writes[direction]
 				next[direction] = driverWrite{event: event, turn: turn}
 			}
@@ -162,6 +175,8 @@ func (d *streamDriver) run(ctx context.Context) error {
 		case failure := <-failures:
 			source, result = failure.source, failure.result
 		case result = <-inputs[0]:
+			source = 0
+		case result = <-ends:
 			source = 0
 		case result = <-inputs[1]:
 			source = 1
@@ -248,19 +263,34 @@ func writeEvents(ctx context.Context, input <-chan driverWrite, output chan<- dr
 	}
 }
 
-func readRequests(ctx context.Context, endpoint ClientEndpoint, out chan<- driverRead, failures chan<- driverFailure) {
+func readRequests(ctx context.Context, endpoint ClientEndpoint, out, ends chan<- driverRead, failures chan<- driverFailure) {
 	for {
 		event, err := endpoint.Receive(ctx)
 		if _, failed := event.(RequestProtocolError); failed || err != nil {
 			failures <- driverFailure{source: 0, result: driverRead{event: event, err: err}}
 			return
 		}
+		if _, end := event.(RequestEndOfMessage); end {
+			// Completion has a separate slot so a paused hook cannot prevent
+			// observing a disconnect. Do not parse the next pipelined request.
+			ends <- driverRead{event: event}
+			if client, ok := endpoint.(*http1Server); ok {
+				err := client.readWait(ctx)
+				var failure Event
+				if len(client.queue) != 0 {
+					failure = client.queue[0]
+					client.queue[0] = nil
+					client.queue = client.queue[1:]
+				}
+				if failure != nil || err != nil {
+					failures <- driverFailure{source: 0, result: driverRead{event: failure, err: err}}
+				}
+			}
+			return
+		}
 		select {
 		case out <- driverRead{event: event}:
 		case <-ctx.Done():
-			return
-		}
-		if _, end := event.(RequestEndOfMessage); end {
 			return
 		}
 	}

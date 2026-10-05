@@ -56,6 +56,7 @@ type httpStream struct {
 	errorHook      bool
 	failed         bool
 	connectRequest bool
+	clientClosed   func() bool
 	// connectEstablished reports the stream answered a CONNECT with a 2xx:
 	// the connection now belongs to a child protocol, not to HTTP.
 	connectEstablished bool

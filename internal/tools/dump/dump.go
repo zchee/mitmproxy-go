@@ -30,6 +30,15 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/master"
 	"github.com/zchee/mitmproxy-go/options"
+
+	// The proxy core resolves protocol layers through a registry that the
+	// factory packages fill from their init functions; without these
+	// imports an accepted connection finds no layer. The HTTP layer
+	// registers no factory yet, so HTTP connections fail at resolution
+	// until it does.
+	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/modes"
+	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/tcplayer"
+	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/tlslayer"
 )
 
 // Config configures a Master.

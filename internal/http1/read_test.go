@@ -26,19 +26,22 @@ func TestReadRequestHead(t *testing.T) {
 		method, scheme, authority, path string
 		invalid                         bool
 	}{
-		"origin":                {line: "GET / HTTP/1.1", method: "GET", path: "/"},
-		"asterisk":              {line: "OPTIONS * HTTP/1.1", method: "OPTIONS", path: "*"},
-		"authority":             {line: "CONNECT foo:42 HTTP/1.1", host: "foo", port: 42, method: "CONNECT", authority: "foo:42"},
-		"absolute":              {line: "GET http://foo:42/bar HTTP/1.1", host: "foo", port: 42, method: "GET", scheme: "http", authority: "foo:42", path: "/bar"},
-		"absolute without path": {line: "GET http://foo:42 HTTP/1.1", host: "foo", port: 42, method: "GET", scheme: "http", authority: "foo:42", path: "/"},
-		"uppercase scheme":      {line: "GET HTTP://foo:42/bar HTTP/1.1", host: "foo", port: 42, method: "GET", scheme: "http", authority: "foo:42", path: "/bar"},
-		"default port":          {line: "GET https://foo/ HTTP/1.1", host: "foo", port: 443, method: "GET", scheme: "https", authority: "foo", path: "/"},
-		"ASCII whitespace":      {line: "\tGET\v/\fHTTP/1.1 ", method: "GET", path: "/"},
-		"invalid version":       {line: "GET / WTF/1.1", invalid: true},
-		"missing port":          {line: "CONNECT example.com HTTP/1.1", invalid: true},
-		"unknown default port":  {line: "GET ws://example.com/ HTTP/1.1", invalid: true},
-		"wrong token count":     {line: "this is not http", invalid: true},
-		"empty":                 {line: "", invalid: true},
+		"IDNA absolute authority": {line: "GET http://xn--aaa-pla.example:80/ HTTP/1.1", host: "äaaa.example", port: 80, method: "GET", scheme: "http", authority: "xn--aaa-pla.example:80", path: "/"},
+		"IDNA CONNECT authority":  {line: "CONNECT xn--r8jz45g.xn--zckzah:443 HTTP/1.1", host: "例え.テスト", port: 443, method: "CONNECT", authority: "xn--r8jz45g.xn--zckzah:443"},
+		"invalid IDNA authority":  {line: "CONNECT xn--abc:443 HTTP/1.1", invalid: true},
+		"origin":                  {line: "GET / HTTP/1.1", method: "GET", path: "/"},
+		"asterisk":                {line: "OPTIONS * HTTP/1.1", method: "OPTIONS", path: "*"},
+		"authority":               {line: "CONNECT foo:42 HTTP/1.1", host: "foo", port: 42, method: "CONNECT", authority: "foo:42"},
+		"absolute":                {line: "GET http://foo:42/bar HTTP/1.1", host: "foo", port: 42, method: "GET", scheme: "http", authority: "foo:42", path: "/bar"},
+		"absolute without path":   {line: "GET http://foo:42 HTTP/1.1", host: "foo", port: 42, method: "GET", scheme: "http", authority: "foo:42", path: "/"},
+		"uppercase scheme":        {line: "GET HTTP://foo:42/bar HTTP/1.1", host: "foo", port: 42, method: "GET", scheme: "http", authority: "foo:42", path: "/bar"},
+		"default port":            {line: "GET https://foo/ HTTP/1.1", host: "foo", port: 443, method: "GET", scheme: "https", authority: "foo", path: "/"},
+		"ASCII whitespace":        {line: "\tGET\v/\fHTTP/1.1 ", method: "GET", path: "/"},
+		"invalid version":         {line: "GET / WTF/1.1", invalid: true},
+		"missing port":            {line: "CONNECT example.com HTTP/1.1", invalid: true},
+		"unknown default port":    {line: "GET ws://example.com/ HTTP/1.1", invalid: true},
+		"wrong token count":       {line: "this is not http", invalid: true},
+		"empty":                   {line: "", invalid: true},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

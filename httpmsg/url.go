@@ -89,6 +89,18 @@ var errAuthority = errors.New("invalid authority")
 // When strict is false a malformed value is returned whole as the host with
 // port -1 instead of failing.
 func ParseAuthority(authority string, strict bool) (host string, port int, err error) {
+	return parseAuthority(authority, strict, false)
+}
+
+// ParseAuthorityBytes splits a wire authority into its Unicode host and port,
+// decoding Punycode labels and removing IPv6 brackets. The port is -1 when absent.
+// Invalid UTF-8, IDNA, host or port syntax returns an error when strict is true;
+// otherwise the original bytes are returned as a string with port -1.
+func ParseAuthorityBytes(authority []byte, strict bool) (host string, port int, err error) {
+	return parseAuthority(string(authority), strict, true)
+}
+
+func parseAuthority(authority string, strict, wire bool) (host string, port int, err error) {
 	fail := func() (string, int, error) {
 		if strict {
 			return "", -1, errAuthority
@@ -100,6 +112,29 @@ func ParseAuthority(authority string, strict bool) (host string, port int, err e
 		return fail()
 	}
 	host = m[1]
+	if wire {
+		if !utf8.ValidString(authority) || !isASCII(host) {
+			return fail()
+		}
+		labels := strings.Split(host, ".")
+		for i, label := range labels {
+			if len(label) < 4 || !strings.EqualFold(label[:4], "xn--") {
+				continue
+			}
+			// Decode without case folding: Python preserves the decoded case,
+			// then validates by comparing its encoded form case-insensitively.
+			decoded, err := idna.Punycode.ToUnicode("xn--" + label[4:])
+			if err != nil {
+				return fail()
+			}
+			encoded, err := idnaProfile.ToASCII(decoded)
+			if err != nil || !strings.EqualFold(encoded, label) {
+				return fail()
+			}
+			labels[i] = decoded
+		}
+		host = strings.Join(labels, ".")
+	}
 	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
 		host = host[1 : len(host)-1]
 	}

@@ -183,7 +183,7 @@ func readRequestLine(line []byte) (*httpmsg.Request, []byte, error) {
 		req.Path = target
 	case req.Method == "CONNECT":
 		req.Authority = target
-		host, port, err := httpmsg.ParseAuthority(target, true)
+		host, port, err := httpmsg.ParseAuthorityBytes(parts[1], true)
 		if err != nil || port <= 0 {
 			return bad()
 		}
@@ -196,7 +196,7 @@ func readRequestLine(line []byte) (*httpmsg.Request, []byte, error) {
 		authority, path, _ := strings.Cut(rest, "/")
 		req.Scheme = strings.ToLower(scheme)
 		req.Authority, req.Path = authority, "/"+path
-		host, port, err := httpmsg.ParseAuthority(authority, true)
+		host, port, err := httpmsg.ParseAuthorityBytes([]byte(authority), true)
 		if err != nil {
 			return bad()
 		}

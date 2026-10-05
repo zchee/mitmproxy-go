@@ -186,6 +186,13 @@ Reproduced on purpose: listen hosts keep IPv6 brackets and explicit empty hosts;
 integer syntax, including Unicode digits, signs, whitespace and single underscores between digits. The default
 4300-digit conversion limit is retained. The macOS TUN-name check accepts one final newline, as Python's `$` does.
 
+## contentviews
+
+| Upstream | Go | Reason |
+|---|---|---|
+| A failed explicitly selected view displays the Python exception and a trimmed traceback (`mitmproxy/contentviews/__init__.py`). | The display keeps the `Couldn't parse as <view>:` heading and shows the Go error without a Python exception class or traceback. | Go errors have no Python traceback. Automatic selection still falls back to Raw with the same description. |
+| `prettify_message` returns the entire rendered text; its callers apply the line cutoff (`mitmproxy/addons/dumper.py`). | `PrettifyMessage` optionally applies the caller's positive line cutoff and reports `Truncated`; a nonpositive cutoff keeps all text. | The shared entry point prevents callers from disagreeing about the cutoff. |
+
 ## Decided for code that is not written yet
 
 These differences are settled in the work plan ([docs/plans/mitmproxy-go-port.md](plans/mitmproxy-go-port.md): the

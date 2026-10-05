@@ -40,6 +40,7 @@ func NewRegistry() *Registry {
 	r.Register(XMLHTML{})
 	r.Register(URLEncoded{})
 	r.Register(Query{})
+	r.Register(Multipart{})
 	return r
 }
 

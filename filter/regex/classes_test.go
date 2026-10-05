@@ -384,6 +384,42 @@ func TestTranslateClassesLinear(t *testing.T) {
 	}
 }
 
+// TestTranslateClassRepeatedEscapes checks that a class escape repeated
+// inside one class costs nothing: the class translates exactly as it does
+// with each escape once, whatever the order. Joining the property text of
+// every repeat instead makes the emitted class grow with the pattern and
+// compiling a class of a few thousand escapes take seconds.
+func TestTranslateClassRepeatedEscapes(t *testing.T) {
+	tests := map[string]struct {
+		pattern string
+		want    string
+	}{
+		"success: one escape twice":            {pattern: `[\w\w_]`, want: `[\w_]`},
+		"success: one escape a thousand times": {pattern: "[" + strings.Repeat(`\w`, 1000) + "_]", want: `[\w_]`},
+		"success: two escapes interleaved":     {pattern: `[\d\w\d\w]`, want: `[\d\w]`},
+		"success: two escapes in reverse":      {pattern: `[\w\d]`, want: `[\d\w]`},
+		"success: negated escapes repeated":    {pattern: `[\W\D\W\D.]`, want: `[\D\W.]`},
+		"success: negated class":               {pattern: `[^\s\s\s]`, want: `[^\s]`},
+	}
+	for name, tt := range tests {
+		for _, flags := range []Flags{0, IgnoreCase, Unicode, Unicode | IgnoreCase} {
+			t.Run(fmt.Sprintf("%s/flags=%d", name, flags), func(t *testing.T) {
+				got, err := translateClasses(tt.pattern, flags, flags&Unicode != 0, false)
+				if err != nil {
+					t.Fatalf("translateClasses(%q) error = %v", tt.pattern, err)
+				}
+				want, err := translateClasses(tt.want, flags, flags&Unicode != 0, false)
+				if err != nil {
+					t.Fatalf("translateClasses(%q) error = %v", tt.want, err)
+				}
+				if diff := gocmp.Diff(want, got, gocmp.AllowUnexported(translation{})); diff != "" {
+					t.Errorf("translateClasses(%q) differs from %q (-want +got):\n%s", tt.pattern, tt.want, diff)
+				}
+			})
+		}
+	}
+}
+
 // BenchmarkMatchOverlappingClass matches \b[\w_]+Z on a URL followed by a
 // run of underscores that ends in a near miss. The time per byte stays the
 // same as the run grows only if the regexp2 translation of [\w_] gives the
@@ -532,6 +568,9 @@ func BenchmarkCompileClass(b *testing.B) {
 	}{
 		"bytes":   {pattern: `^content-type: \w+/\w+`, flags: IgnoreCase | Multiline},
 		"unicode": {pattern: `/api/v\d+/\w+`, flags: IgnoreCase | Unicode},
+		// A class holding the same escape a thousand times compiles as
+		// fast as the class holding it once.
+		"repeated escapes": {pattern: "[" + strings.Repeat(`\w`, 1000) + "]", flags: IgnoreCase | Unicode},
 	}
 	for name, bm := range benchmarks {
 		b.Run(name, func(b *testing.B) {

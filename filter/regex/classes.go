@@ -810,6 +810,11 @@ func (t *classTranslator) class(i int, cur scope) (int, error) {
 		return j, nil
 	}
 
+	// A repeated escape adds nothing to the class. Keeping one of each, at
+	// most six, keeps the emitted class the same size however many repeats
+	// the pattern holds, and sends a single escape to the cached form.
+	slices.Sort(shorts)
+	shorts = slices.Compact(shorts)
 	sh := shorthandExpr(shorts, cur.uni)
 	if rest.Len() == 0 {
 		if neg {

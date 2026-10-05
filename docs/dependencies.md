@@ -61,6 +61,7 @@ plan records no upgrade path, the table says so instead of guessing.
 | `github.com/chromedp/chromedp` | v0.19.1 | MIT | mitmweb end-to-end tests (test-only) | Reproducible browser tests on ubuntu-26.04 in CI. | Not recorded in the plan. |
 | `github.com/google/go-cmp` | v0.7.0 | BSD-3 | tests | Test assertions; the project does not use testify. | Not recorded in the plan. |
 | `go.uber.org/goleak` | v1.3.0 | MIT | tests | Goroutine leak checks. | Not recorded in the plan. |
+| `github.com/google/btree` | v1.1.3 | Apache-2.0 | addons/view | Generic ordered tree replaces Python's SortedKeyList; insertion sequence preserves equal-key order. | Rerun the view ordering tests. |
 
 ## CI tools
 

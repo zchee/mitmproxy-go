@@ -539,3 +539,9 @@ TLS and protocol layers:
 |---|---|---|
 | Replay files are read without a combined size or flow-count limit (`mitmproxy/addons/serverplayback.py`, `mitmproxy/io/io.py`). | One file-loading operation accepts at most 512 MiB and 100,000 flows. | Bound memory retained from user-supplied replay files. |
 | Matching uses SHA-256 of Python's request-key list repr (`mitmproxy/addons/serverplayback.py`). | Uses the same inputs and Python-compatible list, tuple and byte reprs, including the uppercase method accessor; the key is not persisted. HTTP flows built manually without a request are skipped instead of raising. | Keep the same matching equivalence without a Python runtime; invalid Go values must not panic. |
+## addons/view
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| Synchronous Python signals (`mitmproxy/addons/view.py`). | Bounded event channels; overflow closes and removes the subscriber, which must resnapshot. | A slow frontend cannot block the dispatch lock. Channel subscribe/cancel and store access require that lock. |
+| `intercept`, `resume` and `kill` are directly dispatched hooks (`mitmproxy/addons/view.py`). | Runtime changes arrive through `update`; direct methods remain available. | The Go core dispatches the shared update hook for lifecycle notifications. |

@@ -6,6 +6,7 @@ require (
 	github.com/andybalholm/brotli v1.2.6
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/go-ldap/ldap/v3 v3.4.14
+	github.com/google/btree v1.1.3
 	github.com/google/go-cmp v0.7.0
 	github.com/itchyny/timefmt-go v0.1.9
 	github.com/klauspost/compress v1.20.1

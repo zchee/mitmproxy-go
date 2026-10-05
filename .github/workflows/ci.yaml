@@ -61,6 +61,28 @@ jobs:
       - name: go test -race
         run: go test -race -count=1 ./...
 
+  ldap-integration:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    services:
+      openldap:
+        image: osixia/openldap:1.5.0
+        env:
+          LDAP_DOMAIN: example.org
+          LDAP_ADMIN_PASSWORD: integration-password
+          LDAP_TLS: "false"
+        ports:
+          - 389/tcp
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Authenticate against OpenLDAP
+        env:
+          MITMPROXY_TEST_LDAP_ADDRESS: 127.0.0.1:${{ job.services.openldap.ports['389'] }}
+        run: go test -race -tags integration -count=1 -v ./addons/proxyauth
+
   gotip:
     name: build and test (gotip)
     runs-on: ubuntu-26.04

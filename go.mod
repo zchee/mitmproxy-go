@@ -5,6 +5,7 @@ go 1.27
 require (
 	github.com/andybalholm/brotli v1.2.6
 	github.com/dlclark/regexp2 v1.12.0
+	github.com/go-ldap/ldap/v3 v3.4.14
 	github.com/google/go-cmp v0.7.0
 	github.com/klauspost/compress v1.20.1
 	github.com/spf13/cobra v1.10.2
@@ -17,4 +18,9 @@ require (
 	software.sslmate.com/src/go-pkcs12 v0.7.3
 )
 
-require github.com/inconshreveable/mousetrap v1.1.0 // indirect
+require (
+	github.com/Azure/go-ntlmssp v0.1.1 // indirect
+	github.com/go-asn1-ber/asn1-ber v1.5.8 // indirect
+	github.com/google/uuid v1.6.0 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+)

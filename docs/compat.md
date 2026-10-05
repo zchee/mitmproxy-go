@@ -30,6 +30,17 @@ Anything not listed here is meant to behave as upstream does; a difference that 
 | `dummy_crl` adds only a CRL Number extension (`mitmproxy/certs.py`). | The CRL also carries an Authority Key Identifier matching the CA's SKI, or a SHA-1 key identifier when that is absent. | `crypto/x509.CreateRevocationList` requires and emits the identifier. |
 | Both passwordless `.p12` files are written by `cryptography`'s `serialize_key_and_certificates(…, NoEncryption())`: an HMAC-SHA-256 MAC keyed from the empty password with 2048 iterations, and `friendlyName` `mitmproxy` on every bag (`mitmproxy/certs.py`). | Both bundles are encoded with go-pkcs12's `Passwordless` encoder: no MAC, the key file's bags carry `localKeyID` but no `friendlyName`, and the cert-only bag carries the Java trust-store attribute `2.16.840.1.113894.746875.1.1`. Python's `pkcs12.load_pkcs12` reads both bundles and recovers the same certificate and complete private key. | go-pkcs12 is the maintained Go encoder, and its `Encoder` fields are unexported, so no configuration reproduces `cryptography`'s exact structure; what matters is that Python reads the bundles. |
 
+## addons/proxyauth
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| LDAP connects and service-binds during configuration (`mitmproxy/addons/proxyauth.py`). | Configuration validates syntax only. Each authentication connects, service-binds, searches and user-binds outside the addon dispatch lock. An unreachable directory produces an authentication challenge (407 in proxy modes, 401 in reverse mode) and a warning at authentication time. | Network I/O cannot block configuration or the shared dispatch lock. |
+| LDAP operations have no explicit exchange-size or elapsed-time bound, and the search returns all matches before the first is used. | An authentication has a 10-second context deadline; each of its at most two connections receives at most 1 MiB of LDAP data. Search requests one entry without attributes and uses the first returned DN. | Bound resources while retaining the first-match authentication behavior. The configured directory is trusted; the pinned BER library still has no nesting-depth limit. |
+| The default `ldap3.Tls()` skips certificate verification. | LDAPS verifies the server certificate and requires TLS 1.2 or newer. Private directory CAs must be installed in the system trust store. | Do not send credentials to an unauthenticated TLS peer; no separate LDAP trust option is provided. |
+| Invalid LDAP specifications are included verbatim in configuration errors. | Errors name the invalid field but omit the specification; authentication warnings include the error type, not server-supplied diagnostic text. | Specifications contain the service password, and server diagnostics can disclose credentials or personal data. |
+| The LDAP port uses Python `int()` (`mitmproxy/addons/proxyauth.py:252`), including Unicode decimal digits, underscore separators and surrounding whitespace. | Explicit ports must use ASCII decimal syntax (an optional sign is accepted) and fall within 1–65535. | Configuration-only restriction; avoids duplicating the private Python-integer parsers elsewhere in the port. |
+| Basic authentication headers have no length limit. | Headers longer than 64 KiB are rejected. | Bound decoding work under the dispatch lock. |
+
 ## connection
 
 No behavioural differences.

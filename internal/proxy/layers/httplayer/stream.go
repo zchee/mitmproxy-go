@@ -57,6 +57,11 @@ type httpStream struct {
 	// connectEstablished reports the stream answered a CONNECT with a 2xx:
 	// the connection now belongs to a child protocol, not to HTTP.
 	connectEstablished bool
+	// connectConn and connectServer hold the connection the eager strategy
+	// opened while answering a CONNECT, for the layer to publish to the
+	// child; the handler's pool still owns the transport.
+	connectConn   layer.Conn
+	connectServer *connection.Server
 }
 
 func (s *httpStream) done() bool {
@@ -134,6 +139,12 @@ func (s *httpStream) requestHeaders(ctx context.Context, event RequestHeaders) (
 	if err := s.c.Do(ctx, func(context.Context) error {
 		clientTLS = s.c.Data.Client.TLS
 		server = *s.c.Data.Server
+		if server.Address != nil {
+			// Own the address: another exchange may rewrite the shared
+			// metadata while this one normalizes outside the lock.
+			address := *server.Address
+			server.Address = &address
+		}
 		return nil
 	}); err != nil {
 		return streamOutput{}, err

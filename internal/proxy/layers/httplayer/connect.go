@@ -45,26 +45,27 @@ func (s *httpStream) handleConnect(ctx context.Context, event RequestHeaders) (s
 
 	request := s.snapshot.Request
 	response := s.snapshot.Response
+	var metadata *connection.Server
 	if err := s.c.Do(ctx, func(context.Context) error {
 		s.c.Data.Server.Address = &connection.Address{Host: request.Host, Port: request.Port}
+		metadata = s.c.Data.Server
 		return nil
 	}); err != nil {
 		return streamOutput{}, err
 	}
 
 	if response == nil && s.route.mode == modeRegular && s.c.Data.Options.Str("connection_strategy") == "eager" {
-		if _, _, err := s.c.Pool.Open(ctx, s.c.Data.Server, layer.OpenOptions{Reuse: true}); err != nil {
-			address := human.NoAddress
-			if s.c.Data.Server.Address != nil {
-				address = human.FormatAddress(s.c.Data.Server.Address.Host, s.c.Data.Server.Address.Port)
-			}
+		conn, actual, err := s.c.Pool.Open(ctx, metadata, layer.OpenOptions{Reuse: true})
+		if err != nil {
 			response, err = httpmsg.MakeResponse(502, fmt.Appendf(nil,
 				"Cannot connect to %s: %v If you plan to redirect requests away from this server, "+
 					"consider setting `connection_strategy` to `lazy` to suppress early connections.",
-				address, err), nil)
+				human.FormatAddress(request.Host, request.Port), err), nil)
 			if err != nil {
 				return streamOutput{}, err
 			}
+		} else {
+			s.connectConn, s.connectServer = conn, actual
 		}
 	}
 	if response == nil {

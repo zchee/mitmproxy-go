@@ -38,6 +38,15 @@ type http1Server struct {
 	sentHead     bool
 	sentChunked  bool
 	sentTrailers httpmsg.Headers
+
+	// handover makes an established CONNECT retire the endpoint with its
+	// buffered bytes intact instead of relaying them as a raw pipe: the
+	// routing layer collects them with takeover and hands the transport to
+	// a child layer. Set before the first Receive; never changed after.
+	handover bool
+	// handingOver distinguishes endpoint retirement from transport closure.
+	// The child layer still owns both directions of an established tunnel.
+	handingOver bool
 }
 
 func newHTTP1Server(conn layer.Conn, wire *wireStore, fidelity *http1.FidelityCounter) *http1Server {
@@ -168,7 +177,7 @@ func (s *http1Server) readBody(ctx context.Context) error {
 		s.mu.Lock()
 		connect := strings.ToUpper(s.request.Method) == "CONNECT"
 		s.markDoneLocked(true, false, true)
-		closing := s.state == http1Done && s.responseDone
+		closing := s.state == http1Done && !s.handingOver && s.responseDone
 		s.mu.Unlock()
 		if closing {
 			// The response was fully sent before the upload finished and the
@@ -293,6 +302,14 @@ func (s *http1Server) readPipe(ctx context.Context) error {
 	}
 }
 
+// done reports whether the connection is retired: closed, failed, or waiting
+// for a handover. The routing layer checks it between exchanges.
+func (s *http1Server) done() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state == http1Done
+}
+
 // finish retires the connection: no further messages are parsed.
 func (s *http1Server) finish() {
 	s.mu.Lock()
@@ -383,7 +400,7 @@ func (s *http1Server) sendEnd(ctx context.Context) error {
 	s.sentTrailers = nil
 	s.mu.Lock()
 	s.markDoneLocked(false, true, false)
-	closing := s.state == http1Done
+	closing := s.state == http1Done && !s.handingOver
 	s.mu.Unlock()
 	if closing {
 		s.closeWrite()
@@ -437,6 +454,14 @@ func (s *http1Server) markDoneLocked(request, response, onReceive bool) {
 	}
 	s.wire.drop(s.id)
 	if shouldMakePipe(s.request, s.response) {
+		if s.handover && strings.ToUpper(s.request.Method) == "CONNECT" {
+			// The routing layer takes the buffered tunnel bytes and the
+			// transport to a child layer; nothing is parsed or relayed here.
+			s.handingOver = true
+			s.state = http1Done
+			s.kick()
+			return
+		}
 		if onReceive {
 			if err := s.drainBuffered(); err != nil {
 				s.state = http1Done

@@ -41,9 +41,10 @@ var (
 	ErrStaleFrame = errors.New("addon: dispatch frame used after the dispatch lock was released")
 
 	// ErrSyncContext reports a call to [Concurrent] from a nested dispatch,
-	// from a hook mitmproxy dispatches synchronously (load, configure, and
-	// the done of a removal) or from a command, where releasing the lock
-	// would let other hooks run in the middle of the outer one.
+	// from a hook mitmproxy dispatches synchronously (load, configure, the
+	// done of a removal, and any hook fired through [Manager.InvokeSync]) or
+	// from a command, where releasing the lock would let other hooks run in
+	// the middle of the outer one.
 	ErrSyncContext = errors.New("cannot be called from sync context")
 
 	// ErrNoDispatch reports a call to [Concurrent] with a context that does
@@ -196,10 +197,11 @@ func (d *dispatcher) do(ctx context.Context, fn func(context.Context) error) err
 // command, Concurrent returns an error wrapping [ErrSyncContext], because
 // releasing the lock there would interleave other hooks with the outer one.
 // It refuses the same way in the hooks mitmproxy dispatches synchronously:
-// load, configure fired by an option change, and done fired by
-// [Manager.Remove] or [Manager.Clear]. Releasing the lock there would let
-// another registration, removal or option change run in the middle of this
-// one. The done hook fired through [Manager.Trigger] at shutdown may call
+// load and configure, however they are fired, done fired by
+// [Manager.Remove] or [Manager.Clear], and any hook fired through
+// [Manager.InvokeSync]. Releasing the lock there would let another
+// registration, removal or option change run in the middle of this one.
+// The done hook fired through [Manager.Trigger] at shutdown may call
 // Concurrent. A command run through [Manager.Call] refuses it too, because
 // a mitmproxy command is a synchronous call that cannot yield.
 //

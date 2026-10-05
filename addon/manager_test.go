@@ -881,6 +881,9 @@ func TestConcurrentRefusedInSyncHooks(t *testing.T) {
 		probe   string
 		fire    func(t *testing.T, e *testEnv, p *syncProbe) error
 		wantMsg string
+		// wantCalls is the number of Concurrent calls, all refused; zero
+		// means one, that of the fired hook.
+		wantCalls int
 	}{
 		"error: load of Add": {
 			probe:   "load",
@@ -893,6 +896,42 @@ func TestConcurrentRefusedInSyncHooks(t *testing.T) {
 				return e.opts.Set(t.Context(), "probe_flag=true")
 			},
 			wantMsg: "configure",
+		},
+		"error: configure fired through Trigger": {
+			probe: "configure",
+			fire: func(t *testing.T, e *testEnv, _ *syncProbe) error {
+				return e.m.Trigger(t.Context(), ConfigureHook{Updated: map[string]struct{}{"probe_flag": {}}})
+			},
+			wantMsg: "configure",
+		},
+		"error: configure fired through Hook": {
+			probe: "configure",
+			fire: func(t *testing.T, e *testEnv, _ *syncProbe) error {
+				return e.m.Hook(t.Context(), ConfigureHook{Updated: map[string]struct{}{"probe_flag": {}}})
+			},
+			wantMsg: "configure",
+		},
+		"error: load fired through Trigger": {
+			probe: "load",
+			fire: func(t *testing.T, e *testEnv, _ *syncProbe) error {
+				return e.m.Trigger(t.Context(), LoadHook{Loader: &Loader{m: e.m}})
+			},
+			wantMsg:   "load",
+			wantCalls: 2,
+		},
+		"error: configure fired through InvokeSync": {
+			probe: "configure",
+			fire: func(t *testing.T, e *testEnv, p *syncProbe) error {
+				return e.m.InvokeSync(t.Context(), p, ConfigureHook{Updated: map[string]struct{}{"probe_flag": {}}})
+			},
+			wantMsg: "configure",
+		},
+		"error: done fired through InvokeSync": {
+			probe: "done",
+			fire: func(t *testing.T, e *testEnv, p *syncProbe) error {
+				return e.m.InvokeSync(t.Context(), p, DoneHook{})
+			},
+			wantMsg: "done",
 		},
 		"error: done of Remove": {
 			probe: "done",
@@ -925,12 +964,14 @@ func TestConcurrentRefusedInSyncHooks(t *testing.T) {
 			if p.ran {
 				t.Error("the body of Concurrent ran inside a synchronous hook")
 			}
-			if len(p.errs) != 1 {
-				t.Fatalf("Concurrent called %d times, want 1", len(p.errs))
+			wantCalls := max(tt.wantCalls, 1)
+			if len(p.errs) != wantCalls {
+				t.Fatalf("Concurrent called %d times, want %d", len(p.errs), wantCalls)
 			}
-			err := p.errs[0]
-			if !errors.Is(err, ErrSyncContext) || !strings.Contains(err.Error(), tt.wantMsg) {
-				t.Errorf("Concurrent error = %v, want ErrSyncContext naming the %s hook", err, tt.wantMsg)
+			for i, err := range p.errs {
+				if !errors.Is(err, ErrSyncContext) || !strings.Contains(err.Error(), tt.wantMsg+" hook") {
+					t.Errorf("Concurrent call %d error = %v, want ErrSyncContext naming the %s hook", i, err, tt.wantMsg)
+				}
 			}
 		})
 	}
@@ -1436,4 +1477,117 @@ func TestConcurrentRefusedInCommand(t *testing.T) {
 			}
 		})
 	}
+}
+
+// syncInvoker fires configure on target through InvokeSync from its own
+// running hook, as a script loader configures a script it reloads.
+type syncInvoker struct {
+	m      *Manager
+	target any
+	err    error
+}
+
+func (s *syncInvoker) Running(ctx context.Context) error {
+	s.err = s.m.InvokeSync(ctx, s.target, ConfigureHook{Updated: map[string]struct{}{"probe_flag": {}}})
+	return nil
+}
+
+// TestInvokeSync fires a hook on one addon tree through InvokeSync, the
+// counterpart of mitmproxy's invoke_addon_sync.
+func TestInvokeSync(t *testing.T) {
+	errFirst := errors.New("first failure")
+	tests := map[string]struct {
+		tree      func(j *journal) any
+		want      []string
+		wantErr   error
+		wantPanic string
+	}{
+		"success: the addon and its sub-addons, depth first": {
+			tree: func(j *journal) any {
+				return &hooker{name: "root", j: j, children: []any{
+					&hooker{name: "a", j: j, children: []any{&hooker{name: "a1", j: j}}},
+					&hooker{name: "b", j: j},
+				}}
+			},
+			want: []string{"running root", "running a", "running a1", "running b"},
+		},
+		"error: the first handler error stops the dispatch and is returned": {
+			tree: func(j *journal) any {
+				return &hooker{name: "root", j: j, children: []any{
+					&hooker{name: "a", j: j, err: errFirst},
+					&hooker{name: "b", j: j, err: errors.New("never reached")},
+				}}
+			},
+			want:    []string{"running root", "running a"},
+			wantErr: errFirst,
+		},
+		"error: a handler panic is not recovered": {
+			tree: func(j *journal) any {
+				return &hooker{name: "root", j: j, children: []any{
+					&hooker{name: "a", j: j, panicMsg: "handler panic"},
+					&hooker{name: "b", j: j},
+				}}
+			},
+			want:      []string{"running root", "running a"},
+			wantPanic: "handler panic",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t)
+			j := &journal{}
+			// The tree is never registered: InvokeSync, like
+			// invoke_addon_sync, works on any addon.
+			tree := tt.tree(j)
+			var err error
+			r := capturePanic(func() { err = e.m.InvokeSync(t.Context(), tree, RunningHook{}) })
+			switch {
+			case tt.wantPanic == "" && r != nil:
+				t.Errorf("InvokeSync panicked: %v", r)
+			case tt.wantPanic != "" && fmt.Sprint(r) != tt.wantPanic:
+				t.Errorf("InvokeSync panic = %v, want %q", r, tt.wantPanic)
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("InvokeSync error = %v, want %v", err, tt.wantErr)
+			}
+			if diff := cmp.Diff(tt.want, j.got()); diff != "" {
+				t.Errorf("calls (-want +got):\n%s", diff)
+			}
+			if logged := e.log.got(); len(logged) != 0 {
+				t.Errorf("InvokeSync logged %v, want nothing logged", logged)
+			}
+			// The lock was released, also after a panic.
+			within(t, "Do after InvokeSync", func() {
+				if err := e.m.Do(t.Context(), func(context.Context) error { return nil }); err != nil {
+					t.Errorf("Do: %v", err)
+				}
+			})
+		})
+	}
+
+	t.Run("success: re-enters the hold of a hook", func(t *testing.T) {
+		p := &dispatchProbe{}
+		m := NewManager(options.NewManager(), command.NewManager(), p.config())
+		t.Cleanup(m.Close)
+		target := &syncProbe{name: "target", probe: "configure"}
+		s := &syncInvoker{m: m, target: target}
+		if err := m.Add(t.Context(), s); err != nil {
+			t.Fatalf("Add: %v", err)
+		}
+		before := p.starts.Load()
+		within(t, "Trigger with InvokeSync in a hook", func() {
+			if err := m.Trigger(t.Context(), RunningHook{}); err != nil {
+				t.Errorf("Trigger: %v", err)
+			}
+		})
+		if s.err != nil {
+			t.Errorf("InvokeSync from the hook: %v", s.err)
+		}
+		if n := p.starts.Load() - before; n != 1 {
+			t.Errorf("Trigger and the InvokeSync in its hook took the dispatch lock %d times, want 1 (re-entry)", n)
+		}
+		if target.ran || len(target.errs) != 1 || !errors.Is(target.errs[0], ErrSyncContext) {
+			t.Errorf("target ran=%v errs=%v, want Concurrent refused once with ErrSyncContext", target.ran, target.errs)
+		}
+	})
 }

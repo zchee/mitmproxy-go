@@ -99,9 +99,8 @@ func NewManager(opts *options.Manager, cmds *command.Manager, cfg Config) *Manag
 		commands: make(map[any][]string),
 	}
 	m.unsubscribe = opts.Subscribe(func(ctx context.Context, updated map[string]struct{}) error {
-		hook := ConfigureHook{Updated: updated}
 		return m.d.do(ctx, func(ctx context.Context) error {
-			return m.trigger(inSync(ctx, hook.Name()+" hook"), hook)
+			return m.trigger(ctx, ConfigureHook{Updated: updated})
 		})
 	})
 	return m
@@ -381,6 +380,12 @@ func (m *Manager) Hook(ctx context.Context, hook Hook) error {
 // Trigger runs hook on every addon in the chain, each addon before its
 // sub-addons, under the dispatch lock.
 //
+// The configure and load hooks run as a synchronous dispatch, in which
+// [Concurrent] returns an error wrapping [ErrSyncContext], whether they are
+// fired through Trigger, [Manager.Hook], an option change or
+// [Manager.InvokeSync]: mitmproxy dispatches both only synchronously, with
+// trigger and invoke_addon_sync, never with trigger_event.
+//
 // A handler error is logged and the hook goes on to the next addon in the
 // chain, skipping the sub-addons of the failing one that it had not reached
 // yet; a handler panic is recovered and handled the same way. A handler
@@ -403,8 +408,11 @@ func (m *Manager) Trigger(ctx context.Context, hook Hook) error {
 // trigger is Trigger for a caller that holds the dispatch lock through the
 // frame in ctx. It runs the handlers in that frame instead of a nested one,
 // so that handlers of a hook dispatched at the outermost level may call
-// [Concurrent].
+// [Concurrent], unless the hook is one that always runs synchronously.
 func (m *Manager) trigger(ctx context.Context, hook Hook) error {
+	if syncHook(hook) {
+		ctx = inSync(ctx, hook.Name()+" hook")
+	}
 	m.mu.RLock()
 	chain := m.chain
 	m.mu.RUnlock()
@@ -422,6 +430,35 @@ func (m *Manager) trigger(ctx context.Context, hook Hook) error {
 		m.log().ErrorContext(ctx, "Addon error: "+err.Error(), "addon", addonName(a), "hook", hook.Name())
 	}
 	return nil
+}
+
+// syncHook reports whether hook is one that mitmproxy dispatches only
+// synchronously, so that its handlers can never release the dispatch lock.
+func syncHook(hook Hook) bool {
+	switch hook.(type) {
+	case ConfigureHook, LoadHook:
+		return true
+	}
+	return false
+}
+
+// InvokeSync runs hook on addon and its sub-addons, depth first, under the
+// dispatch lock, as a synchronous dispatch (mitmproxy's invoke_addon_sync).
+// A ctx that carries a valid dispatch frame re-enters the hold of the lock
+// instead of taking it again.
+//
+// addon need not be registered: a script loader uses InvokeSync to fire
+// configure and running on a script it has just loaded, and script.run to
+// fire the events of a flow on a script it never registers. [Concurrent]
+// called with a handler's context returns an error wrapping
+// [ErrSyncContext], whichever the hook. The first handler error stops the
+// dispatch and is returned as it is, without being logged, and a handler
+// panic is not recovered; mitmproxy's callers wrap invoke_addon_sync in
+// safecall when they want either logged.
+func (m *Manager) InvokeSync(ctx context.Context, addon any, hook Hook) error {
+	return m.d.do(ctx, func(ctx context.Context) error {
+		return m.invokeTree(inSync(ctx, hook.Name()+" hook"), addon, hook)
+	})
 }
 
 // panicError is a recovered handler panic.

@@ -427,7 +427,8 @@ func (t *classTranslator) both(s string) {
 // ASCII classes, where its ASCII word boundary is Python's; compileRE2
 // sends every other \b and \B to regexp2, where they become lookarounds.
 func translateClasses(body string, flags Flags, str, verbose bool) (translation, error) {
-	if !hasClassEscape(body) && !strings.Contains(body, "(?") {
+	// A class can hold a [ only if the body has two of them.
+	if !hasClassEscape(body) && !strings.Contains(body, "(?") && strings.Count(body, "[") < 2 {
 		return translation{re2: body, re2OK: true, backtrack: body}, nil
 	}
 	t := &classTranslator{src: body, str: str, re2OK: true}
@@ -585,10 +586,12 @@ type classItem struct {
 }
 
 // literal returns the item as text for a rebuilt class, escaping the
-// characters that would mean something else at a new position.
+// characters that would mean something else at a new position, and [,
+// which Python reads as a member while RE2 reads [: as the start of a
+// POSIX class and regexp2 reads -[ as the start of a class subtraction.
 func (it classItem) literal() string {
 	switch it.text {
-	case "-", "^", "]":
+	case "-", "^", "]", "[":
 		return `\` + it.text
 	}
 	return it.text
@@ -671,7 +674,8 @@ func isHex(c byte) bool {
 // sre_parse: a ] right after [ or [^ is a member, and a - between two
 // members is a range unless a ] follows it. A range with a class escape at
 // either end is an error, as in Python. A class that the pattern does not
-// close is copied as it is, for the engines to reject.
+// close is copied as it is, for the engines to reject. Every other class is
+// rebuilt from its members, so that each [ in it is escaped.
 func (t *classTranslator) class(i int, cur scope) (int, error) {
 	src := t.src
 	j := i + 1
@@ -718,7 +722,11 @@ func (t *classTranslator) class(i int, cur scope) (int, error) {
 		j = k
 	}
 	if len(shorts) == 0 {
-		t.both(src[i:j])
+		if neg {
+			t.both("[^" + rest.String() + "]")
+		} else {
+			t.both("[" + rest.String() + "]")
+		}
 		return j, nil
 	}
 

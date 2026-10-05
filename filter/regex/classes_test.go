@@ -233,6 +233,51 @@ func TestCompileClassFoldScope(t *testing.T) {
 	}
 }
 
+// TestCompileBracketInClass checks that a [ inside a character class is a
+// literal member, as in Python, on both engines: RE2 would otherwise read
+// [:alpha:] as a POSIX class and regexp2 would read -[ as the start of a
+// class subtraction. match lists the subjects Python 3.13 finds a match
+// in and miss those it does not, the same for str and bytes patterns with
+// and without re.IGNORECASE.
+func TestCompileBracketInClass(t *testing.T) {
+	tests := map[string]struct {
+		pattern     string
+		match, miss []string
+	}{
+		"success: what looks like a POSIX class":        {pattern: `[[:alpha:]]`, match: []string{"a]", ":]", "[]"}, miss: []string{"b"}},
+		`success: a POSIX look-alike beside \d`:         {pattern: `x[[:digit:]\d]`, match: []string{"x:5]", "xd0]", "x[1]"}, miss: []string{"x5"}},
+		`success: a range ending in [ beside \w`:        {pattern: `[\w.-[]`, match: []string{"[", ".", "A"}, miss: []string{"-", `\`}},
+		`success: a [ before a trailing dash beside \d`: {pattern: `[\d[-]`, match: []string{"[", "-"}, miss: []string{`\`}},
+		`success: a [ in a negated class beside \d`:     {pattern: `[^[\d]`, match: []string{"a"}, miss: []string{"[", "5"}},
+		"success: a [ alone":                            {pattern: `[[]`, match: []string{"["}, miss: []string{"a"}},
+		"success: a [ after another member":             {pattern: `[a[]`, match: []string{"[", "a"}},
+		"success: a [ after a leading bracket member":   {pattern: `[]a[]`, match: []string{"[", "]"}},
+	}
+	for name, tt := range tests {
+		for _, flags := range []Flags{0, Unicode, IgnoreCase, Unicode | IgnoreCase} {
+			// A lookahead sends the pattern to regexp2.
+			for _, pattern := range []string{tt.pattern, "(?=.)" + tt.pattern} {
+				t.Run(fmt.Sprintf("%s/%q/flags=%d", name, pattern, flags), func(t *testing.T) {
+					m, err := Compile(pattern, flags)
+					if err != nil {
+						t.Fatalf("Compile(%q) error = %v", pattern, err)
+					}
+					for _, in := range tt.match {
+						if !m.MatchString(in) {
+							t.Errorf("MatchString(%q) = false, want true", in)
+						}
+					}
+					for _, in := range tt.miss {
+						if m.MatchString(in) {
+							t.Errorf("MatchString(%q) = true, want false", in)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
 // TestCompileOverlapDoesNotBacktrack checks that what the translation emits
 // for regexp2 never offers two ways to match the same text: a class whose
 // members overlap its class escape, such as [\w_], and a run of \B. Under a

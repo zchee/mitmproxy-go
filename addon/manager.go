@@ -249,11 +249,16 @@ func (m *Manager) register(ctx context.Context, addon any) error {
 	// removed. The frame of a synchronous dispatch is never replaced, so
 	// every handler can be called with it.
 	ctx = inSync(ctx, LoadHook{}.Name()+" hook")
+	var loaded []any
 	for a := range traverse(addon) {
+		loaded = append(loaded, a)
 		if _, err := (LoadHook{Loader: &Loader{m: m, addon: a}}).invoke(ctx, a); err != nil {
 			// The addon is not registered, so nothing could remove it
-			// later; take back the commands the loads added.
-			for a := range traverse(addon) {
+			// later; take back the commands the loads added. Only the
+			// addons whose load ran have a Loader, and a load may have
+			// dropped one of them from the tree, so they are the ones
+			// recorded here rather than the ones the tree yields now.
+			for _, a := range loaded {
 				m.unregisterCommands(a)
 			}
 			return err

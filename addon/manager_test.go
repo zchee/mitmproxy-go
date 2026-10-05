@@ -1226,6 +1226,47 @@ func TestSubAddonCommandsFollowTheSubAddon(t *testing.T) {
 	})
 }
 
+// droppingSibling drops the first sub-addon of parent in its load, then
+// fails, as a parent reloading its sub-addons might drop one whose load
+// already ran before the load of another one fails.
+type droppingSibling struct {
+	parent *growingParent
+	err    error
+}
+
+func (d *droppingSibling) Load(context.Context, *Loader) error {
+	d.parent.children = d.parent.children[1:]
+	return d.err
+}
+
+// TestFailedLoadTakesBackCommandsOfDroppedSubAddons fails a load after a
+// sub-addon whose load added a command was dropped from the tree. The
+// commands taken back are those of every addon whose load ran, not only of
+// the addons the tree still yields.
+func TestFailedLoadTakesBackCommandsOfDroppedSubAddons(t *testing.T) {
+	e := newEnv(t)
+	errLoad := errors.New("load failed")
+	dropped := &growingParent{name: "dropped"}
+	parent := &growingParent{name: "parent"}
+	parent.children = []any{dropped, &droppingSibling{parent: parent, err: errLoad}}
+
+	if err := e.m.Add(t.Context(), parent); !errors.Is(err, errLoad) {
+		t.Fatalf("Add error = %v, want %v", err, errLoad)
+	}
+	if names := commandNames(e.cmds); len(names) != 0 {
+		t.Errorf("commands left after the failed load: %v", names)
+	}
+	e.m.mu.RLock()
+	owners := len(e.m.commands)
+	e.m.mu.RUnlock()
+	if owners != 0 {
+		t.Errorf("command owners recorded after the failed load: %d, want 0", owners)
+	}
+	if err := e.m.Add(t.Context(), &growingParent{name: "again", children: []any{dropped}}); err != nil {
+		t.Errorf("Add of the dropped sub-addon under a new parent: %v", err)
+	}
+}
+
 // TestChainChangeDuringConcurrent removes an addon while a hook chain has
 // released the lock with Concurrent. The chain in flight goes on over the
 // addons it started with, as mitmproxy's trigger_event iterates the list

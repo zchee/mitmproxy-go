@@ -5,12 +5,12 @@
 // maps to a Go test, or is listed here with the reason it has no port:
 //
 //	test_alpn_select_callback                         -> TestALPNSelect
-//	TestTlsConfig.test_configure                      -> TestConfigureCerts (needs the store loader; until then covered for the error paths by TestConfigureCertsWithoutStore)
+//	TestTlsConfig.test_configure                      -> TestConfigureCerts and TestConfigureECDHCurve
 //	TestTlsConfig.test_configure_tls_version          -> TestConfigureTLSVersionWarnings
 //	TestTlsConfig.test_configure_ciphers              -> TestConfigureCiphers: the @SECLEVEL warnings are not ported, because the cipher options accept only exact OpenSSL suite names, so "ALL" and "@SECLEVEL=0" fail with an OptionsError instead (docs/compat.md)
-//	TestTlsConfig.test_get_cert                       -> not ported yet: needs certs.FromStore; listed as remaining work
+//	TestTlsConfig.test_get_cert                       -> TestGetCert
 //	TestTlsConfig.test_tls_clienthello                -> TestTLSClientHello
-//	TestTlsConfig.test_tls_start_client               -> not ported yet: needs certs.FromStore; listed as remaining work
+//	TestTlsConfig.test_tls_start_client               -> TestTLSStartClient
 //	TestTlsConfig.test_quic_start_client              -> not applicable: QUIC is not implemented
 //	TestTlsConfig.test_tls_start_server_cannot_verify -> TestTLSStartServer/"error: empty sni opts out of verification"
 //	TestTlsConfig.test_tls_start_server_verify_failed -> TestTLSStartServer/"error: handshake with an untrusted server fails"
@@ -19,11 +19,11 @@
 //	TestTlsConfig.test_tls_start_server_insecure      -> TestTLSStartServer/"success: insecure skips verification"
 //	TestTlsConfig.test_quic_start_server_insecure     -> not applicable: QUIC is not implemented
 //	TestTlsConfig.test_alpn_selection                 -> TestServerALPNOffers and TestTLSStartServer/"success: alpn offers mirror the client"
-//	TestTlsConfig.test_no_h2_proxy                    -> not ported yet: needs tls_start_client and the store; listed as remaining work
+//	TestTlsConfig.test_no_h2_proxy                    -> TestNoH2Proxy: the forced protocol is observed on the configuration's NextProtos instead of pyOpenSSL app data
 //	TestTlsConfig.test_client_cert_file               -> TestTLSStartServer/"success: client certificate from a file" and "success: client certificate from a directory"
-//	TestTlsConfig.test_ca_expired                     -> not ported yet: needs certs.FromStore; listed as remaining work
-//	TestTlsConfig.test_crl_substitution               -> not ported yet: needs certs.FromStore; listed as remaining work
-//	TestTlsConfig.test_crl_request                    -> not ported yet: needs certs.FromStore; listed as remaining work
+//	TestTlsConfig.test_ca_expired                     -> TestCAExpired: an expired CA is written to disk instead of monkeypatching has_expired
+//	TestTlsConfig.test_crl_substitution               -> TestCRLSubstitution
+//	TestTlsConfig.test_crl_request                    -> TestCRLRequest
 //	test_default_ciphers                              -> not applicable: without a ciphers option the configurations keep the crypto/tls default suites instead of upstream's OpenSSL cipher string (docs/compat.md)
 package tlsconfig
 

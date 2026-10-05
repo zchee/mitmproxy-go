@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -31,6 +32,8 @@ import (
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/certs"
 	"github.com/zchee/mitmproxy-go/connection"
+	"github.com/zchee/mitmproxy-go/flow"
+	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/options"
 )
 
@@ -177,6 +180,94 @@ func (t *TLSConfig) TLSClientHello(ctx context.Context, d *hookdata.ClientHello)
 	return nil
 }
 
+// TLSStartClient builds the configuration for TLS between the client and the
+// proxy (py:mitmproxy/addons/tlsconfig.py:210-271). It returns early when a
+// user addon already provided one. The chosen leaf certificate is published
+// as the client connection's MitmCert; the TLS layer replaces it only when a
+// handshake certificate is present.
+func (t *TLSConfig) TLSStartClient(ctx context.Context, d *hookdata.TLS) error {
+	if d.Config != nil {
+		return nil
+	}
+	client := d.Context.Client
+	server := d.Context.Server
+
+	entry, err := t.getCert(d.Context)
+	if err != nil {
+		return err
+	}
+
+	if len(client.CipherList) == 0 {
+		if ciphers := t.options.OptStr("ciphers_client"); ciphers != nil {
+			client.CipherList = strings.Split(*ciphers, ":")
+		}
+	}
+
+	cfg := &tls.Config{
+		MinVersion:       minTLSVersion(t.options.Str("tls_version_client_min")),
+		MaxVersion:       maxTLSVersion(t.options.Str("tls_version_client_max")),
+		CurvePreferences: curvePreferences(t.options.OptStr("tls_ecdh_curve_client")),
+		KeyLogWriter:     t.keyLog(),
+	}
+	// Without a cipher list the crypto/tls defaults apply, where upstream
+	// would install its own OpenSSL default cipher string (docs/compat.md).
+	if len(client.CipherList) > 0 {
+		ids, err := suiteIDs("ciphers_client", client.CipherList)
+		if err != nil {
+			return err
+		}
+		cfg.CipherSuites = ids
+	}
+	if t.options.Bool("request_client_cert") {
+		cfg.ClientAuth = tls.RequestClientCert
+	}
+
+	// The handshake sends the chosen leaf, then the entry's chain beyond
+	// its own first certificate, exactly as upstream's use_certificate
+	// replaces the first certificate loaded from the chain file, and then
+	// the upstream server's certificates when
+	// add_upstream_certs_to_client_chain is set.
+	certificate := tls.Certificate{
+		Certificate: [][]byte{entry.Cert.X509().Raw},
+		PrivateKey:  entry.PrivateKey,
+		Leaf:        entry.Cert.X509(),
+	}
+	if len(entry.ChainCerts) > 1 {
+		for _, chain := range entry.ChainCerts[1:] {
+			certificate.Certificate = append(certificate.Certificate, chain.X509().Raw)
+		}
+	}
+	if t.options.Bool("add_upstream_certs_to_client_chain") {
+		for _, pemCert := range server.CertificateList {
+			extra, err := certs.ParseCert(pemCert)
+			if err != nil {
+				return fmt.Errorf("tlsconfig: upstream certificate: %w", err)
+			}
+			certificate.Certificate = append(certificate.Certificate, extra.X509().Raw)
+		}
+	}
+	cfg.Certificates = []tls.Certificate{certificate}
+
+	// Force HTTP/1 for secure web proxies: CONNECT over HTTP/2 is not
+	// supported, as it is not by upstream.
+	clientALPN := client.ALPN
+	if len(d.Context.Layers) == 2 {
+		if top, ok := d.Context.Layers[0].(interface{ Kind() hookdata.LayerKind }); ok && top.Kind() == hookdata.LayerRegular {
+			clientALPN = []byte("http/1.1")
+		}
+	}
+	// Until the proxy speaks HTTP/2 the protocol is selected as if the
+	// http2 option were off (docs/compat.md). The configuration carries
+	// exactly one protocol, or none.
+	if proto := alpnSelect(clientALPN, server.ALPN, client.ALPNOffers, false); proto != nil {
+		cfg.NextProtos = []string{string(proto)}
+	}
+
+	client.MitmCert = entry.Cert.PEM()
+	d.Config = cfg
+	return nil
+}
+
 // TLSStartServer builds the configuration for TLS between the proxy and the
 // server (py:mitmproxy/addons/tlsconfig.py:273-377). It returns early when a
 // user addon already provided one.
@@ -290,6 +381,27 @@ func clientCertificate(path string, server *connection.Server) (*tls.Certificate
 		return nil, fmt.Errorf("tlsconfig: client certificate %s: %w", name, err)
 	}
 	return &cert, nil
+}
+
+// Request answers a request for the certificate revocation list of the
+// proxy's CA: a live request without a response or an error, whose path ends
+// in the CA's CRL path, receives the store's CRL
+// (py:mitmproxy/addons/tlsconfig.py:635-644). The response is built under
+// the dispatch lock; it is small and involves no I/O.
+func (t *TLSConfig) Request(ctx context.Context, f *flow.HTTPFlow) error {
+	if !f.Live || f.Error != nil || f.Response != nil || f.Request == nil || t.store == nil {
+		return nil
+	}
+	// Check whether the request carries the magic CRL token at the end.
+	if !strings.HasSuffix(f.Request.Path, t.crlPath()) {
+		return nil
+	}
+	response, err := httpmsg.MakeResponse(http.StatusOK, t.store.DefaultCRL(), httpmsg.Headers{{Name: []byte("Content-Type"), Value: []byte("application/pkix-crl")}})
+	if err != nil {
+		return err
+	}
+	f.Response = response
+	return nil
 }
 
 // keyLog returns the writer for TLS master secrets when the SSLKEYLOGFILE

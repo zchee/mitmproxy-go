@@ -397,6 +397,23 @@ increments it.
 | Response fields are updated while the async app sends events (`mitmproxy/addons/asgiapp.py`). | The response becomes visible atomically after the handler returns and the dispatch lock is reacquired. | Other goroutines must not see partial response construction or race with the handler. |
 | The registration name changes if `host` changes (`mitmproxy/addons/asgiapp.py`). | The registration name remains fixed; `SetHost` changes matching only. | Addon removal must use the name recorded at registration. |
 
+## addons/tlsconfig
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `ciphers_client` and `ciphers_server` accept the full OpenSSL cipher-string syntax: aliases such as `HIGH`, `!`/`+`/`-` operators, `@STRENGTH` and `@SECLEVEL` (`mitmproxy/addons/tlsconfig.py`). | The options accept only colon-separated exact OpenSSL suite names of suites `crypto/tls` implements, mapped through `internal/tlsnames`; anything else fails configure with an `OptionsError` naming the entry. A connection's `Cipher` and `CipherList` fields still record OpenSSL names, as upstream's do. | `crypto/tls` has no cipher-string engine to hand the expression to, and silently approximating an expression would intercept traffic with an unintended cipher set. |
+| Without a ciphers option, connections use upstream's own OpenSSL default cipher list, prefixed with `@SECLEVEL=0` for insecure minimum versions (`mitmproxy/addons/tlsconfig.py:48-75`). | Connections keep the `crypto/tls` default suites. Explicit cipher lists restrict TLS 1.0–1.2 only; TLS 1.3 suite selection remains controlled by Go. There are no `@SECLEVEL` mechanics and no `With tls_version_*_min set to ..., ciphers_* must include "@SECLEVEL=0"` warnings. | Go's `CipherSuites` field does not configure TLS 1.3, and security levels are an OpenSSL concept with no Go counterpart. |
+| ALPN on both sides follows the `http2` option (`mitmproxy/addons/tlsconfig.py`). | Until the HTTP/2 layer lands, automatic protocol selection behaves as if `http2` were off: `h2` is dropped from mirrored upstream offers and the client preference fallback selects only HTTP/1 protocols. Explicit addon presets and an already negotiated upstream protocol still take precedence, as upstream specifies. | The default path must not negotiate a protocol the proxy cannot yet speak; addons retain control of their explicit overrides. |
+| The `tls_version_*` warnings name the OpenSSL build's supported versions (`mitmproxy/addons/tlsconfig.py:541-558`). | The warnings name `crypto/tls` and its supported versions (`TLS1`, `TLS1_1`, `TLS1_2`, `TLS1_3`). | The version floor comes from the Go TLS stack, not an OpenSSL build. |
+| `SSL3` is a selectable bound where the OpenSSL build decides whether it works; `UNBOUNDED` leaves both bounds to OpenSSL (`mitmproxy/net/tls.py`). | `SSL3` clamps to TLS 1.0, the lowest version `crypto/tls` can speak, and logs the unsupported-version warning; `UNBOUNDED` maps to TLS 1.0 as a minimum and TLS 1.3 as a maximum. | Go dropped SSLv3 entirely; the clamp preserves the "as low/high as possible" intent. |
+| `tls_ecdh_curve_*` accepts every curve name OpenSSL knows (`mitmproxy/net/tls.py`). | Only `secp256r1`, `secp384r1` and `secp521r1` are accepted; any other name fails configure with an `OptionsError` listing the valid curves. | They are the named curves `crypto/tls` implements. |
+| `ssl_verify_upstream_trusted_confdir` is handed to OpenSSL as a hashed certificate directory, loaded lazily per lookup (`mitmproxy/addons/tlsconfig.py`). | Every readable PEM file in the directory is loaded into the verification pool up front; files that hold no certificate are skipped. | Go's verifier takes a pool, not a directory; eager loading keeps the file-system work out of the handshake path. |
+| `ssl_insecure` also enables OpenSSL's `legacy_server_connect` (unsafe legacy renegotiation, `mitmproxy/addons/tlsconfig.py:342`). | `ssl_insecure` only disables certificate verification; there is no legacy-renegotiation switch. | `crypto/tls` does not implement insecure legacy renegotiation with servers. |
+
+The legacy cipher suites and DH parameters that the pyOpenSSL stack supports and `crypto/tls` does not are listed under
+["Decided for code that is not written yet"](#decided-for-code-that-is-not-written-yet), because they concern the TLS
+layers as much as this addon.
+
 ## Decided for code that is not written yet
 
 These differences are settled in the work plan ([docs/plans/mitmproxy-go-port.md](plans/mitmproxy-go-port.md): the

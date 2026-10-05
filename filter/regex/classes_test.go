@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -326,14 +327,21 @@ func TestCompileOverlapDoesNotBacktrack(t *testing.T) {
 			input:   strings.Repeat("1", 30) + "!aZ", want: false,
 		},
 		`success: a run of \B between spaces, str`: {
-			pattern: " " + strings.Repeat(`\B`, 25) + "x", flags: Unicode,
+			pattern: " " + strings.Repeat(`\B`, 32) + "x", flags: Unicode,
 			input: "   ", want: false,
 		},
 		`success: a run of \B between spaces, bytes`: {
-			pattern: " " + strings.Repeat(`\B`, 25) + "x",
+			pattern: " " + strings.Repeat(`\B`, 32) + "x",
 			input:   "   ", want: false,
 		},
 	}
+	// A match that backtracks runs into MatchTimeout and is reported to
+	// the logger, also where it would have returned the same result, so
+	// the count of abandoned matches tells it apart from a linear match
+	// without a bound on wall-clock time.
+	var abandoned atomic.Int64
+	SetLogger(func(string, error) { abandoned.Add(1) })
+	t.Cleanup(func() { SetLogger(nil) })
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			m, err := Compile(tt.pattern, tt.flags)
@@ -343,12 +351,12 @@ func TestCompileOverlapDoesNotBacktrack(t *testing.T) {
 			if !IsBacktracking(m) {
 				t.Fatalf("Compile(%q) runs on RE2; the case needs regexp2", tt.pattern)
 			}
+			before := abandoned.Load()
 			start := time.Now()
 			got := m.MatchString(tt.input)
-			// A linear match takes microseconds; the bound leaves room
-			// for the race detector and stays well below MatchTimeout.
-			if elapsed := time.Since(start); elapsed > MatchTimeout/4 {
-				t.Errorf("MatchString(%q) took %v; the translation backtracks", tt.input, elapsed)
+			t.Logf("MatchString(%q) took %v", tt.input, time.Since(start))
+			if n := abandoned.Load() - before; n != 0 {
+				t.Errorf("MatchString(%q) ran into MatchTimeout %d times; the translation backtracks", tt.input, n)
 			}
 			if got != tt.want {
 				t.Errorf("MatchString(%q) = %v, want %v", tt.input, got, tt.want)

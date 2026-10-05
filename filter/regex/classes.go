@@ -335,15 +335,16 @@ func boundary(c byte, uni bool) string {
 }
 
 // hasScannedEscape reports whether pattern contains an escape the scanner
-// rewrites or refuses: \d, \D, \w, \W, \s, \S, \b, \B, \u, \U, \p, \P or
-// \x{, possibly inside a character class.
+// rewrites or refuses: \d, \D, \w, \W, \s, \S, \b, \B, \A, \Z, \z, \u, \U,
+// a digit from 1 to 9, \k, \p, \P or \x{, possibly inside a character
+// class.
 func hasScannedEscape(pattern string) bool {
 	for i := 0; i+1 < len(pattern); i++ {
 		if pattern[i] != '\\' {
 			continue
 		}
 		i++
-		if c := pattern[i]; isShorthand(c) || c == 'b' || c == 'B' || c == 'u' || c == 'U' || '1' <= c && c <= '9' || foreignEscape(pattern, i-1) != nil {
+		if c := pattern[i]; isShorthand(c) || strings.IndexByte("bBAZzuU123456789", c) >= 0 || foreignEscape(pattern, i-1) != nil {
 			return true
 		}
 	}
@@ -644,7 +645,7 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 	// whitespace can stand between two quantifiers, a { may start a repeat
 	// to rewrite, and a + after a quantifier makes it possessive.
 	possessive := strings.Contains(body, "*+") || strings.Contains(body, "++") || strings.Contains(body, "?+")
-	if !verbose && !possessive && !hasScannedEscape(body) && !strings.ContainsAny(body, "{") && !strings.Contains(body, "(?") && strings.Count(body, "[") < 2 {
+	if !verbose && !possessive && !quantifiedAnchor(body) && !hasScannedEscape(body) && !strings.ContainsAny(body, "{") && !strings.Contains(body, "(?") && strings.Count(body, "[") < 2 {
 		return translation{re2: body, re2OK: true, backtrack: body}, nil
 	}
 	t := &classTranslator{src: body, str: str, re2OK: true}
@@ -695,6 +696,11 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 				t.bt.WriteByte(')')
 				t.re2OK = false
 				continue
+			}
+			if n > 0 && atom < 0 {
+				// Python repeats an item, never a position such as ^, $,
+				// \A, \Z, \b or \B, while both Go engines accept a*$?.
+				return translation{}, errors.New("nothing to repeat")
 			}
 			repeat, gap, open, suffixed = n > 0, false, c == '(', false
 			if n > 0 {
@@ -953,6 +959,17 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 		}
 	}
 	return translation{re2: t.re2.String(), re2OK: t.re2OK, backtrack: openAtomic(t.bt.String(), t.atomic), unicodeBoundary: t.uniBoundary}, nil
+}
+
+// quantifiedAnchor reports whether a ^ or $ in s is followed by a
+// character that can start a quantifier, which only the scanner refuses.
+func quantifiedAnchor(s string) bool {
+	for i := 0; i+1 < len(s); i++ {
+		if (s[i] == '^' || s[i] == '$') && strings.IndexByte("*+?{", s[i+1]) >= 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // unknownExtension reports whether rest, the text after "(?", starts group

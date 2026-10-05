@@ -106,6 +106,8 @@ Reproduced on purpose (compatibility, not differences):
   know, such as `(?<name>...)` and `(?'name'...)`. A group name is checked with Go's Unicode letter, mark, digit and
   connector categories, where Python uses the XID properties; they differ only on a few characters that NFKC
   normalisation changes.
+- Python's `nothing to repeat` for a quantifier on a position rather than an item, such as `^*`, `a$?`, `\A*` or `\b+`,
+  which both Go engines accept.
 - pyparsing's grammar as mitmproxy uses it: `a&b` is one bare word, expressions side by side inside parentheses are an
   error, tabs are expanded before parsing, and an operator name must be followed by whitespace, a non-ASCII character
   or the end of the input.

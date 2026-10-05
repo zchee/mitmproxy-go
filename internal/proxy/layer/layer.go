@@ -55,6 +55,7 @@ import (
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/flow"
+	"github.com/zchee/mitmproxy-go/internal/http1"
 )
 
 // Layer is one protocol layer of a connection: the counterpart of
@@ -242,6 +243,11 @@ type Context struct {
 	// A layer that wraps it must preserve buffered bytes through a Recorder.
 	// Its metadata stays in Data.Server and is read or written only in Do.
 	Server Recorder
+
+	// HTTPFidelity belongs to one proxy instance and counts head-byte
+	// normalisations emitted by the proxy itself. The HTTP layer passes it
+	// to the assembly functions. A nil counter disables accounting.
+	HTTPFidelity *http1.FidelityCounter
 
 	// Logger is the connection's logger, prefixed with the client address
 	// like mitmproxy's log_prefix (py:mitmproxy/proxy/mode_servers.py).

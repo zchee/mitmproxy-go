@@ -64,6 +64,14 @@ Anything not listed here is meant to behave as upstream does; a difference that 
 | DNS answers render through `ResourceRecord.__str__`: A/AAAA addresses, NS/CNAME/PTR domain names, TXT text, HTTPS record JSON, hexadecimal for other types (`mitmproxy/dns.py:74,153-169`). | A, AAAA and TXT render as upstream's do, and unknown types render as hexadecimal; NS, CNAME, PTR and HTTPS records render as their type name instead of their data. | Their data needs the DNS wire codec (compressed domain names, HTTPS record fields), which is ported with the DNS protocol work; the type-name placeholder stands in until that codec lands. |
 | Message content chunks are coloured by syntax-highlight tag through `CONTENTVIEW_STYLES` (`mitmproxy/addons/dumper.py:38-45,130-140`). | Message content is printed uncoloured; request, status, header and trailer styles are emitted as upstream's are. | The syntax highlighter behind the tags is ported with the content-view highlighting work; on a pipe, where the differential runs, upstream emits no colour either, so the compared output is identical. |
 
+## addons/savehar
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| HAR objects retain Python dictionary insertion order (`mitmproxy/addons/savehar.py`). | Exported HAR objects sort keys; arrays, duplicate fields and all JSON values retain upstream semantics. | Deterministic standard-library JSON output; HAR consumers do not depend on object key order. Float spelling and ASCII/surrogateescape string spelling follow Python. |
+| `.zhar` uses Python's zlib encoder at level 9 (`mitmproxy/addons/savehar.py`). | Uses Go's standard zlib encoder at level 9. The decompressed HAR is equivalent; compressed bytes may differ. | Compression streams depend on the encoder implementation; both encodings are readable by zlib. |
+| `save.har` and `hardump` create files with mode 0666 under the process umask (`mitmproxy/addons/savehar.py`). | New HAR and compressed HAR files are created with mode 0600; existing files retain their permissions. | Recordings contain bodies, cookies and headers that may contain credentials, matching the port's save, export and cut file policy. |
+
 ## addons/save
 
 | Upstream behaviour | Go behaviour | Reason |

@@ -12,10 +12,12 @@ import (
 
 	gocmp "github.com/google/go-cmp/cmp"
 
+	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/flow/state"
 	"github.com/zchee/mitmproxy-go/flowio/tnetstring"
 	"github.com/zchee/mitmproxy-go/internal/testutil"
+	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
 )
 
 // writeAll writes flows into a flow file.
@@ -149,6 +151,121 @@ func TestWriterErrors(t *testing.T) {
 	}
 	if buf.Len() != 0 {
 		t.Errorf("a failed Add wrote %d bytes", buf.Len())
+	}
+}
+
+// TestWriterRefusesFlowsItCannotReadBack writes flows that lack a part
+// mitmproxy requires: an HTTP or DNS flow without a request, a flow without
+// a connection, and connections without the fields that upstream sets in
+// every constructor. Upstream's get_state raises for the same flows, and its
+// reader, like Reader, refuses their state, so Add must refuse them and
+// write nothing. Flows that have those parts are written and read back.
+func TestWriterRefusesFlowsItCannotReadBack(t *testing.T) {
+	tests := map[string]struct {
+		build   func() flow.Flow
+		wantErr string // empty: written and read back
+	}{
+		"success: http flow": {
+			build: func() flow.Flow { return testflow.TFlow(testflow.WithResponse) },
+		},
+		"success: tcp flow over constructor-built connections": {
+			build: func() flow.Flow {
+				return flow.NewTCPFlow(connection.NewClient(connection.Address{}, connection.Address{}, 0), connection.NewServer(nil), true)
+			},
+		},
+		"error: http flow without a request": {
+			build: func() flow.Flow {
+				f := testflow.TFlow()
+				f.Request = nil
+				return f
+			},
+			wantErr: "flowio: cannot write http flow: no request",
+		},
+		"error: dns flow without a request": {
+			build: func() flow.Flow {
+				f := testflow.TDNSFlow()
+				f.Request = nil
+				return f
+			},
+			wantErr: "flowio: cannot write dns flow: no request",
+		},
+		"error: flow without a client connection": {
+			build:   func() flow.Flow { return flow.NewTCPFlow(nil, testflow.TServerConn(), false) },
+			wantErr: "flowio: cannot write tcp flow: no client_conn",
+		},
+		"error: flow without a server connection": {
+			build:   func() flow.Flow { return flow.NewUDPFlow(testflow.TClientConn(), nil, false) },
+			wantErr: "flowio: cannot write udp flow: no server_conn",
+		},
+		"error: client connection without a peer address": {
+			build: func() flow.Flow {
+				f := testflow.TFlow()
+				f.ClientConn.Peername = nil
+				return f
+			},
+			wantErr: "flowio: cannot write http flow: no client_conn.peername",
+		},
+		"error: client connection without a socket address": {
+			build: func() flow.Flow {
+				f := testflow.TFlow()
+				f.ClientConn.Sockname = nil
+				return f
+			},
+			wantErr: "flowio: cannot write http flow: no client_conn.sockname",
+		},
+		"error: client connection without a start time": {
+			build: func() flow.Flow {
+				f := testflow.TFlow()
+				f.ClientConn.TimestampStart = nil
+				return f
+			},
+			wantErr: "flowio: cannot write http flow: no client_conn.timestamp_start",
+		},
+		"error: client connection without a transport protocol": {
+			build: func() flow.Flow {
+				f := testflow.TFlow()
+				f.ClientConn.TransportProtocol = ""
+				return f
+			},
+			wantErr: "flowio: cannot write http flow: no client_conn.transport_protocol",
+		},
+		"error: server connection without a transport protocol": {
+			build: func() flow.Flow {
+				f := testflow.TFlow()
+				f.ServerConn.TransportProtocol = ""
+				return f
+			},
+			wantErr: "flowio: cannot write http flow: no server_conn.transport_protocol",
+		},
+		"error: zero-value connections": {
+			build: func() flow.Flow {
+				f := testflow.TFlow()
+				f.ClientConn, f.ServerConn = &connection.Client{}, &connection.Server{}
+				return f
+			},
+			wantErr: "flowio: cannot write http flow: no client_conn.peername",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			err := NewWriter(&buf).Add(tt.build())
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Errorf("Add error = %v, want %q", err, tt.wantErr)
+				}
+				if buf.Len() != 0 {
+					t.Errorf("a refused Add wrote %d bytes", buf.Len())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Add: %v", err)
+			}
+			if _, err := NewReader(&buf).Next(); err != nil {
+				t.Errorf("reading the written flow back: %v", err)
+			}
+		})
 	}
 }
 

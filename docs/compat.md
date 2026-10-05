@@ -204,6 +204,15 @@ read to the end of the message whatever length their field declares; the server_
 end of their bodies whatever list length they declare, and an empty or truncated one makes the whole ClientHello
 invalid; an odd cipher suite length leaves its last byte to be read as the compression methods' length.
 
+## internal/tools/cmdline
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `--version` prints mitmproxy, Python, OpenSSL and platform information (`mitmproxy/tools/main.py`, `mitmproxy/utils/debug.py`). | Prints `Mitmproxy-go: <version>`, `Go: <runtime.Version()>`, and `Platform: <GOOS/GOARCH>`, on three lines. | Identifies the runtime actually used; the Go proxy does not use OpenSSL. |
+| argparse formats help, reports argument errors, and accepts unambiguous long-flag abbreviations (`mitmproxy/tools/cmdline.py`). | Cobra/pflag supplies command parsing and error text; help preserves option help and metavars but uses a flat flag table. Long flags must be spelled in full. | The selected Go command-line library uses GNU-style flags. |
+| A boolean flag accepts no attached value (`mitmproxy/optmanager.py`, `make_parser`). | Generated boolean flags also accept `=true`, meaning that flag was selected; for example, `--no-server=true` disables the server. Other attached values are rejected. | pflag sends the same value to a boolean flag for a bare occurrence and an explicit `=true`. Use the positive or negative flag to select the desired value. |
+| There is no `completion` subcommand (`mitmproxy/tools/cmdline.py`). | `completion bash`, `completion zsh`, `completion fish` and `completion powershell` generate scripts backed by Cobra's completion protocol. A filter beginning with the word `completion` must follow `--`. | Shell completion is an explicit addition to the Go CLI. |
+
 ## Decided for code that is not written yet
 
 These differences are settled in the work plan ([docs/plans/mitmproxy-go-port.md](plans/mitmproxy-go-port.md): the

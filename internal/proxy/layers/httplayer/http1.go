@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -82,6 +83,7 @@ type http1Conn struct {
 	br       *bufio.Reader
 	wire     *wireStore
 	fidelity *http1.FidelityCounter
+	logger   *slog.Logger
 
 	send chan struct{}
 
@@ -102,6 +104,16 @@ func newHTTP1Conn(conn layer.Conn, wire *wireStore, fidelity *http1.FidelityCoun
 		conn: conn, src: src, br: bufio.NewReaderSize(src, http1ReadBuffer),
 		wire: wire, fidelity: fidelity,
 		send: make(chan struct{}, 1),
+	}
+}
+
+func (c *http1Conn) reportFidelity(ctx context.Context, delta uint64) {
+	if delta == 0 || c.fidelity == nil {
+		return
+	}
+	c.fidelity.Add(delta)
+	if c.logger != nil {
+		c.logger.DebugContext(ctx, "HTTP wire normalization", "http_fidelity", c.fidelity.Load())
 	}
 }
 

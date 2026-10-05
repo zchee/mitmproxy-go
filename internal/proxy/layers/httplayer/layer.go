@@ -88,6 +88,7 @@ func (l *httpLayer) Run(ctx context.Context, c *layer.Context) error {
 	c.Client.StopRecording()
 	wire := newWireStore()
 	client := newHTTP1Server(c.Client, wire, c.HTTPFidelity)
+	client.logger = c.Logger
 	client.handover = true
 
 	// When a server TLS layer sits above, its derived pool already wraps
@@ -131,6 +132,7 @@ func (l *httpLayer) Run(ctx context.Context, c *layer.Context) error {
 				if endpoint == nil {
 					c.Server.StopRecording()
 					endpoint = newHTTP1Client(c.Server, wire, c.HTTPFidelity)
+					endpoint.logger = c.Logger
 					endpoints[conn] = endpoint
 				}
 				idleCtx, cancel := context.WithCancel(ctx)
@@ -248,6 +250,7 @@ func (l *httpLayer) connect(ctx context.Context, c *layer.Context, stream *httpS
 		recorded := c.Record(conn)
 		recorded.StopRecording()
 		endpoint = newHTTP1Client(recorded, wire, c.HTTPFidelity)
+		endpoint.logger = c.Logger
 		endpoints[conn] = endpoint
 		c.Server = recorded
 	}

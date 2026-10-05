@@ -71,7 +71,8 @@ type Config struct {
 type Master struct {
 	*master.Master
 
-	logger *slog.Logger
+	logger       *slog.Logger
+	httpFidelity *http1.FidelityCounter
 }
 
 // New returns a Master whose addons are registered in upstream's
@@ -104,11 +105,12 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 	}
 	fan.handlers = handlers
 
+	httpFidelity := new(http1.FidelityCounter)
 	ps, err := proxyserver.New(proxy.Config{
 		Manager:      m.Addons,
 		Options:      opts,
 		Connections:  new(proxy.Connections),
-		HTTPFidelity: new(http1.FidelityCounter),
+		HTTPFidelity: httpFidelity,
 		Logger:       logger,
 	})
 	if err != nil {
@@ -137,7 +139,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 	if err := m.Addons.Add(ctx, addons...); err != nil {
 		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
 	}
-	return &Master{Master: m, logger: logger}, nil
+	return &Master{Master: m, logger: logger, httpFidelity: httpFidelity}, nil
 }
 
 // Logger returns the logger that fans every record out to the add_log

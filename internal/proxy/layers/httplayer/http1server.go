@@ -366,7 +366,9 @@ func (s *http1Server) sendHead(ctx context.Context, response *httpmsg.Response) 
 		original = entry.head
 		addonChanged = entry.addonChanged
 	}
-	raw := http1.AssembleResponseHead(response, original, addonChanged, s.fidelity)
+	var emitted http1.FidelityCounter
+	raw := http1.AssembleResponseHead(response, original, addonChanged, &emitted)
+	s.reportFidelity(ctx, emitted.Load())
 	if err := s.writeCtx(ctx, raw); err != nil {
 		return err
 	}

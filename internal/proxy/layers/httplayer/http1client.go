@@ -122,7 +122,11 @@ func (c *http1Client) sendHead(ctx context.Context, request *httpmsg.Request) er
 		original = entry.head
 		addonChanged = entry.addonChanged
 	}
-	raw := http1.AssembleRequestHead(request, original, addonChanged, c.fidelity)
+	// Count this head separately so concurrent connections cannot cause a
+	// normalization log to be attributed to the wrong client.
+	var emitted http1.FidelityCounter
+	raw := http1.AssembleRequestHead(request, original, addonChanged, &emitted)
+	c.reportFidelity(ctx, emitted.Load())
 	if err := c.writeCtx(ctx, raw); err != nil {
 		return err
 	}

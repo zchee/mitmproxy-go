@@ -59,11 +59,11 @@ func awaitHTTP[T any](t *testing.T, ch <-chan T) T {
 // startHTTPDump uses the command's option parser and the production addon set.
 // Importing proxytest here would register its layers and hide missing imports
 // in the dump assembly.
-func startHTTPDump(t *testing.T, mode string) (*Master, string, *httpProbe) {
+func startHTTPDump(t *testing.T, mode string, stdout io.Writer) (*Master, string, *httpProbe) {
 	t.Helper()
-	m := newMaster(t, Config{Stdout: io.Discard, Stderr: io.Discard, WithTermlog: true, WithDumper: true})
+	m := newMaster(t, Config{Stdout: stdout, Stderr: io.Discard, WithTermlog: true, WithDumper: true})
 	cmd := cmdline.New(m.Options, "test")
-	if err := cmd.ParseFlags([]string{"--mode", mode, "--listen-host", "127.0.0.1", "--listen-port", "0", "--set", "confdir=" + t.TempDir()}); err != nil {
+	if err := cmd.ParseFlags([]string{"--mode", mode, "--listen-host", "127.0.0.1", "--listen-port", "0", "--set", "confdir=" + t.TempDir(), "--set", "termlog_verbosity=debug"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := cmdline.Apply(t.Context(), cmd, m.Options, m.Do); err != nil {
@@ -111,7 +111,7 @@ func TestHTTPProxyAssembly(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, addr, probe := startHTTPDump(t, tt.mode)
+			_, addr, probe := startHTTPDump(t, tt.mode, io.Discard)
 			transport := &http.Transport{DisableKeepAlives: true}
 			t.Cleanup(transport.CloseIdleConnections)
 			target := "http://" + addr + "/assembly"

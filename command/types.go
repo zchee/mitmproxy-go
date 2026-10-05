@@ -6,6 +6,8 @@ package command
 import (
 	"fmt"
 	"reflect"
+
+	"github.com/zchee/mitmproxy-go/flow"
 )
 
 // Type is the identity of a command parameter or return type, the Go
@@ -65,8 +67,9 @@ type (
 
 // The type identities registered with mitmproxy's CommandTypes.
 //
-// FlowType and FlowsType carry no Go binding yet: a command whose signature
-// needs them cannot be registered until the flow model provides one.
+// FlowType binds to the [flow.Flow] interface and FlowsType to a slice of
+// it, so a command takes one flow or a list of flows of any kind and may
+// type-switch to the concrete flow it handles.
 var (
 	ArgType     Type = &basicType{name: "Arg", display: "arg", goType: reflect.TypeFor[CmdArgs]()}
 	BoolType    Type = &basicType{name: "Bool", display: "bool", goType: reflect.TypeFor[bool]()}
@@ -74,8 +77,8 @@ var (
 	CmdType     Type = &basicType{name: "Cmd", display: "cmd", goType: reflect.TypeFor[Cmd]()}
 	CutSpecType Type = &basicType{name: "CutSpec", display: "cut[]", goType: reflect.TypeFor[CutSpec]()}
 	DataType    Type = &basicType{name: "Data", display: "data[][]", goType: reflect.TypeFor[Data]()}
-	FlowType    Type = &basicType{name: "Flow", display: "flow"}
-	FlowsType   Type = &basicType{name: "Flows", display: "flow[]"}
+	FlowType    Type = &basicType{name: "Flow", display: "flow", goType: reflect.TypeFor[flow.Flow]()}
+	FlowsType   Type = &basicType{name: "Flows", display: "flow[]", goType: reflect.TypeFor[[]flow.Flow]()}
 	IntType     Type = &basicType{name: "Int", display: "int", goType: reflect.TypeFor[int]()}
 	MarkerType  Type = &basicType{name: "Marker", display: "marker", goType: reflect.TypeFor[Marker]()}
 	PathType    Type = &basicType{name: "Path", display: "path", goType: reflect.TypeFor[Path]()}
@@ -106,7 +109,7 @@ func (ChoiceType) Display() string { return "choice" }
 // byGoType maps each Go type a command signature may use to its identity.
 var byGoType = func() map[reflect.Type]Type {
 	m := make(map[reflect.Type]Type)
-	for _, t := range []Type{ArgType, BoolType, BytesType, CmdType, CutSpecType, DataType, IntType, MarkerType, PathType, StrType, StrSeqType} {
+	for _, t := range []Type{ArgType, BoolType, BytesType, CmdType, CutSpecType, DataType, FlowType, FlowsType, IntType, MarkerType, PathType, StrType, StrSeqType} {
 		m[t.(*basicType).goType] = t
 	}
 	return m

@@ -17,6 +17,7 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/zchee/mitmproxy-go/command"
+	"github.com/zchee/mitmproxy-go/flow"
 )
 
 func TestMain(m *testing.M) {
@@ -124,6 +125,10 @@ func TestTypeFor(t *testing.T) {
 		"success: marker":        {goType: reflect.TypeFor[command.Marker](), want: command.MarkerType},
 		"success: cut spec":      {goType: reflect.TypeFor[command.CutSpec](), want: command.CutSpecType},
 		"success: data":          {goType: reflect.TypeFor[command.Data](), want: command.DataType},
+		"success: flow":          {goType: reflect.TypeFor[flow.Flow](), want: command.FlowType},
+		"success: flow slice":    {goType: reflect.TypeFor[[]flow.Flow](), want: command.FlowsType},
+		"error: concrete flow":   {goType: reflect.TypeFor[*flow.HTTPFlow](), wantErr: "unsupported type"},
+		"error: concrete flows":  {goType: reflect.TypeFor[[]*flow.TCPFlow](), wantErr: "unsupported type"},
 		"error: struct":          {goType: reflect.TypeFor[unsupported](), wantErr: "unsupported type"},
 		"error: int64":           {goType: reflect.TypeFor[int64](), wantErr: "unsupported type"},
 		"error: empty interface": {goType: reflect.TypeFor[any](), wantErr: "unsupported type"},
@@ -207,6 +212,35 @@ func TestRegisterSignature(t *testing.T) {
 			fn:   func(ctx context.Context, m command.Marker) (command.CutSpec, error) { return nil, nil },
 			opts: []command.Option{command.WithParams("marker")},
 			want: summary{Params: []string{"marker:Marker"}, Return: "CutSpec", Signature: "ctx marker -> cut[]"},
+		},
+		"success: flow list argument": {
+			name: "flow.kill",
+			fn:   func(_ context.Context, flows []flow.Flow) {},
+			opts: []command.Option{command.WithParams("flows")},
+			want: summary{Params: []string{"flows:Flows"}, Signature: "flow.kill flows"},
+		},
+		"success: single flow argument and flow list result": {
+			name: "flow.one",
+			fn:   func(_ context.Context, f flow.Flow, spec string) ([]flow.Flow, error) { return nil, nil },
+			opts: []command.Option{command.WithParams("f", "spec")},
+			want: summary{Params: []string{"f:Flow", "spec:Str"}, Return: "Flows", Signature: "flow.one f spec -> flow[]"},
+		},
+		"success: variadic flows map on the element": {
+			name: "flow.each",
+			fn:   func(_ context.Context, fs ...flow.Flow) flow.Flow { return nil },
+			opts: []command.Option{command.WithParams("fs")},
+			want: summary{Params: []string{"*fs:Flow"}, Return: "Flow", Signature: "flow.each *fs -> flow"},
+		},
+		"success: explicit flow identities": {
+			name: "flow.explicit",
+			fn:   func(_ context.Context, f flow.Flow, fs []flow.Flow) {},
+			opts: []command.Option{command.WithParams("f", "fs"), command.WithArgument("f", command.FlowType), command.WithArgument("fs", command.FlowsType)},
+			want: summary{Params: []string{"f:Flow", "fs:Flows"}, Signature: "flow.explicit f fs"},
+		},
+		"error: concrete flow list argument": {
+			name:    "flow.http",
+			fn:      func(_ context.Context, flows []*flow.HTTPFlow) {},
+			wantErr: command.ErrSignature,
 		},
 		"success: error-only result has no return type": {
 			name: "errorish",
@@ -307,10 +341,16 @@ func TestRegisterSignature(t *testing.T) {
 			opts:    []command.Option{command.WithParams("arg"), command.WithArgument("arg", command.PathType)},
 			wantErr: command.ErrSignature,
 		},
-		"error: flow identity has no Go binding yet": {
+		"error: flow identity on a string parameter": {
 			name:    "flow",
 			fn:      func(_ context.Context, arg string) {},
 			opts:    []command.Option{command.WithParams("arg"), command.WithArgument("arg", command.FlowType)},
+			wantErr: command.ErrSignature,
+		},
+		"error: flows identity on a single flow parameter": {
+			name:    "flows",
+			fn:      func(_ context.Context, arg flow.Flow) {},
+			opts:    []command.Option{command.WithParams("arg"), command.WithArgument("arg", command.FlowsType)},
 			wantErr: command.ErrSignature,
 		},
 		"error: nil argument identity": {
@@ -793,5 +833,100 @@ func TestSetRunnerRefusesReplacement(t *testing.T) {
 				t.Errorf("Call after a refused SetRunner = %v, %v; want %q from the first runner", got, err, "first")
 			}
 		})
+	}
+}
+
+// TestCallPassesFlows checks that flow and flow-list arguments reach the
+// command as the very values the caller passed, with and without a Runner,
+// and that values that are not flows of the declared shape are refused.
+func TestCallPassesFlows(t *testing.T) {
+	h := flow.NewHTTPFlow(nil, nil, true)
+	tc := flow.NewTCPFlow(nil, nil, true)
+	tests := map[string]struct {
+		name        string
+		args        []any
+		want        []flow.Flow
+		wantErr     error
+		wantErrText string
+	}{
+		"success: flow list of mixed kinds": {
+			name: "flows.take", args: []any{[]flow.Flow{h, tc}}, want: []flow.Flow{h, tc},
+		},
+		"success: empty flow list": {
+			name: "flows.take", args: []any{[]flow.Flow{}}, want: []flow.Flow{},
+		},
+		"success: nil flow list": {
+			name: "flows.take", args: []any{nil}, want: nil,
+		},
+		"success: concrete flow for a single flow parameter": {
+			name: "flow.take", args: []any{h}, want: []flow.Flow{h},
+		},
+		"success: variadic flows": {
+			name: "flow.each", args: []any{tc, h}, want: []flow.Flow{tc, h},
+		},
+		"error: concrete flow slice for a flow list parameter": {
+			name: "flows.take", args: []any{[]*flow.HTTPFlow{h}}, wantErr: command.ErrArgumentMismatch, wantErrText: "argument flows: []*flow.HTTPFlow is not a []flow.Flow",
+		},
+		"error: single flow for a flow list parameter": {
+			name: "flows.take", args: []any{h}, wantErr: command.ErrArgumentMismatch, wantErrText: "argument flows",
+		},
+		"error: flow list for a single flow parameter": {
+			name: "flow.take", args: []any{[]flow.Flow{h}}, wantErr: command.ErrArgumentMismatch, wantErrText: "argument f",
+		},
+		"error: string for a flow parameter": {
+			name: "flow.take", args: []any{"@all"}, wantErr: command.ErrArgumentMismatch, wantErrText: "string is not a flow.Flow",
+		},
+	}
+	for name, tt := range tests {
+		for _, runner := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/runner=%t", name, runner), func(t *testing.T) {
+				m := command.NewManager()
+				var got []flow.Flow
+				regs := []struct {
+					name   string
+					fn     any
+					params []string
+				}{
+					{"flows.take", func(_ context.Context, flows []flow.Flow) { got = flows }, []string{"flows"}},
+					{"flow.take", func(_ context.Context, f flow.Flow) { got = []flow.Flow{f} }, []string{"f"}},
+					{"flow.each", func(_ context.Context, fs ...flow.Flow) { got = fs }, []string{"fs"}},
+				}
+				for _, r := range regs {
+					if err := m.Register(r.name, r.fn, command.WithParams(r.params...)); err != nil {
+						t.Fatalf("Register(%q): %v", r.name, err)
+					}
+				}
+				var runs int
+				if runner {
+					if err := m.SetRunner(func(ctx context.Context, _ string, run func(context.Context) (any, error)) (any, error) {
+						runs++
+						return run(ctx)
+					}); err != nil {
+						t.Fatalf("SetRunner: %v", err)
+					}
+				}
+				_, err := m.Call(t.Context(), tt.name, tt.args...)
+				if runner && runs != 1 {
+					t.Errorf("the runner ran %d times; want 1", runs)
+				}
+				if tt.wantErr != nil {
+					if !errors.Is(err, tt.wantErr) || !strings.Contains(err.Error(), tt.wantErrText) {
+						t.Fatalf("Call(%q) error = %v, want %v containing %q", tt.name, err, tt.wantErr, tt.wantErrText)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("Call(%q): %v", tt.name, err)
+				}
+				if len(got) != len(tt.want) || (got == nil) != (tt.want == nil) {
+					t.Fatalf("Call(%q) passed %d flows (nil %t), want %d (nil %t)", tt.name, len(got), got == nil, len(tt.want), tt.want == nil)
+				}
+				for i := range got {
+					if got[i] != tt.want[i] {
+						t.Errorf("flow %d: got %p, want the caller's flow %p", i, got[i], tt.want[i])
+					}
+				}
+			})
+		}
 	}
 }

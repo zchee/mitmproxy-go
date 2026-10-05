@@ -19,7 +19,9 @@
 //     Set never changes the kind of an existing key, and SetBytesKey makes it
 //     a byte string.
 //   - The zero value is an empty map ready to use, and every read-only
-//     method accepts a nil *Map and treats it as empty.
+//     method accepts a nil *Map and treats it as empty. The flow file codec
+//     (package flowio/tnetstring) likewise writes a nil map as an empty
+//     dictionary; [Map.MarshalJSONTo] writes it as null.
 //   - A Map is not safe for concurrent use. Concurrent reads are fine, but a
 //     mutation concurrent with any other access must be synchronised by the
 //     caller.

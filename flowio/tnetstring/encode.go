@@ -18,7 +18,9 @@ import (
 //
 // See the package documentation for the accepted types. Strings must be valid
 // UTF-8, as Python's str.encode("utf8") requires. A nil *omap.Map[any] is
-// written as an empty dictionary and a nil []byte as an empty byte string.
+// written as an empty dictionary, as omap treats a nil map as empty, and a
+// nil []byte as an empty byte string; only an untyped nil is written as
+// None.
 func Dumps(v any) ([]byte, error) {
 	var e encoder
 	if err := e.value(v, 0); err != nil {

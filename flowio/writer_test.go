@@ -155,3 +155,43 @@ func TestWriterErrors(t *testing.T) {
 type failingWriter struct{ err error }
 
 func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
+
+// TestNilStateDict pins how a missing dictionary is written: a nil *state.Map
+// is an empty dictionary, as omap treats it, and only an untyped nil is None.
+// A model whose upstream writes None must therefore put an untyped nil in its
+// state, not a nil map.
+func TestNilStateDict(t *testing.T) {
+	tests := map[string]struct {
+		in   any
+		want string
+	}{
+		"success: nil map is an empty dict": {
+			in:   (*state.Map)(nil),
+			want: "0:}",
+		},
+		"success: untyped nil is None": {
+			in:   nil,
+			want: "0:~",
+		},
+		"success: both side by side in a state dict": {
+			in: func() *state.Map {
+				m := state.NewMap(2)
+				m.Set("metadata", (*state.Map)(nil))
+				m.Set("websocket", nil)
+				return m
+			}(),
+			want: "29:9:websocket;0:~8:metadata;0:}}",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := tnetstring.Dumps(tt.in)
+			if err != nil {
+				t.Fatalf("Dumps(%v) error: %v", tt.in, err)
+			}
+			if diff := gocmp.Diff(tt.want, string(got)); diff != "" {
+				t.Errorf("Dumps mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

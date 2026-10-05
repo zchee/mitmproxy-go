@@ -601,3 +601,10 @@ Replay API: `proxy.Replay` takes a `ReplayRunner` supplied as `httplayer.Replay`
 | `@` replacement files have no size bound (`mitmproxy/addons/modifybody.py`, `modifyheaders.py`). | Uses modifyheaders' 16 MiB replacement-file limit; patterns and transformations use the bounds and engine differences listed under filter/regex. | Bound work under the addon dispatch lock. |
 | Replacing a missing streamed body raises `TypeError` (`mitmproxy/addons/modifybody.py:74-85`). | Missing bodies are left untouched. Invalid content encoding returns a hook error without changing the message. | Streamed bodies cannot be modified; preserve their absence. |
 | Invalid file and regex errors contain Python exception details (`mitmproxy/addons/modifybody.py:35-39`). | Retains upstream's prefixes, with details from Go's filesystem and shared Python-syntax compiler. | Diagnostics belong to the implementation in use. |
+
+## addons/mapremote
+
+| Upstream | Go | Reason |
+|---|---|---|
+| URL regex searches and substitutions have no explicit resource limit (`mitmproxy/addons/mapremote.py:64`). | Uses the pattern, subject, template, output and fallback bounds and engine differences listed under filter/regex. Abandoned transformations return a hook error without changing the request. | Bound memory and work under addon dispatch. |
+| Invalid regex details come from Python's `re.error` (`mitmproxy/addons/mapremote.py:24`). | Keeps the `Invalid regular expression` prefix and subject repr, with shared compiler details. | The implementation supplies the diagnostic. |

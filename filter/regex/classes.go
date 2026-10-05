@@ -332,19 +332,58 @@ func boundary(c byte, uni bool) string {
 	return "(?-i:(?:(?<=" + w + ")(?=" + w + ")|(?<!" + w + ")(?!" + w + ")(?:(?<=" + anyRune + ")|(?<!" + anyRune + ")(?=" + anyRune + "))))"
 }
 
-// hasClassEscape reports whether pattern contains \d, \D, \w, \W, \s, \S,
-// \b or \B, possibly inside a character class.
-func hasClassEscape(pattern string) bool {
+// hasScannedEscape reports whether pattern contains an escape the scanner
+// rewrites or refuses: \d, \D, \w, \W, \s, \S, \b, \B, \p, \P or \x{,
+// possibly inside a character class.
+func hasScannedEscape(pattern string) bool {
 	for i := 0; i+1 < len(pattern); i++ {
 		if pattern[i] != '\\' {
 			continue
 		}
 		i++
-		if c := pattern[i]; isShorthand(c) || c == 'b' || c == 'B' {
+		if c := pattern[i]; isShorthand(c) || c == 'b' || c == 'B' || foreignEscape(pattern, i-1) != nil {
 			return true
 		}
 	}
 	return false
+}
+
+// foreignEscape returns Python's error for the escape that starts with the
+// backslash at src[i], with i+1 < len(src), when both Go engines accept it
+// and Python does not: the property classes \p and \P, and \x{...}, where
+// Python reads \x and then no hex digit.
+func foreignEscape(src string, i int) error {
+	switch e := src[i+1]; {
+	case e == 'p' || e == 'P':
+		return fmt.Errorf(`bad escape \%c`, e)
+	case e == 'x' && i+2 < len(src) && src[i+2] == '{':
+		return errors.New(`incomplete escape \x`)
+	}
+	return nil
+}
+
+// braceRepeat returns the length of the {m,n} repeat at the start of s, or
+// 0 when s does not start with one. As in Python, m and n may be empty, so
+// that {,} is a repeat, while {} and a { that no } closes after the digits
+// are literal text.
+func braceRepeat(s string) int {
+	if !strings.HasPrefix(s, "{") || strings.HasPrefix(s, "{}") {
+		return 0
+	}
+	j := 1
+	for j < len(s) && '0' <= s[j] && s[j] <= '9' {
+		j++
+	}
+	if j < len(s) && s[j] == ',' {
+		j++
+		for j < len(s) && '0' <= s[j] && s[j] <= '9' {
+			j++
+		}
+	}
+	if j < len(s) && s[j] == '}' {
+		return j + 1
+	}
+	return 0
 }
 
 // scope is the state of the inline flags that the class translation needs
@@ -427,8 +466,9 @@ func (t *classTranslator) both(s string) {
 // ASCII classes, where its ASCII word boundary is Python's; compileRE2
 // sends every other \b and \B to regexp2, where they become lookarounds.
 func translateClasses(body string, flags Flags, str, verbose bool) (translation, error) {
-	// A class can hold a [ only if the body has two of them.
-	if !hasClassEscape(body) && !strings.Contains(body, "(?") && strings.Count(body, "[") < 2 {
+	// A class can hold a [ only if the body has two of them. Verbose
+	// whitespace can stand between two quantifiers.
+	if !verbose && !hasScannedEscape(body) && !strings.Contains(body, "(?") && strings.Count(body, "[") < 2 {
 		return translation{re2: body, re2OK: true, backtrack: body}, nil
 	}
 	t := &classTranslator{src: body, str: str, re2OK: true}
@@ -436,14 +476,45 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 	t.bt.Grow(len(body))
 	stack := []scope{{fold: flags&IgnoreCase != 0, verbose: verbose, uni: flags&Unicode != 0}}
 	src := body
+	// Python reads a ? or + right after a quantifier as making it lazy or
+	// possessive, and a quantifier after a repeat and a comment or verbose
+	// whitespace as an error. Both Go engines drop that text first and see
+	// a lazy quantifier in a*(?#c)?, so the scanner tracks whether the
+	// last token was a repeat, whether ignored text has followed it, and
+	// whether the last token opened a group, after which ? starts the
+	// group's syntax.
+	var repeat, gap, open bool
 	for i := 0; i < len(src); {
 		cur := stack[len(stack)-1]
-		switch c := src[i]; {
+		c := src[i]
+		switch {
+		case c == '(' && strings.HasPrefix(src[i:], "(?#"),
+			c == '#' && cur.verbose, cur.verbose && strings.IndexByte(" \t\n\r\v\f", c) >= 0:
+			gap, open = true, false
+		default:
+			n := braceRepeat(src[i:])
+			if c == '*' || c == '+' || c == '?' && !open {
+				n = 1
+			}
+			if n > 0 && repeat && gap {
+				return translation{}, errors.New("multiple repeat")
+			}
+			repeat, gap, open = n > 0, false, c == '('
+			if n > 0 {
+				t.both(src[i : i+n])
+				i += n
+				continue
+			}
+		}
+		switch {
 		case c == '\\':
 			if i+1 == len(src) {
 				t.both(src[i:])
 				i++
 				continue
+			}
+			if err := foreignEscape(src, i); err != nil {
+				return translation{}, err
 			}
 			switch e := src[i+1]; {
 			case isShorthand(e):
@@ -501,6 +572,7 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 				}
 				t.both(header + ":")
 				i += 1 + n
+				open = false
 				continue
 			}
 			t.both("(")
@@ -678,28 +750,32 @@ func (it classItem) literal() string {
 }
 
 // readItem reads the class member at src[i:]. It reports false when the
-// pattern ends first.
-func (t *classTranslator) readItem(i int) (classItem, int, bool) {
+// pattern ends first, and an error for an escape Python rejects.
+func (t *classTranslator) readItem(i int) (classItem, int, bool, error) {
 	src := t.src
 	if i >= len(src) {
-		return classItem{}, i, false
+		return classItem{}, i, false, nil
 	}
 	if src[i] != '\\' {
 		_, size := utf8.DecodeRuneInString(src[i:])
-		return classItem{text: src[i : i+size]}, i + size, true
+		return classItem{text: src[i : i+size]}, i + size, true, nil
 	}
 	if i+1 >= len(src) {
-		return classItem{}, i, false
+		return classItem{}, i, false, nil
+	}
+	if err := foreignEscape(src, i); err != nil {
+		return classItem{}, i, false, err
 	}
 	if e := src[i+1]; isShorthand(e) {
-		return classItem{text: src[i : i+2], short: e}, i + 2, true
+		return classItem{text: src[i : i+2], short: e}, i + 2, true, nil
 	}
 	end := escapeEnd(src, i)
-	return classItem{text: src[i:end]}, end, true
+	return classItem{text: src[i:end]}, end, true, nil
 }
 
 // escapeEnd returns the index after the escape that starts with the
-// backslash at src[i], with i+1 < len(src).
+// backslash at src[i], with i+1 < len(src). foreignEscape has refused \p,
+// \P and \x{ before.
 func escapeEnd(src string, i int) int {
 	j := i + 2
 	digits := func(n int, ok func(byte) bool) int {
@@ -720,20 +796,14 @@ func escapeEnd(src string, i int) int {
 	}
 	switch e := src[i+1]; {
 	case e == 'x':
-		if k, ok := braced(); ok {
-			return k
-		}
 		return digits(2, isHex)
 	case e == 'u':
 		return digits(4, isHex)
 	case e == 'U':
 		return digits(8, isHex)
-	case e == 'N' || e == 'p' || e == 'P':
+	case e == 'N':
 		if k, ok := braced(); ok {
 			return k
-		}
-		if e != 'N' && j < len(src) {
-			return j + 1
 		}
 		return j
 	case '0' <= e && e <= '7':
@@ -776,13 +846,19 @@ func (t *classTranslator) class(i int, cur scope) (int, error) {
 			j++
 			break
 		}
-		this, k, ok := t.readItem(j)
+		this, k, ok, err := t.readItem(j)
+		if err != nil {
+			return 0, err
+		}
 		if !ok {
 			t.both(src[i:])
 			return len(src), nil
 		}
 		if k+1 < len(src) && src[k] == '-' && src[k+1] != ']' {
-			that, k2, ok := t.readItem(k + 1)
+			that, k2, ok, err := t.readItem(k + 1)
+			if err != nil {
+				return 0, err
+			}
 			if !ok {
 				t.both(src[i:])
 				return len(src), nil

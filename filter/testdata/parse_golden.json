@@ -5287,6 +5287,45 @@
       "describe": "domain matches /(?u)a/i",
       "dump": "FDomain(?u)a\n",
       "describe_case_sensitive": "domain matches /(?u)a/"
+    },
+    {
+      "expr": "~u \"a*(?#c)?\"",
+      "ok": false
+    },
+    {
+      "expr": "~b \"a*(?#c)?\"",
+      "ok": false
+    },
+    {
+      "expr": "~u \"a(?#c)?\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a(?#c)?"
+      ],
+      "describe": "url matches /a(?#c)?/i",
+      "dump": "FUrla(?#c)?\n",
+      "describe_case_sensitive": "url matches /a(?#c)?/"
+    },
+    {
+      "expr": "~u \"(?x)a* ?\"",
+      "ok": false
+    },
+    {
+      "expr": "~u \"[\\\\w\\\\x{41}]\"",
+      "ok": false
+    },
+    {
+      "expr": "~b \"\\\\x{41}\"",
+      "ok": false
+    },
+    {
+      "expr": "~u \"[\\\\d\\\\p{L}]\"",
+      "ok": false
+    },
+    {
+      "expr": "~b \"\\\\P{L}\"",
+      "ok": false
     }
   ]
 }

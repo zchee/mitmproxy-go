@@ -465,13 +465,13 @@ func TestCompileUserRangeCaseTable(t *testing.T) {
 		backtracking bool
 		want         bool
 	}{
-		"success: range at the start on regexp2 misses (documented)": {pattern: `(?i)x(?=)|(?-i:[\x{212a}-\x{212b}])`, input: kelvin, backtracking: true, want: false},
-		"success: single character at the start on regexp2":          {pattern: `(?i)x(?=)|(?-i:[\x{212a}])`, input: kelvin, backtracking: true, want: true},
-		"success: range after a literal on regexp2":                  {pattern: `(?=)a(?:(?i:x)|[\x{212a}-\x{212b}])`, input: "a" + kelvin, backtracking: true, want: true},
-		"success: range at the start on RE2":                         {pattern: `(?i)x|(?-i:[\x{212a}-\x{212b}])`, input: kelvin, want: true},
-		"success: folded range on regexp2 misses (documented)":       {pattern: `(?i)(?=)[\x{13a0}-\x{13a1}]`, input: "\u13a0", backtracking: true, want: false},
-		"success: folded single character on regexp2":                {pattern: `(?i)(?=)\x{13a0}`, input: "\uab70", backtracking: true, want: true},
-		"success: folded range on RE2":                               {pattern: `(?i)[\x{13a0}-\x{13a1}]`, input: "\uab70", want: true},
+		"success: range at the start on regexp2 misses (documented)": {pattern: "(?i)x(?=)|(?-i:[\u212a-\u212b])", input: kelvin, backtracking: true, want: false},
+		"success: single character at the start on regexp2":          {pattern: "(?i)x(?=)|(?-i:[\u212a])", input: kelvin, backtracking: true, want: true},
+		"success: range after a literal on regexp2":                  {pattern: "(?=)a(?:(?i:x)|[\u212a-\u212b])", input: "a" + kelvin, backtracking: true, want: true},
+		"success: range at the start on RE2":                         {pattern: "(?i)x|(?-i:[\u212a-\u212b])", input: kelvin, want: true},
+		"success: folded range on regexp2 misses (documented)":       {pattern: "(?i)(?=)[\u13a0-\u13a1]", input: "\u13a0", backtracking: true, want: false},
+		"success: folded single character on regexp2":                {pattern: "(?i)(?=)\u13a0", input: "\uab70", backtracking: true, want: true},
+		"success: folded range on RE2":                               {pattern: "(?i)[\u13a0-\u13a1]", input: "\uab70", want: true},
 	}
 	for name, tt := range tests {
 		for _, mode := range []Flags{0, Unicode} {

@@ -367,6 +367,71 @@ func TestCompileFlagGroupError(t *testing.T) {
 	}
 }
 
+// TestCompilePythonRejects checks patterns that both Go engines would
+// accept but Python 3.13 rejects, with Python's message, for str and bytes
+// patterns alike, and the patterns next to them that Python accepts. A
+// quantifier after a comment, or after verbose whitespace, cannot make the
+// quantifier before it lazy or possessive: Python sees a second repeat.
+func TestCompilePythonRejects(t *testing.T) {
+	tests := map[string]struct {
+		pattern string
+		wantErr string
+	}{
+		"error: ? after a comment after *":         {pattern: `a*(?#c)?`, wantErr: "multiple repeat"},
+		"error: ? after a comment after {n}":       {pattern: `a{2}(?#c)?`, wantErr: "multiple repeat"},
+		"error: ? after a comment after ?":         {pattern: `a?(?#c)?`, wantErr: "multiple repeat"},
+		"error: ? after a comment after a lazy *":  {pattern: `a*?(?#c)?`, wantErr: "multiple repeat"},
+		"error: ? after two comments":              {pattern: `a*(?#c)(?#d)?`, wantErr: "multiple repeat"},
+		"error: {,} after a comment":               {pattern: `a*(?#c){,}`, wantErr: "multiple repeat"},
+		"error: repeat of an escaped backslash":    {pattern: `\\*(?#c)?`, wantErr: "multiple repeat"},
+		"error: * after a comment after a comment": {pattern: `a(?#c)*(?#d)?`, wantErr: "multiple repeat"},
+		"error: ? after verbose whitespace":        {pattern: `(?x)a* ?`, wantErr: "multiple repeat"},
+		"error: ? after a verbose comment":         {pattern: "(?x)a*#c\n?", wantErr: "multiple repeat"},
+		"error: ? after a comment and whitespace":  {pattern: `(?x)a* (?#c) ?`, wantErr: "multiple repeat"},
+		"error: {n} after verbose whitespace":      {pattern: `(?x)a{2} ?`, wantErr: "multiple repeat"},
+		"error: scoped verbose whitespace":         {pattern: `(?x:a* ?)`, wantErr: "multiple repeat"},
+		"error: \\x{...}":                          {pattern: `\x{41}`, wantErr: `incomplete escape \x`},
+		"error: \\x{...} in a class":               {pattern: `[\x{41}]`, wantErr: `incomplete escape \x`},
+		"error: \\x{...} in a class with \\w":      {pattern: `[\w\x{41}]`, wantErr: `incomplete escape \x`},
+		"error: \\p{...}":                          {pattern: `\p{L}`, wantErr: `bad escape \p`},
+		"error: \\p{...} in a class with \\d":      {pattern: `[\d\p{L}]`, wantErr: `bad escape \p`},
+		"error: \\P{...} in a class":               {pattern: `[\P{L}]`, wantErr: `bad escape \P`},
+		"error: \\p without braces in a class":     {pattern: `[\pL]`, wantErr: `bad escape \p`},
+		"success: comment before a quantifier":     {pattern: `a(?#c)?`},
+		"success: lazy quantifiers":                {pattern: `a*?b+?`},
+		"success: comments without a quantifier":   {pattern: `a*(?#c)(?#d)`},
+		"success: escaped star before a comment":   {pattern: `a\*(?#c)?`},
+		"success: group before a comment":          {pattern: `(?:a*)(?#c)?`},
+		"success: class before a comment":          {pattern: `[a*](?#c)?`},
+		"success: literal brace after a comment":   {pattern: `a*(?#c){x`},
+		"success: empty braces after a comment":    {pattern: `a*(?#c){}`},
+		"success: open brace after a comment":      {pattern: `a*(?#c){1,`},
+		"success: verbose whitespace before {n}":   {pattern: `(?x)a {2}`},
+		"success: optional open paren":             {pattern: `\(?a`},
+		"success: escaped p and x":                 {pattern: `\\p\\x{41}`},
+		"success: \\x with two digits":             {pattern: `[\x41]\x41`},
+	}
+	for name, tt := range tests {
+		for _, mode := range []Flags{0, Unicode} {
+			t.Run(fmt.Sprintf("%s/unicode=%v", name, mode != 0), func(t *testing.T) {
+				m, err := Compile(tt.pattern, mode)
+				if tt.wantErr == "" {
+					if err != nil {
+						t.Fatalf("Compile(%q) error = %v, Python accepts it", tt.pattern, err)
+					}
+					return
+				}
+				if err == nil {
+					t.Fatalf("Compile(%q) = %v, want error %q", tt.pattern, m, tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("Compile(%q) error = %q, want it to contain %q", tt.pattern, err, tt.wantErr)
+				}
+			})
+		}
+	}
+}
+
 // TestCatastrophicBacktrackingTimesOut feeds a pattern that needs regexp2
 // (it has a lookahead) and backtracks exponentially on a near-miss input.
 func TestCatastrophicBacktrackingTimesOut(t *testing.T) {
@@ -473,7 +538,7 @@ func FuzzCompile(f *testing.F) {
 		`[[:alpha:]]`, `x[[:digit:]\d]`, `[\w.-[]`, `[^[\d]`,
 		`(?ias:x)`, `(?sai:x)`, `(?a)(?u:\d)`, `(?L:\w)`, `(?ai-s:\w)`,
 		`(?#a\)b)c`, `a(?#c)*b`, `(a)\1(?#c)0`, "(?x) (?i)a", "(?x)a # (?i)\nb", `(?i-i:a)`, `(?a-:x)`, `\N{DIGIT ZERO}`,
-		`(?i)x(?=)|(?-i:[\x{212a}-\x{212b}])`, `\.js$`, `(a$)+`, `a\Z`, `\B`, `(?=a)(a+)+$`,
+		"(?i)x(?=)|(?-i:[\u212a-\u212b])", `a*(?#c)?`, `(?x)a* ?`, `[\w\x{41}]`, `[\d\p{L}]`, `\.js$`, `(a$)+`, `a\Z`, `\B`, `(?=a)(a+)+$`,
 		strings.Repeat("(?=a)", 64), strings.Repeat(`\B`, 32),
 	}
 	for _, s := range seeds {

@@ -207,6 +207,32 @@ func (s *httpStream) responseHeaders(ctx context.Context, event ResponseHeaders)
 	if !s.requestSent || s.response.headers || event.Response == nil {
 		return streamOutput{}, fmt.Errorf("HTTP stream %d received invalid response headers", s.id)
 	}
+	if s.route.validateInboundHeaders {
+		if err := event.Response.ValidateHeaders(); err != nil {
+			message := fmt.Sprintf("Received %v from server, refusing to prevent request smuggling attacks. "+
+				"Disable the validate_inbound_headers option to skip this security check.", err)
+			if err := s.c.Do(ctx, func(context.Context) error {
+				s.flow.Response = event.Response
+				s.flow.Response.RawContent = nil
+				return nil
+			}); err != nil {
+				return streamOutput{}, err
+			}
+			// Retire the origin before error hooks, which may pause the flow.
+			s.failed = true
+			return streamOutput{
+				events: []Event{RequestProtocolError{ID: s.id, Message: message, Code: ResponseValidationFailed}},
+				after: func(ctx context.Context) (streamOutput, error) {
+					out, err := s.fail(ctx, message, ResponseValidationFailed)
+					if err == nil {
+						// Only the client error remains; the origin is already retired.
+						out.events = out.events[:1]
+					}
+					return out, err
+				},
+			}, nil
+		}
+	}
 	if event.Response.StatusCode >= 100 && event.Response.StatusCode < 200 && event.Response.StatusCode != 101 {
 		return streamOutput{events: []Event{event}}, nil
 	}

@@ -30,6 +30,12 @@ Anything not listed here is meant to behave as upstream does; a difference that 
 | `dummy_crl` adds only a CRL Number extension (`mitmproxy/certs.py`). | The CRL also carries an Authority Key Identifier matching the CA's SKI, or a SHA-1 key identifier when that is absent. | `crypto/x509.CreateRevocationList` requires and emits the identifier. |
 | Both passwordless `.p12` files are written by `cryptography`'s `serialize_key_and_certificates(…, NoEncryption())`: an HMAC-SHA-256 MAC keyed from the empty password with 2048 iterations, and `friendlyName` `mitmproxy` on every bag (`mitmproxy/certs.py`). | Both bundles are encoded with go-pkcs12's `Passwordless` encoder: no MAC, the key file's bags carry `localKeyID` but no `friendlyName`, and the cert-only bag carries the Java trust-store attribute `2.16.840.1.113894.746875.1.1`. Python's `pkcs12.load_pkcs12` reads both bundles and recovers the same certificate and complete private key. | go-pkcs12 is the maintained Go encoder, and its `Encoder` fields are unexported, so no configuration reproduces `cryptography`'s exact structure; what matters is that Python reads the bundles. |
 
+## addons/upstreamauth
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| Invalid upstream-auth configuration errors include the complete specification (`mitmproxy/addons/upstream_auth.py:15`). | Errors omit the specification. | It can contain a password. |
+
 ## addons/proxyauth
 
 | Upstream behaviour | Go behaviour | Reason |

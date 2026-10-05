@@ -43,6 +43,7 @@ func NewRegistry() *Registry {
 	r.Register(Multipart{})
 	r.Register(Image{})
 	r.Register(CSS{})
+	r.Register(JavaScript{})
 	return r
 }
 

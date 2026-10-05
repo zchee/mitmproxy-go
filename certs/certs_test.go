@@ -24,7 +24,7 @@ package certs_test
 //	TestCert.test_convert                            -> TestCertConvert (the pyOpenSSL round trip is not applicable: the port has no pyOpenSSL objects; the PEM and state round trips are ported)
 //	TestCert.test_keyinfo                            -> TestCertKeyInfo
 //	TestCert.test_is_ca                              -> TestCertIsCA
-//	TestCert.test_err_broken_sans                    -> TestCertAltNames/"success: undecodable san entry is kept raw"
+//	TestCert.test_err_broken_sans                    -> TestCertAltNames/"success: non-DNS SAN remains available"
 //	TestCert.test_state                              -> TestCertConvert (state is the PEM; the copy half is covered by parsing the PEM twice)
 //	TestCert.test_add_cert_overrides                 -> TestStoreAddCertFile/"success: added file overrides generation"
 //	TestCert.test_from_store_with_passphrase         -> TestStoreAddCertFile passphrase cases
@@ -34,7 +34,7 @@ package certs_test
 //	TestCert.test_add_cert_chain_invalid             -> TestStoreAddCertFile/"success: invalid chain falls back to the leaf"
 //	TestCert.test_add_cert_is_ca                     -> TestStoreAddCertFile/"success: ca certificate warns"
 //	TestCert.test_special_character                  -> TestCertSubjectIssuer/"success: comma in the organization"
-//	TestCert.test_multi_valued_rdns                  -> TestCertSubjectIssuer/"success: multi-valued rdns"
+//	TestCert.test_multi_valued_rdns                  -> TestParseNameMultivaluedRDN
 //	TestCert.test_crl_distribution_points            -> TestCertCRLDistributionPoints
 //	TestDNTree (commented out upstream)              -> not applicable: dead code at the pinned commit.
 

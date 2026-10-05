@@ -45,7 +45,7 @@ v0.1.6; their licence (MIT) is `wg-test-client/LICENSE`.
 | `mitmproxy/clientcert/` | Client certificates (`client.pem`, `127.0.0.1.pem`) and the OpenSSL recipe (`make`, `client.cnf`) that produced them. |
 | `mitmproxy/addonscripts/` | Python addon scripts loaded by upstream's script tests; reference for the Starlark scripting tests. |
 | `mitmproxy/image_parser/` | PNG, GIF and JPEG samples for the image contentview parser; sources in `mitmproxy/image_parser/README.md`. |
-| `mitmproxy-net/` | Network-layer fixtures from `test/mitmproxy/net/data/`: text certificates (`text_cert*`, `dsa_cert.pem`, `ec_cert.pem`), the `verificationcerts/` chains the certificate tests load, HTTP exchange samples and the `tls/` ClientHello captures (`test/mitmproxy/net/test_tls.py`, `test/mitmproxy/test_certs.py`, `test/mitmproxy/addons/test_tlsconfig.py`). |
+| `mitmproxy-net/` | Network-layer fixtures from `test/mitmproxy/net/data/`: the text certificates (`text_cert*`, `dercert`, `dsa_cert.pem`, `ec_cert.pem`), the `verificationcerts/` chains, a server key pair, `clientcert/`, `dhparam.pem` and an `htpasswd` sample (`test/mitmproxy/test_certs.py`, `test/mitmproxy/net/test_tls.py`, `test/mitmproxy/addons/test_tlsconfig.py`). |
 | `mitmproxy/mitmproxy.pem` | Encrypted private key and certificate used by `test/mitmproxy/test_certs.py`. |
 | `mitmproxy/testkey.pem` | RSA private key and certificate used by `test/mitmproxy/test_certs.py` and `test/mitmproxy/test_proxy.py`. |
 | `mitmproxy/invalid-subject.pem` | Certificate with an invalid subject and no basic constraints (`test_certs.py`, `test_tlsconfig.py`). |

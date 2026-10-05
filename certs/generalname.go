@@ -78,6 +78,12 @@ func EmailName(email string) GeneralName {
 	return GeneralName{typ: GeneralNameEmail, text: email}
 }
 
+// otherName returns the GeneralName carrying the raw DER encoding of a
+// SAN entry whose type the package does not model.
+func otherName(der []byte) GeneralName {
+	return GeneralName{typ: GeneralNameOther, text: string(der)}
+}
+
 // Type reports which kind of name n holds.
 func (n GeneralName) Type() GeneralNameType {
 	return n.typ

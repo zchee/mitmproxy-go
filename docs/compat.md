@@ -18,6 +18,13 @@ Anything not listed here is meant to behave as upstream does; a difference that 
 | The UTF-8 password file has no size bound (`mitmproxy/utils/htpasswd.py`). | Files larger than 8 MiB are refused. | Bound memory used when loading configuration. |
 | A malformed bcrypt hash can raise from `check_password` (`mitmproxy/utils/htpasswd.py:81`); the authentication addon catches it. | `File.Check` returns false for malformed hashes. | The boolean checking API fails closed without requiring its caller to catch a parser error. |
 
+## certs
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `Cert.cn` and `Cert.organization` return `None` when absent (`mitmproxy/certs.py`). | `CN()` and `Organization()` return an empty string. The certificate's `String()` still distinguishes an absent CN (`None`) from an explicitly empty one (`''`). | The Go accessors return strings. |
+| SAN values include cryptography's specialised objects for every GeneralName type (`mitmproxy/certs.py`). | DNS, IP, URI and email names have typed constructors. Other types retain their complete DER as an opaque comparable value and render as hex, rather than Python object text. | Opaque names can be retained without recreating cryptography's object model. |
+
 ## connection
 
 No behavioural differences.

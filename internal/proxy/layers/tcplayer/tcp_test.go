@@ -98,6 +98,7 @@ type session struct {
 	cancel         context.CancelFunc
 	done           chan error
 	finished       chan struct{}
+	ignore         bool
 }
 
 func newSession(t *testing.T, observed *observer) *session {
@@ -127,7 +128,7 @@ func newSession(t *testing.T, observed *observer) *session {
 
 func (s *session) start(t *testing.T) {
 	t.Helper()
-	l, err := layer.Build(t.Context(), s.context, hookdata.LayerStack{{Kind: hookdata.LayerTCP}})
+	l, err := layer.Build(t.Context(), s.context, hookdata.LayerStack{{Kind: hookdata.LayerTCP, Ignore: s.ignore}})
 	if err != nil {
 		t.Fatal(err)
 	}

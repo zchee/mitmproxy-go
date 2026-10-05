@@ -21,11 +21,17 @@ import (
 )
 
 func init() {
-	layer.Register(hookdata.LayerTCP, func(c *layer.Context, _ hookdata.LayerSpec, _ layer.Layer) (layer.Layer, error) {
-		return &tcpLayer{flow: flow.NewTCPFlow(c.Data.Client, c.Data.Server, true)}, nil
+	layer.Register(hookdata.LayerTCP, func(c *layer.Context, spec hookdata.LayerSpec, _ layer.Layer) (layer.Layer, error) {
+		l := &tcpLayer{}
+		if !spec.Ignore {
+			l.flow = flow.NewTCPFlow(c.Data.Client, c.Data.Server, true)
+		}
+		return l, nil
 	})
 }
 
+// tcpLayer relays a raw TCP connection. A nil flow is the ignore mode:
+// bytes are forwarded as they arrive, without a flow and without hooks.
 type tcpLayer struct {
 	flow *flow.TCPFlow
 }
@@ -33,8 +39,10 @@ type tcpLayer struct {
 func (*tcpLayer) Kind() hookdata.LayerKind { return hookdata.LayerTCP }
 
 func (l *tcpLayer) Run(ctx context.Context, c *layer.Context) error {
-	if _, err := c.Hooks.Fire(ctx, addon.TCPStartHook{Flow: l.flow}); err != nil {
-		return err
+	if l.flow != nil {
+		if _, err := c.Hooks.Fire(ctx, addon.TCPStartHook{Flow: l.flow}); err != nil {
+			return err
+		}
 	}
 	if c.Server == nil {
 		var metadata *connection.Server
@@ -46,6 +54,9 @@ func (l *tcpLayer) Run(ctx context.Context, c *layer.Context) error {
 		}
 		opened, actual, err := c.Pool.Open(ctx, metadata, layer.OpenOptions{})
 		if err != nil {
+			if l.flow == nil {
+				return err
+			}
 			_, hookErr := c.Hooks.FireFunc(ctx, func(context.Context) error {
 				l.flow.Error = flow.NewError(err.Error())
 				return nil
@@ -55,7 +66,9 @@ func (l *tcpLayer) Run(ctx context.Context, c *layer.Context) error {
 		c.Server = c.Record(opened)
 		if err := c.Do(ctx, func(context.Context) error {
 			c.Data.Server = actual
-			l.flow.ServerConn = actual
+			if l.flow != nil {
+				l.flow.ServerConn = actual
+			}
 			return nil
 		}); err != nil {
 			return err
@@ -64,6 +77,9 @@ func (l *tcpLayer) Run(ctx context.Context, c *layer.Context) error {
 	c.Server.StopRecording()
 	c.Client.StopRecording()
 	err := l.relay(ctx, c, c.Server)
+	if l.flow == nil {
+		return err
+	}
 	_, hookErr := c.Hooks.Fire(ctx, addon.TCPEndHook{Flow: l.flow})
 	endErr := c.Do(context.WithoutCancel(ctx), func(context.Context) error {
 		l.flow.Live = false
@@ -107,6 +123,10 @@ func (l *tcpLayer) relay(ctx context.Context, c *layer.Context, server layer.Con
 	}()
 
 	inject := c.Inject
+	if l.flow == nil {
+		// Without a flow there is nothing an addon could inject into.
+		inject = nil
+	}
 	for remaining := 2; remaining > 0; {
 		var event received
 		select {
@@ -133,8 +153,9 @@ func (l *tcpLayer) relay(ctx context.Context, c *layer.Context, server layer.Con
 		if !event.fromClient {
 			dst = c.Client
 		}
+		content := event.content
 		// Unlike socket reads, an injected message may have empty content.
-		if len(event.content) > 0 || event.err == nil {
+		if l.flow != nil && (len(event.content) > 0 || event.err == nil) {
 			snapshot, err := c.Hooks.FireFunc(ctx, func(context.Context) error {
 				l.flow.Messages = append(l.flow.Messages, tcp.NewMessage(event.fromClient, event.content))
 				return nil
@@ -145,19 +166,20 @@ func (l *tcpLayer) relay(ctx context.Context, c *layer.Context, server layer.Con
 			if snapshot.Killed() {
 				return nil
 			}
+			content = nil
 			if snapshot.LastMessage != nil {
-				content := snapshot.LastMessage.Content
-				for len(content) > 0 {
-					n, err := dst.Write(content)
-					if err != nil {
-						return err
-					}
-					if n == 0 {
-						return io.ErrNoProgress
-					}
-					content = content[n:]
-				}
+				content = snapshot.LastMessage.Content
 			}
+		}
+		for len(content) > 0 {
+			n, err := dst.Write(content)
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				return io.ErrNoProgress
+			}
+			content = content[n:]
 		}
 		if event.err != nil {
 			remaining--

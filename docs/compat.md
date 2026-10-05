@@ -313,6 +313,13 @@ increments it.
 | TLS ClientHello receive buffers have no explicit byte cap (`mitmproxy/proxy/layers/tls.py`). | ClientHello collection is bounded independently at 128 KiB of wire bytes, including record headers, and 64 KiB of reassembled handshake bytes, including the handshake header. The collector returns a limit error when either bound is exceeded. | Bound retained network input even when a small handshake is fragmented into many records. |
 | TLS connections are half-closed with a bare TCP FIN (`mitmproxy/proxy/layers/tls.py`). | The TLS transport sends `close_notify`, then FIN; reads remain available. | Go's `tls.Conn.CloseWrite` sends `close_notify`; peers see a clean TLS shutdown. |
 
+## internal/proxy/layers/modes
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Reverse mode accepts `udp` and `dtls` targets (`mitmproxy/proxy/layers/modes.py`, `mitmproxy/addons/next_layer.py`). | Building the reverse top layer rejects these schemes with an error naming the scheme and the required datagram transport support. | UDP and DTLS layers are not available yet. |
+| Reverse mode accepts `http3`, `quic`, and `dns` targets (`mitmproxy/proxy/layers/modes.py`, `mitmproxy/addons/next_layer.py`). | Building the reverse top layer rejects these schemes with an error naming the scheme and the required QUIC and DNS protocol support. | QUIC, HTTP/3, and DNS protocol layers are not available yet. |
+
 ## Decided for code that is not written yet
 
 These differences are settled in the work plan ([docs/plans/mitmproxy-go-port.md](plans/mitmproxy-go-port.md): the

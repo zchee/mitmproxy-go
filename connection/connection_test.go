@@ -258,6 +258,21 @@ func TestNoneVersusEmpty(t *testing.T) {
 	}
 }
 
+// TestNilListsEncodeEmpty checks that list attributes left nil in Go are
+// written as empty lists, which upstream's get_state always produces, and
+// never as None or a typed nil.
+func TestNilListsEncodeEmpty(t *testing.T) {
+	t.Parallel()
+
+	s := (&Client{}).GetState()
+	for _, key := range []string{"certificate_list", "alpn_offers", "cipher_list"} {
+		v, _ := s.Get(key)
+		if diff := gocmp.Diff([]any{}, v); diff != "" {
+			t.Errorf("%s state mismatch (-want +got):\n%s", key, diff)
+		}
+	}
+}
+
 func TestSetStateErrors(t *testing.T) {
 	t.Parallel()
 

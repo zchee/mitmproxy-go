@@ -55,6 +55,23 @@ func TestDataStateKeyOrder(t *testing.T) {
 	}
 }
 
+// TestDataStateNone checks that unset optional attributes are written as
+// None (an untyped nil), which the flow file codec writes as a tnetstring
+// null; a typed nil pointer would not be.
+func TestDataStateNone(t *testing.T) {
+	t.Parallel()
+
+	s := (&Data{}).GetState()
+	for _, key := range []string{"closed_by_client", "close_code", "close_reason", "timestamp_end"} {
+		if v, _ := s.Get(key); v != nil {
+			t.Errorf("%s state = %#v, want nil", key, v)
+		}
+	}
+	if v, _ := tWebSocket().GetState().Get("close_code"); !gocmp.Equal(v, any(int64(1000))) {
+		t.Errorf("close_code state = %#v, want int64(1000)", v)
+	}
+}
+
 func TestDataFixtureRoundTrip(t *testing.T) {
 	t.Parallel()
 

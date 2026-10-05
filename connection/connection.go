@@ -242,7 +242,11 @@ func (c *Connection) putState(m *state.Map) {
 	m.Set("alpn", state.OptBytes(c.ALPN))
 	m.Set("alpn_offers", state.BytesList(c.ALPNOffers))
 	m.Set("cipher", state.Opt(c.Cipher))
-	m.Set("cipher_list", state.StringList(c.CipherList))
+	cipherList := make([]any, len(c.CipherList))
+	for i, name := range c.CipherList {
+		cipherList[i] = name
+	}
+	m.Set("cipher_list", cipherList)
 	if c.TLSVersion == "" {
 		m.Set("tls_version", nil)
 	} else {

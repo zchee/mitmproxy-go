@@ -236,7 +236,11 @@ func (d *Data) GetState() *state.Map {
 	m := state.NewMap(5)
 	m.Set("messages", msgs)
 	m.Set("closed_by_client", state.Opt(d.ClosedByClient))
-	m.Set("close_code", state.OptInt(d.CloseCode))
+	var closeCode any // None, not a typed nil, when no close code was sent.
+	if d.CloseCode != nil {
+		closeCode = int64(*d.CloseCode)
+	}
+	m.Set("close_code", closeCode)
 	m.Set("close_reason", state.Opt(d.CloseReason))
 	m.Set("timestamp_end", state.Opt(d.TimestampEnd))
 	return m

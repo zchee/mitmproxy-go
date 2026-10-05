@@ -557,6 +557,16 @@ func TestModifiedRightAfterBackup(t *testing.T) {
 	}
 }
 
+// TestBackupStateNone checks that a flow with no backup writes "backup" as
+// None (an untyped nil), not as a typed nil dictionary.
+func TestBackupStateNone(t *testing.T) {
+	t.Parallel()
+
+	if v, _ := tTCPFlow(false).GetState().Get("backup"); v != nil {
+		t.Errorf("backup state = %#v, want nil", v)
+	}
+}
+
 func TestBackup(t *testing.T) {
 	t.Parallel()
 

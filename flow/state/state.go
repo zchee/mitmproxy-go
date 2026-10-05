@@ -188,13 +188,13 @@ func (d *Decoder) Finish() error {
 	}
 	d.done = true
 	if d.m.Len() > 0 {
-		d.err = Unexpected(d.typ, d.m.Keys())
+		d.err = unexpected(d.typ, d.m.Keys())
 	}
 	return d.err
 }
 
-// Unexpected returns the error upstream's set_state raises for leftover keys.
-func Unexpected(typ string, keys []string) error {
+// unexpected returns the error upstream's set_state raises for leftover keys.
+func unexpected(typ string, keys []string) error {
 	return fmt.Errorf("unexpected fields in %s.set_state: %v", typ, keys)
 }
 
@@ -369,14 +369,6 @@ func Opt[T any](p *T) any {
 	return *p
 }
 
-// OptInt returns *p as int64, or nil when p is nil.
-func OptInt[T ~int | ~int64 | ~uint16 | ~uint32](p *T) any {
-	if p == nil {
-		return nil
-	}
-	return int64(*p)
-}
-
 // OptBytes returns b, or an untyped nil when b is nil. Storing a nil []byte
 // directly would produce a typed nil that encoders treat as empty bytes.
 func OptBytes(b []byte) any {
@@ -395,28 +387,11 @@ func Bytes(b []byte) []byte {
 	return b
 }
 
-// OptDict returns m, or an untyped nil when m is nil.
-func OptDict(m *Map) any {
-	if m == nil {
-		return nil
-	}
-	return m
-}
-
 // BytesList converts a list of byte strings to a state list.
 func BytesList(bs [][]byte) []any {
 	out := make([]any, len(bs))
 	for i, b := range bs {
 		out[i] = Bytes(b)
-	}
-	return out
-}
-
-// StringList converts a list of strings to a state list.
-func StringList(ss []string) []any {
-	out := make([]any, len(ss))
-	for i, s := range ss {
-		out[i] = s
 	}
 	return out
 }

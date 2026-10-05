@@ -277,7 +277,11 @@ func (b *Base) putState(m *state.Map, typ string) {
 	b.mu.Lock()
 	backup := state.CopyMap(b.backup)
 	b.mu.Unlock()
-	m.Set("backup", state.OptDict(backup))
+	if backup == nil {
+		m.Set("backup", nil) // None, not a typed nil *Map.
+	} else {
+		m.Set("backup", backup)
+	}
 }
 
 func (b *Base) client() *connection.Client {

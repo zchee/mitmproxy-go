@@ -14,6 +14,7 @@ require (
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.59.0
+	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0
 	software.sslmate.com/src/go-pkcs12 v0.7.3
 )

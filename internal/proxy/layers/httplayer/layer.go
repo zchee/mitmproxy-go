@@ -30,8 +30,9 @@ func init() {
 // endpoint; a CONNECT answered with a 2xx ends the loop and hands the
 // transport, with every buffered byte, to a child layer.
 type httpLayer struct {
-	route routeConfig
-	child layer.Layer
+	route    routeConfig
+	child    layer.Layer
+	upstream *connection.ServerSpec
 }
 
 func newHTTPLayer(c *layer.Context, spec hookdata.LayerSpec, child layer.Layer) (layer.Layer, error) {
@@ -50,14 +51,18 @@ func newHTTPLayer(c *layer.Context, spec hookdata.LayerSpec, child layer.Layer) 
 	// are safe here. A reverse proxy serves transparent-mode requests but
 	// rewrites the Host header, so the distinction comes from the mode the
 	// client connected to, as upstream tests client.proxy_mode.
+	var upstream *connection.ServerSpec
 	if mode := c.Data.Client.ProxyMode; mode != "" {
 		parsed, err := modespec.Parse(mode)
 		if err != nil {
 			return nil, fmt.Errorf("httplayer: %w", err)
 		}
 		_, route.reverse = parsed.(modespec.ReverseMode)
+		if mode, ok := parsed.(modespec.UpstreamMode); ok && route.mode == modeUpstream {
+			upstream = &connection.ServerSpec{Scheme: mode.Scheme, Address: connection.Address{Host: mode.Address.Host, Port: mode.Address.Port}}
+		}
 	}
-	return &httpLayer{route: route, child: child}, nil
+	return &httpLayer{route: route, child: child, upstream: upstream}, nil
 }
 
 // Kind implements [layer.Layer].
@@ -65,6 +70,19 @@ func (*httpLayer) Kind() hookdata.LayerKind { return hookdata.LayerHTTP }
 
 // Run implements [layer.Layer].
 func (l *httpLayer) Run(ctx context.Context, c *layer.Context) error {
+	if l.upstream != nil {
+		derived := *c
+		c = &derived
+		pool := newUpstreamPool(ctx, c, c.Pool, false)
+		defer pool.stop()
+		c.Pool = pool
+		if err := c.Do(ctx, func(context.Context) error {
+			c.Data.Server.Via = new(*l.upstream)
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
 	// Bytes the next-layer decision consumed replay into the request parser.
 	c.Client.StopRecording()
 	wire := newWireStore()
@@ -151,8 +169,12 @@ func (l *httpLayer) connect(ctx context.Context, c *layer.Context, stream *httpS
 		srv := c.Data.Server
 		same := srv.Address != nil && srv.Address.Host == request.Host && srv.Address.Port == request.Port && srv.TLS == tls
 		if !same {
+			via := srv.Via
 			srv = connection.NewServer(&connection.Address{Host: request.Host, Port: request.Port})
 			srv.TransportProtocol = connection.TCP
+			if via != nil {
+				srv.Via = new(*via)
+			}
 		}
 		if tls {
 			srv.TLS = true
@@ -202,6 +224,14 @@ func (l *httpLayer) connect(ctx context.Context, c *layer.Context, stream *httpS
 // fresh recorder restores sniffing for the next-layer decision, and the
 // connection the eager strategy opened becomes the current server.
 func (l *httpLayer) tunnel(ctx context.Context, c *layer.Context, client *http1Server, stream *httpStream) error {
+	if pool, ok := c.Pool.(*upstreamPool); ok {
+		// A CONNECT child sends origin-form requests even without origin TLS;
+		// its logical connections require tunnels rather than forwarding mode.
+		tunnelPool := newUpstreamPool(ctx, c, pool.base, true)
+		defer tunnelPool.stop()
+		c.Pool = tunnelPool
+		c.Server = nil
+	}
 	c.Client = c.Record(prefixed(client.takeover(), c.Client))
 	if stream.connectConn != nil {
 		c.Server = c.Record(stream.connectConn)

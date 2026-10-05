@@ -192,6 +192,17 @@ integer syntax, including Unicode digits, signs, whitespace and single underscor
 |---|---|---|
 | A failed explicitly selected view displays the Python exception and a trimmed traceback (`mitmproxy/contentviews/__init__.py`). | The display keeps the `Couldn't parse as <view>:` heading and shows the Go error without a Python exception class or traceback. | Go errors have no Python traceback. Automatic selection still falls back to Raw with the same description. |
 | `prettify_message` returns the entire rendered text; its callers apply the line cutoff (`mitmproxy/addons/dumper.py`). | `PrettifyMessage` optionally applies the caller's positive line cutoff and reports `Truncated`; a nonpositive cutoff keeps all text. | The shared entry point prevents callers from disagreeing about the cutoff. |
+## tlsparse
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `get_client_hello` and `parse_client_hello` reassemble a handshake message of any declared length, up to the 16 MiB a 24-bit length allows (`mitmproxy/proxy/layers/tls.py`). | A handshake message longer than 65,536 bytes, its 4-byte header included, is refused with `ErrTooLarge` as soon as its length is known, before its bytes arrive. | Every re-ask of `next_layer` runs under the global dispatch lock, so ClientHello reassembly must be bounded. |
+| `ClientHello.raw_bytes(True)` raises `OverflowError` for a body longer than 65,531 bytes, whose record length does not fit 16 bits (`mitmproxy/tls.py`). | `RawBytes(true)` returns nil for such a body. | Go methods do not raise; the largest accepted handshake body (65,532 bytes) cannot fit in one synthetic record. |
+
+Reproduced on purpose (compatibility, not differences): the handshake message type is not checked; the extensions are
+read to the end of the message whatever length their field declares; the server_name and ALPN extensions are read to the
+end of their bodies whatever list length they declare, and an empty or truncated one makes the whole ClientHello
+invalid; an odd cipher suite length leaves its last byte to be read as the compression methods' length.
 
 ## Decided for code that is not written yet
 

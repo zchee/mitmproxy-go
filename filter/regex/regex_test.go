@@ -665,6 +665,34 @@ func TestCompileGroupReferences(t *testing.T) {
 	}
 }
 
+// TestCompileGroupNameErrors checks how an error message quotes a bad
+// group name, as Python 3.13 does: repr in a str pattern, and ascii of the
+// Latin-1 text in a bytes pattern, so a UTF-8 name shows as bytes.
+func TestCompileGroupNameErrors(t *testing.T) {
+	tests := map[string]struct {
+		pattern string
+		flags   Flags
+		wantErr string
+	}{
+		"error: single quote in a name":    {pattern: "(?P<a'b>x)", flags: Unicode, wantErr: `bad character in group name "a'b"`},
+		"error: digit then letter, str":    {pattern: "(?P<1\u00e9>x)", flags: Unicode, wantErr: "bad character in group name '1\u00e9'"},
+		"error: digit then letter, bytes":  {pattern: "(?P<1\u00e9>x)", wantErr: `bad character in group name '1\xc3\xa9'`},
+		"error: non-ASCII name in bytes":   {pattern: "(?P<\u00e9\u00e9x>a)", wantErr: `bad character in group name '\xc3\xa9\xc3\xa9x'`},
+		"error: backreference name, bytes": {pattern: "(?P=1\u00e9)", wantErr: `bad character in group name '1\xc3\xa9'`},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			m, err := Compile(tt.pattern, tt.flags)
+			if err == nil {
+				t.Fatalf("Compile(%q) = %v, want error %q", tt.pattern, m, tt.wantErr)
+			}
+			if !strings.HasSuffix(err.Error(), ": "+tt.wantErr) {
+				t.Errorf("Compile(%q) error = %q, want it to end in %q", tt.pattern, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 // TestCompileCodePointEscapes checks \u and \U against Python 3.13. A str
 // pattern takes exactly four or eight hex digits and a code point up to
 // U+10FFFF; a bytes pattern has neither escape. wantStr empty means the

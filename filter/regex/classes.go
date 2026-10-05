@@ -14,6 +14,8 @@ import (
 	"sync"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/zchee/mitmproxy-go/internal/pyrepr"
 )
 
 // runeSet is a set of runes stored as sorted, disjoint, non-adjacent
@@ -569,7 +571,7 @@ func checkGroupName(name string, str bool) error {
 		ascii = ascii && name[i] < utf8.RuneSelf
 	}
 	if !str && !ascii || !isIdentifier(name) {
-		return fmt.Errorf("bad character in group name %s", pyRepr(name, !str))
+		return fmt.Errorf("bad character in group name %s", groupNameRepr(name, str))
 	}
 	return nil
 }
@@ -591,38 +593,15 @@ func isIdentifier(s string) bool {
 	return s != ""
 }
 
-// pyRepr quotes s as Python's repr does, or as its ascii when ascii is
-// set, for the error messages that name a group.
-func pyRepr(s string, ascii bool) string {
-	quote := byte('\'')
-	if strings.Contains(s, "'") && !strings.Contains(s, `"`) {
-		quote = '"'
+// groupNameRepr quotes a group name for an error message as Python does:
+// with repr in a str pattern and with ascii in a bytes pattern, whose text
+// Python reads as Latin-1, so that each byte of a non-ASCII name shows as
+// \xNN.
+func groupNameRepr(name string, str bool) string {
+	if str {
+		return pyrepr.Str(name)
 	}
-	var b strings.Builder
-	b.WriteByte(quote)
-	for _, r := range s {
-		switch {
-		case r == rune(quote) || r == '\\':
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r < ' ' || r == 0x7f || (ascii || !unicode.IsPrint(r)) && r >= utf8.RuneSelf && r <= 0xff:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		case (ascii || !unicode.IsPrint(r)) && r > 0xff && r <= 0xffff:
-			fmt.Fprintf(&b, `\u%04x`, r)
-		case (ascii || !unicode.IsPrint(r)) && r > 0xffff:
-			fmt.Fprintf(&b, `\U%08x`, r)
-		default:
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte(quote)
-	return b.String()
+	return strings.TrimPrefix(pyrepr.Bytes([]byte(name)), "b")
 }
 
 // translation is a pattern rewritten for each engine.
@@ -813,7 +792,7 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			}
 			gid, ok := t.names[name]
 			if !ok {
-				return translation{}, fmt.Errorf("unknown group name %s", pyRepr(name, !str))
+				return translation{}, fmt.Errorf("unknown group name %s", groupNameRepr(name, str))
 			}
 			if err := t.groupRef(gid); err != nil {
 				return translation{}, err
@@ -833,7 +812,7 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 				return translation{}, err
 			}
 			if was, ok := t.names[name]; ok {
-				return translation{}, fmt.Errorf("redefinition of group name %s as group %d; was group %d", pyRepr(name, !str), t.groups+1, was)
+				return translation{}, fmt.Errorf("redefinition of group name %s as group %d; was group %d", groupNameRepr(name, str), t.groups+1, was)
 			}
 			if t.names == nil {
 				t.names = map[string]int{}
@@ -867,7 +846,7 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 					return translation{}, err
 				}
 				if _, ok := t.names[cond]; !ok {
-					return translation{}, fmt.Errorf("unknown group name %s", pyRepr(cond, !str))
+					return translation{}, fmt.Errorf("unknown group name %s", groupNameRepr(cond, str))
 				}
 			}
 			next := cur

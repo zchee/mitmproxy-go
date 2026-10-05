@@ -47,7 +47,7 @@ type TLSConfig struct {
 	store   *certs.Store
 
 	keyLogOnce   sync.Once
-	keyLogWriter io.Writer
+	keyLogWriter io.WriteCloser
 }
 
 // New returns the addon using opts.
@@ -148,6 +148,17 @@ func (t *TLSConfig) Configure(ctx context.Context, updated map[string]struct{}) 
 // Running initializes the certificate store before serving connections.
 func (t *TLSConfig) Running(ctx context.Context) error {
 	return t.Configure(ctx, map[string]struct{}{"confdir": {}})
+}
+
+// Done closes the key log after connections stop, returning any close error.
+// Repeated calls do nothing; the closed writer is never reopened.
+func (t *TLSConfig) Done(context.Context) error {
+	if t.keyLogWriter == nil {
+		return nil
+	}
+	err := t.keyLogWriter.Close()
+	t.keyLogWriter = nil
+	return err
 }
 
 // warnUnsupportedVersion logs when a tls_version_* option names a TLS version

@@ -58,7 +58,12 @@ func newTLSConfig(t *testing.T) (*TLSConfig, *addon.Manager, *options.Manager) {
 	}
 	tc := New(opts)
 	m := addon.NewManager(opts, command.NewManager(), addon.Config{})
-	t.Cleanup(m.Close)
+	t.Cleanup(func() {
+		if err := m.Clear(t.Context()); err != nil {
+			t.Error(err)
+		}
+		m.Close()
+	})
 	if err := m.Add(t.Context(), tc); err != nil {
 		t.Fatal(err)
 	}
@@ -675,6 +680,63 @@ func TestTLSStartServer(t *testing.T) {
 			}
 			if tt.check != nil {
 				tt.check(t, connCtx, d, clientState, serverState)
+			}
+		})
+	}
+}
+
+// TestKeyLogDone checks shutdown closure without reopening the key log.
+func TestKeyLogDone(t *testing.T) {
+	tests := map[string]struct {
+		enabled    bool
+		closeEarly bool
+	}{
+		"success: disabled":         {},
+		"success: opened log":       {enabled: true},
+		"error: already closed log": {enabled: true, closeEarly: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			path := ""
+			if tt.enabled {
+				path = t.TempDir() + "/sslkeylog.txt"
+			}
+			t.Setenv("SSLKEYLOGFILE", path)
+			tc, m, _ := newTLSConfig(t)
+			writer := tc.keyLog()
+			var file *os.File
+			if tt.enabled {
+				var ok bool
+				file, ok = writer.(*os.File)
+				if !ok {
+					t.Fatalf("keyLog() = %T, want *os.File", writer)
+				}
+				t.Cleanup(func() { _ = file.Close() })
+				if tt.closeEarly {
+					if err := file.Close(); err != nil {
+						t.Fatal(err)
+					}
+				}
+			} else if writer != nil {
+				t.Fatalf("disabled keyLog() = %T, want nil", writer)
+			}
+			err := m.Clear(t.Context())
+			if diff := gocmp.Diff(tt.closeEarly, errors.Is(err, os.ErrClosed)); diff != "" {
+				t.Fatalf("Done error = %v (-want +got):\n%s", err, diff)
+			}
+			if !tt.closeEarly && err != nil {
+				t.Fatal(err)
+			}
+			if file != nil {
+				if _, err := file.Write(nil); !errors.Is(err, os.ErrClosed) {
+					t.Fatalf("write after Done = %v, want closed file", err)
+				}
+			}
+			if err := m.Clear(t.Context()); err != nil {
+				t.Fatalf("repeated Done = %v", err)
+			}
+			if tc.keyLog() != nil {
+				t.Fatal("key log reopened after Done")
 			}
 		})
 	}

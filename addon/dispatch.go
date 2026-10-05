@@ -98,8 +98,10 @@ type dispatcher struct {
 	cur *frame
 
 	// onStart and onEnd, when set, are called every time mu is acquired
-	// and just before it is released. The proxy uses them to pause a
-	// connection's idle watchdog while hooks run.
+	// and just before it is released, by whichever goroutine holds it.
+	// They serve process-level observability (lock hold-time metrics);
+	// per-connection state such as an idle watchdog is not managed here,
+	// because these fire for every acquisition by any goroutine.
 	onStart func()
 	onEnd   func()
 }

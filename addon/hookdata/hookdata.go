@@ -45,10 +45,10 @@ type NextLayer struct {
 	DataClient []byte
 	// DataServer is the data received from the server so far.
 	DataServer []byte
-	// Layer is the layer to use next. A handler sets it; nil leaves the
-	// decision to the handlers after it, or to a later call of the hook
-	// when more data has arrived.
-	Layer any
+	// Layer is the stack of layers to use next, outermost first. A handler
+	// sets it; nil leaves the decision to the handlers after it, or to a
+	// later call of the hook when more data has arrived.
+	Layer LayerStack
 }
 
 // ServerConnection is the value of the server_connect, server_connected,

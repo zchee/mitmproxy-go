@@ -29,8 +29,9 @@ type Config struct {
 	// [addon.LogHandlerOptions].
 	LogQueueSize int
 
-	// OnDispatchStart and OnDispatchEnd are passed to the addon manager;
-	// see [addon.Config].
+	// OnDispatchStart and OnDispatchEnd observe every process-level dispatch
+	// lock acquisition and release; see [addon.Config]. They must not manage
+	// a connection's idle watchdog, which the proxy's hook runner disarms.
 	OnDispatchStart func()
 	OnDispatchEnd   func()
 }

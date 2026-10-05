@@ -54,8 +54,12 @@ type Config struct {
 	Logger *slog.Logger
 
 	// OnDispatchStart and OnDispatchEnd, when set, are called each time the
-	// dispatch lock is taken and just before it is released. The proxy uses
-	// them to stop a connection's idle watchdog while hooks run.
+	// dispatch lock is taken and just before it is released, by whichever
+	// goroutine takes it. They are process-level observability callbacks,
+	// for example for lock hold-time metrics. They are not suited to
+	// per-connection work such as pausing one connection's idle watchdog,
+	// because they fire for every acquisition by any goroutine; the proxy
+	// disarms a connection's watchdog in its own hook runner instead.
 	OnDispatchStart func()
 	OnDispatchEnd   func()
 }
@@ -388,18 +392,72 @@ func (m *Manager) Clear(ctx context.Context) error {
 // frame.
 func (m *Manager) Hook(ctx context.Context, hook Hook) error {
 	return m.d.do(ctx, func(ctx context.Context) error {
-		if err := m.trigger(ctx, hook); err != nil {
+		return m.hookLocked(ctx, hook)
+	})
+}
+
+// hookLocked is the body of [Manager.Hook]: the hook chain, then update for
+// a flow hook, run with the dispatch lock held through the frame in ctx.
+func (m *Manager) hookLocked(ctx context.Context, hook Hook) error {
+	if err := m.trigger(ctx, hook); err != nil {
+		return err
+	}
+	f := HookFlow(hook)
+	if f == nil {
+		return nil
+	}
+	return m.trigger(ctx, UpdateHook{Flows: []flow.Flow{f}})
+}
+
+// HookFlow returns the flow that hook carries, or nil for a hook that does
+// not carry one (and for a flow hook whose flow field is nil). The proxy's
+// hook runner uses it to wait for an intercepted flow and to snapshot the
+// flow's fields without knowing every hook type.
+func HookFlow(hook Hook) flow.Flow {
+	if fh, ok := hook.(flowHook); ok {
+		return fh.flowArg()
+	}
+	return nil
+}
+
+// HookFunc runs prepare, then hook's chain and update exactly like
+// [Manager.Hook], and then finish, all in one hold of the dispatch lock, so
+// that no [Manager.Do] callback and no other hook can observe the state
+// prepare produced without the hook having run. The proxy's hook runner is
+// built on it: a layer stores what it has read into the flow in prepare
+// (the only place outside [Manager.Do] where a layer may write a flow field
+// handlers can see), and the hook fires on that state atomically.
+//
+// prepare and finish run with a frame that marks a synchronous dispatch:
+// [Concurrent] called from either returns an error wrapping
+// [ErrSyncContext], so neither can release the lock. The hook's handlers
+// run with the ordinary frame of the hold, exactly as under [Manager.Hook],
+// so at the outermost dispatch level they may call [Concurrent] (which
+// releases the lock; the single-hold guarantee then covers prepare and the
+// chain up to that handler). A prepare error skips the hook and finish and
+// is returned. finish runs only when prepare and the dispatch succeeded;
+// the hook runner uses it to read a consistent snapshot after update handlers
+// have made their final edits, before another dispatch can change the flow.
+// It receives the current frame, refreshed after any Concurrent call. Either
+// callback may be nil.
+//
+// [Manager.Do] with [Manager.Hook] inside it is not a substitute: the inner
+// call re-enters one level deeper, where [Concurrent] is refused.
+func (m *Manager) HookFunc(ctx context.Context, prepare func(context.Context) error, hook Hook, finish func(context.Context)) error {
+	return m.d.do(ctx, func(ctx context.Context) error {
+		if prepare != nil {
+			if err := prepare(inSync(ctx, "HookFunc prepare")); err != nil {
+				return err
+			}
+		}
+		if err := m.hookLocked(ctx, hook); err != nil {
 			return err
 		}
-		fh, ok := hook.(flowHook)
-		if !ok {
-			return nil
+		if finish != nil {
+			ctx = withFrame(ctx, m.d.current(frameFrom(ctx)))
+			finish(inSync(ctx, "HookFunc finish"))
 		}
-		f := fh.flowArg()
-		if f == nil {
-			return nil
-		}
-		return m.trigger(ctx, UpdateHook{Flows: []flow.Flow{f}})
+		return nil
 	})
 }
 

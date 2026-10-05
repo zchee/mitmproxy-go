@@ -58,6 +58,9 @@ type Result struct {
 	ViewName        string
 	Description     string
 	Truncated       bool
+	// Err records a message-type, view-selection, or rendering failure, even
+	// when Text contains a successful Raw fallback. Missing content is not an error.
+	Err error
 }
 
 var logger atomic.Pointer[slog.Logger]

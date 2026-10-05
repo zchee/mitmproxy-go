@@ -12,9 +12,12 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/zchee/mitmproxy-go/httpmsg"
 )
+
+var errPrettify = errors.New("prettify failure")
 
 type exampleView struct {
 	name         string
@@ -34,7 +37,7 @@ func (v exampleView) RenderPriority([]byte, Metadata) float64 {
 
 func (v exampleView) Prettify(data []byte, _ Metadata) (string, error) {
 	if v.failPrettify {
-		return "", errors.New("prettify failure")
+		return "", errPrettify
 	}
 	return string(data), nil
 }
@@ -136,8 +139,8 @@ func TestPrettifyMessage(t *testing.T) {
 	}{
 		"empty_content":         {want: Result{Text: "Content is missing.", SyntaxHighlight: "error"}},
 		"empty_present":         {data: []byte{}, want: Result{SyntaxHighlight: "none", ViewName: "Raw"}},
-		"view_failure_auto":     {data: []byte("content"), selected: "auto", fail: true, want: Result{Text: "content", SyntaxHighlight: "none", ViewName: "Raw", Description: "[failed to parse as FailingPrettify]"}},
-		"view_failure_explicit": {data: []byte("content"), selected: "failing", fail: true, want: Result{Text: "Couldn't parse as FailingPrettify:\nprettify failure\n", SyntaxHighlight: "error", ViewName: "FailingPrettify"}},
+		"view_failure_auto":     {data: []byte("content"), selected: "auto", fail: true, want: Result{Text: "content", SyntaxHighlight: "none", ViewName: "Raw", Description: "[failed to parse as FailingPrettify]", Err: errPrettify}},
+		"view_failure_explicit": {data: []byte("content"), selected: "failing", fail: true, want: Result{Text: "Couldn't parse as FailingPrettify:\nprettify failure\n", SyntaxHighlight: "error", ViewName: "FailingPrettify", Err: errPrettify}},
 		"control_characters":    {data: []byte("a\x00b\t\nc"), want: Result{Text: "a.b\t\nc", SyntaxHighlight: "none", ViewName: "Raw"}},
 		"line_cutoff":           {data: []byte("first\nsecond\nthird"), cutoff: 2, want: Result{Text: "first\nsecond\n", SyntaxHighlight: "none", ViewName: "Raw", Truncated: true}},
 		"complete_lines":        {data: []byte("first\nsecond\n"), cutoff: 2, want: Result{Text: "first\nsecond\n", SyntaxHighlight: "none", ViewName: "Raw"}},
@@ -149,7 +152,7 @@ func TestPrettifyMessage(t *testing.T) {
 				r.Register(exampleView{name: "FailingPrettify", priority: 2, failPrettify: true})
 			}
 			got := PrettifyMessage(&httpmsg.Message{RawContent: tt.data}, nil, tt.selected, r, tt.cutoff)
-			if diff := cmp.Diff(tt.want, got); diff != "" {
+			if diff := cmp.Diff(tt.want, got, cmpopts.EquateErrors()); diff != "" {
 				t.Fatal(diff)
 			}
 		})

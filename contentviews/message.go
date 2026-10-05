@@ -5,6 +5,7 @@ package contentviews
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -16,14 +17,18 @@ import (
 	"github.com/zchee/mitmproxy-go/websocket"
 )
 
+// ErrUnsupportedMessage indicates a message type not supported by PrettifyMessage.
+var ErrUnsupportedMessage = errors.New("unsupported contentview message")
+
 // PrettifyMessage renders an HTTP, TCP, UDP, or WebSocket message. HTTP inputs
 // may be *httpmsg.Message, *httpmsg.Request, or *httpmsg.Response. A nil registry
 // uses DefaultRegistry. An empty viewName means auto. Positive lineCutoff limits
 // text through that many newlines; nonpositive values leave the text uncut.
 // Callers pass options.Manager.Int("content_view_lines_cutoff") when appropriate.
 // A failed automatic view falls back to Raw; an explicitly requested view's
-// failure is displayed as an error. The input and its flow must not be mutated
-// concurrently while this function runs.
+// failure is displayed as an error. Result.Err preserves either failure and wraps
+// ErrUnsupportedMessage for unsupported message types. The input and its flow
+// must not be mutated concurrently while this function runs.
 func PrettifyMessage(message any, f flow.Flow, viewName string, registry *Registry, lineCutoff int) Result {
 	if registry == nil {
 		registry = DefaultRegistry
@@ -33,17 +38,17 @@ func PrettifyMessage(message any, f flow.Flow, viewName string, registry *Regist
 	}
 	data, metadata, description, err := messageData(message, f)
 	if err != nil {
-		return Result{Text: err.Error(), SyntaxHighlight: "error"}
+		return Result{Text: err.Error(), SyntaxHighlight: "error", Err: err}
 	}
 	if data == nil {
 		return Result{Text: "Content is missing.", SyntaxHighlight: "error"}
 	}
 	view, err := registry.GetView(data, metadata, viewName)
 	if err != nil {
-		return Result{Text: err.Error(), SyntaxHighlight: "error", Description: description}
+		return Result{Text: err.Error(), SyntaxHighlight: "error", Description: description, Err: err}
 	}
 	text, err := prettify(view, data, metadata)
-	result := Result{Text: text, SyntaxHighlight: view.SyntaxHighlight(), ViewName: view.Name(), Description: description}
+	result := Result{Text: text, SyntaxHighlight: view.SyntaxHighlight(), ViewName: view.Name(), Description: description, Err: err}
 	if err != nil {
 		logSink().Debug("Contentview failed", "view", view.Name(), "error", err)
 		if viewName == "auto" {
@@ -68,7 +73,10 @@ func PrettifyMessage(message any, f flow.Flow, viewName string, registry *Regist
 func prettify(view View, data []byte, metadata Metadata) (text string, err error) {
 	defer func() {
 		if value := recover(); value != nil {
-			err = fmt.Errorf("%v", value)
+			var ok bool
+			if err, ok = value.(error); !ok {
+				err = fmt.Errorf("%v", value)
+			}
 		}
 	}()
 	return view.Prettify(data, metadata)
@@ -109,7 +117,7 @@ func messageData(message any, f flow.Flow) ([]byte, Metadata, string, error) {
 	case nil:
 		return nil, metadata, "", nil
 	default:
-		return nil, metadata, "", fmt.Errorf("unsupported contentview message %T", message)
+		return nil, metadata, "", fmt.Errorf("%w %T", ErrUnsupportedMessage, message)
 	}
 	if m := metadata.HTTPMessage; m != nil {
 		metadata.Protocol = "http"

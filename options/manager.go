@@ -28,6 +28,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/zchee/mitmproxy-go/internal/textwrap"
 	"github.com/zchee/mitmproxy-go/omap"
 )
 
@@ -171,7 +172,7 @@ func (m *Manager) Add(ctx context.Context, name string, typ Type, def any, help 
 		name: name,
 		typ:  typ,
 		def:  cdef,
-		help: strings.ReplaceAll(strings.TrimSpace(dedent(help)), "\n", " "),
+		help: strings.ReplaceAll(strings.TrimSpace(textwrap.Dedent(help)), "\n", " "),
 	}
 	for _, opt := range opts {
 		opt(o)

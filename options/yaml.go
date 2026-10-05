@@ -19,6 +19,7 @@ import (
 	yaml "go.yaml.in/yaml/v4"
 
 	"github.com/zchee/mitmproxy-go/internal/pyrepr"
+	"github.com/zchee/mitmproxy-go/internal/textwrap"
 	"github.com/zchee/mitmproxy-go/omap"
 )
 
@@ -242,7 +243,7 @@ func (m *Manager) Dump() (string, error) {
 			txt += fmt.Sprintf(" Type %s.", o.typ)
 		}
 		key := strNode(o.name)
-		if lines := wrap(txt); len(lines) > 0 {
+		if lines := textwrap.Wrap(txt); len(lines) > 0 {
 			key.HeadComment = "# " + strings.Join(lines, "\n# ")
 		}
 		doc := &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{key, valueNode(o.def)}}

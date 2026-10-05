@@ -525,6 +525,56 @@ func TestManagerHelp(t *testing.T) {
 	}
 }
 
+// TestHelpWrapping checks the layout of help text against values recorded
+// with CPython 3.13 from "\n".join(textwrap.wrap(doc.strip())), which is
+// how mitmproxy builds Command.help from a docstring.
+func TestHelpWrapping(t *testing.T) {
+	tests := map[string]struct {
+		in   string
+		want string
+	}{
+		"success: short": {
+			in:   "  cmd1 help\n",
+			want: "cmd1 help",
+		},
+		"success: long single paragraph": {
+			in:   "Save flows to a file. If the path starts with a +, flows are appended to the file, otherwise it is over-written. The file format is the native mitmproxy dump format.",
+			want: "Save flows to a file. If the path starts with a +, flows are appended\nto the file, otherwise it is over-written. The file format is the\nnative mitmproxy dump format.",
+		},
+		"success: several paragraphs": {
+			in:   "Export a flow to a path.\n\nThe format is one of the formats listed by export.formats, and the flows are written one after another in the order given.",
+			want: "Export a flow to a path.  The format is one of the formats listed by\nexport.formats, and the flows are written one after another in the\norder given.",
+		},
+		"success: indented lines": {
+			in:   "\n        Replay flows from a server.\n\n        Every flow is replayed in turn;\n            an indented continuation line keeps its leading spaces as part of the text.\n    ",
+			want: "Replay flows from a server.          Every flow is replayed in turn;\nan indented continuation line keeps its leading spaces as part of the\ntext.",
+		},
+		"success: tabs and hyphens": {
+			in:   "Mark flows.\tA well-known, mode-specific marker--the default--is used when no marker-name-that-is-rather-long-indeed is given.",
+			want: "Mark flows.     A well-known, mode-specific marker--the default--is\nused when no marker-name-that-is-rather-long-indeed is given.",
+		},
+		"success: empty": {
+			in:   "",
+			want: "",
+		},
+		"success: whitespace only": {
+			in:   " \n\t ",
+			want: "",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			m := command.NewManager()
+			if err := m.Register("helped", func(context.Context) {}, command.WithHelp(tt.in)); err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tt.want, lookup(t, m, "helped").Help); diff != "" {
+				t.Errorf("Help of %q (-want +got):\n%s", tt.in, diff)
+			}
+		})
+	}
+}
+
 func TestRegisterDuplicate(t *testing.T) {
 	m := command.NewManager()
 	if err := m.Register("dup", func(context.Context) string { return "first" }); err != nil {

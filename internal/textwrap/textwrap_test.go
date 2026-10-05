@@ -1,7 +1,7 @@
 // Copyright 2026 The mitmproxy-go Authors.
 // SPDX-License-Identifier: MIT
 
-package options
+package textwrap
 
 import (
 	"strings"
@@ -27,8 +27,8 @@ func TestDedent(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if got := dedent(tt.in); got != tt.want {
-				t.Errorf("dedent(%q) = %q, want %q", tt.in, got, tt.want)
+			if got := Dedent(tt.in); got != tt.want {
+				t.Errorf("Dedent(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}
@@ -91,8 +91,8 @@ func TestWrap(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if diff := gocmp.Diff(tt.want, wrap(tt.in), cmpopts.EquateEmpty()); diff != "" {
-				t.Errorf("wrap(%q) mismatch (-want +got):\n%s", tt.in, diff)
+			if diff := gocmp.Diff(tt.want, Wrap(tt.in), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("Wrap(%q) mismatch (-want +got):\n%s", tt.in, diff)
 			}
 		})
 	}

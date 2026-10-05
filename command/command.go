@@ -16,11 +16,10 @@
 // fired by the command run inside the caller's hold of the lock instead of
 // waiting for it forever.
 //
-// Help text set with [WithHelp] is stored with surrounding whitespace
-// removed and is otherwise kept as given. mitmproxy also re-wraps a
-// command's help to 70 columns (Python's textwrap.wrap); that wrapping is not
-// reproduced yet, so help served to the web frontend will differ from
-// mitmproxy's until it is.
+// Help text set with [WithHelp] is laid out as mitmproxy lays out a
+// command's docstring: surrounding whitespace removed, then re-wrapped to
+// 70 columns with Python's textwrap.wrap, which joins paragraphs and
+// indented lines into one run of text.
 package command
 
 import (
@@ -31,6 +30,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/zchee/mitmproxy-go/internal/textwrap"
 	"github.com/zchee/mitmproxy-go/omap"
 )
 
@@ -101,9 +101,11 @@ type options struct {
 	overrides []argumentOverride
 }
 
-// WithHelp sets the command's help text. Surrounding whitespace is removed.
+// WithHelp sets the command's help text. Surrounding whitespace is removed
+// and the rest is re-wrapped to 70 columns, its lines joined by newlines, as
+// mitmproxy does with "\n".join(textwrap.wrap(doc.strip())).
 func WithHelp(help string) Option {
-	return func(o *options) { o.help = strings.TrimSpace(help) }
+	return func(o *options) { o.help = strings.Join(textwrap.Wrap(strings.TrimSpace(help)), "\n") }
 }
 
 // WithParams names the command's parameters in order, excluding the leading

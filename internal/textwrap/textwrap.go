@@ -1,7 +1,10 @@
 // Copyright 2026 The mitmproxy-go Authors.
 // SPDX-License-Identifier: MIT
 
-package options
+// Package textwrap ports the parts of Python's textwrap module that
+// mitmproxy uses to lay out help text: dedent and wrap with their default
+// settings.
+package textwrap
 
 import (
 	"slices"
@@ -9,7 +12,7 @@ import (
 	"unicode"
 )
 
-// dedent is Python's textwrap.dedent: lines consisting only of spaces and
+// Dedent is Python's textwrap.dedent: lines consisting only of spaces and
 // tabs are emptied, and the longest leading run of spaces and tabs shared by
 // all other lines is removed.
 //
@@ -17,7 +20,7 @@ import (
 // a help text starts right after the opening quotes, it has no indentation,
 // the common margin is empty, and the indentation of the following lines is
 // kept; the resulting runs of spaces are part of the help text upstream.
-func dedent(text string) string {
+func Dedent(text string) string {
 	lines := strings.Split(text, "\n")
 	for i, l := range lines {
 		if strings.Trim(l, " \t") == "" {
@@ -151,10 +154,10 @@ func isBlankChunk(c []rune) bool {
 	return strings.TrimSpace(string(c)) == ""
 }
 
-// wrap is Python's textwrap.wrap(text) with its default settings: width 70,
+// Wrap is Python's textwrap.wrap(text) with its default settings: width 70,
 // tabs expanded, every whitespace character replaced by a space, whitespace
 // dropped at line boundaries, long words broken, preferably after a hyphen.
-func wrap(text string) []string {
+func Wrap(text string) []string {
 	text = expandTabs(text)
 	t := []rune(text)
 	for i, r := range t {

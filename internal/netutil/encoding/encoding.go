@@ -43,7 +43,8 @@ import (
 var ErrUnknownEncoding = errors.New("unknown encoding")
 
 // ErrSizeLimit is wrapped by the error DecodeLimit returns when the decoded
-// output would be larger than the limit.
+// output would be larger than the limit, and when a zstd frame declares a
+// window larger than the bound DecodeLimit allows for that limit.
 var ErrSizeLimit = errors.New("decoded size exceeds the limit")
 
 // Error describes a failed Decode or Encode call.
@@ -150,8 +151,9 @@ func Decode(data []byte, encoding string) ([]byte, error) {
 // input claims, and stays within a small multiple of limit. A zstd frame may
 // need its declared window before any output is produced, so for zstd the
 // bound is at least the 8 MiB window RFC 9659 lets HTTP senders use; a frame
-// whose window is larger than that and larger than limit is refused with
-// ErrSizeLimit before it is decoded.
+// whose window is larger than that and larger than limit is refused before it
+// is decoded, with an error wrapping both ErrSizeLimit and
+// [zstd.ErrWindowSizeExceeded].
 func DecodeLimit(data []byte, encoding string, limit int64) ([]byte, error) {
 	return decode(data, encoding, max(limit, 0))
 }
@@ -192,6 +194,23 @@ func decode(data []byte, encoding string, limit int64) ([]byte, error) {
 
 func sizeLimitError(limit int64) error {
 	return fmt.Errorf("%w of %d bytes", ErrSizeLimit, limit)
+}
+
+// windowLimitError reports a zstd frame refused by DecodeLimit because its
+// window is larger than the decoder memory bound used for the limit. It
+// wraps ErrSizeLimit and the decoder's window error.
+type windowLimitError struct {
+	bound uint64
+	limit int64
+	err   error
+}
+
+func (e *windowLimitError) Error() string {
+	return fmt.Sprintf("frame window exceeds the bound of %d bytes for a limit of %d bytes", e.bound, e.limit)
+}
+
+func (e *windowLimitError) Unwrap() []error {
+	return []error{ErrSizeLimit, e.err}
 }
 
 // Encode encodes data with the named encoding.
@@ -437,7 +456,7 @@ func decodeZstd(data []byte, limit int64) ([]byte, error) {
 		return nil, sizeLimitError(limit)
 	case errors.Is(err, zstd.ErrWindowSizeExceeded) && mem < zstdWindowLimit:
 		// Decode would accept this window; the limit is what refuses it.
-		return nil, fmt.Errorf("%w: %w", sizeLimitError(limit), err)
+		return nil, &windowLimitError{bound: mem, limit: limit, err: err}
 	case err != nil:
 		return nil, err
 	case int64(len(out)) > limit:

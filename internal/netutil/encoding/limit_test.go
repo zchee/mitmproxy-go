@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -183,8 +184,71 @@ func TestDecodeLimitAllocations(t *testing.T) {
 	}
 }
 
+// zstdWideWindow is a zstd frame of 27 bytes whose header declares a 32 MiB
+// window without the single-segment flag: Decode accepts it, while
+// DecodeLimit refuses it for any limit below 32 MiB because the bound for
+// zstd is max(limit, 8 MiB).
+const zstdWideWindow = "28b52ffd0478d900006d69746d70726f78792066757a7a2073656564207061796c6f61641077c1db"
+
+// TestDecodeLimitZstdWindow checks that a zstd frame is refused when its
+// declared window exceeds the bound DecodeLimit derives from the limit,
+// however small its content, and decoded once the bound covers it.
+func TestDecodeLimitZstdWindow(t *testing.T) {
+	data := mustHex(t, zstdWideWindow)
+	want, err := Decode(data, "zstd")
+	if err != nil {
+		t.Fatalf("Decode error: %v", err)
+	}
+	if diff := cmp.Diff([]byte("mitmproxy fuzz seed payload"), want); diff != "" {
+		t.Fatalf("Decode output differs (-want +got):\n%s", diff)
+	}
+	tests := map[string]struct {
+		limit   int64
+		wantErr string
+	}{
+		"error: limit equal to the content size": {
+			limit:   int64(len(want)),
+			wantErr: "ZstdError when decoding b'(\\xb5/\\x with 'zstd': ZstdError('frame window exceeds the bound of 8388608 bytes for a limit of 27 bytes')",
+		},
+		"error: limit of 8 MiB": {
+			limit:   8 << 20,
+			wantErr: "ZstdError when decoding b'(\\xb5/\\x with 'zstd': ZstdError('frame window exceeds the bound of 8388608 bytes for a limit of 8388608 bytes')",
+		},
+		"success: limit covering the 32 MiB window": {
+			limit: 32 << 20,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := DecodeLimit(data, "zstd", tt.limit)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("DecodeLimit(limit %d) error: %v", tt.limit, err)
+				}
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("DecodeLimit(limit %d) output differs from Decode (-Decode +DecodeLimit):\n%s", tt.limit, diff)
+				}
+				return
+			}
+			if got != nil {
+				t.Errorf("DecodeLimit(limit %d) returned %d bytes with the error, want none", tt.limit, len(got))
+			}
+			if !errors.Is(err, ErrSizeLimit) || !errors.Is(err, zstd.ErrWindowSizeExceeded) {
+				t.Errorf("DecodeLimit(limit %d) error = %v, want wrapping ErrSizeLimit and zstd.ErrWindowSizeExceeded", tt.limit, err)
+			}
+			if err != nil {
+				if diff := cmp.Diff(tt.wantErr, err.Error()); diff != "" {
+					t.Errorf("DecodeLimit(limit %d) error text differs (-want +got):\n%s", tt.limit, diff)
+				}
+			}
+		})
+	}
+}
+
 // FuzzDecodeLimit checks DecodeLimit against Decode: below the limit both
-// agree, above it DecodeLimit fails with ErrSizeLimit.
+// agree, above it DecodeLimit fails with ErrSizeLimit. A zstd frame whose
+// declared window exceeds the bound DecodeLimit uses may also be refused
+// below the limit, with an error that wraps the zstd window error as well.
 func FuzzDecodeLimit(f *testing.F) {
 	payload := []byte("mitmproxy fuzz seed payload")
 	for _, enc := range Encodings() {
@@ -194,6 +258,17 @@ func FuzzDecodeLimit(f *testing.F) {
 		}
 		f.Add(encoded, enc, int64(len(payload)))
 		f.Add(encoded, enc, int64(len(payload)-1))
+	}
+	// zstd frames declaring a 32 MiB window, refused below that limit.
+	for _, seed := range []struct {
+		hex   string
+		limit int64
+	}{
+		{hex: zstdWideWindow, limit: 27},
+		{hex: "28b52ffd1078310000303030303030", limit: 10},
+		{hex: "28b52ffd0078010000", limit: -155},
+	} {
+		f.Add(mustHex(f, seed.hex), "Zstd", seed.limit)
 	}
 	f.Fuzz(func(t *testing.T, data []byte, enc string, limit int64) {
 		want, wantErr := Decode(data, enc)
@@ -210,6 +285,9 @@ func FuzzDecodeLimit(f *testing.F) {
 				t.Fatalf("DecodeLimit(%x, %q, %d) error = %v for %d decoded bytes, want ErrSizeLimit", data, enc, limit, err, len(want))
 			}
 		case err != nil:
+			if strings.EqualFold(enc, "zstd") && errors.Is(err, ErrSizeLimit) && errors.Is(err, zstd.ErrWindowSizeExceeded) {
+				return
+			}
 			t.Fatalf("DecodeLimit(%x, %q, %d) error = %v, Decode gave %d bytes", data, enc, limit, err, len(want))
 		case !bytes.Equal(want, got):
 			t.Fatalf("DecodeLimit(%x, %q, %d) = %x, Decode = %x", data, enc, limit, got, want)

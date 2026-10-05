@@ -34,6 +34,8 @@ type subscription struct {
 func NewRegistry() *Registry {
 	r := &Registry{}
 	r.Register(Raw{})
+	r.Register(HexDump{})
+	r.Register(HexStream{})
 	return r
 }
 

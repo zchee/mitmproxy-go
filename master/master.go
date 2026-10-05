@@ -110,16 +110,24 @@ func (m *Master) Call(ctx context.Context, name string, args ...any) (any, error
 //
 // The done hook runs whenever running was invoked, even if it failed. Run
 // always closes the master, including on a pre-running startup failure, and
-// returns the first startup, running, done or Close error. When Run stops
-// because [Master.ShutdownWithError] recorded an error, it returns that
-// error, wrapped in an [*ExitError] when it is not one already. Run must be
-// called outside dispatch and at most once per Master.
+// returns the first startup, running, done or Close error. When
+// [Master.ShutdownWithError] recorded an error and Run has no earlier error
+// to return, Run returns the recorded error, wrapped in an [*ExitError]
+// when it is not one already; that holds even when the error is recorded
+// from the done hook or during Close. Run must be called outside dispatch
+// and at most once per Master.
 func (m *Master) Run(ctx context.Context) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer func() {
 		if cerr := m.Close(context.WithoutCancel(ctx)); err == nil {
 			err = cerr
+		}
+		// The done hook and Close run after the function body read the
+		// recorded error; an addon that fails while flushing in done, the
+		// way save flushes its active flows, records its error only now.
+		if err == nil {
+			err = m.shutdownResult()
 		}
 	}()
 

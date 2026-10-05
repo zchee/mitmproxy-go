@@ -54,6 +54,7 @@ type recorder struct {
 	runningErr error
 	logger     *slog.Logger  // when set, Running logs through it
 	ran        chan struct{} // when set, closed by Running
+	doneFn     func()        // when set, called by Done
 }
 
 func (r *recorder) add(s string) {
@@ -91,6 +92,9 @@ func (r *recorder) Running(ctx context.Context) error {
 
 func (r *recorder) Done(context.Context) error {
 	r.add("done")
+	if r.doneFn != nil {
+		r.doneFn()
+	}
 	return nil
 }
 
@@ -240,8 +244,9 @@ func TestShutdownWithError(t *testing.T) {
 	tests := map[string]struct {
 		beforeRun bool // stop before Run starts instead of from running
 		stop      func(m *master.Master)
-		wantCause error // matched with errors.Is; nil means Run returns nil
-		wantSame  error // when set, Run must return exactly this error value
+		done      func(m *master.Master) // when set, run by the done hook
+		wantCause error                  // matched with errors.Is; nil means Run returns nil
+		wantSame  error                  // when set, Run must return exactly this error value
 	}{
 		"success: the cause is wrapped in an ExitError": {
 			stop:      func(m *master.Master) { m.ShutdownWithError(cause) },
@@ -268,6 +273,11 @@ func TestShutdownWithError(t *testing.T) {
 			stop:      func(m *master.Master) { m.ShutdownWithError(cause) },
 			wantCause: cause,
 		},
+		"success: an error recorded from the done hook is returned": {
+			stop:      func(m *master.Master) { m.Shutdown() },
+			done:      func(m *master.Master) { m.ShutdownWithError(cause) },
+			wantCause: cause,
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -276,6 +286,9 @@ func TestShutdownWithError(t *testing.T) {
 				r.ran = make(chan struct{})
 			}
 			m := newMaster(t, r)
+			if tt.done != nil {
+				r.doneFn = func() { tt.done(m) }
+			}
 			if tt.beforeRun {
 				tt.stop(m)
 			}

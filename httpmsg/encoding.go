@@ -24,9 +24,11 @@ import (
 // that cannot be applied to its body.
 var ErrContentEncoding = errors.New("invalid content-encoding")
 
-// decodeContent removes the content coding enc from data.
+// decodeContent removes the content coding enc from data. The decoded size
+// is bounded by the package's decode limit: a body that would decode to
+// more is an error wrapping [netencoding.ErrSizeLimit].
 func decodeContent(data []byte, enc string) ([]byte, error) {
-	out, err := netencoding.Decode(data, enc)
+	out, err := netencoding.DecodeLimit(data, enc, DecodeLimit())
 	if err != nil {
 		return nil, fmt.Errorf("%w %q: %w", ErrContentEncoding, enc, err)
 	}

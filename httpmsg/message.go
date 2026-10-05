@@ -66,7 +66,9 @@ func (m *Message) IsHTTP3() bool { return m.HTTPVersion == "HTTP/3" }
 
 // Content returns the body with its Content-Encoding removed. It returns
 // nil when the body is missing, and an error when the encoding cannot be
-// decoded.
+// decoded. A body whose decoded size would exceed the process-global bound
+// (see [SetDecodeLimit]) counts as undecodable, with an error wrapping the
+// size-limit error of the decoder.
 func (m *Message) Content() ([]byte, error) {
 	if m.RawContent == nil {
 		return nil, nil
@@ -115,7 +117,9 @@ func (m *Message) SetContent(value []byte) {
 
 // Text returns the decoded body as text. The character set comes from a
 // byte order mark, the Content-Type charset or the media type, falling back
-// to Latin-1, as upstream infers it. A missing body gives "".
+// to Latin-1, as upstream infers it. A missing body gives "". Like
+// [Message.Content], it fails for a body whose decoded size would exceed
+// the process-global bound.
 func (m *Message) Text() (string, error) {
 	content, err := m.Content()
 	if err != nil || content == nil {

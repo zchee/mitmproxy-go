@@ -48,6 +48,14 @@ Anything not listed here is meant to behave as upstream does; a difference that 
 | The LDAP port uses Python `int()` (`mitmproxy/addons/proxyauth.py:252`), including Unicode decimal digits, underscore separators and surrounding whitespace. | Explicit ports must use ASCII decimal syntax (an optional sign is accepted) and fall within 1–65535. | Configuration-only restriction; avoids duplicating the private Python-integer parsers elsewhere in the port. |
 | Basic authentication headers have no length limit. | Headers longer than 64 KiB are rejected. | Bound decoding work under the dispatch lock. |
 
+## addons/browser
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| `browser.start` has a Python default argument `browser="chrome"` (`mitmproxy/addons/browser.py:40`). | `Start(ctx, names ...string)` accepts zero or one name, defaults to Chrome, and rejects extra names. Command metadata displays a variadic string argument. | The Go command registry has no default-argument representation. |
+| Flatpak discovery runs `flatpak info` synchronously before the command returns (`mitmproxy/addons/browser.py:19-32`). | Probes run outside dispatch; a launch or unsupported-platform alert can arrive after the command returns. Launch uses the current listen options when discovery completes. `Done` cancels pending probes and prevents their deferred launches. | Waiting for a child process cannot hold the shared addon dispatch lock. Direct filesystem lookup and process start remain synchronous. |
+| `done` kills browsers and removes temporary profiles immediately (`mitmproxy/addons/browser.py:227-233`). | `Done` kills without waiting; background reapers wait for each child and then remove its profile. Failed starts remove their unused profiles immediately. Cleanup errors are logged. | Reap children and avoid removing profiles while a terminating browser still uses them, without waiting under dispatch. |
+
 ## connection
 
 No behavioural differences.

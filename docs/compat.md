@@ -608,3 +608,13 @@ Replay API: `proxy.Replay` takes a `ReplayRunner` supplied as `httplayer.Replay`
 |---|---|---|
 | URL regex searches and substitutions have no explicit resource limit (`mitmproxy/addons/mapremote.py:64`). | Uses the pattern, subject, template, output and fallback bounds and engine differences listed under filter/regex. Abandoned transformations return a hook error without changing the request. | Bound memory and work under addon dispatch. |
 | Invalid regex details come from Python's `re.error` (`mitmproxy/addons/mapremote.py:24`). | Keeps the `Invalid regular expression` prefix and subject repr, with shared compiler details. | The implementation supplies the diagnostic. |
+
+## addons/maplocal
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Local files are read without a byte bound (`mitmproxy/addons/maplocal.py:139`). | Serves only regular files, capped at 64 MiB; oversized or unreadable files log the upstream warning and continue to later rules. | Bound file reads and avoid ordinary blocking device or FIFO reads under dispatch. |
+| Candidate paths are lexically confined, but symlinks may escape the configured directory (`mitmproxy/addons/maplocal.py:41-49,128-139`). | Reads and stats use `os.Root`, refusing symlinks outside the configured directory and absolute symlinks. Relative in-root symlinks are supported. NUL paths are rejected without candidates. Windows reserved device paths are also rejected. | Prevent URL-selected files from escaping the directory, including symlink changes during traversal. |
+| Content-Type comes from Python's `mimetypes.guess_type` (`mitmproxy/addons/maplocal.py:134`). | Uses Go's `mime.TypeByExtension`, including the host's MIME database and charset parameters for textual formats. | Use the standard maintained MIME database; host mappings may differ. |
+| Synthetic responses identify the server as mitmproxy (`mitmproxy/addons/maplocal.py:133`). | Uses `mitmproxy-go <version>`. | Identify the program serving the local file. |
+| Regex and missing-path errors contain Python exception details (`mitmproxy/addons/maplocal.py:31,36`). | Preserves the prefixes and configured subject/path, with Go compiler/filesystem details. Patterns and searched URLs inherit filter/regex's documented bounds and differences. | Resource limits and diagnostics belong to the implementation in use. |

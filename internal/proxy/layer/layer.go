@@ -282,10 +282,13 @@ type Context struct {
 // srv itself when a new connection was dialed, the pooled connection's
 // server when reuse matched one. Establishment is single-flight per key:
 // concurrent Opens for one key wait, outside the dispatch lock, for the
-// first dial instead of dialing again — except that a waiter that needs
-// HTTP/2 re-dials with reuse false when the established connection did
-// not negotiate h2, instead of joining it (as in
-// py:mitmproxy/proxy/layers/http/__init__.py). Setup, including TLS and
+// first dial instead of dialing again. The flight runs under the
+// connection handler's context, not the caller's: a caller whose ctx ends
+// merely stops waiting, while the establishment continues for the other
+// waiters and fails only with the handler or the dial and setup. One
+// exception to joining: a waiter that needs HTTP/2 re-dials with reuse
+// false when the established connection did not negotiate h2, instead of
+// joining it (as in py:mitmproxy/proxy/layers/http/__init__.py). Setup, including TLS and
 // CONNECT, is part of the same single flight as dialing; no waiter sees a
 // connection until setup has finished.
 type ServerPool interface {

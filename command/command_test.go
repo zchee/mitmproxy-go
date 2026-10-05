@@ -363,7 +363,6 @@ func newTestManager(t *testing.T) *command.Manager {
 		{"fail", func(context.Context) (string, error) { return "partial", errBoom }, nil},
 		{"failonly", func(context.Context) error { return errBoom }, nil},
 		{"ctxvalue", func(ctx context.Context) string { s, _ := ctx.Value(ctxKey{}).(string); return s }, nil},
-		{"ctxnil", func(ctx context.Context) bool { return ctx == nil }, nil},
 		{"reenter", func(ctx context.Context, foo string) (string, error) {
 			r, err := m.Call(ctx, "one.two", foo)
 			if err != nil {
@@ -414,11 +413,6 @@ func TestManagerCall(t *testing.T) {
 			name: "ctxvalue",
 			ctx:  func(ctx context.Context) context.Context { return context.WithValue(ctx, ctxKey{}, "carried") },
 			want: "carried",
-		},
-		"success: nil context is passed as nil": {
-			name: "ctxnil",
-			ctx:  func(context.Context) context.Context { return nil },
-			want: true,
 		},
 		"success: command calls another command": {
 			name: "reenter", args: []any{"foo"}, want: "outer ret foo",
@@ -484,6 +478,41 @@ func TestManagerCall(t *testing.T) {
 	}
 }
 
+// TestCallRefusesNilContext checks that a nil context is refused with the
+// same error whether or not a Runner is installed, before the Runner or the
+// command runs.
+func TestCallRefusesNilContext(t *testing.T) {
+	tests := map[string]struct {
+		runner bool
+	}{
+		"error: without a runner": {},
+		"error: with a runner":    {runner: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			m := newTestManager(t)
+			var runs int
+			if tt.runner {
+				m.SetRunner(func(ctx context.Context, _ string, run func(context.Context) (any, error)) (any, error) {
+					runs++
+					return run(ctx)
+				})
+			}
+			var nilCtx context.Context
+			got, err := m.Call(nilCtx, "ctxvalue")
+			if !errors.Is(err, command.ErrArgumentMismatch) || !strings.Contains(err.Error(), "ctxvalue: nil context") {
+				t.Fatalf("Call(nil, %q) = %v, %v; want an error wrapping %v that names the nil context", "ctxvalue", got, err, command.ErrArgumentMismatch)
+			}
+			if got != nil {
+				t.Errorf("Call(nil) returned %v alongside an error", got)
+			}
+			if runs != 0 {
+				t.Errorf("the runner ran %d times for a nil context; want 0", runs)
+			}
+		})
+	}
+}
+
 func TestManagerHelp(t *testing.T) {
 	m := newTestManager(t)
 	if got, want := lookup(t, m, "one.two").Help, "cmd1 help"; got != want {
@@ -544,6 +573,10 @@ func TestCommandsOrder(t *testing.T) {
 
 func TestManagerConcurrentUse(t *testing.T) {
 	m := newTestManager(t)
+	fixtures := 0
+	for range m.Commands() {
+		fixtures++
+	}
 	const workers = 8
 	var wg sync.WaitGroup
 	for i := range workers {
@@ -570,7 +603,7 @@ func TestManagerConcurrentUse(t *testing.T) {
 	for range m.Commands() {
 		count++
 	}
-	if want := 10 + workers; count != want {
+	if want := fixtures + workers; count != want {
 		t.Errorf("registered %d commands, want %d", count, want)
 	}
 }

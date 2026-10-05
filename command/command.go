@@ -256,8 +256,9 @@ func (c *Command) call(ctx context.Context, args []any) (any, error) {
 
 	const first = 1
 	in := make([]reflect.Value, 0, len(args)+first)
-	// Going through a pointer keeps the interface type, so a nil ctx is
-	// passed as a nil context.Context instead of an invalid Value.
+	// Manager.Call refuses a nil ctx, but a Runner hands run a context of
+	// its own. Going through a pointer keeps the parameter's interface type,
+	// so even a nil one is a valid Value rather than a reflect panic.
 	in = append(in, reflect.ValueOf(&ctx).Elem())
 	for i, arg := range args {
 		pi := min(i, n-1)
@@ -392,8 +393,9 @@ func (m *Manager) Unregister(name string) bool {
 //
 // ctx is passed to the command as its first argument and must not be nil:
 // the Runner an addon manager installs derives the command's context from
-// it. The Manager's lock is not held while the command runs, so a command
-// may call other commands.
+// it. A nil ctx is refused with an error wrapping [ErrArgumentMismatch],
+// before the Runner or the command runs. The Manager's lock is not held
+// while the command runs, so a command may call other commands.
 //
 // Every call goes through the [Runner] installed with [Manager.SetRunner],
 // and the command is looked up inside it. A Manager that an addon manager
@@ -412,6 +414,9 @@ func (m *Manager) Unregister(name string) bool {
 // A Manager without a Runner runs the command directly on the caller's
 // goroutine, without any lock.
 func (m *Manager) Call(ctx context.Context, name string, args ...any) (any, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("%w: %s: nil context", ErrArgumentMismatch, name)
+	}
 	run := func(ctx context.Context) (any, error) {
 		m.mu.RLock()
 		c, ok := m.commands.Get(name)

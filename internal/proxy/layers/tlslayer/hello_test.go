@@ -17,6 +17,7 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/zchee/mitmproxy-go/internal/proxy"
+	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer/layertest"
 	"github.com/zchee/mitmproxy-go/tlsparse"
 )
@@ -137,7 +138,7 @@ func TestReadClientHelloErrors(t *testing.T) {
 		"incomplete header":   {wire: []byte("\x16\x03"), want: io.EOF},
 		"incomplete record":   {wire: []byte("\x16\x03\x01\x00\x05\x01\x00"), want: io.EOF},
 		"oversized handshake": {wire: helloRecords([]byte{1, 1, 0, 0}, 4), want: tlsparse.ErrTooLarge},
-		"wire recording cap":  {wire: helloRecords(helloMessage(30000), 1), want: proxy.ErrRecordSize},
+		"wire recording cap":  {wire: helloRecords(helloMessage(30000), 1), want: layer.ErrRecordSize},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

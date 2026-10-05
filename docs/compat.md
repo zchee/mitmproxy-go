@@ -341,6 +341,8 @@ increments it.
 |---|---|---|
 | TLS ClientHello receive buffers have no explicit byte cap (`mitmproxy/proxy/layers/tls.py`). | ClientHello collection is bounded independently at 128 KiB of wire bytes, including record headers, and 64 KiB of reassembled handshake bytes, including the handshake header. The collector returns a limit error when either bound is exceeded. | Bound retained network input even when a small handshake is fragmented into many records. |
 | TLS connections are half-closed with a bare TCP FIN (`mitmproxy/proxy/layers/tls.py`). | The TLS transport sends `close_notify`, then FIN; reads remain available. | Go's `tls.Conn.CloseWrite` sends `close_notify`; peers see a clean TLS shutdown. |
+| Handshake failures are explained by matching OpenSSL error identities, falling back to `OpenSSL <repr>` (`mitmproxy/proxy/layers/tls.py`). | The same explanations are produced from the `crypto/tls` error identities: a TLS record header whose first four bytes are ASCII yields `The remote server does not speak TLS.`, a version negotiation failure yields the `tls_version_server_min` guidance, and an unexplained error keeps Go's own error text. | Go's TLS stack reports these conditions through typed errors rather than OpenSSL error tuples. |
+| `Certificate verify failed:` is followed by OpenSSL's verify result string (`mitmproxy/proxy/layers/tls.py`). | The prefix is followed by Go's `x509` verification error text, for example `x509: certificate is valid for example.com, not wrong.host`. | The verification detail comes from the verifier in use; the Go text names the same cause. |
 
 ## internal/proxy/layers/modes
 

@@ -567,3 +567,8 @@ TLS and protocol layers:
 | `extract` traverses arbitrary Python attributes and formats arbitrary objects with `str` (`mitmproxy/addons/cut.py:48-72`). | Traverses the Go model's exported fields using Python-style names and its explicitly supported computed properties. Unknown attributes return empty text. Nonprimitive model objects use their Go text representation. | Go models do not carry dynamic Python instance attributes or bound Python methods. |
 | Clipboard support is always available to import; backend errors use pyperclip text (`mitmproxy/addons/cut.py:150-176`). | `cut.clip` is registered in every build. Without the `clipboard` tag it returns `cut.clip: clipboard support is not compiled in (build with -tags clipboard)`; tagged builds log clipboard-library failures. | Desktop clipboard support remains opt-in. |
 | File errors use Python's OS diagnostic text (`mitmproxy/addons/cut.py:147-148`). | Logs Go OS diagnostic text. | The runtime supplies filesystem diagnostics. |
+## addons/serversideevents
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| Calling `response` without a response raises `AssertionError` (`mitmproxy/addons/server_side_events.py`). | Returns an error stating that a response is required. | Malformed manually built Go flows should return an error rather than panic. |

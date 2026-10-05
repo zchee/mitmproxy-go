@@ -8,12 +8,16 @@ import (
 	"errors"
 	"io"
 	"sync"
+
+	"github.com/zchee/mitmproxy-go/addon"
+	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 )
 
 type driverRead struct {
-	event Event
-	err   error
-	write bool
+	event    Event
+	err      error
+	write    bool
+	accepted chan struct{}
 }
 
 type driverFailure struct {
@@ -56,6 +60,9 @@ type streamDriver struct {
 
 func (d *streamDriver) run(ctx context.Context) (err error) {
 	ctx, cancel := context.WithCancelCause(ctx)
+	clientTerminal, terminateClient := context.WithCancel(ctx)
+	defer terminateClient()
+	d.stream.clientTerminal, d.stream.cancel = clientTerminal, cancel
 	var workers sync.WaitGroup
 	defer func() {
 		cancel(nil)
@@ -69,13 +76,14 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 			}
 		}
 	}()
-	reads := [2]chan driverRead{make(chan driverRead), make(chan driverRead)}
+	// One request slot lets a reader observe a terminal read following a
+	// partial body chunk even while the owner is paused in requestheaders.
+	reads := [2]chan driverRead{make(chan driverRead, 1), make(chan driverRead)}
 	writes := [2]chan driverWrite{make(chan driverWrite), make(chan driverWrite)}
 	written := [2]chan driverWritten{make(chan driverWritten, 1), make(chan driverWritten, 1)}
 	failures := make(chan driverFailure, 2)
-	requestEnds := make(chan driverRead, 1)
 	requestReads, responseReads := reads[0], reads[1]
-	workers.Go(func() { readRequests(ctx, cancel, d.client, requestReads, requestEnds, failures) })
+	workers.Go(func() { readRequests(ctx, terminateClient, d.client, requestReads, failures) })
 	workers.Go(func() { readResponses(ctx, d.server, responseReads, failures) })
 	workers.Go(func() {
 		writeEvents(ctx, writes[0], written[0], func(ctx context.Context, event Event) error {
@@ -144,10 +152,6 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 				inputs[i] = nil
 			}
 		}
-		ends := requestEnds
-		if inputs[0] == nil {
-			ends = nil
-		}
 		var destinations [2]chan driverWrite
 		var next [2]driverWrite
 		for _, turn := range turns {
@@ -184,8 +188,6 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 			source, result = failure.source, failure.result
 		case result = <-inputs[0]:
 			source = 0
-		case result = <-ends:
-			source = 0
 		case result = <-inputs[1]:
 			source = 1
 		case destinations[0] <- next[0]:
@@ -207,6 +209,9 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 			if stop != nil {
 				stop()
 			}
+		}
+		if result.accepted != nil {
+			close(result.accepted)
 		}
 		if source < 0 || d.stream.failed {
 			continue
@@ -278,41 +283,93 @@ func writeEvents(ctx context.Context, input <-chan driverWrite, output chan<- dr
 	}
 }
 
-func readRequests(ctx context.Context, cancel context.CancelCauseFunc, endpoint ClientEndpoint, out, ends chan<- driverRead, failures chan<- driverFailure) {
+// runHook cancels an intercepted wait when any client reader terminates,
+// without suppressing ordinary protocol-error hooks on unpaused flows.
+func (s *httpStream) runHook(ctx context.Context, prepare func(context.Context) error, hook addon.Hook) (*layer.Snapshot, error) {
+	if s.clientTerminal == nil {
+		return s.c.Hooks.FireFunc(ctx, prepare, hook)
+	}
+	var stop func() bool
+	done := make(chan struct{})
+	defer func() {
+		if stop != nil && !stop() {
+			<-done
+		}
+	}()
+	return s.c.Hooks.FireFunc(ctx, func(hookCtx context.Context) error {
+		if prepare != nil {
+			if err := prepare(hookCtx); err != nil {
+				return err
+			}
+		}
+		// Arm under dispatch so the callback checks interception after the
+		// hook releases dispatch, even if the reader has already terminated.
+		// The callback owns no endpoint lock and never blocks the reader.
+		stop = context.AfterFunc(s.clientTerminal, func() {
+			defer close(done)
+			_ = s.c.Do(ctx, func(context.Context) error {
+				if s.flow.Intercepted() {
+					s.cancel(io.EOF)
+				}
+				return nil
+			})
+		})
+		return nil
+	}, hook)
+}
+
+func readRequests(ctx context.Context, terminate context.CancelFunc, endpoint ClientEndpoint, out chan<- driverRead, failures chan<- driverFailure) {
+	if client, ok := endpoint.(*http1Server); ok {
+		client.onReadTermination = terminate
+		defer func() { client.onReadTermination = nil }()
+	}
+	var failure driverRead
+	defer func() {
+		if failure.event != nil || failure.err != nil {
+			terminate()
+			failures <- driverFailure{source: 0, result: failure}
+		}
+	}()
 	for {
 		event, err := endpoint.Receive(ctx)
 		if _, failed := event.(RequestProtocolError); failed || err != nil {
-			failures <- driverFailure{source: 0, result: driverRead{event: event, err: err}}
+			failure = driverRead{event: event, err: err}
 			return
 		}
 		if _, end := event.(RequestEndOfMessage); end {
-			// Completion has a separate slot so a paused hook cannot prevent
-			// observing a disconnect. Do not parse the next pipelined request.
-			ends <- driverRead{event: event}
+			// The buffered slot lets the reader observe disconnects during the
+			// final request hook without parsing the next pipelined request.
+			select {
+			case out <- driverRead{event: event}:
+			case <-ctx.Done():
+				return
+			}
 			if client, ok := endpoint.(*http1Server); ok {
-				err := client.readWait(ctx)
-				var failure Event
+				failure.err = client.readWait(ctx)
 				if len(client.queue) != 0 {
-					failure = client.queue[0]
+					failure.event = client.queue[0]
 					client.queue[0] = nil
 					client.queue = client.queue[1:]
-				}
-				if closed, ok := failure.(RequestProtocolError); ok && closed.Code == ClientDisconnected {
-					// A queued event cannot wake an owner in WaitForResume.
-					// Cancel the same stream context that protects the hook wait.
-					cancel(io.EOF)
-					return
-				}
-				if failure != nil || err != nil {
-					failures <- driverFailure{source: 0, result: driverRead{event: failure, err: err}}
 				}
 			}
 			return
 		}
+		result := driverRead{event: event}
+		if _, headers := event.(RequestHeaders); headers {
+			// A terminal event must not overtake the head that creates its flow.
+			result.accepted = make(chan struct{})
+		}
 		select {
-		case out <- driverRead{event: event}:
+		case out <- result:
 		case <-ctx.Done():
 			return
+		}
+		if result.accepted != nil {
+			select {
+			case <-result.accepted:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}
 }

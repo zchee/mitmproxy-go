@@ -109,7 +109,7 @@ func headersEqual(a, b httpmsg.Headers) bool {
 func (s *httpStream) fireHook(ctx context.Context, prepare func(context.Context) error, hook addon.Hook) (*layer.Snapshot, error) {
 	var request *httpmsg.Request
 	var response *httpmsg.Response
-	snapshot, err := s.c.Hooks.FireFunc(ctx, func(ctx context.Context) error {
+	snapshot, err := s.runHook(ctx, func(ctx context.Context) error {
 		if prepare != nil {
 			if err := prepare(ctx); err != nil {
 				return err

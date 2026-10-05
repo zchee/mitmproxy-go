@@ -156,6 +156,8 @@ func TestLayerMultipleRewrittenDestinations(t *testing.T) {
 }
 
 type interceptHTTPAddon struct {
+	beforeWait   func()
+	headers      bool
 	connect      bool
 	held         chan *flow.HTTPFlow
 	connected    chan *connection.Server
@@ -163,8 +165,19 @@ type interceptHTTPAddon struct {
 	clientClosed chan struct{}
 }
 
+func (a *interceptHTTPAddon) RequestHeaders(_ context.Context, f *flow.HTTPFlow) error {
+	if a.headers {
+		f.Intercept()
+		a.held <- f
+		if a.beforeWait != nil {
+			a.beforeWait()
+		}
+	}
+	return nil
+}
+
 func (a *interceptHTTPAddon) Request(_ context.Context, f *flow.HTTPFlow) error {
-	if !a.connect {
+	if !a.connect && !a.headers {
 		f.Intercept()
 		a.held <- f
 	}
@@ -300,6 +313,82 @@ func TestLayerCloseDuringRequestHook(t *testing.T) {
 	await(t, originClosed)
 }
 
+func TestLayerClientTerminationDuringHook(t *testing.T) {
+	tests := map[string]struct {
+		headers    string
+		body       string
+		reset      bool
+		beforeWait bool
+	}{
+		"error: content length without body": {headers: "Content-Length: 10\r\n"},
+		"error: terminal before hook wait":   {headers: "Content-Length: 10\r\n", beforeWait: true},
+		"error: content length mid body":     {headers: "Content-Length: 10\r\n", body: "abc"},
+		"error: chunked mid chunk":           {headers: "Transfer-Encoding: chunked\r\n", body: "a\r\nabc"},
+		"error: malformed chunk":             {headers: "Transfer-Encoding: chunked\r\n", body: "invalid\r\n"},
+		"error: raw read reset":              {reset: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			originClosed := make(chan struct{})
+			origin := proxytest.StartOrigin(t, func(conn net.Conn) {
+				data, err := io.ReadAll(conn)
+				if err != nil || len(data) != 0 {
+					t.Errorf("origin received paused request: (%q, %v), want EOF", data, err)
+				}
+				close(originClosed)
+			})
+			addon := &interceptHTTPAddon{headers: !tt.reset, held: make(chan *flow.HTTPFlow, 1), connected: make(chan *connection.Server, 1), disconnected: make(chan *connection.Server, 1), clientClosed: make(chan struct{})}
+			p := proxytest.Start(t, proxytest.WithOrigin("origin.test", origin), proxytest.WithAddons(addon), proxytest.WithOptions(map[string]any{"connection_strategy": "eager"}))
+			client := dialHTTPPeer(t, p.Addr)
+			sendHTTPBytes(t, client, "CONNECT origin.test:80 HTTP/1.1\r\n\r\n")
+			expectRead(t, client, "HTTP/1.1 200 Connection established\r\n\r\n")
+			server := await(t, addon.connected)
+			if tt.beforeWait {
+				if err := p.Master.Do(t.Context(), func(context.Context) error {
+					addon.beforeWait = func() {
+						// Keep dispatch held until the reader acknowledges the FIN.
+						// Cancellation must not make the reader wait for dispatch.
+						if err := client.(*net.TCPConn).CloseWrite(); err != nil {
+							t.Errorf("client FIN: %v", err)
+						}
+						if data, err := io.ReadAll(client); err != nil || len(data) != 0 {
+							t.Errorf("closure before hook wait = (%q, %v), want EOF", data, err)
+						}
+					}
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			sendHTTPBytes(t, client, "POST / HTTP/1.1\r\nHost: origin.test\r\n"+tt.headers+"\r\n")
+			f := await(t, addon.held)
+			if tt.reset {
+				if err := client.(*net.TCPConn).SetLinger(0); err != nil {
+					t.Fatal(err)
+				}
+				if err := client.Close(); err != nil {
+					t.Fatal(err)
+				}
+			} else if !tt.beforeWait {
+				sendHTTPBytes(t, client, tt.body)
+				if err := client.(*net.TCPConn).CloseWrite(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			assertClosedWithoutResume(t, p, addon, f)
+			if !tt.reset {
+				if data, err := io.ReadAll(client); err != nil || len(data) != 0 {
+					t.Fatalf("paused request closure = (%q, %v), want EOF without a response", data, err)
+				}
+			}
+			if closed := await(t, addon.disconnected); closed.ID != server.ID {
+				t.Fatalf("released origin = %s, want %s", closed.ID, server.ID)
+			}
+			await(t, originClosed)
+		})
+	}
+}
+
 func assertClosedWithoutResume(t *testing.T, p *proxytest.Proxy, a *interceptHTTPAddon, f *flow.HTTPFlow) {
 	t.Helper()
 	deadline := time.NewTimer(layertest.Timeout)
@@ -325,7 +414,7 @@ func assertClosedWithoutResume(t *testing.T, p *proxytest.Proxy, a *interceptHTT
 		}
 	}
 	for _, hook := range p.Recorder.Hooks() {
-		if slices.Contains([]string{"responseheaders", "response", "error", "http_connect_error"}, hook) {
+		if hook == "request" && a.headers || slices.Contains([]string{"responseheaders", "response", "error", "http_connect_error"}, hook) {
 			t.Errorf("closed intercepted flow fired %s", hook)
 		}
 	}

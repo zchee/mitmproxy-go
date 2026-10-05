@@ -57,6 +57,9 @@ type httpStream struct {
 	failed         bool
 	connectRequest bool
 	clientClosed   func() bool
+	// clientTerminal is notified by readers; cancel wakes an intercepted hook.
+	clientTerminal context.Context
+	cancel         context.CancelCauseFunc
 	// connectEstablished reports the stream answered a CONNECT with a 2xx:
 	// the connection now belongs to a child protocol, not to HTTP.
 	connectEstablished bool
@@ -462,7 +465,7 @@ func (s *httpStream) finish(ctx context.Context, request bool) (streamOutput, er
 func (s *httpStream) syntheticResponse(ctx context.Context) (streamOutput, error) {
 	s.response.headers = true
 	var err error
-	s.snapshot, err = s.c.Hooks.Fire(ctx, addon.ResponseHeadersHook{Flow: s.flow})
+	s.snapshot, err = s.runHook(ctx, nil, addon.ResponseHeadersHook{Flow: s.flow})
 	if err != nil {
 		return streamOutput{}, err
 	}

@@ -28,6 +28,9 @@ type http1Server struct {
 	// Receive-side state, owned by the receiving goroutine.
 	body  *http1.BodyReader
 	queue []RequestEvent
+	// onReadTermination notifies the driver before queued data can hide an
+	// observed terminal read. It only cancels a context, never waits for hooks.
+	onReadTermination context.CancelFunc
 
 	// id is the current stream. Guarded by mu: the next-exchange bump runs
 	// under the lock, possibly on the sending goroutine.
@@ -316,6 +319,9 @@ func (s *http1Server) finish() {
 	id := s.id
 	s.mu.Unlock()
 	s.wire.drop(id)
+	if s.onReadTermination != nil {
+		s.onReadTermination()
+	}
 }
 
 // Send writes one response event to the client. See ClientEndpoint.

@@ -25,7 +25,7 @@ import (
 func (s *httpStream) handleConnect(ctx context.Context, event RequestHeaders) (streamOutput, error) {
 	s.connectRequest = true
 	var err error
-	s.snapshot, err = s.c.Hooks.FireFunc(ctx, func(context.Context) error {
+	s.snapshot, err = s.runHook(ctx, func(context.Context) error {
 		s.flow.Request = event.Request
 		s.flow.Request.RawContent = nil
 		return nil
@@ -91,7 +91,7 @@ func (s *httpStream) handleConnect(ctx context.Context, event RequestHeaders) (s
 	if established {
 		hook = addon.HTTPConnectedHook{Flow: s.flow}
 	}
-	s.snapshot, err = s.c.Hooks.FireFunc(ctx, func(context.Context) error {
+	s.snapshot, err = s.runHook(ctx, func(context.Context) error {
 		s.flow.Response = response
 		return nil
 	}, hook)

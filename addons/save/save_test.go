@@ -336,11 +336,11 @@ func TestStrftimePath(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
 			s, m := setup(t, nil)
 			s.clock = func() time.Time {
 				return time.Date(2000, 1, 2, 3, 4, 5, 123456000, time.FixedZone("local", 9*60*60))
 			}
-			root := t.TempDir()
 			if err := configure(t, m, map[string]any{"save_stream_file": new(filepath.Join(root, tt.format+".mitm"))}); err != nil {
 				t.Fatal(err)
 			}
@@ -432,8 +432,8 @@ func TestFilterAndAppend(t *testing.T) {
 }
 
 func TestWebSocketNotSavedAtResponse(t *testing.T) {
-	_, m := setup(t, nil)
 	path := filepath.Join(t.TempDir(), "flows.mitm")
+	_, m := setup(t, nil)
 	if err := configure(t, m, map[string]any{"save_stream_file": new(path)}); err != nil {
 		t.Fatal(err)
 	}

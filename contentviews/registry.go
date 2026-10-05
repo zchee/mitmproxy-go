@@ -39,6 +39,7 @@ func NewRegistry() *Registry {
 	r.Register(JSON{})
 	r.Register(XMLHTML{})
 	r.Register(URLEncoded{})
+	r.Register(Query{})
 	return r
 }
 

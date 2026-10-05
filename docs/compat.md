@@ -336,6 +336,10 @@ increments it.
 | `TimeoutWatchdog.watch` checks whether it is armed before sleeping, but does not recheck after the sleep; a previously scheduled timeout can fire during a long hook (`mitmproxy/proxy/server.py`). | Disarming invalidates the pending timer. Expiry checks the disarm counter and timer generation again before cancelling the connection. | Hook execution and intercepted-flow waits must not count as connection idle time. |
 | Injected messages are queued without a bound and without a size limit (`mitmproxy/proxy/events.py`, `mitmproxy/addons/proxyserver.py`). | A connection holds at most 64 undelivered injected messages, each TCP payload at most 128 KiB, cloned when queued; a full queue or an oversized or unsupported message is an error the `inject.tcp` caller sees. | Injection runs under the dispatch lock, so delivery must never block on a layer, and a connection that does not drain its queue must not grow it without bound. |
 
+Injection returns `proxy: injection queue is full`, `proxy: injected message exceeds 128 KiB`,
+or `proxy: injection requires a TCP message` for the corresponding queue, size, or type limit.
+A completed flow or connection returns `proxy: flow is not from a live connection`.
+
 ## master startup
 
 | Upstream | Go | Reason |

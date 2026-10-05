@@ -15,6 +15,7 @@ import (
 	"net/netip"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -116,6 +117,9 @@ func TestCurlRegularProxy(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
 			command := exec.CommandContext(ctx, curl, "--disable", "--silent", "--show-error", "--fail", "--noproxy", "", "--proxy", "http://"+p.Addr, "--cacert", filepath.Join(p.ConfDir, "mitmproxy-ca-cert.pem"), scheme+"://example.test/hello")
+			if runtime.GOOS == "windows" {
+				command.Args = append(command.Args, "--ssl-revoke-best-effort")
+			}
 			output, err := command.CombinedOutput()
 			if err != nil {
 				t.Fatalf("curl: %v\n%s", err, output)

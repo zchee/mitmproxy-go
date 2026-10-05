@@ -18,6 +18,7 @@ import (
 
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/options"
+	"github.com/zchee/mitmproxy-go/tlsparse"
 )
 
 // Context is the context of one proxied connection, shared by the protocol
@@ -82,6 +83,8 @@ type Socks5Auth struct {
 type ClientHello struct {
 	// Context is the context of the connection.
 	Context *Context
+	// ClientHello is the parsed hello received from the client.
+	ClientHello *tlsparse.ClientHello
 	// IgnoreConnection, when a handler sets it, forwards the connection's
 	// encrypted contents unmodified instead of intercepting them.
 	IgnoreConnection bool

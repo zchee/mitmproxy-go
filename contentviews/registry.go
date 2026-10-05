@@ -41,6 +41,7 @@ func NewRegistry() *Registry {
 	r.Register(URLEncoded{})
 	r.Register(Query{})
 	r.Register(Multipart{})
+	r.Register(Image{})
 	return r
 }
 

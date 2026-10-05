@@ -79,8 +79,21 @@ func ParseTransferEncoding(value string) (TransferEncoding, error) {
 // names that are not tokens, both Transfer-Encoding and Content-Length,
 // repeated framing headers, Transfer-Encoding outside HTTP/1.1, and
 // malformed or unknown values.
-// A request must also end its transfer codings with chunked.
+// A request must also end its transfer codings with chunked. Bare C0 control
+// bytes other than HTAB, and DEL, are rejected; obs-fold remains supported.
 func (r *Request) ValidateHeaders() error {
+	for _, f := range r.Headers {
+		for i := 0; i < len(f.Value); i++ {
+			c := f.Value[i]
+			if c == '\r' && i+2 < len(f.Value) && f.Value[i+1] == '\n' && (f.Value[i+2] == ' ' || f.Value[i+2] == '\t') {
+				i++ // Skip the CRLF of a parsed continuation, not a bare control.
+				continue
+			}
+			if c < 0x20 && c != '\t' || c == 0x7f {
+				return fmt.Errorf("invalid header value for %q: %q", f.Name, f.Value)
+			}
+		}
+	}
 	return validateHeaders(&r.Message, true, 0)
 }
 

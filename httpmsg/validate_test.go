@@ -4,8 +4,11 @@
 package httpmsg
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	gocmp "github.com/google/go-cmp/cmp"
 )
 
 func TestParseContentLength(t *testing.T) {
@@ -79,6 +82,54 @@ func TestParseTransferEncoding(t *testing.T) {
 			}
 			if err != nil || got != tt.want {
 				t.Errorf("ParseTransferEncoding(%q) = (%q, %v), want %q", tt.in, got, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateRequestHeaderValues(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		value string
+		valid bool
+	}{
+		"success: empty":                  {valid: true},
+		"success: folded continuation":    {value: "first\r\n second\r\n\tthird", valid: true},
+		"error: bare carriage return":     {value: "a\rContent-Length: 9"},
+		"error: bare newline":             {value: "a\nb"},
+		"error: line end without folding": {value: "a\r\nb"},
+		"error: truncated fold":           {value: "a\r\n"},
+		"error: control inside a fold":    {value: "a\r\n \x00b"},
+	}
+	for c := range 256 {
+		valid := c == '\t' || c >= 0x20 && c != 0x7f
+		for _, position := range []string{"prefix", "middle", "suffix"} {
+			value := string([]byte{byte(c)})
+			switch position {
+			case "prefix":
+				value += "text"
+			case "middle":
+				value = "a" + value + "b"
+			case "suffix":
+				value = "text" + value
+			}
+			tests[fmt.Sprintf("byte %02x at %s", c, position)] = struct {
+				value string
+				valid bool
+			}{value: value, valid: valid}
+		}
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			r := tReq()
+			r.Headers = hdrs("X-Value", tt.value)
+			err := r.ValidateHeaders()
+			if diff := gocmp.Diff(tt.valid, err == nil); diff != "" {
+				t.Fatalf("ValidateHeaders value %q: %v (-want +got):\n%s", tt.value, err, diff)
+			}
+			if !tt.valid && !strings.Contains(err.Error(), "invalid header value") {
+				t.Fatalf("ValidateHeaders error = %v, want invalid header value", err)
 			}
 		})
 	}

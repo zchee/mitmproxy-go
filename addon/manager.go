@@ -88,7 +88,10 @@ type Manager struct {
 }
 
 // NewManager returns a Manager that adds addon options to opts and addon
-// commands to cmds, and fires the configure hook whenever opts change.
+// commands to cmds, and fires the configure hook whenever opts change. It
+// installs a [command.Runner] on cmds (see [command.Manager.SetRunner]) that
+// runs every command under the dispatch lock as a synchronous call; see
+// [Manager.Call].
 func NewManager(opts *options.Manager, cmds *command.Manager, cfg Config) *Manager {
 	m := &Manager{
 		d:        dispatcher{onStart: cfg.OnDispatchStart, onEnd: cfg.OnDispatchEnd},
@@ -103,7 +106,21 @@ func NewManager(opts *options.Manager, cmds *command.Manager, cfg Config) *Manag
 			return m.trigger(ctx, ConfigureHook{Updated: updated})
 		})
 	})
+	cmds.SetRunner(m.runCommand)
 	return m
+}
+
+// runCommand is the [command.Runner] the Manager installs on its command
+// registry: it runs a command under the dispatch lock, in a frame that marks
+// a synchronous call.
+func (m *Manager) runCommand(ctx context.Context, name string, run func(context.Context) (any, error)) (any, error) {
+	var res any
+	err := m.d.do(ctx, func(ctx context.Context) error {
+		var err error
+		res, err = run(inSync(ctx, "command "+name))
+		return err
+	})
+	return res, err
 }
 
 // log returns the logger for the manager's own records.
@@ -137,23 +154,17 @@ func (m *Manager) Do(ctx context.Context, fn func(ctx context.Context) error) er
 
 // Call runs the command registered under name with args under the
 // dispatch lock, the way [Manager.Do] runs a function, and returns its
-// result (see [command.Manager.Call]). A ctx that carries a valid dispatch
-// frame, such as the context of a hook or of a command calling another
-// command, re-enters the hold of the lock instead of taking it again.
-// Frontends and other goroutines outside the hooks call commands through
-// Call.
+// result. It is [command.Manager.Call] on the Manager's command registry,
+// which runs every command the same way through the runner NewManager
+// installed. A ctx that carries a valid dispatch frame, such as the context
+// of a hook or of a command calling another command, re-enters the hold of
+// the lock instead of taking it again.
 //
 // The command runs as a synchronous call, as a mitmproxy command does: it
 // cannot release the lock, and [Concurrent] called with its context
 // returns an error wrapping [ErrSyncContext].
 func (m *Manager) Call(ctx context.Context, name string, args ...any) (any, error) {
-	var res any
-	err := m.d.do(ctx, func(ctx context.Context) error {
-		var err error
-		res, err = m.cmds.Call(inSync(ctx, "command "+name), name, args...)
-		return err
-	})
-	return res, err
+	return m.cmds.Call(ctx, name, args...)
 }
 
 // Get returns the registered addon named name, or nil.

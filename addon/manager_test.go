@@ -1411,6 +1411,21 @@ func TestCallRunsUnderTheDispatchLock(t *testing.T) {
 		}
 	})
 
+	t.Run("success: command registry Call outside a hook", func(t *testing.T) {
+		before := p.starts.Load()
+		var (
+			got any
+			err error
+		)
+		within(t, "command registry Call", func() { got, err = cmds.Call(t.Context(), "probe.held") })
+		if err != nil || got != true {
+			t.Errorf("Call = %v, %v; want true (run under the dispatch lock)", got, err)
+		}
+		if n := p.starts.Load() - before; n != 1 {
+			t.Errorf("Call took the dispatch lock %d times, want 1", n)
+		}
+	})
+
 	t.Run("error: unknown command", func(t *testing.T) {
 		if _, err := m.Call(t.Context(), "no.such.command"); !errors.Is(err, command.ErrUnknownCommand) {
 			t.Errorf("Call error = %v, want ErrUnknownCommand", err)
@@ -1430,14 +1445,45 @@ func (c *releasingCaller) Running(ctx context.Context) error {
 	return nil
 }
 
+// directReleasingCaller calls the command "probe.release" from its running
+// hook through the command registry itself instead of the addon manager.
+type directReleasingCaller struct {
+	cmds *command.Manager
+	err  error
+}
+
+func (c *directReleasingCaller) Running(ctx context.Context) error {
+	_, c.err = c.cmds.Call(ctx, "probe.release")
+	return nil
+}
+
 // TestConcurrentRefusedInCommand calls Concurrent from a command. A
 // mitmproxy command is a synchronous call that cannot yield, so the frame
-// a command runs under refuses Concurrent, whether Call took the lock or
-// re-entered the hold of a hook.
+// a command runs under refuses Concurrent, whether the call took the lock
+// or re-entered the hold of a hook, and whether it went through the addon
+// manager or straight to the command registry.
 func TestConcurrentRefusedInCommand(t *testing.T) {
 	tests := map[string]struct {
 		call func(t *testing.T, m *Manager) error
 	}{
+		"error: command registry Call from outside the hooks": {
+			call: func(t *testing.T, m *Manager) error {
+				_, err := m.Commands().Call(t.Context(), "probe.release")
+				return err
+			},
+		},
+		"error: command registry Call from a hook with its context": {
+			call: func(t *testing.T, m *Manager) error {
+				c := &directReleasingCaller{cmds: m.Commands()}
+				if err := m.Add(t.Context(), c); err != nil {
+					return err
+				}
+				if err := m.Trigger(t.Context(), RunningHook{}); err != nil {
+					return err
+				}
+				return c.err
+			},
+		},
 		"error: Call from outside the hooks": {
 			call: func(t *testing.T, m *Manager) error {
 				_, err := m.Call(t.Context(), "probe.release")

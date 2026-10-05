@@ -202,7 +202,7 @@ func (d *dispatcher) do(ctx context.Context, fn func(context.Context) error) err
 // [Manager.InvokeSync]. Releasing the lock there would let another
 // registration, removal or option change run in the middle of this one.
 // The done hook fired through [Manager.Trigger] at shutdown may call
-// Concurrent. A command run through [Manager.Call] refuses it too, because
+// Concurrent. A command refuses it too, however it is called, because
 // a mitmproxy command is a synchronous call that cannot yield.
 //
 // fn gets a context without a dispatch frame; it must not touch addon state

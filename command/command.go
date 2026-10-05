@@ -317,10 +317,16 @@ func arity(n int, variadic bool) string {
 	}
 }
 
+// Runner runs a command call on behalf of [Manager.Call]. It must call run
+// exactly once, with the context the command is to receive, and return
+// run's results. name is the name the command was called by.
+type Runner func(ctx context.Context, name string, run func(ctx context.Context) (any, error)) (any, error)
+
 // Manager holds the registered commands. It is safe for concurrent use.
 type Manager struct {
 	mu       sync.RWMutex
 	commands omap.Map[*Command]
+	runner   Runner
 }
 
 // NewManager returns an empty Manager.
@@ -358,6 +364,18 @@ func (m *Manager) Register(name string, fn any, opts ...Option) error {
 	return nil
 }
 
+// SetRunner makes [Manager.Call] run every command through r; a nil r runs
+// commands directly on the caller's goroutine, which is the default.
+// [github.com/zchee/mitmproxy-go/addon.NewManager] installs a Runner that
+// runs each command under the addon dispatch lock as a synchronous call, so
+// a Manager serves one addon manager: installing a Runner replaces the one
+// installed before.
+func (m *Manager) SetRunner(r Runner) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.runner = r
+}
+
 // Unregister removes the command registered under name and reports whether
 // there was one. The addon manager uses it to take an addon's commands away
 // when the addon is removed, so that loading the addon again can register
@@ -375,19 +393,39 @@ func (m *Manager) Unregister(name string) bool {
 // ctx is passed to the command as its first argument. The Manager's lock
 // is not held while the command runs, so a command may call other commands.
 //
-// Call does not take the addon dispatch lock, and commands run addon code,
-// so Call must run under that lock: from a hook or from another command,
-// with their context, or else through
-// [github.com/zchee/mitmproxy-go/addon.Manager.Call] or
-// [github.com/zchee/mitmproxy-go/master.Master.Call], which take it.
+// Every call goes through the [Runner] installed with [Manager.SetRunner],
+// and the command is looked up inside it. A Manager that an addon manager
+// was created with has the addon manager's Runner, so every entry point
+// runs the command the same way: Call itself, whether from a frontend
+// goroutine, from a hook with the hook's context or from another command
+// with that command's context, and
+// [github.com/zchee/mitmproxy-go/addon.Manager.Call] and
+// [github.com/zchee/mitmproxy-go/master.Master.Call], which call it. The
+// command runs under the addon dispatch lock, re-entering the hold of the
+// caller when ctx carries a dispatch frame and taking the lock otherwise, as
+// a synchronous call: like a mitmproxy command, it cannot yield, and
+// [github.com/zchee/mitmproxy-go/addon.Concurrent] called with its context
+// returns an error. A hook or a command must therefore pass on its own
+// context; a context without its frame waits for the lock the caller holds.
+// A Manager without a Runner runs the command directly on the caller's
+// goroutine, without any lock.
 func (m *Manager) Call(ctx context.Context, name string, args ...any) (any, error) {
-	m.mu.RLock()
-	c, ok := m.commands.Get(name)
-	m.mu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrUnknownCommand, name)
+	run := func(ctx context.Context) (any, error) {
+		m.mu.RLock()
+		c, ok := m.commands.Get(name)
+		m.mu.RUnlock()
+		if !ok {
+			return nil, fmt.Errorf("%w: %s", ErrUnknownCommand, name)
+		}
+		return c.call(ctx, args)
 	}
-	return c.call(ctx, args)
+	m.mu.RLock()
+	r := m.runner
+	m.mu.RUnlock()
+	if r == nil {
+		return run(ctx)
+	}
+	return r(ctx, name, run)
 }
 
 // Commands returns an iterator over the registered commands in registration

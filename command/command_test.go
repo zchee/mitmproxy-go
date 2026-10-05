@@ -613,3 +613,70 @@ func TestUnregister(t *testing.T) {
 		t.Errorf("Commands order (-want +got):\n%s", diff)
 	}
 }
+
+// runnerCall is one call a recording Runner saw.
+type runnerCall struct {
+	Name   string
+	Result any
+	Err    string
+}
+
+// TestSetRunner routes calls through a Runner, which decides the context
+// the command gets and sees the result, and removes it again.
+func TestSetRunner(t *testing.T) {
+	tests := map[string]struct {
+		name    string
+		args    []any
+		want    any
+		wantErr error
+		calls   []runnerCall
+	}{
+		"success: the command gets the runner's context": {
+			name:  "ctxvalue",
+			want:  "from runner",
+			calls: []runnerCall{{Name: "ctxvalue", Result: "from runner"}},
+		},
+		"success: a command calling another goes through the runner twice": {
+			name:  "reenter",
+			args:  []any{"foo"},
+			want:  "outer ret foo",
+			calls: []runnerCall{{Name: "one.two", Result: "ret foo"}, {Name: "reenter", Result: "outer ret foo"}},
+		},
+		"error: an unknown command is looked up inside the runner": {
+			name:    "nonexistent",
+			wantErr: command.ErrUnknownCommand,
+			calls:   []runnerCall{{Name: "nonexistent", Err: "unknown command: nonexistent"}},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			m := newTestManager(t)
+			var calls []runnerCall
+			m.SetRunner(func(ctx context.Context, name string, run func(context.Context) (any, error)) (any, error) {
+				res, err := run(context.WithValue(ctx, ctxKey{}, "from runner"))
+				c := runnerCall{Name: name, Result: res}
+				if err != nil {
+					c.Err = err.Error()
+				}
+				calls = append(calls, c)
+				return res, err
+			})
+			got, err := m.Call(t.Context(), tt.name, tt.args...)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Call(%q) error = %v, want %v", tt.name, err, tt.wantErr)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("Call(%q) (-want +got):\n%s", tt.name, diff)
+			}
+			if diff := cmp.Diff(tt.calls, calls); diff != "" {
+				t.Errorf("runner calls (-want +got):\n%s", diff)
+			}
+
+			m.SetRunner(nil)
+			calls = nil
+			if got, err := m.Call(t.Context(), "ctxvalue"); err != nil || got != "" || len(calls) != 0 {
+				t.Errorf("Call after SetRunner(nil) = %v, %v with %d runner calls; want a direct call", got, err, len(calls))
+			}
+		})
+	}
+}

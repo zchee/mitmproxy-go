@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -157,6 +158,33 @@ func acceptRecord(t *testing.T, listener *net.TCPListener) (net.Conn, launchReco
 	return conn, record
 }
 
+// connectionTerminated accepts the EOF or Windows reset caused by killing a child.
+func connectionTerminated(err error) bool {
+	const wsaECONNRESET = syscall.Errno(10054)
+	return errors.Is(err, io.EOF) || runtime.GOOS == "windows" && errors.Is(err, wsaECONNRESET)
+}
+
+func TestConnectionTerminated(t *testing.T) {
+	tests := map[string]struct {
+		err  error
+		want bool
+	}{
+		"success: EOF":           {err: io.EOF, want: true},
+		"success: wrapped EOF":   {err: fmt.Errorf("read: %w", io.EOF), want: true},
+		"platform: killed child": {err: &net.OpError{Op: "read", Err: syscall.Errno(10054)}, want: runtime.GOOS == "windows"},
+		"error: open connection": {},
+		"error: deadline":        {err: os.ErrDeadlineExceeded},
+		"error: other socket":    {err: &net.OpError{Op: "read", Err: syscall.Errno(10053)}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if diff := gocmp.Diff(tt.want, connectionTerminated(tt.err)); diff != "" {
+				t.Fatalf("connectionTerminated(%v) (-want +got):\n%s", tt.err, diff)
+			}
+		})
+	}
+}
+
 // TestBrowser ports upstream test_browser with a real recording executable.
 func TestBrowser(t *testing.T) {
 	binary := buildRecorder(t)
@@ -201,7 +229,7 @@ func TestBrowser(t *testing.T) {
 	}
 	waitWorkers(t, browser)
 	for _, conn := range conns {
-		if _, err := conn.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+		if _, err := conn.Read(make([]byte, 1)); !connectionTerminated(err) {
 			hang(t, fmt.Sprintf("browser connection after done: %v", err))
 		}
 	}

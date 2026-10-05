@@ -103,8 +103,8 @@ func TestDoneDuringProbe(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitWorkers(t, browser)
-	if _, err := conn.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
-		hang(t, "pending probe was not terminated")
+	if _, err := conn.Read(make([]byte, 1)); !connectionTerminated(err) {
+		t.Fatalf("pending probe connection after done: %v", err)
 	}
 	if len(browser.browser) != 0 {
 		t.Fatal("launch survived done")

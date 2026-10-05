@@ -643,6 +643,26 @@ func TestPyStr(t *testing.T) {
 	}
 }
 
+func BenchmarkPyStr(b *testing.B) {
+	inner := state.NewMap(3)
+	inner.Set("k", []any{int64(1), 2.5, nil, true})
+	inner.Set("it's", []byte("a'b\x00\xff"))
+	inner.Set("text", "caf\u00e9 \u200b \"quoted\" \U0001F600 "+strings.Repeat("plain ascii ", 8))
+	values := map[string]any{
+		"dict":  inner,
+		"bytes": []byte(strings.Repeat("GET / HTTP/1.1\r\nHost: example.com\r\n", 4)),
+		"list":  []any{"it's", int64(42), []byte{0, 1, 2, 0xff}, "\t\n"},
+	}
+	for name, v := range values {
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = pyStr(v)
+			}
+		})
+	}
+}
+
 func BenchmarkMatch(b *testing.B) {
 	f := tflow(tflowOpts{resp: true})
 	f.Response.RawContent = []byte(strings.Repeat("lorem ipsum dolor sit amet ", 400) + "needle")

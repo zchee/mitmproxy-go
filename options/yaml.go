@@ -18,6 +18,7 @@ import (
 
 	yaml "go.yaml.in/yaml/v4"
 
+	"github.com/zchee/mitmproxy-go/internal/pyrepr"
 	"github.com/zchee/mitmproxy-go/omap"
 )
 
@@ -234,7 +235,7 @@ func (m *Manager) Dump() (string, error) {
 		if len(o.choices) > 0 {
 			reprs := make([]string, len(o.choices))
 			for i, c := range o.choices {
-				reprs[i] = pyRepr(c)
+				reprs[i] = pyrepr.Str(c)
 			}
 			txt += fmt.Sprintf(" Valid values are %s.", strings.Join(reprs, ", "))
 		} else {

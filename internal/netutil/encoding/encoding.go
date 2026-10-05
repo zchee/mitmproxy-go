@@ -28,14 +28,14 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/flate"
 	"github.com/klauspost/compress/gzip"
 	"github.com/klauspost/compress/zlib"
 	"github.com/klauspost/compress/zstd"
+
+	"github.com/zchee/mitmproxy-go/internal/pyrepr"
 )
 
 // ErrUnknownEncoding is wrapped by the error Decode and Encode return for an
@@ -77,10 +77,10 @@ type Error struct {
 func (e *Error) Error() string {
 	input := e.inputRepr
 	if input == "" {
-		input = bytesReprPrefix(e.Prefix, e.Prefix)
+		input = pyrepr.BytesPrefix(e.Prefix, reprLimit)
 	}
 	name, msg := e.pyException()
-	return fmt.Sprintf("%s when %s %s with %s: %s(%s)", name, e.Op, input, strRepr(e.Encoding), name, strRepr(msg))
+	return fmt.Sprintf("%s when %s %s with %s: %s(%s)", name, e.Op, input, pyrepr.Str(e.Encoding), name, pyrepr.Str(msg))
 }
 
 // pyException returns the name of the exception upstream raises for e and
@@ -258,87 +258,12 @@ func Encode(data []byte, encoding string) ([]byte, error) {
 
 func newError(op, encoding string, data []byte, err error) *Error {
 	prefix := slices.Clone(data[:min(len(data), 10)])
-	return &Error{Op: op, Encoding: encoding, Prefix: prefix, Err: err, inputRepr: bytesReprPrefix(prefix, data)}
+	return &Error{Op: op, Encoding: encoding, Prefix: prefix, Err: err, inputRepr: pyrepr.BytesPrefix(data, reprLimit)}
 }
 
 // reprLimit is how many characters of the input's repr an error shows, as
 // upstream's repr(encoded)[:10].
 const reprLimit = 10
-
-// bytesReprPrefix returns the first reprLimit characters of the Python repr
-// of all, whose first bytes are prefix. prefix must hold at least the first
-// reprLimit-2 bytes of all, or all of it: every byte takes at least one
-// character after the two-character b' opening.
-func bytesReprPrefix(prefix, all []byte) string {
-	var b strings.Builder
-	q := reprQuote(bytes.IndexByte(all, '\'') >= 0, bytes.IndexByte(all, '"') >= 0)
-	b.WriteByte('b')
-	b.WriteByte(q)
-	for _, c := range prefix {
-		switch {
-		case c == q || c == '\\':
-			b.WriteByte('\\')
-			b.WriteByte(c)
-		case c == '\t':
-			b.WriteString(`\t`)
-		case c == '\n':
-			b.WriteString(`\n`)
-		case c == '\r':
-			b.WriteString(`\r`)
-		case c < 0x20 || c >= 0x7f:
-			fmt.Fprintf(&b, `\x%02x`, c)
-		default:
-			b.WriteByte(c)
-		}
-		if b.Len() >= reprLimit {
-			break
-		}
-	}
-	b.WriteByte(q)
-	s := b.String()
-	return s[:min(len(s), reprLimit)]
-}
-
-// strRepr returns the Python repr of s.
-func strRepr(s string) string {
-	var b strings.Builder
-	q := reprQuote(strings.Contains(s, "'"), strings.Contains(s, `"`))
-	b.WriteByte(q)
-	for _, r := range s {
-		switch {
-		case r == rune(q) || r == '\\':
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r < 0x20 || r == 0x7f:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		case r < utf8.RuneSelf || unicode.IsPrint(r):
-			b.WriteRune(r)
-		case r <= 0xff:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		case r <= 0xffff:
-			fmt.Fprintf(&b, `\u%04x`, r)
-		default:
-			fmt.Fprintf(&b, `\U%08x`, r)
-		}
-	}
-	b.WriteByte(q)
-	return b.String()
-}
-
-// reprQuote picks the quote Python's repr uses: a single quote unless the
-// text contains a single quote and no double quote.
-func reprQuote(hasSingle, hasDouble bool) byte {
-	if hasSingle && !hasDouble {
-		return '"'
-	}
-	return '\''
-}
 
 // truncated reports whether err signals that the input ended early.
 func truncated(err error) bool {

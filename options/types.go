@@ -8,7 +8,8 @@ import (
 	"math"
 	"slices"
 	"strings"
-	"unicode"
+
+	"github.com/zchee/mitmproxy-go/internal/pyrepr"
 )
 
 // Type identifies the value type of an option.
@@ -221,47 +222,11 @@ func equalValues(a, b any) bool {
 	return a == b
 }
 
-// pyRepr formats s the way Python's repr() formats a str, which is how
-// mitmproxy renders choices and values inside its messages.
-func pyRepr(s string) string {
-	quote := byte('\'')
-	if strings.ContainsRune(s, '\'') && !strings.ContainsRune(s, '"') {
-		quote = '"'
-	}
-	var b strings.Builder
-	b.WriteByte(quote)
-	for _, r := range s {
-		switch {
-		case r == '\\':
-			b.WriteString(`\\`)
-		case r == rune(quote):
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case !unicode.IsPrint(r) && r < 0x100:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		case !unicode.IsPrint(r) && r < 0x10000:
-			fmt.Fprintf(&b, `\u%04x`, r)
-		case !unicode.IsPrint(r):
-			fmt.Fprintf(&b, `\U%08x`, r)
-		default:
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte(quote)
-	return b.String()
-}
-
 // pyListRepr formats ss the way Python's repr() formats a list of str.
 func pyListRepr(ss []string) string {
 	parts := make([]string, len(ss))
 	for i, s := range ss {
-		parts[i] = pyRepr(s)
+		parts[i] = pyrepr.Str(s)
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
 }

@@ -8,12 +8,11 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/flow/state"
-	"github.com/zchee/mitmproxy-go/flowio/tnetstring"
+	"github.com/zchee/mitmproxy-go/internal/pyrepr"
 	"github.com/zchee/mitmproxy-go/internal/version"
 )
 
@@ -251,125 +250,15 @@ func renderTupleVersion(v any) (string, error) {
 		return "", fmt.Errorf("invalid flow: the version is a %s, not an integer or a tuple", state.TypeName(v))
 	}
 	items = items[:min(len(items), 2)]
-	var b strings.Builder
-	b.WriteByte('(')
+	b := []byte{'('}
 	for i, it := range items {
 		if i > 0 {
-			b.WriteString(", ")
+			b = append(b, ", "...)
 		}
-		writeRepr(&b, it)
+		b = pyrepr.AppendValue(b, it)
 	}
 	if len(items) == 1 {
-		b.WriteByte(',')
+		b = append(b, ',')
 	}
-	b.WriteByte(')')
-	return b.String(), nil
-}
-
-// writeRepr writes v as Python's repr writes the equivalent object.
-func writeRepr(b *strings.Builder, v any) {
-	switch x := v.(type) {
-	case nil:
-		b.WriteString("None")
-	case bool:
-		if x {
-			b.WriteString("True")
-		} else {
-			b.WriteString("False")
-		}
-	case int64:
-		b.WriteString(strconv.FormatInt(x, 10))
-	case float64:
-		b.WriteString(tnetstring.FormatFloat(x))
-	case string:
-		writeStrRepr(b, x)
-	case []byte:
-		writeBytesRepr(b, x)
-	case []any:
-		b.WriteByte('[')
-		for i, e := range x {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			writeRepr(b, e)
-		}
-		b.WriteByte(']')
-	case *state.Map:
-		b.WriteByte('{')
-		i := 0
-		for k, e := range x.All() {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			i++
-			writeStrRepr(b, k)
-			b.WriteString(": ")
-			writeRepr(b, e)
-		}
-		b.WriteByte('}')
-	default:
-		fmt.Fprintf(b, "%v", v)
-	}
-}
-
-// reprQuote picks the quote Python's repr uses: a single quote, unless the
-// text contains one and no double quote.
-func reprQuote(hasSingle, hasDouble bool) byte {
-	if hasSingle && !hasDouble {
-		return '"'
-	}
-	return '\''
-}
-
-func writeStrRepr(b *strings.Builder, s string) {
-	q := reprQuote(strings.ContainsRune(s, '\''), strings.ContainsRune(s, '"'))
-	b.WriteByte(q)
-	for _, r := range s {
-		switch {
-		case r == '\\' || r == rune(q):
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0):
-			fmt.Fprintf(b, `\x%02x`, r)
-		case r == utf8.RuneError || !unicode.IsPrint(r):
-			if r <= 0xffff {
-				fmt.Fprintf(b, `\u%04x`, r)
-			} else {
-				fmt.Fprintf(b, `\U%08x`, r)
-			}
-		default:
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte(q)
-}
-
-func writeBytesRepr(b *strings.Builder, p []byte) {
-	q := reprQuote(strings.IndexByte(string(p), '\'') >= 0, strings.IndexByte(string(p), '"') >= 0)
-	b.WriteByte('b')
-	b.WriteByte(q)
-	for _, c := range p {
-		switch {
-		case c == '\\' || c == q:
-			b.WriteByte('\\')
-			b.WriteByte(c)
-		case c == '\t':
-			b.WriteString(`\t`)
-		case c == '\n':
-			b.WriteString(`\n`)
-		case c == '\r':
-			b.WriteString(`\r`)
-		case c < 0x20 || c >= 0x7f:
-			fmt.Fprintf(b, `\x%02x`, c)
-		default:
-			b.WriteByte(c)
-		}
-	}
-	b.WriteByte(q)
+	return string(append(b, ')')), nil
 }

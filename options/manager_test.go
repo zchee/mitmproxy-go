@@ -15,6 +15,8 @@ import (
 
 	gocmp "github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+
+	"github.com/zchee/mitmproxy-go/internal/pyrepr"
 )
 
 func mustAdd(t testing.TB, m *Manager, name string, typ Type, def any, help string, opts ...AddOption) {
@@ -650,8 +652,8 @@ func TestPyRepr(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if got := pyRepr(tt.in); got != tt.want {
-				t.Errorf("pyRepr(%q) = %s, want %s", tt.in, got, tt.want)
+			if got := pyrepr.Str(tt.in); got != tt.want {
+				t.Errorf("pyrepr.Str(%q) = %s, want %s", tt.in, got, tt.want)
 			}
 		})
 	}

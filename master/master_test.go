@@ -275,7 +275,7 @@ func TestCall(t *testing.T) {
 			t.Errorf("Close: %v", err)
 		}
 	})
-	if err := m.Commands.Register("probe.held", func() bool { return held.Load() }); err != nil {
+	if err := m.Commands.Register("probe.held", func(context.Context) bool { return held.Load() }); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 
@@ -299,5 +299,63 @@ func TestCall(t *testing.T) {
 	})
 	if c.err != nil || c.got != true {
 		t.Errorf("Call in the hook = %v, %v; want true", c.got, c.err)
+	}
+}
+
+// optionSetter adds an option and a command that changes it, the shape of
+// mitmproxy commands such as set and options.load.
+type optionSetter struct {
+	opts *options.Manager
+
+	mu         sync.Mutex
+	configured []string
+}
+
+func (a *optionSetter) Load(ctx context.Context, l *addon.Loader) error {
+	if err := l.AddOption(ctx, "setter_flag", options.TypeBool, false, "A flag the command sets."); err != nil {
+		return err
+	}
+	return l.AddCommand("setter.set", func(ctx context.Context) error {
+		return a.opts.Set(ctx, "setter_flag=true")
+	})
+}
+
+func (a *optionSetter) Configure(_ context.Context, updated map[string]struct{}) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.configured = append(a.configured, strings.Join(slices.Sorted(maps.Keys(updated)), ","))
+	return nil
+}
+
+// TestCallCommandThatSetsAnOption runs, through Master.Call from outside
+// the hooks, a command that changes an option. The option change fires
+// configure, which re-enters the hold of the dispatch lock Call took
+// through the context the command passes on, instead of waiting for it.
+func TestCallCommandThatSetsAnOption(t *testing.T) {
+	m := master.New(master.Config{Options: options.NewManager(), Logger: discard})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), deadlockTimeout)
+		defer cancel()
+		if err := m.Close(ctx); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+	a := &optionSetter{opts: m.Options}
+	if err := m.Addons.Add(t.Context(), a); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	var err error
+	within(t, "master.Call of a command that sets an option", func() { _, err = m.Call(t.Context(), "setter.set") })
+	if err != nil {
+		t.Fatalf("Call(setter.set): %v", err)
+	}
+	if !m.Options.Bool("setter_flag") {
+		t.Error("setter_flag = false after the command, want true")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if diff := cmp.Diff([]string{"setter_flag"}, a.configured); diff != "" {
+		t.Errorf("configure calls (-want +got):\n%s", diff)
 	}
 }

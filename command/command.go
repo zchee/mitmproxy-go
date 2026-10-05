@@ -4,10 +4,17 @@
 // Package command manages typed commands that addons register and that the
 // frontends invoke by name.
 //
-// A command is an ordinary Go function. Its parameter and result types are
-// checked when it is registered: every parameter must map to a command type
+// A command is an ordinary Go function whose first parameter is a
+// [context.Context]. Its parameter and result types are checked when it is
+// registered: every parameter after the context must map to a command type
 // identity ([Type]), and so must the result, mirroring the annotation checks
 // mitmproxy performs when it builds a Command.
+//
+// mitmproxy's commands take no context. The port requires one because a
+// command runs under the addon dispatch lock, which Go cannot re-enter: the
+// context carries the dispatch frame that lets an option change or a hook
+// fired by the command run inside the caller's hold of the lock instead of
+// waiting for it forever.
 //
 // Help text set with [WithHelp] is stored with surrounding whitespace
 // removed and is otherwise kept as given. mitmproxy also re-wraps a
@@ -54,7 +61,7 @@ type Command struct {
 	Name string
 	// Help is the command's help text; it is empty when none was given.
 	Help string
-	// Params lists the command's parameters in call order. A leading
+	// Params lists the command's parameters in call order. The leading
 	// context.Context parameter of the function is not listed.
 	Params []Param
 	// Return is the identity of the command's result, or nil when the
@@ -62,7 +69,6 @@ type Command struct {
 	Return Type
 
 	fn       reflect.Value
-	takesCtx bool
 	hasValue bool // fn returns a value before the optional error
 	hasErr   bool // fn's last result is an error
 }
@@ -100,7 +106,7 @@ func WithHelp(help string) Option {
 	return func(o *options) { o.help = strings.TrimSpace(help) }
 }
 
-// WithParams names the command's parameters in order, excluding a leading
+// WithParams names the command's parameters in order, excluding the leading
 // context.Context parameter. Go functions carry no parameter names at run
 // time, so without this option the parameters are named arg0, arg1 and so
 // on. Registration fails when the number of names differs from the number of
@@ -140,11 +146,10 @@ func newCommand(name string, fn any, opts ...Option) (*Command, error) {
 
 	c := &Command{Name: name, Help: o.help, fn: fv}
 
-	first := 0
-	if ft.NumIn() > 0 && ft.In(0) == contextType {
-		c.takesCtx = true
-		first = 1
+	if ft.NumIn() == 0 || ft.In(0) != contextType {
+		return nil, fmt.Errorf("%w: command %s: the first parameter must be a context.Context, which carries the dispatch frame, got %v", ErrSignature, name, ft)
 	}
+	const first = 1
 	n := ft.NumIn() - first
 	if o.names != nil && len(o.names) != n {
 		return nil, fmt.Errorf("%w: command %s: %d parameter names for %d parameters", ErrSignature, name, len(o.names), n)
@@ -249,14 +254,11 @@ func (c *Command) call(ctx context.Context, args []any) (any, error) {
 		return nil, fmt.Errorf("%w: %s takes %s, got %d", ErrArgumentMismatch, c.Name, arity(n, variadic), len(args))
 	}
 
-	first := 0
-	in := make([]reflect.Value, 0, len(args)+1)
-	if c.takesCtx {
-		// Going through a pointer keeps the interface type, so a nil ctx is
-		// passed as a nil context.Context instead of an invalid Value.
-		in = append(in, reflect.ValueOf(&ctx).Elem())
-		first = 1
-	}
+	const first = 1
+	in := make([]reflect.Value, 0, len(args)+first)
+	// Going through a pointer keeps the interface type, so a nil ctx is
+	// passed as a nil context.Context instead of an invalid Value.
+	in = append(in, reflect.ValueOf(&ctx).Elem())
 	for i, arg := range args {
 		pi := min(i, n-1)
 		pt := paramGoType(ft, first+pi, variadic && pi == n-1)
@@ -328,12 +330,16 @@ func NewManager() *Manager {
 
 // Register checks the signature of fn and registers it under name.
 //
-// fn must be a function. An optional first parameter of type
-// context.Context receives the context passed to [Manager.Call] and is not a
-// command parameter. Every other parameter type, and the result type, must
-// map to a command type identity (see [TypeFor]); a variadic final
-// parameter maps on its element type. fn may return nothing, an error, a
-// value, or a value and an error.
+// fn must be a function whose first parameter is a context.Context; a
+// function without one is refused with an error wrapping [ErrSignature] that
+// names the command. That parameter receives the context passed to
+// [Manager.Call], which carries the dispatch frame the command runs under,
+// and is not a command parameter: a command that changes an option, calls
+// another command or fires a hook must pass it on, or it waits forever for
+// the dispatch lock its own caller holds. Every other parameter type, and
+// the result type, must map to a command type identity (see [TypeFor]); a
+// variadic final parameter maps on its element type. fn may return nothing,
+// an error, a value, or a value and an error.
 //
 // Unlike mitmproxy, which silently replaces a command registered twice,
 // Register refuses a name that is already taken, so that two addons claiming
@@ -366,9 +372,8 @@ func (m *Manager) Unregister(name string) bool {
 // Call invokes the command registered under name with native Go arguments
 // and returns its result, which is nil for a command that returns nothing.
 //
-// ctx is passed to a command that declares a leading context.Context
-// parameter. The Manager's lock is not held while the command runs, so a
-// command may call other commands.
+// ctx is passed to the command as its first argument. The Manager's lock
+// is not held while the command runs, so a command may call other commands.
 //
 // Call does not take the addon dispatch lock, and commands run addon code,
 // so Call must run under that lock: from a hook or from another command,

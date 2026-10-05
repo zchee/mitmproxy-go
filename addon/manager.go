@@ -560,7 +560,9 @@ func (l *Loader) AddOption(ctx context.Context, name string, typ options.Type, d
 
 // AddCommand adds a command to the command registry (mitmproxy's
 // Loader.add_command). See [command.Manager.Register] for the functions a
-// command may be. The command belongs to the addon whose load received l,
+// command may be; a function whose first parameter is not a
+// [context.Context] is refused with an error wrapping
+// [command.ErrSignature]. The command belongs to the addon whose load received l,
 // which may be a sub-addon, and is unregistered when that addon is
 // removed. A name another addon's command already has is refused with
 // [command.ErrDuplicateCommand].

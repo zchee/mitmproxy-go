@@ -262,7 +262,7 @@ func (a *optAddon) Load(ctx context.Context, l *Loader) error {
 	if err := l.AddOption(ctx, "upstream_cert", options.TypeBool, true, a.help); err != nil {
 		return err
 	}
-	return l.AddCommand("optaddon.echo", func(s string) string { return "echo " + s }, command.WithParams("s"))
+	return l.AddCommand("optaddon.echo", func(_ context.Context, s string) string { return "echo " + s }, command.WithParams("s"))
 }
 
 func (a *optAddon) Configure(_ context.Context, updated map[string]struct{}) error {
@@ -657,10 +657,20 @@ func (a *echoAddon) Name() string { return a.name }
 
 func (a *echoAddon) Load(_ context.Context, l *Loader) error {
 	v := a.version
-	if err := l.AddCommand(a.prefix+".echo", func(s string) string { return fmt.Sprintf("v%d %s", v, s) }, command.WithParams("s")); err != nil {
+	if err := l.AddCommand(a.prefix+".echo", func(_ context.Context, s string) string { return fmt.Sprintf("v%d %s", v, s) }, command.WithParams("s")); err != nil {
 		return err
 	}
 	return a.failLoad
+}
+
+// ctxlessCommandAddon adds a command without a leading context that
+// changes an option. Without a context of its own, such a command could
+// only pass on one it kept, such as that of its load, whose frame is stale
+// by the time the command runs.
+type ctxlessCommandAddon struct{ opts *options.Manager }
+
+func (a *ctxlessCommandAddon) Load(ctx context.Context, l *Loader) error {
+	return l.AddCommand("ctxless.set", func() error { return a.opts.Set(ctx, "upstream_cert=false") })
 }
 
 func TestAddonCommandsFollowTheAddon(t *testing.T) {
@@ -716,6 +726,20 @@ func TestAddonCommandsFollowTheAddon(t *testing.T) {
 		}
 		if err := e.m.Add(t.Context(), &echoAddon{name: "broken", prefix: "broken", version: 2}); err != nil {
 			t.Errorf("Add after the failed load: %v", err)
+		}
+	})
+
+	t.Run("error: a command without a leading context is refused", func(t *testing.T) {
+		e := newEnv(t)
+		err := e.m.Add(t.Context(), &ctxlessCommandAddon{opts: e.opts})
+		if !errors.Is(err, command.ErrSignature) || !strings.Contains(err.Error(), "command ctxless.set: the first parameter must be a context.Context") {
+			t.Fatalf("Add error = %v, want ErrSignature naming ctxless.set and the missing context", err)
+		}
+		if names := commandNames(e.cmds); len(names) != 0 {
+			t.Errorf("commands registered after the refusal: %v", names)
+		}
+		if e.m.Get("ctxlesscommandaddon") != nil {
+			t.Error("the addon whose load failed is registered")
 		}
 	})
 
@@ -1121,7 +1145,7 @@ func (p *growingParent) Name() string  { return p.name }
 func (p *growingParent) Addons() []any { return p.children }
 
 func (p *growingParent) Load(_ context.Context, l *Loader) error {
-	if err := l.AddCommand(p.name+".cmd", func() {}); err != nil {
+	if err := l.AddCommand(p.name+".cmd", func(context.Context) {}); err != nil {
 		return err
 	}
 	if p.grow != nil {
@@ -1134,7 +1158,7 @@ func (p *growingParent) Load(_ context.Context, l *Loader) error {
 type loadingHolder struct{ v any }
 
 func (loadingHolder) Load(_ context.Context, l *Loader) error {
-	return l.AddCommand("holder.cmd", func() {})
+	return l.AddCommand("holder.cmd", func(context.Context) {})
 }
 
 // commandNames lists the registered commands in registration order.
@@ -1267,7 +1291,7 @@ func TestCallRunsUnderTheDispatchLock(t *testing.T) {
 	cmds := command.NewManager()
 	m := NewManager(options.NewManager(), cmds, p.config())
 	t.Cleanup(m.Close)
-	if err := cmds.Register("probe.held", func() bool { return p.held.Load() }); err != nil {
+	if err := cmds.Register("probe.held", func(context.Context) bool { return p.held.Load() }); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 

@@ -149,56 +149,57 @@ func TestTypeFor(t *testing.T) {
 
 func TestRegisterSignature(t *testing.T) {
 	tests := map[string]struct {
-		name    string
-		fn      any
-		opts    []command.Option
-		want    summary
-		wantErr error
+		name        string
+		fn          any
+		opts        []command.Option
+		want        summary
+		wantErr     error
+		wantErrText string
 	}{
 		"success: no return value": {
 			name: "noret",
-			fn:   func() {},
+			fn:   func(context.Context) {},
 			want: summary{Signature: "noret "},
 		},
 		"success: string to string with help": {
 			name: "cmd.path",
-			fn:   func(foo string) string { return "ret " + foo },
+			fn:   func(_ context.Context, foo string) string { return "ret " + foo },
 			opts: []command.Option{command.WithParams("foo"), command.WithHelp("  cmd1 help\n")},
 			want: summary{Help: "cmd1 help", Params: []string{"foo:Str"}, Return: "Str", Signature: "cmd.path foo -> str"},
 		},
 		"success: mixed parameter types": {
 			name: "cmd4",
-			fn:   func(a int, b string, c command.Path) string { return "ok" },
+			fn:   func(_ context.Context, a int, b string, c command.Path) string { return "ok" },
 			opts: []command.Option{command.WithParams("a", "b", "c")},
 			want: summary{Params: []string{"a:Int", "b:Str", "c:Path"}, Return: "Str", Signature: "cmd4 a b c -> str"},
 		},
 		"success: subcommand with variadic arguments": {
 			name: "subcommand",
-			fn:   func(cmd command.Cmd, args ...command.CmdArgs) string { return "ok" },
+			fn:   func(_ context.Context, cmd command.Cmd, args ...command.CmdArgs) string { return "ok" },
 			opts: []command.Option{command.WithParams("cmd", "args")},
 			want: summary{Params: []string{"cmd:Cmd", "*args:Arg"}, Return: "Str", Signature: "subcommand cmd *args -> str"},
 		},
 		"success: variadic strings return a sequence": {
 			name: "varargs",
-			fn:   func(one string, v ...string) []string { return v },
+			fn:   func(_ context.Context, one string, v ...string) []string { return v },
 			opts: []command.Option{command.WithParams("one", "var")},
 			want: summary{Params: []string{"one:Str", "*var:Str"}, Return: "StrSeq", Signature: "varargs one *var -> str[]"},
 		},
 		"success: choice argument": {
 			name: "choose",
-			fn:   func(arg string) []string { return nil },
+			fn:   func(_ context.Context, arg string) []string { return nil },
 			opts: []command.Option{command.WithParams("arg"), command.WithArgument("arg", command.Choice("choices"))},
 			want: summary{Params: []string{"arg:Choice(choices)"}, Return: "StrSeq", Signature: "choose arg -> str[]"},
 		},
 		"success: explicit identity matching the Go type": {
 			name: "path",
-			fn:   func(arg command.Path) {},
+			fn:   func(_ context.Context, arg command.Path) {},
 			opts: []command.Option{command.WithParams("arg"), command.WithArgument("arg", command.PathType)},
 			want: summary{Params: []string{"arg:Path"}, Signature: "path arg"},
 		},
 		"success: default parameter names": {
 			name: "defaults",
-			fn:   func(int, bool, ...[]byte) command.Data { return nil },
+			fn:   func(context.Context, int, bool, ...[]byte) command.Data { return nil },
 			want: summary{Params: []string{"arg0:Int", "arg1:Bool", "*arg2:Bytes"}, Return: "Data", Signature: "defaults arg0 arg1 *arg2 -> data[][]"},
 		},
 		"success: leading context is not a parameter": {
@@ -209,37 +210,50 @@ func TestRegisterSignature(t *testing.T) {
 		},
 		"success: error-only result has no return type": {
 			name: "errorish",
-			fn:   func(s []string) error { return nil },
+			fn:   func(_ context.Context, s []string) error { return nil },
 			want: summary{Params: []string{"arg0:StrSeq"}, Signature: "errorish arg0"},
 		},
 		"error: unsupported return type": {
 			name:    "invalidret",
-			fn:      func() unsupported { return unsupported{} },
+			fn:      func(context.Context) unsupported { return unsupported{} },
 			wantErr: command.ErrSignature,
 		},
 		"error: unsupported argument type": {
 			name:    "invalidarg",
-			fn:      func(u unsupported) {},
+			fn:      func(_ context.Context, u unsupported) {},
 			wantErr: command.ErrSignature,
 		},
 		"error: unsupported variadic element type": {
 			name:    "invalidvariadic",
-			fn:      func(u ...unsupported) {},
+			fn:      func(_ context.Context, u ...unsupported) {},
 			wantErr: command.ErrSignature,
 		},
 		"error: context not in first position": {
-			name:    "latectx",
-			fn:      func(s string, ctx context.Context) {},
-			wantErr: command.ErrSignature,
+			name:        "latectx",
+			fn:          func(s string, ctx context.Context) {},
+			wantErr:     command.ErrSignature,
+			wantErrText: "command latectx: the first parameter must be a context.Context",
+		},
+		"error: no parameters and no context": {
+			name:        "noctx",
+			fn:          func() {},
+			wantErr:     command.ErrSignature,
+			wantErrText: "command noctx: the first parameter must be a context.Context, which carries the dispatch frame, got func()",
+		},
+		"error: parameters without a context": {
+			name:        "noctx.args",
+			fn:          func(foo string) string { return foo },
+			wantErr:     command.ErrSignature,
+			wantErrText: "command noctx.args: the first parameter must be a context.Context, which carries the dispatch frame, got func(string) string",
 		},
 		"error: second result is not an error": {
 			name:    "tworesults",
-			fn:      func() (string, string) { return "", "" },
+			fn:      func(context.Context) (string, string) { return "", "" },
 			wantErr: command.ErrSignature,
 		},
 		"error: three results": {
 			name:    "threeresults",
-			fn:      func() (string, int, error) { return "", 0, nil },
+			fn:      func(context.Context) (string, int, error) { return "", 0, nil },
 			wantErr: command.ErrSignature,
 		},
 		"error: not a function": {
@@ -249,59 +263,59 @@ func TestRegisterSignature(t *testing.T) {
 		},
 		"error: nil function": {
 			name:    "nilfunc",
-			fn:      (func())(nil),
+			fn:      (func(context.Context))(nil),
 			wantErr: command.ErrSignature,
 		},
 		"error: empty command name": {
 			name:    "",
-			fn:      func() {},
+			fn:      func(context.Context) {},
 			wantErr: command.ErrSignature,
 		},
 		"error: too few parameter names": {
 			name:    "names",
-			fn:      func(a, b string) {},
+			fn:      func(_ context.Context, a, b string) {},
 			opts:    []command.Option{command.WithParams("a")},
 			wantErr: command.ErrSignature,
 		},
 		"error: repeated parameter name": {
 			name:    "names",
-			fn:      func(a, b string) {},
+			fn:      func(_ context.Context, a, b string) {},
 			opts:    []command.Option{command.WithParams("a", "a")},
 			wantErr: command.ErrSignature,
 		},
 		"error: empty parameter name": {
 			name:    "names",
-			fn:      func(a string) {},
+			fn:      func(_ context.Context, a string) {},
 			opts:    []command.Option{command.WithParams("")},
 			wantErr: command.ErrSignature,
 		},
 		"error: argument override for unknown parameter": {
 			name:    "choose",
-			fn:      func(arg string) {},
+			fn:      func(_ context.Context, arg string) {},
 			opts:    []command.Option{command.WithParams("arg"), command.WithArgument("nope", command.Choice("choices"))},
 			wantErr: command.ErrSignature,
 		},
 		"error: choice on a non-string parameter": {
 			name:    "choose",
-			fn:      func(arg int) {},
+			fn:      func(_ context.Context, arg int) {},
 			opts:    []command.Option{command.WithParams("arg"), command.WithArgument("arg", command.Choice("choices"))},
 			wantErr: command.ErrSignature,
 		},
 		"error: identity bound to a different Go type": {
 			name:    "path",
-			fn:      func(arg string) {},
+			fn:      func(_ context.Context, arg string) {},
 			opts:    []command.Option{command.WithParams("arg"), command.WithArgument("arg", command.PathType)},
 			wantErr: command.ErrSignature,
 		},
 		"error: flow identity has no Go binding yet": {
 			name:    "flow",
-			fn:      func(arg string) {},
+			fn:      func(_ context.Context, arg string) {},
 			opts:    []command.Option{command.WithParams("arg"), command.WithArgument("arg", command.FlowType)},
 			wantErr: command.ErrSignature,
 		},
 		"error: nil argument identity": {
 			name:    "nilarg",
-			fn:      func(arg string) {},
+			fn:      func(_ context.Context, arg string) {},
 			opts:    []command.Option{command.WithParams("arg"), command.WithArgument("arg", nil)},
 			wantErr: command.ErrSignature,
 		},
@@ -311,8 +325,8 @@ func TestRegisterSignature(t *testing.T) {
 			m := command.NewManager()
 			err := m.Register(tt.name, tt.fn, tt.opts...)
 			if tt.wantErr != nil {
-				if !errors.Is(err, tt.wantErr) {
-					t.Fatalf("Register(%q) error = %v, want %v", tt.name, err, tt.wantErr)
+				if !errors.Is(err, tt.wantErr) || !strings.Contains(err.Error(), tt.wantErrText) {
+					t.Fatalf("Register(%q) error = %v, want %v containing %q", tt.name, err, tt.wantErr, tt.wantErrText)
 				}
 				for n := range m.Commands() {
 					t.Errorf("failed registration left command %q behind", n)
@@ -341,13 +355,13 @@ func newTestManager(t *testing.T) *command.Manager {
 		fn   any
 		opts []command.Option
 	}{
-		{"one.two", func(foo string) string { return "ret " + foo }, []command.Option{command.WithParams("foo"), command.WithHelp("cmd1 help")}},
-		{"cmd3", func(foo int) int { return foo }, []command.Option{command.WithParams("foo")}},
-		{"empty", func() {}, nil},
-		{"varargs", func(one string, v ...string) []string { return v }, []command.Option{command.WithParams("one", "var")}},
-		{"cut", func(spec command.CutSpec) int { return len(spec) }, []command.Option{command.WithParams("spec")}},
-		{"fail", func() (string, error) { return "partial", errBoom }, nil},
-		{"failonly", func() error { return errBoom }, nil},
+		{"one.two", func(_ context.Context, foo string) string { return "ret " + foo }, []command.Option{command.WithParams("foo"), command.WithHelp("cmd1 help")}},
+		{"cmd3", func(_ context.Context, foo int) int { return foo }, []command.Option{command.WithParams("foo")}},
+		{"empty", func(context.Context) {}, nil},
+		{"varargs", func(_ context.Context, one string, v ...string) []string { return v }, []command.Option{command.WithParams("one", "var")}},
+		{"cut", func(_ context.Context, spec command.CutSpec) int { return len(spec) }, []command.Option{command.WithParams("spec")}},
+		{"fail", func(context.Context) (string, error) { return "partial", errBoom }, nil},
+		{"failonly", func(context.Context) error { return errBoom }, nil},
 		{"ctxvalue", func(ctx context.Context) string { s, _ := ctx.Value(ctxKey{}).(string); return s }, nil},
 		{"ctxnil", func(ctx context.Context) bool { return ctx == nil }, nil},
 		{"reenter", func(ctx context.Context, foo string) (string, error) {
@@ -482,10 +496,10 @@ func TestManagerHelp(t *testing.T) {
 
 func TestRegisterDuplicate(t *testing.T) {
 	m := command.NewManager()
-	if err := m.Register("dup", func() string { return "first" }); err != nil {
+	if err := m.Register("dup", func(context.Context) string { return "first" }); err != nil {
 		t.Fatalf("first Register: %v", err)
 	}
-	err := m.Register("dup", func() string { return "second" })
+	err := m.Register("dup", func(context.Context) string { return "second" })
 	if !errors.Is(err, command.ErrDuplicateCommand) {
 		t.Fatalf("second Register error = %v, want ErrDuplicateCommand", err)
 	}
@@ -502,7 +516,7 @@ func TestCommandsOrder(t *testing.T) {
 	m := command.NewManager()
 	names := []string{"view.flows.add", "cut", "export.file", "a.b"}
 	for _, n := range names {
-		if err := m.Register(n, func() {}); err != nil {
+		if err := m.Register(n, func(context.Context) {}); err != nil {
 			t.Fatalf("Register(%q): %v", n, err)
 		}
 	}
@@ -535,7 +549,7 @@ func TestManagerConcurrentUse(t *testing.T) {
 	for i := range workers {
 		wg.Go(func() {
 			name := fmt.Sprintf("worker.%d", i)
-			if err := m.Register(name, func(s string) string { return name + " " + s }, command.WithParams("s")); err != nil {
+			if err := m.Register(name, func(_ context.Context, s string) string { return name + " " + s }, command.WithParams("s")); err != nil {
 				t.Errorf("Register(%q): %v", name, err)
 				return
 			}
@@ -564,7 +578,7 @@ func TestManagerConcurrentUse(t *testing.T) {
 func TestUnregister(t *testing.T) {
 	m := command.NewManager()
 	for _, n := range []string{"a", "b", "c"} {
-		if err := m.Register(n, func() string { return "first " + n }); err != nil {
+		if err := m.Register(n, func(context.Context) string { return "first " + n }); err != nil {
 			t.Fatalf("Register(%q): %v", n, err)
 		}
 	}
@@ -584,7 +598,7 @@ func TestUnregister(t *testing.T) {
 
 	// The name is free again: registering it succeeds and the new function
 	// is the one called; it goes to the end of the order.
-	if err := m.Register("b", func() string { return "second b" }); err != nil {
+	if err := m.Register("b", func(context.Context) string { return "second b" }); err != nil {
 		t.Fatalf("Register(b) after Unregister: %v", err)
 	}
 	got, err := m.Call(t.Context(), "b")

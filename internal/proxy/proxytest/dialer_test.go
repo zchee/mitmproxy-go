@@ -13,11 +13,12 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/connection"
+	"github.com/zchee/mitmproxy-go/internal/proxy"
 )
 
 func TestOriginDialerPreservesMetadata(t *testing.T) {
 	origin := StartEchoOrigin(t)
-	dial := originDialer(map[string]*Origin{"example.test": origin})
+	dial := originDialer(map[string]*Origin{"example.test": origin}, proxy.NewDialer(net.Dialer{}))
 	tests := map[string]struct {
 		host   string
 		source *connection.Address
@@ -53,7 +54,7 @@ func TestOriginDialerPreservesMetadata(t *testing.T) {
 
 func TestOriginDialerErrors(t *testing.T) {
 	origin := StartEchoOrigin(t)
-	dial := originDialer(map[string]*Origin{"example.test": origin})
+	dial := originDialer(map[string]*Origin{"example.test": origin}, proxy.NewDialer(net.Dialer{}))
 	tests := map[string]struct {
 		address   *connection.Address
 		source    *connection.Address
@@ -105,7 +106,7 @@ func TestOriginDialerHonorsSourcePort(t *testing.T) {
 	t.Cleanup(func() { _ = occupied.Close() })
 	server := connection.NewServer(&connection.Address{Host: "example.test", Port: 443})
 	server.Sockname = &connection.Address{Host: "127.0.0.1", Port: occupied.Addr().(*net.TCPAddr).Port}
-	conn, err := originDialer(map[string]*Origin{"example.test": origin})(t.Context(), server)
+	conn, err := originDialer(map[string]*Origin{"example.test": origin}, proxy.NewDialer(net.Dialer{}))(t.Context(), server)
 	if conn != nil {
 		_ = conn.Close()
 	}

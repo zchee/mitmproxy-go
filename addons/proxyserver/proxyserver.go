@@ -11,9 +11,11 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
@@ -58,10 +60,6 @@ type serverState struct{ instances []*modeserver.Instance }
 // Options and Connections must be non-nil. The caller registers the addon with
 // Manager and supplies nextlayer and the protocol-layer factory imports.
 func New(cfg proxy.Config) (*ProxyServer, error) {
-	handler, err := proxy.NewHandler(cfg)
-	if err != nil {
-		return nil, err
-	}
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -69,8 +67,17 @@ func New(cfg proxy.Config) (*ProxyServer, error) {
 	// Configure carries a dispatch frame; asynchronous listener work must never
 	// inherit it. SetupServers links its outside-dispatch lifetime separately.
 	ctx, cancel := context.WithCancel(context.Background())
-	p := &ProxyServer{manager: cfg.Manager, opts: cfg.Options, handler: handler, connections: cfg.Connections, logger: logger, lifetime: ctx, cancel: cancel, wake: make(chan struct{}, 1)}
+	p := &ProxyServer{manager: cfg.Manager, opts: cfg.Options, connections: cfg.Connections, logger: logger, lifetime: ctx, cancel: cancel, wake: make(chan struct{}, 1)}
 	p.instances.Store(&serverState{})
+	if cfg.Dialer == nil {
+		cfg.Dialer = p.Dialer()
+	}
+	handler, err := proxy.NewHandler(cfg)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	p.handler = handler
 	return p, nil
 }
 
@@ -314,10 +321,46 @@ func (p *ProxyServer) ServerConnect(_ context.Context, data *hookdata.ServerConn
 	if server.Address == nil || server.TransportProtocol != connection.TCP {
 		return nil
 	}
+	if err := p.destinationError(*server.Address); err != nil {
+		server.Error = new(err.Error())
+	}
+	return nil
+}
+
+var errSelfConnect = errors.New("Request destination unknown. Unable to figure out where this request should be forwarded to.") //nolint:staticcheck // Preserve upstream's user-facing refusal text.
+
+// Dialer returns a TCP dialer that refuses resolved addresses matching this
+// proxy's current listeners. Custom Config.Dialer implementations can delegate
+// here after routing a destination, without bypassing the listener guard.
+func (p *ProxyServer) Dialer() layer.Dialer {
+	dial := proxy.NewDialer(net.Dialer{Control: p.dialControl})
+	return func(ctx context.Context, server *connection.Server) (layer.Conn, error) {
+		conn, err := dial(ctx, server)
+		if errors.Is(err, errSelfConnect) {
+			// net.Dialer wraps Control errors; the flow needs the refusal text,
+			// not the socket operation and resolved address in that wrapper.
+			return nil, errSelfConnect
+		}
+		return conn, err
+	}
+}
+
+func (p *ProxyServer) dialControl(_, address string, _ syscall.RawConn) error {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	number, err := strconv.Atoi(port)
+	if err != nil {
+		return err
+	}
+	return p.destinationError(connection.Address{Host: host, Port: number})
+}
+
+func (p *ProxyServer) destinationError(destination connection.Address) error {
 	for _, addr := range p.ListenAddrs() {
-		if server.Address.Port == addr.Port && isListenerHost(server.Address.Host, addr.Host) {
-			server.Error = new("Request destination unknown. Unable to figure out where this request should be forwarded to.")
-			return nil
+		if destination.Port == addr.Port && isListenerHost(destination.Host, addr.Host) {
+			return errSelfConnect
 		}
 	}
 	return nil

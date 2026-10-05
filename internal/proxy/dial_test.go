@@ -37,7 +37,7 @@ func TestDialServer(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			srv, listener := listenLoopback(t)
 			srv.Sockname = tt.source
-			conn, err := dialServer(t.Context(), srv)
+			conn, err := NewDialer(net.Dialer{})(t.Context(), srv)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -96,7 +96,7 @@ func TestDialServerRejects(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			srv := listening.Clone()
 			tt.prepare(srv)
-			conn, err := dialServer(t.Context(), srv)
+			conn, err := NewDialer(net.Dialer{})(t.Context(), srv)
 			if conn != nil {
 				_ = conn.Close()
 			}
@@ -111,7 +111,7 @@ func TestDialServerHonoursCancellation(t *testing.T) {
 	srv, _ := listenLoopback(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	conn, err := dialServer(ctx, srv)
+	conn, err := NewDialer(net.Dialer{})(ctx, srv)
 	if conn != nil {
 		_ = conn.Close()
 	}

@@ -77,7 +77,7 @@ func NewHandler(cfg Config) (*Handler, error) {
 		clock:       wallClock{},
 	}
 	if h.dial == nil {
-		h.dial = dialServer
+		h.dial = NewDialer(net.Dialer{})
 	}
 	if h.logger == nil {
 		h.logger = slog.Default()
@@ -305,16 +305,24 @@ func asLayerConn(conn net.Conn) layer.Conn {
 	return &noHalfCloseConn{Conn: conn}
 }
 
-// dialServer is the default dialer: TCP to the server's address, from the
-// Sockname the connect_addr option selected when one is set.
-func dialServer(ctx context.Context, srv *connection.Server) (layer.Conn, error) {
+// NewDialer returns a TCP dialer using dialer's resolver, controls and timeouts.
+// Each call uses the server's Sockname as its local address when set, without
+// changing dialer or sharing per-connection source addresses between calls.
+func NewDialer(dialer net.Dialer) layer.Dialer {
+	return func(ctx context.Context, srv *connection.Server) (layer.Conn, error) {
+		return dialServer(ctx, srv, dialer)
+	}
+}
+
+// dialServer opens TCP to the server's address, from the Sockname the
+// connect_addr option selected when one is set.
+func dialServer(ctx context.Context, srv *connection.Server, dialer net.Dialer) (layer.Conn, error) {
 	if srv.Address == nil || srv.Address.Host == "" {
 		return nil, errors.New("proxy: cannot open connection, no hostname given")
 	}
 	if srv.TransportProtocol != connection.TCP {
 		return nil, fmt.Errorf("proxy: transport protocol %q is not supported yet", srv.TransportProtocol)
 	}
-	dialer := net.Dialer{}
 	if srv.Sockname != nil {
 		local := &net.TCPAddr{Port: srv.Sockname.Port}
 		if srv.Sockname.Host != "" {

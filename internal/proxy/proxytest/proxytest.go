@@ -145,16 +145,20 @@ func Start(t testing.TB, opts ...Option) *Proxy {
 		t.Fatal(err)
 	}
 	recorder := &addontest.Recorder{}
+	var dialer layer.Dialer
 	server, err := proxyserver.New(proxy.Config{
 		Manager:     m.Addons,
 		Options:     m.Options,
 		Connections: new(proxy.Connections),
-		Dialer:      originDialer(cfg.origins),
-		Logger:      logger,
+		Dialer: func(ctx context.Context, server *connection.Server) (layer.Conn, error) {
+			return dialer(ctx, server)
+		},
+		Logger: logger,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	dialer = originDialer(cfg.origins, server.Dialer())
 	ready := &startup{ready: make(chan struct{})}
 	addons := append([]any{server, nextlayer.New(m.Options), tlsconfig.New(m.Options), recorder}, cfg.addons...)
 	addons = append(addons, ready)
@@ -267,7 +271,7 @@ func readCA(t testing.TB, confdir string) *x509.Certificate {
 	return ca
 }
 
-func originDialer(origins map[string]*Origin) layer.Dialer {
+func originDialer(origins map[string]*Origin, dial layer.Dialer) layer.Dialer {
 	return func(ctx context.Context, server *connection.Server) (layer.Conn, error) {
 		if server.Address == nil || server.Address.Host == "" {
 			return nil, errors.New("proxytest: server address unknown")
@@ -275,34 +279,23 @@ func originDialer(origins map[string]*Origin) layer.Dialer {
 		if server.TransportProtocol != connection.TCP {
 			return nil, fmt.Errorf("proxytest: unsupported transport %q", server.TransportProtocol)
 		}
-		target := server.Address.String()
 		if host := strings.ToLower(strings.TrimSuffix(server.Address.Host, ".")); strings.HasSuffix(host, ".test") {
 			origin, ok := origins[host]
 			if !ok {
 				return nil, fmt.Errorf("proxytest: no origin mapped for %s", host)
 			}
-			target = origin.Addr
-		}
-		dialer := new(net.Dialer)
-		if server.Sockname != nil {
-			local := &net.TCPAddr{Port: server.Sockname.Port}
-			if server.Sockname.Host != "" {
-				ip, err := netip.ParseAddr(server.Sockname.Host)
-				if err != nil {
-					return nil, fmt.Errorf("proxytest: invalid source address %q: %w", server.Sockname.Host, err)
-				}
-				local.IP, local.Zone = ip.AsSlice(), ip.Zone()
+			host, port, err := net.SplitHostPort(origin.Addr)
+			if err != nil {
+				return nil, err
 			}
-			if server.Sockname.Scope != nil && server.Sockname.Scope.ScopeID != 0 {
-				local.Zone = strconv.FormatUint(uint64(server.Sockname.Scope.ScopeID), 10)
+			number, err := strconv.Atoi(port)
+			if err != nil {
+				return nil, err
 			}
-			dialer.LocalAddr = local
+			server = server.Clone()
+			server.Address = &connection.Address{Host: host, Port: number}
 		}
-		conn, err := dialer.DialContext(ctx, "tcp", target)
-		if err != nil {
-			return nil, err
-		}
-		return conn.(*net.TCPConn), nil
+		return dial(ctx, server)
 	}
 }
 

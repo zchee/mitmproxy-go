@@ -13,6 +13,9 @@ import (
 	"testing"
 	"time"
 
+	gocmp "github.com/google/go-cmp/cmp"
+
+	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/internal/proxy/proxytest"
 )
@@ -34,19 +37,33 @@ func (c *clientSignal) ClientConnected(context.Context, *connection.Client) erro
 // itself again without end.
 func TestHTTPSelfConnectAddressForms(t *testing.T) {
 	const refused = "Request destination unknown. Unable to figure out where this request should be forwarded to."
-	tests := map[string]struct{ host string }{
-		"error: IPv4-mapped IPv6 loopback":  {host: "::ffff:127.0.0.1"},
-		"error: uncompressed IPv6 loopback": {host: "0:0:0:0:0:0:0:1"},
-		"error: IPv4 loopback":              {host: "127.0.0.1"},
+	tests := map[string]struct {
+		host         string
+		listenHost   string
+		resolvedHost string
+	}{
+		"error: IPv4-mapped IPv6 loopback":        {host: "::ffff:127.0.0.1"},
+		"error: uncompressed IPv6 loopback":       {host: "0:0:0:0:0:0:0:1"},
+		"error: IPv4 loopback":                    {host: "127.0.0.1"},
+		"error: resolved IPv4, wildcard listener": {host: "self.test", resolvedHost: "127.0.0.1"},
+		"error: resolved IPv6, wildcard listener": {host: "self.test", resolvedHost: "::1"},
+		"error: resolved IPv4, loopback listener": {host: "self.test", listenHost: "127.0.0.1", resolvedHost: "127.0.0.1"},
+		"error: resolved IPv6, loopback listener": {host: "self.test", listenHost: "127.0.0.1", resolvedHost: "::1"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			signal := &clientSignal{connected: make(chan struct{}, 2)}
-			p := proxytest.Start(t, proxytest.WithOptions(map[string]any{"listen_host": ""}), proxytest.WithAddons(signal))
+			origin := &proxytest.Origin{}
+			opts := []proxytest.Option{proxytest.WithOptions(map[string]any{"listen_host": tt.listenHost}), proxytest.WithAddons(signal)}
+			if tt.resolvedHost != "" {
+				opts = append(opts, proxytest.WithOrigin(tt.host, origin))
+			}
+			p := proxytest.Start(t, opts...)
 			_, port, err := net.SplitHostPort(p.Addr)
 			if err != nil {
 				t.Fatal(err)
 			}
+			origin.Addr = net.JoinHostPort(tt.resolvedHost, port)
 			conn := dial(t, net.JoinHostPort("127.0.0.1", port))
 			target := net.JoinHostPort(tt.host, port)
 			if _, err := io.WriteString(conn, "GET http://"+target+"/ HTTP/1.1\r\nHost: "+target+"\r\n\r\n"); err != nil {
@@ -86,7 +103,22 @@ func TestHTTPSelfConnectAddressForms(t *testing.T) {
 				t.Fatalf("response = %d %q (%v), want 502 with %q", got.status, got.body, got.err, refused)
 			}
 			// Settle the hook record behind the dispatch barrier before counting.
-			if err := p.Master.Do(t.Context(), func(context.Context) error { return nil }); err != nil {
+			if err := p.Master.Do(t.Context(), func(context.Context) error {
+				failures := 0
+				for _, call := range p.Recorder.Calls() {
+					if call.Hook == "server_connect_error" {
+						failures++
+						server := call.Arg.(*hookdata.ServerConnection).Server
+						if diff := gocmp.Diff(new(refused), server.Error); diff != "" {
+							t.Errorf("server.Error (-want +got):\n%s", diff)
+						}
+					}
+				}
+				if failures != 1 {
+					t.Errorf("server_connect_error fired %d times, want 1", failures)
+				}
+				return nil
+			}); err != nil {
 				t.Fatal(err)
 			}
 			clients := 0

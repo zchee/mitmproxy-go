@@ -440,6 +440,19 @@ func MatchStringReport(m Matcher, s string) (matched, abandoned bool) {
 // The limit is ignored for RE2 and other Matcher implementations, which report
 // their MatchString result with abandoned false.
 func MatchStringReportTimeout(m Matcher, s string, limit time.Duration) (matched, abandoned bool) {
+	if p, ok := m.(*Pattern); ok && p.bt != nil {
+		in, err := p.input(s)
+		if err != nil {
+			return false, false
+		}
+		re := p.bt
+		if limit != MatchTimeout {
+			re = regexp2.MustCompile(p.bt.String(), p.options)
+			re.MatchTimeout = limit
+		}
+		matched, err = re.MatchRunes(in.runes)
+		return matched && err == nil, err != nil
+	}
 	bt, ok := m.(*backtrackMatcher)
 	if !ok {
 		return m.MatchString(s), false
@@ -493,6 +506,9 @@ func (m *backtrackMatcher) Flags() Flags { return m.flags }
 
 // IsBacktracking reports whether m runs on the regexp2 fallback engine.
 func IsBacktracking(m Matcher) bool {
+	if p, ok := m.(*Pattern); ok {
+		return p.bt != nil
+	}
 	_, ok := m.(*backtrackMatcher)
 	return ok
 }

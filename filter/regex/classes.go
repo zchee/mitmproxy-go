@@ -519,6 +519,8 @@ type classTranslator struct {
 	// returns. TestTranslateClassesLinear checks that it grows linearly
 	// with the pattern.
 	steps int
+	// captures preserves Python numbering for capture and substitution callers.
+	captures bool
 }
 
 // openGroup numbers a new capturing group and marks it open.
@@ -631,6 +633,8 @@ type translation struct {
 	// unicodeBoundary says that a \b stands where the classes are Unicode,
 	// so RE2's ASCII \b cannot stand for it.
 	unicodeBoundary bool
+	groups          int
+	names           map[string]int
 }
 
 func (t *classTranslator) both(s string) {
@@ -667,14 +671,18 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 // sends every other \b and \B to regexp2, where they become lookarounds.
 // It also returns the steps it took; see classTranslator.steps.
 func scanClasses(body string, flags Flags, str, verbose bool) (translation, int, error) {
+	return scanClassesCaptures(body, flags, str, verbose, false)
+}
+
+func scanClassesCaptures(body string, flags Flags, str, verbose, captures bool) (translation, int, error) {
 	// A class can hold a [ only if the body has two of them. Verbose
 	// whitespace can stand between two quantifiers, a { may start a repeat
 	// to rewrite, and a + after a quantifier makes it possessive.
 	possessive := strings.Contains(body, "*+") || strings.Contains(body, "++") || strings.Contains(body, "?+")
-	if !verbose && !possessive && !quantifiedAnchor(body) && !hasScannedEscape(body) && !strings.ContainsAny(body, "{") && !strings.Contains(body, "(?") && strings.Count(body, "[") < 2 {
+	if !captures && !verbose && !possessive && !quantifiedAnchor(body) && !hasScannedEscape(body) && !strings.ContainsAny(body, "{") && !strings.Contains(body, "(?") && strings.Count(body, "[") < 2 {
 		return translation{re2: body, re2OK: true, backtrack: body}, len(body), nil
 	}
-	t := &classTranslator{src: body, str: str, re2OK: true}
+	t := &classTranslator{src: body, str: str, re2OK: true, captures: captures}
 	t.re2.Grow(len(body))
 	t.bt.Grow(len(body))
 	stack := []scope{{fold: flags&IgnoreCase != 0, verbose: verbose, uni: flags&Unicode != 0}}
@@ -761,6 +769,10 @@ func scanClasses(body string, flags Flags, str, verbose bool) (translation, int,
 				if err != nil {
 					return translation{}, t.steps, err
 				}
+				if captures && !str && cur.fold && strings.HasPrefix(text, `\x`) && byteFoldLiteral(t, src[i:end]) {
+					i = end
+					continue
+				}
 				t.re2.WriteString(src[i:end])
 				t.bt.WriteString(text)
 				t.re2OK = t.re2OK && strings.HasPrefix(text, `\x`)
@@ -789,6 +801,10 @@ func scanClasses(body string, flags Flags, str, verbose bool) (translation, int,
 					atom = -1
 				}
 				end := escapeEnd(src, i)
+				if captures && !str && cur.fold && byteFoldLiteral(t, src[i:end]) {
+					i = end
+					continue
+				}
 				t.both(src[i:end])
 				i = end
 				continue
@@ -833,6 +849,9 @@ func scanClasses(body string, flags Flags, str, verbose bool) (translation, int,
 			}
 			atom, open = t.bt.Len(), false
 			t.re2.WriteString(src[i:end])
+			if captures {
+				name = strconv.Itoa(gid)
+			}
 			t.bt.WriteString(`\k<` + name + `>`)
 			t.re2OK = false
 			i = end
@@ -857,6 +876,9 @@ func scanClasses(body string, flags Flags, str, verbose bool) (translation, int,
 			stack = append(stack, next)
 			atom, open, header = -1, false, false
 			t.re2.WriteString(src[i:end])
+			if captures {
+				name = strconv.Itoa(next.gid)
+			}
 			t.bt.WriteString("(?<" + name + ">")
 			i = end
 		case c == '(' && strings.HasPrefix(src[i:], "(?("):
@@ -882,12 +904,16 @@ func scanClasses(body string, flags Flags, str, verbose bool) (translation, int,
 				if _, ok := t.names[cond]; !ok {
 					return translation{}, t.steps, fmt.Errorf("unknown group name %s", groupNameRepr(cond, str))
 				}
+				if captures {
+					cond = strconv.Itoa(t.names[cond])
+				}
 			}
 			next := cur
 			next.start, next.gid, next.cond, next.bar = t.bt.Len(), 0, true, false
 			stack = append(stack, next)
 			atom, open, header = -1, false, false
-			t.both(src[i:end])
+			t.re2.WriteString(src[i:end])
+			t.bt.WriteString("(?(" + cond + ")")
 			i = end
 		case c == '(' && strings.HasPrefix(src[i:], "(?") && len(src) > i+2 && unknownExtension(src[i+2:]):
 			// Group syntax Python does not have, such as the (?<name>,
@@ -938,7 +964,12 @@ func scanClasses(body string, flags Flags, str, verbose bool) (translation, int,
 				continue
 			}
 			header = strings.HasPrefix(src[i+1:], "?")
-			t.both("(")
+			t.re2.WriteByte('(')
+			if captures && next.gid > 0 {
+				t.bt.WriteString("(?<" + strconv.Itoa(next.gid) + ">")
+			} else {
+				t.bt.WriteByte('(')
+			}
 			i++
 		case c == ')':
 			atom, header = -1, false
@@ -968,6 +999,13 @@ func scanClasses(body string, flags Flags, str, verbose bool) (translation, int,
 			t.both(src[i:end])
 			i = end
 		default:
+			if captures && !str && cur.fold && c >= utf8.RuneSelf {
+				_, size := utf8.DecodeRuneInString(src[i:])
+				atom = t.bt.Len()
+				byteFoldLiteral(t, src[i:i+size])
+				i += size
+				continue
+			}
 			switch {
 			case header:
 				// (?:, (?=, (?!, (?>, (?<=, (?<! and (?P<name> end here.
@@ -991,7 +1029,7 @@ func scanClasses(body string, flags Flags, str, verbose bool) (translation, int,
 			return translation{}, t.steps, fmt.Errorf("invalid group reference %d", gid)
 		}
 	}
-	return translation{re2: t.re2.String(), re2OK: t.re2OK, backtrack: openAtomic(t.bt.String(), t.atomic), unicodeBoundary: t.uniBoundary}, t.steps, nil
+	return translation{re2: t.re2.String(), re2OK: t.re2OK, backtrack: openAtomic(t.bt.String(), t.atomic), unicodeBoundary: t.uniBoundary, groups: t.groups, names: t.names}, t.steps, nil
 }
 
 // quantifiedAnchor reports whether a ^ or $ in s is followed by a
@@ -1313,6 +1351,31 @@ func (t *classTranslator) class(i int, cur scope) (int, error) {
 			rest.WriteString(this.literal())
 		}
 		j = k
+	}
+	if t.captures && !t.str && cur.fold {
+		set := runeSet{}
+		if rest.Len() > 0 {
+			var ok bool
+			set, ok = re2ClassSet("["+rest.String()+"]", false)
+			if !ok {
+				return 0, errors.New("invalid bytes character class")
+			}
+		}
+		for _, c := range shorts {
+			set = set.union(shorthandSet(c, false))
+		}
+		for c := rune('A'); c <= 'Z'; c++ {
+			if set.contains(c) || set.contains(c+'a'-'A') {
+				set = set.union(runeSet{c, c, c + 'a' - 'A', c + 'a' - 'A'})
+			}
+		}
+		if neg {
+			set = set.negate()
+		}
+		expr := newClassExpr(set, "")
+		t.re2.WriteString(expr.exact())
+		t.bt.WriteString(expr.backtrackExact())
+		return j, nil
 	}
 	if len(shorts) == 0 {
 		if neg {

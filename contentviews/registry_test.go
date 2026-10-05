@@ -98,12 +98,18 @@ func TestRegistry(t *testing.T) {
 			}
 		}},
 		"render_priority_error": {func(t *testing.T) {
+			var log bytes.Buffer
+			previous := SetLogger(slog.New(slog.NewTextHandler(&log, nil)))
+			t.Cleanup(func() { SetLogger(previous) })
 			r := &Registry{}
 			r.Register(exampleView{name: "FailingRenderPriority", failPriority: true})
 			r.Register(exampleView{name: "Example"})
 			got, err := r.GetView(nil, Metadata{}, "auto")
 			if err != nil || got.Name() != "Example" {
 				t.Fatalf("view=%v err=%v", got, err)
+			}
+			if !strings.Contains(log.String(), "Error in FailingRenderPriority.render_priority") {
+				t.Fatalf("priority panic was not logged: %s", log.String())
 			}
 		}},
 		"equal_priority_keeps_registration_order": {func(t *testing.T) {
@@ -131,12 +137,17 @@ func TestRegistry(t *testing.T) {
 // The missing-content and view-failure cases port test___init__.py.
 func TestPrettifyMessage(t *testing.T) {
 	tests := map[string]struct {
-		data     []byte
-		selected string
-		fail     bool
-		cutoff   int
-		want     Result
+		data            []byte
+		selected        string
+		fail            bool
+		defaultRegistry bool
+		cutoff          int
+		want            Result
 	}{
+		"hex_stream":            {data: []byte("content"), selected: "hex stream", want: Result{Text: "636f6e74656e74", SyntaxHighlight: "none", ViewName: "Hex Stream"}},
+		"default_registry":      {data: []byte("content"), defaultRegistry: true, want: Result{Text: "content", SyntaxHighlight: "none", ViewName: "Raw"}},
+		"zero_line_cutoff":      {data: []byte("first\nsecond\nthird"), want: Result{Text: "first\nsecond\nthird", SyntaxHighlight: "none", ViewName: "Raw"}},
+		"negative_line_cutoff":  {data: []byte("first\nsecond\nthird"), cutoff: -1, want: Result{Text: "first\nsecond\nthird", SyntaxHighlight: "none", ViewName: "Raw"}},
 		"empty_content":         {want: Result{Text: "Content is missing.", SyntaxHighlight: "error"}},
 		"empty_present":         {data: []byte{}, want: Result{SyntaxHighlight: "none", ViewName: "Raw"}},
 		"view_failure_auto":     {data: []byte("content"), selected: "auto", fail: true, want: Result{Text: "content", SyntaxHighlight: "none", ViewName: "Raw", Description: "[failed to parse as FailingPrettify]", Err: errPrettify}},
@@ -147,7 +158,10 @@ func TestPrettifyMessage(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			r := NewRegistry()
+			var r *Registry
+			if !tt.defaultRegistry {
+				r = NewRegistry()
+			}
 			if tt.fail {
 				r.Register(exampleView{name: "FailingPrettify", priority: 2, failPrettify: true})
 			}

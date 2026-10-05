@@ -8,7 +8,9 @@ package contentviews
 import (
 	json "encoding/json/v2"
 	"fmt"
+	"maps"
 	rand "math/rand/v2"
+	"slices"
 	"strings"
 	"testing"
 
@@ -93,10 +95,10 @@ func TestImageDifferential(t *testing.T) {
 		"mitmproxy/image_parser/app1.jpeg":    200,
 		"mitmproxy/image.ico":                 100,
 	}
-	for fixture, count := range mutations {
+	for _, fixture := range slices.Sorted(maps.Keys(mutations)) {
 		data := testutil.Fixture(t, fixture)
-		for i := range count {
-			mutated := append([]byte{}, data...)
+		for i := range mutations[fixture] {
+			mutated := slices.Clone(data)
 			mutated[rng.IntN(len(mutated))] = byte(rng.IntN(256))
 			tests[fmt.Sprintf("mutation/%s/%d", fixture, i)] = imageCase{mutated}
 		}

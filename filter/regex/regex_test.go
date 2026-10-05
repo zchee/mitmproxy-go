@@ -455,3 +455,47 @@ func BenchmarkMatch(b *testing.B) {
 		})
 	}
 }
+
+// fuzzCompileBound is how long FuzzCompile lets one Compile take. A
+// translation that scans a pattern more than once per character, or emits
+// a pattern that grows faster than its input, shows up as a compile far
+// above it.
+const fuzzCompileBound = time.Second
+
+// FuzzCompile compiles arbitrary patterns as str and bytes patterns, with
+// and without IgnoreCase. A pattern may be rejected, but Compile must not
+// panic or take longer than fuzzCompileBound, and a compiled Matcher must
+// run on a short subject that holds the characters the translation treats
+// specially.
+func FuzzCompile(f *testing.F) {
+	seeds := []string{
+		`\b[\w_]+Z`, `[\w_]+(?=Z)`, `[\da-f0-9]+`, `[^\W_]`, `[\s\S]`, `[]\w]`, `[!--\w]`,
+		`[[:alpha:]]`, `x[[:digit:]\d]`, `[\w.-[]`, `[^[\d]`,
+		`(?ias:x)`, `(?sai:x)`, `(?a)(?u:\d)`, `(?L:\w)`, `(?ai-s:\w)`,
+		`(?#a\)b)c`, `a(?#c)*b`, `(a)\1(?#c)0`, "(?x) (?i)a", "(?x)a # (?i)\nb", `(?i-i:a)`, `(?a-:x)`, `\N{DIGIT ZERO}`,
+		`(?i)x(?=)|(?-i:[\x{212a}-\x{212b}])`, `\.js$`, `(a$)+`, `a\Z`, `\B`, `(?=a)(a+)+$`,
+		strings.Repeat("(?=a)", 64), strings.Repeat(`\B`, 32),
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	SetLogger(nil)
+	f.Cleanup(func() { SetLogger(nil) })
+	const subject = "aK_ 1\n\u0663\u00e9\u212a[]-"
+	f.Fuzz(func(t *testing.T, pattern string) {
+		for _, flags := range []Flags{0, IgnoreCase, Unicode, Unicode | IgnoreCase} {
+			start := time.Now()
+			m, err := Compile(pattern, flags)
+			if elapsed := time.Since(start); elapsed > fuzzCompileBound {
+				t.Fatalf("Compile(%q, %d) took %v, more than %v", pattern, flags, elapsed, fuzzCompileBound)
+			}
+			if err != nil {
+				continue
+			}
+			if got := m.Pattern(); got != pattern {
+				t.Fatalf("Compile(%q, %d).Pattern() = %q", pattern, flags, got)
+			}
+			m.MatchString(subject)
+		}
+	})
+}

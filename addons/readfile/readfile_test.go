@@ -241,7 +241,12 @@ func TestRunningLoadsAsynchronously(t *testing.T) {
 		t.Fatal(err)
 	}
 	wait(t, r.done)
-	if !strings.Contains(logs.String(), "Failed to read "+path) {
+	loggedPath := path
+	if runtime.GOOS == "windows" {
+		// TextHandler escapes backslashes inside its quoted message field.
+		loggedPath = strings.ReplaceAll(path, `\`, `\\`)
+	}
+	if !strings.Contains(logs.String(), "Failed to read "+loggedPath) {
 		t.Fatalf("missing read failure: %q", logs.String())
 	}
 }

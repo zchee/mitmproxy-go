@@ -5,6 +5,30 @@ package command
 
 import "errors"
 
+// Error is a failure reported by a command implementation, corresponding to
+// mitmproxy's CommandError. Registry and argument-parser errors retain their
+// existing sentinels; command functions may also return other errors unchanged.
+type Error struct {
+	// Msg is the message shown to the user, or empty to use Err's message.
+	Msg string
+	// Err is the underlying cause, if any.
+	Err error
+}
+
+// Error returns the user-facing message.
+func (e *Error) Error() string {
+	if e.Msg != "" {
+		return e.Msg
+	}
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return ""
+}
+
+// Unwrap returns the underlying cause.
+func (e *Error) Unwrap() error { return e.Err }
+
 // Errors returned by [Manager]. Errors the Manager produces itself wrap one
 // or more of these sentinels, so callers can classify them with [errors.Is].
 // An argument whose parsing calls an unknown command wraps both

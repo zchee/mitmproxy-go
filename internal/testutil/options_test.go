@@ -95,7 +95,7 @@ func TestOptionLists(t *testing.T) {
 	})
 
 	t.Run("go-only names", func(t *testing.T) {
-		want := []string{"local_redirector_path", "otel_exporter_endpoint", "pprof_addr", "script_max_steps"}
+		want := []string{"content_decode_limit", "local_redirector_path", "otel_exporter_endpoint", "pprof_addr", "script_max_steps"}
 		got := slices.Sorted(maps.Keys(byName(goOnly)))
 		if diff := gocmp.Diff(want, got); diff != "" {
 			t.Errorf("options-go-only.txt names mismatch (-want +got):\n%s", diff)

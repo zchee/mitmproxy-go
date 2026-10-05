@@ -197,6 +197,23 @@ Reproduced on purpose (compatibility, not differences):
 Reproduced on purpose: path expansion and completion follow the host's `os.path` conventions, including named users,
 leading-dot glob rules, and Python's bracket patterns.
 
+## addons/core
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Flow editing and encoding commands use `getattr` on request and response objects, including objects on non-HTTP flows (`mitmproxy/addons/core.py`). | `flow.set`, `flow.decode`, `flow.encode` and `flow.encode.toggle` mutate only present HTTP request or response parts. Other flow types and absent parts are skipped; `flow.set` still includes all supplied flows in its update hook. | HTTP fields and body codecs belong to typed HTTP messages, not DNS or transport messages. |
+| Assigning `Request.method` preserves the supplied bytes, but reading the property returns their uppercase spelling (`mitmproxy/http.py`). | `flow.set ... method post` leaves `httpmsg.Request.Method` and serialized request state as `post`; callers that need the upstream display value uppercase it themselves. | The exported Go field represents raw wire bytes, without a separate display accessor. |
+| There is no `content_decode_limit` option (`mitmproxy/addons/core.py`). | Core registers a string option with default `256m`, validates it with `human.ParseSize`, and rejects negative, malformed and overflowing values with `OptionsError`. An accepted value is published through `httpmsg.SetDecodeLimit`, whose bound is process-global: with several managers in one process the last configure wins, and removing core restores the 256 MiB default for the whole process. Zero bounds every nonempty decoded body, not unlimited decoding. | The Go-only option configures the bounded decoder, whose decode paths are package-level code shared by every manager in the process. |
+
+Reproduced on purpose:
+
+- `flow.set` sends every supplied flow to the update hook, even when the selected field is absent or unchanged;
+  upstream writes an instance attribute instead of clearing its local request-update flag.
+- `set` creates a separate option assignment for every value. Sequence options accept multiple values; scalar
+  options reject them, despite the command's upstream help text saying values are joined with spaces.
+- `options.save` preserves an `OptionsError` from malformed existing YAML rather than converting it to a command
+  error. Filesystem failures are command errors with the `Could not save options - ` prefix.
+
 ## addon
 
 | Upstream | Go | Reason |

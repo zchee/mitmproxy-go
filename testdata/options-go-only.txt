@@ -1,3 +1,4 @@
+content_decode_limit	str	"256m"	Maximum size of a decoded HTTP body. Bodies exceeding this limit are treated as undecodable.
 local_redirector_path	str	""	Path to the local mode redirector. Empty means it is downloaded into the configuration directory on first use.
 otel_exporter_endpoint	str	""	OTLP endpoint that OpenTelemetry traces and metrics are exported to. Empty disables the exporter.
 pprof_addr	str	""	Serve net/http/pprof on this loopback address, for example 127.0.0.1:6060. Empty disables it.

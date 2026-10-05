@@ -581,3 +581,16 @@ TLS and protocol layers:
 | History text uses Python's default text-file encoding (`mitmproxy/addons/command_history.py:38,46,58`). | Uses strict UTF-8 on every platform. Windows writes retain Python's CRLF newline translation. | A portable, deterministic history-file encoding instead of a process-locale-dependent codec. |
 | Append and vacuum create files with mode 0666 under the process umask (`mitmproxy/addons/command_history.py:46,58`). | Creates new files with mode 0600; existing files keep their permissions. | History can contain sensitive command arguments. |
 | Failed writes and deletion log Python exception details (`mitmproxy/addons/command_history.py:48,61,76`). | Preserves `Failed writing to <path>:` and `Failed deleting <path>:` prefixes with Go filesystem details. | Diagnostics belong to the runtime in use. |
+
+## addons/clientplayback
+
+| Upstream | Go | Reason |
+|---|---|---|
+| The queue and file loads have no combined byte or flow-count bounds (`mitmproxy/addons/clientplayback.py:153,229,285,295`). | At most 100,000 requests are queued; one file-loading operation accepts at most 512 MiB and 100,000 flows. | Bound retained memory from replay commands and user-supplied files. |
+| Concurrency `-1` starts an unlimited number of replay tasks (`mitmproxy/addons/clientplayback.py:180-188`). | At most 256 replay requests are active simultaneously. | Bound sockets, goroutines and transport buffers. |
+| `replay.client.count` includes the queue and the one scheduler inflight flow, omitting concurrent tasks after launch (`mitmproxy/addons/clientplayback.py:193-194,240-245`). | Counts all queued and active requests until completion. | Keepserving must not shut down while concurrent replays remain active. |
+| Only live flows and the scheduler's current inflight flow are refused (`mitmproxy/addons/clientplayback.py:196-198`). | A flow already queued or active is skipped with `Can't replay live flow.` | Avoid simultaneous mutation of the same flow object by separate replay workers. |
+| HTTP/2 and HTTP/3 flows pass the replay check (`mitmproxy/addons/clientplayback.py:196-210`). | Refuses them with `Can't replay HTTP/2 flows: HTTP/2 is not supported yet.` or the corresponding HTTP/3 text. | Do not reinterpret unsupported protocol requests as HTTP/1; enable them when their protocol layers are available. |
+| `done` cancels the scheduler only (`mitmproxy/addons/clientplayback.py:166-172`). | Cancels all replay exchanges and joins their workers outside dispatch; synchronous addon removal cancels immediately but cannot join until dispatch is released. | Goroutines and their sockets must not outlive shutdown, and waiting under dispatch would deadlock completion hooks. |
+
+Replay API: `proxy.Replay` takes a `ReplayRunner` supplied as `httplayer.Replay` by the addon, rather than constructing a Python `ReplayHandler` (`mitmproxy/addons/clientplayback.py:85-143`). The explicit runner keeps the proxy package independent of the HTTP layer, whose integration tests import the proxy; hooks and pooled transport behavior are unchanged.

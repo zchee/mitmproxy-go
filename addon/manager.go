@@ -462,6 +462,9 @@ func (m *Manager) trigger(ctx context.Context, hook Hook) error {
 // synchronously, so that its handlers can never release the dispatch lock.
 // It decides by the hook's name, as the rest of the dispatch does, so that
 // a pointer to the hook, which is a [Hook] as well, is treated the same.
+// A hook type that embeds ConfigureHook or LoadHook but returns another
+// name from Name is therefore not synchronous, although it calls the same
+// handlers.
 func syncHook(hook Hook) bool {
 	switch hook.Name() {
 	case ConfigureHook{}.Name(), LoadHook{}.Name():

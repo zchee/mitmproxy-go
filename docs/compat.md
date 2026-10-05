@@ -477,3 +477,12 @@ TLS and protocol layers:
 | Upstream | Go | Reason |
 |---|---|---|
 | Reverse HTTPS opens TCP and UDP listeners (`mitmproxy/proxy/mode_servers.py`, `mitmproxy/proxy/mode_specs.py`). | Reverse HTTPS currently opens TCP listeners only. | The QUIC transport is not implemented yet. |
+
+## addons/proxyserver
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `configure` accepts every parseable proxy mode; backends without an implementation fail later, at listen time (`mitmproxy/addons/proxyserver.py`). | `configure` rejects modes whose server backend is not implemented with `Proxy mode <spec> is not supported by mitmproxy-go yet.` | Failing at configure time names the unsupported mode instead of starting a server that cannot serve it. |
+| `inject.websocket` and `inject.udp` commands (`mitmproxy/addons/proxyserver.py`). | Only `inject.tcp` is registered. | The WebSocket and UDP protocol layers are not implemented yet. |
+| `inject.tcp` only warns when the event cannot be delivered. | A full injection queue, an oversized message or a wrong message type is returned to the command caller as an error; only the non-TCP-flow and not-live warnings match upstream. | The bounded injection queue is a deliberate backpressure divergence, and its errors must reach the caller to be actionable. |
+| Transparent mode initialises platform redirection at configure time. | Transparent mode is rejected as unsupported. | Original-destination lookup is not implemented yet. |

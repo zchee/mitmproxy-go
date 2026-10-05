@@ -4,7 +4,6 @@
 package proxy
 
 import (
-	"errors"
 	"io"
 
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
@@ -12,10 +11,10 @@ import (
 
 // MaxRecordBytes bounds sniffed bytes and a single Peek request. A protocol
 // that needs more must stop recording before continuing to read.
-const MaxRecordBytes = 128 << 10
+const MaxRecordBytes = layer.MaxRecordBytes
 
 // ErrRecordSize reports a negative Peek size or an exhausted recording bound.
-var ErrRecordSize = errors.New("proxy: recording size limit exceeded")
+var ErrRecordSize = layer.ErrRecordSize
 
 // Record wraps c with bounded recording and replay. Call StopRecording at a
 // handover; a later handover may wrap the resulting connection again. Reads

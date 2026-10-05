@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	gocmp "github.com/google/go-cmp/cmp"
+
+	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 )
 
 type memoryConn struct {
@@ -61,7 +63,10 @@ func TestRecorderReplay(t *testing.T) {
 }
 
 func TestRecorderBound(t *testing.T) {
-	r := Record(memoryConn{input: bytes.NewReader(bytes.Repeat([]byte{'x'}, MaxRecordBytes+1))})
+	if MaxRecordBytes != layer.MaxRecordBytes || ErrRecordSize != layer.ErrRecordSize {
+		t.Fatal("driver and layer recording limits differ")
+	}
+	r := Record(memoryConn{input: bytes.NewReader(bytes.Repeat([]byte{'x'}, layer.MaxRecordBytes+1))})
 	if _, err := r.Peek(-1); !errors.Is(err, ErrRecordSize) {
 		t.Fatalf("negative peek: %v", err)
 	}
@@ -71,7 +76,7 @@ func TestRecorderBound(t *testing.T) {
 	if n, err := io.CopyN(io.Discard, r, MaxRecordBytes); err != nil || n != MaxRecordBytes {
 		t.Fatalf("read: %d, %v", n, err)
 	}
-	if _, err := r.Read(make([]byte, 1)); !errors.Is(err, ErrRecordSize) {
+	if _, err := r.Read(make([]byte, 1)); !errors.Is(err, layer.ErrRecordSize) {
 		t.Fatalf("over cap: %v", err)
 	}
 	r.StopRecording()

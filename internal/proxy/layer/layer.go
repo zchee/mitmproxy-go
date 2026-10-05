@@ -46,6 +46,7 @@ package layer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -312,6 +313,14 @@ type OpenOptions struct {
 // including Sockname when the connect_addr option selected a source address.
 // It must honor ctx cancellation. The pool owns and closes the returned conn.
 type Dialer func(ctx context.Context, server *connection.Server) (Conn, error)
+
+// MaxRecordBytes bounds recorded sniffing bytes and a single Peek request.
+// A protocol that needs more must stop recording before continuing to read.
+const MaxRecordBytes = 128 << 10
+
+// ErrRecordSize is returned or wrapped by a Recorder when lookahead or recording
+// exceeds its bound, or when Peek is called with a negative size.
+var ErrRecordSize = errors.New("proxy: recording size limit exceeded")
 
 // Recorder is a [Conn] that can record what is read from it and replay it,
 // so that bytes consumed while sniffing (the next-layer loop, the TLS

@@ -594,3 +594,10 @@ TLS and protocol layers:
 | `done` cancels the scheduler only (`mitmproxy/addons/clientplayback.py:166-172`). | Cancels all replay exchanges and joins their workers outside dispatch; synchronous addon removal cancels immediately but cannot join until dispatch is released. | Goroutines and their sockets must not outlive shutdown, and waiting under dispatch would deadlock completion hooks. |
 
 Replay API: `proxy.Replay` takes a `ReplayRunner` supplied as `httplayer.Replay` by the addon, rather than constructing a Python `ReplayHandler` (`mitmproxy/addons/clientplayback.py:85-143`). The explicit runner keeps the proxy package independent of the HTTP layer, whose integration tests import the proxy; hooks and pooled transport behavior are unchanged.
+## addons/modifybody
+
+| Upstream | Go | Reason |
+|---|---|---|
+| `@` replacement files have no size bound (`mitmproxy/addons/modifybody.py`, `modifyheaders.py`). | Uses modifyheaders' 16 MiB replacement-file limit; patterns and transformations use the bounds and engine differences listed under filter/regex. | Bound work under the addon dispatch lock. |
+| Replacing a missing streamed body raises `TypeError` (`mitmproxy/addons/modifybody.py:74-85`). | Missing bodies are left untouched. Invalid content encoding returns a hook error without changing the message. | Streamed bodies cannot be modified; preserve their absence. |
+| Invalid file and regex errors contain Python exception details (`mitmproxy/addons/modifybody.py:35-39`). | Retains upstream's prefixes, with details from Go's filesystem and shared Python-syntax compiler. | Diagnostics belong to the implementation in use. |

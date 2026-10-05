@@ -88,6 +88,7 @@ type singleByteReader struct {
 	buf [1]byte
 }
 
+// ReadByte reads exactly one byte from the underlying reader.
 func (s *singleByteReader) ReadByte() (byte, error) {
 	if _, err := io.ReadFull(s.r, s.buf[:]); err != nil {
 		return 0, err

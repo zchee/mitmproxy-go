@@ -322,6 +322,7 @@ var _ ServerEndpoint = (*lazyServer)(nil)
 // acknowledgement, before the driver accepts further request events.
 type acquisitionError struct{ message string }
 
+// Error returns the server connection acquisition failure message.
 func (e *acquisitionError) Error() string { return e.message }
 
 // Send implements [ServerEndpoint]. The first RequestHeaders acquires the
@@ -405,6 +406,7 @@ type prefixConn struct {
 	prefix []byte
 }
 
+// Read consumes buffered prefix bytes before reading the underlying connection.
 func (p *prefixConn) Read(b []byte) (int, error) {
 	p.mu.Lock()
 	if len(p.prefix) != 0 {

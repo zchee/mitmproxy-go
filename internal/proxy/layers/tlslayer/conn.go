@@ -44,6 +44,7 @@ func (c *tlsConn) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// CloseWrite sends TLS close_notify and half-closes the underlying transport.
 func (c *tlsConn) CloseWrite() error {
 	return errors.Join(c.Conn.CloseWrite(), c.raw.CloseWrite())
 }

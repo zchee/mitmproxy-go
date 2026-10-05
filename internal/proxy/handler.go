@@ -282,12 +282,14 @@ type halfCloseConn struct {
 	closeWrite func() error
 }
 
+// CloseWrite invokes the underlying connection's write-side close operation.
 func (c *halfCloseConn) CloseWrite() error { return c.closeWrite() }
 
 type noHalfCloseConn struct {
 	net.Conn
 }
 
+// CloseWrite reports that the underlying connection does not support half-closing.
 func (*noHalfCloseConn) CloseWrite() error { return ErrHalfCloseUnsupported }
 
 // asLayerConn adapts an accepted socket to [layer.Conn]. A transport

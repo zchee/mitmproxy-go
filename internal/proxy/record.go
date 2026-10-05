@@ -32,6 +32,7 @@ type recorder struct {
 	recording bool
 }
 
+// Read replays buffered bytes or reads and records new transport bytes.
 func (r *recorder) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
@@ -68,8 +69,10 @@ func (r *recorder) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// Buffered returns the number of unread bytes in the recording buffer.
 func (r *recorder) Buffered() int { return len(r.buf) - r.pos }
 
+// Peek buffers and returns the next n bytes without consuming them, subject to the recording limit.
 func (r *recorder) Peek(n int) ([]byte, error) {
 	if n < 0 || n > MaxRecordBytes {
 		return nil, ErrRecordSize
@@ -98,6 +101,7 @@ func (r *recorder) Peek(n int) ([]byte, error) {
 	return r.buf[r.pos : r.pos+n], nil
 }
 
+// StopRecording stops capturing new bytes and rewinds the buffer for replay.
 func (r *recorder) StopRecording() {
 	if r.recording {
 		r.recording = false

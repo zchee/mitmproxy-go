@@ -111,6 +111,7 @@ func upstreamIdentity(srv *connection.Server) upstreamKey {
 	return key
 }
 
+// Open establishes or reuses an origin connection through its configured upstream proxy.
 func (p *upstreamPool) Open(ctx context.Context, srv *connection.Server, opts layer.OpenOptions) (layer.Conn, *connection.Server, error) {
 	var snapshot *connection.Server
 	if err := p.c.Do(ctx, func(context.Context) error {
@@ -310,6 +311,7 @@ func (p *upstreamPool) await(ctx context.Context, entry *upstreamEntry) (layer.C
 	return entry.conn, entry.srv, nil
 }
 
+// Lookup returns the established pooled connection for an origin or direct server.
 func (p *upstreamPool) Lookup(srv *connection.Server) (layer.Conn, bool) {
 	p.mu.Lock()
 	entry := p.origins[srv]
@@ -344,6 +346,7 @@ func (p *upstreamPool) Lookup(srv *connection.Server) (layer.Conn, bool) {
 	return p.base.Lookup(entry.proxy)
 }
 
+// Upgrade applies setup once to a pooled origin connection and waits for the result.
 func (p *upstreamPool) Upgrade(ctx context.Context, srv *connection.Server, setup func(context.Context, layer.Conn, *connection.Server) (layer.Conn, error)) (layer.Conn, *connection.Server, error) {
 	if srv == nil || setup == nil {
 		return nil, nil, errors.New("proxy: Upgrade requires a pooled server and a setup")
@@ -484,13 +487,25 @@ func (c *upstreamConn) current() layer.Conn {
 	return c.conn
 }
 
-func (c *upstreamConn) Write(b []byte) (int, error)        { return c.current().Write(b) }
-func (c *upstreamConn) LocalAddr() net.Addr                { return c.current().LocalAddr() }
-func (c *upstreamConn) RemoteAddr() net.Addr               { return c.current().RemoteAddr() }
-func (c *upstreamConn) SetDeadline(t time.Time) error      { return c.current().SetDeadline(t) }
-func (c *upstreamConn) SetReadDeadline(t time.Time) error  { return c.current().SetReadDeadline(t) }
+// Write writes bytes to the current upstream connection.
+func (c *upstreamConn) Write(b []byte) (int, error) { return c.current().Write(b) }
+
+// LocalAddr returns the current upstream connection's local address.
+func (c *upstreamConn) LocalAddr() net.Addr { return c.current().LocalAddr() }
+
+// RemoteAddr returns the current upstream connection's remote address.
+func (c *upstreamConn) RemoteAddr() net.Addr { return c.current().RemoteAddr() }
+
+// SetDeadline sets both I/O deadlines on the current upstream connection.
+func (c *upstreamConn) SetDeadline(t time.Time) error { return c.current().SetDeadline(t) }
+
+// SetReadDeadline sets the read deadline on the current upstream connection.
+func (c *upstreamConn) SetReadDeadline(t time.Time) error { return c.current().SetReadDeadline(t) }
+
+// SetWriteDeadline sets the write deadline on the current upstream connection.
 func (c *upstreamConn) SetWriteDeadline(t time.Time) error { return c.current().SetWriteDeadline(t) }
 
+// Read reads upstream bytes and marks the logical server's read side closed on EOF.
 func (c *upstreamConn) Read(b []byte) (int, error) {
 	n, err := c.current().Read(b)
 	if errors.Is(err, io.EOF) {
@@ -503,6 +518,7 @@ func (c *upstreamConn) Read(b []byte) (int, error) {
 	return n, err
 }
 
+// Close closes the upstream connection and marks the logical server closed.
 func (c *upstreamConn) Close() error {
 	err := c.current().Close()
 	_ = c.c.Do(context.Background(), func(context.Context) error {
@@ -513,6 +529,7 @@ func (c *upstreamConn) Close() error {
 	return err
 }
 
+// CloseWrite closes the upstream write side and clears the logical server's write capability.
 func (c *upstreamConn) CloseWrite() error {
 	err := c.current().CloseWrite()
 	_ = c.c.Do(context.Background(), func(context.Context) error {

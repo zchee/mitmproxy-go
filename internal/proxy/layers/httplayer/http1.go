@@ -39,6 +39,7 @@ type pushbackReader struct {
 	r      io.Reader
 }
 
+// Read consumes pushed-back bytes before reading from the underlying reader.
 func (p *pushbackReader) Read(b []byte) (int, error) {
 	if len(p.prefix) != 0 {
 		n := copy(b, p.prefix)

@@ -216,10 +216,12 @@ type windowLimitError struct {
 	err   error
 }
 
+// Error describes the frame window bound and the configured decoding limit.
 func (e *windowLimitError) Error() string {
 	return fmt.Sprintf("frame window exceeds the bound of %d bytes for a limit of %d bytes", e.bound, e.limit)
 }
 
+// Unwrap exposes the size-limit sentinel and the underlying decoder error.
 func (e *windowLimitError) Unwrap() []error {
 	return []error{ErrSizeLimit, e.err}
 }

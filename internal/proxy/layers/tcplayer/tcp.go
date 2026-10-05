@@ -36,8 +36,10 @@ type tcpLayer struct {
 	flow *flow.TCPFlow
 }
 
+// Kind identifies this layer as a TCP relay.
 func (*tcpLayer) Kind() hookdata.LayerKind { return hookdata.LayerTCP }
 
+// Run relays both TCP directions and emits lifecycle hooks for captured flows.
 func (l *tcpLayer) Run(ctx context.Context, c *layer.Context) error {
 	if l.flow != nil {
 		if _, err := c.Hooks.Fire(ctx, addon.TCPStartHook{Flow: l.flow}); err != nil {

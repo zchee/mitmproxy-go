@@ -218,6 +218,7 @@ type optionValue struct {
 	opposite *optionValue
 }
 
+// String returns the flag's current value as text.
 func (v *optionValue) String() string {
 	switch value := v.value.(type) {
 	case nil:
@@ -231,8 +232,10 @@ func (v *optionValue) String() string {
 	}
 }
 
+// Type returns the flag's metavar for command-line help.
 func (v *optionValue) Type() string { return v.metavar }
 
+// Set validates and parses a flag value using its registered option type and choices.
 func (v *optionValue) Set(text string) error {
 	if v.option.Type() == options.TypeBool {
 		if text != "true" {
@@ -265,7 +268,10 @@ func (v *optionValue) Set(text string) error {
 // Cobra uses SliceValue to keep repeatable flags available in completions.
 type sequenceValue struct{ *optionValue }
 
+// Append validates and appends one value to the sequence flag.
 func (v *sequenceValue) Append(text string) error { return v.Set(text) }
+
+// Replace validates a replacement sequence and preserves the previous values on failure.
 func (v *sequenceValue) Replace(values []string) error {
 	previous := v.value
 	v.value = []string{}
@@ -278,6 +284,7 @@ func (v *sequenceValue) Replace(values []string) error {
 	return nil
 }
 
+// GetSlice returns a copy of the sequence flag's current values.
 func (v *sequenceValue) GetSlice() []string {
 	values, _ := v.value.([]string)
 	return slices.Clone(values)

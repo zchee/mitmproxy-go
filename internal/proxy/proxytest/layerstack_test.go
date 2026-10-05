@@ -104,6 +104,7 @@ func TestReverseRawTLSClientHTTPBytes(t *testing.T) {
 
 type connectionFinished struct{ done chan struct{} }
 
+// ClientDisconnected signals that the observed client connection has finished.
 func (c *connectionFinished) ClientDisconnected(context.Context, *connection.Client) error {
 	close(c.done)
 	return nil

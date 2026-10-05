@@ -94,12 +94,14 @@ type handler struct {
 	group     string
 }
 
+// Enabled reports whether startup error collection accepts the log level.
 func (h *handler) Enabled(_ context.Context, level slog.Level) bool {
 	h.collector.mu.Lock()
 	defer h.collector.mu.Unlock()
 	return level >= slog.LevelError && !h.collector.finished
 }
 
+// Handle collects an error record and its attributes until startup checking finishes.
 func (h *handler) Handle(ctx context.Context, record slog.Record) error {
 	if record.Level < slog.LevelError {
 		return nil
@@ -128,6 +130,7 @@ func (h *handler) Handle(ctx context.Context, record slog.Record) error {
 	return nil
 }
 
+// WithAttrs returns a handler that includes the attributes in collected errors.
 func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	clone := *h
 	clone.attrs = slices.Clone(h.attrs)
@@ -138,6 +141,7 @@ func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &clone
 }
 
+// WithGroup returns a handler that groups subsequent error attributes by name.
 func (h *handler) WithGroup(name string) slog.Handler {
 	if name == "" {
 		return h

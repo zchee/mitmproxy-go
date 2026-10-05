@@ -147,4 +147,5 @@ type limitedLDAPConn struct {
 	reader io.LimitedReader
 }
 
+// Read reads LDAP response bytes through the bounded reader.
 func (c *limitedLDAPConn) Read(p []byte) (int, error) { return c.reader.Read(p) }

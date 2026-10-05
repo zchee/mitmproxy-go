@@ -22,12 +22,14 @@ type fidelityLog struct {
 	buf bytes.Buffer
 }
 
+// Write appends log bytes while holding the buffer mutex.
 func (l *fidelityLog) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.buf.Write(p)
 }
 
+// String returns the collected log text while holding the buffer mutex.
 func (l *fidelityLog) String() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()

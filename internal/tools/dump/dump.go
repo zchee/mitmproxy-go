@@ -154,6 +154,7 @@ type fanoutHandler struct {
 	handlers []slog.Handler
 }
 
+// Enabled reports whether any destination handler accepts the log level.
 func (h *fanoutHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	for _, handler := range h.handlers {
 		if handler.Enabled(ctx, level) {
@@ -163,6 +164,7 @@ func (h *fanoutHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return false
 }
 
+// Handle sends a cloned record to each enabled destination and joins their errors.
 func (h *fanoutHandler) Handle(ctx context.Context, record slog.Record) error {
 	var errs []error
 	for _, handler := range h.handlers {
@@ -173,6 +175,7 @@ func (h *fanoutHandler) Handle(ctx context.Context, record slog.Record) error {
 	return errors.Join(errs...)
 }
 
+// WithAttrs returns a fanout handler with the attributes attached to every destination.
 func (h *fanoutHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	handlers := make([]slog.Handler, len(h.handlers))
 	for i, handler := range h.handlers {
@@ -181,6 +184,7 @@ func (h *fanoutHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &fanoutHandler{handlers: handlers}
 }
 
+// WithGroup returns a fanout handler with the named group applied to every destination.
 func (h *fanoutHandler) WithGroup(name string) slog.Handler {
 	handlers := make([]slog.Handler, len(h.handlers))
 	for i, handler := range h.handlers {

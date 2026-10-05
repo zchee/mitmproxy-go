@@ -112,6 +112,7 @@ func newClassExpr(set runeSet, text string) classExpr {
 	return e
 }
 
+// String returns the original character class text or the normalized rune set.
 func (c classExpr) String() string {
 	if c.text != "" {
 		return c.text

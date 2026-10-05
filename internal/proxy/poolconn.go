@@ -22,6 +22,7 @@ type poolConn struct {
 	stop  func()
 }
 
+// Read reads server bytes and records EOF or fatal transport failures in the pool.
 func (c *poolConn) Read(buf []byte) (int, error) {
 	n, err := c.Conn.Read(buf)
 	if errors.Is(err, io.EOF) {
@@ -32,6 +33,7 @@ func (c *poolConn) Read(buf []byte) (int, error) {
 	return n, err
 }
 
+// Write writes server bytes and retires the connection after fatal transport failures.
 func (c *poolConn) Write(buf []byte) (int, error) {
 	n, err := c.Conn.Write(buf)
 	if fatalTransportError(err) {
@@ -40,6 +42,7 @@ func (c *poolConn) Write(buf []byte) (int, error) {
 	return n, err
 }
 
+// CloseWrite half-closes the transport and updates its pooled connection state.
 func (c *poolConn) CloseWrite() error {
 	err := c.Conn.CloseWrite()
 	if fatalTransportError(err) {
@@ -63,6 +66,7 @@ func (c *poolConn) halfClose(direction connection.State) error {
 	return err
 }
 
+// Close closes the transport and retires its pool entry with disconnection notification.
 func (c *poolConn) Close() error {
 	if c.stop != nil {
 		c.stop()

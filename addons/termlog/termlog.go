@@ -93,10 +93,12 @@ type handler struct {
 	client string
 }
 
+// Enabled reports whether the log level meets the configured verbosity.
 func (h *handler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= h.log.level.Level()
 }
 
+// Handle formats an enabled record and writes it to the configured output.
 func (h *handler) Handle(ctx context.Context, record slog.Record) error {
 	if !h.Enabled(ctx, record.Level) {
 		return nil
@@ -143,6 +145,7 @@ func (h *handler) Handle(ctx context.Context, record slog.Record) error {
 	return nil
 }
 
+// WithAttrs returns a handler that includes the attributes in subsequent records.
 func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	clone := *h
 	var b strings.Builder
@@ -154,6 +157,7 @@ func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &clone
 }
 
+// WithGroup returns a handler that prefixes subsequent attribute names with the group.
 func (h *handler) WithGroup(name string) slog.Handler {
 	if name == "" {
 		return h

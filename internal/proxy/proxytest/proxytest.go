@@ -205,6 +205,7 @@ func Start(t testing.TB, opts ...Option) *Proxy {
 
 type startup struct{ ready chan struct{} }
 
+// Running signals that the proxy master has completed startup.
 func (s *startup) Running(context.Context) error { close(s.ready); return nil }
 
 func wait(t testing.TB, done <-chan struct{}, operation string) {

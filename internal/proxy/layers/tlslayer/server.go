@@ -158,6 +158,7 @@ type serverReplayConn struct {
 	reader io.Reader
 }
 
+// Read reads replayed server bytes before consuming the underlying transport.
 func (c *serverReplayConn) Read(b []byte) (int, error) { return c.reader.Read(b) }
 
 // Upgrade implements [layer.ServerPool].

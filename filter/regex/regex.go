@@ -409,10 +409,17 @@ type re2Matcher struct {
 	flags   Flags
 }
 
-func (m *re2Matcher) Match(b []byte) bool       { return m.re.Match(b) }
+// Match reports whether the byte slice matches the compiled RE2 expression.
+func (m *re2Matcher) Match(b []byte) bool { return m.re.Match(b) }
+
+// MatchString reports whether the string matches the compiled RE2 expression.
 func (m *re2Matcher) MatchString(s string) bool { return m.re.MatchString(s) }
-func (m *re2Matcher) Pattern() string           { return m.pattern }
-func (m *re2Matcher) Flags() Flags              { return m.flags }
+
+// Pattern returns the original regular expression text.
+func (m *re2Matcher) Pattern() string { return m.pattern }
+
+// Flags returns the flags used to compile the expression.
+func (m *re2Matcher) Flags() Flags { return m.flags }
 
 type backtrackMatcher struct {
 	re      *regexp2.Regexp
@@ -448,8 +455,10 @@ func MatchStringReportTimeout(m Matcher, s string, limit time.Duration) (matched
 	return matched && err == nil, err != nil
 }
 
+// Match reports whether the bytes match, treating a backtracking timeout as no match.
 func (m *backtrackMatcher) Match(b []byte) bool { return m.MatchString(string(b)) }
 
+// MatchString reports whether the string matches, logging backtracking failures as no match.
 func (m *backtrackMatcher) MatchString(s string) bool {
 	ok, err := m.re.MatchString(s)
 	if err != nil {
@@ -476,8 +485,11 @@ func timeoutError(s string) error {
 	return fmt.Errorf("match abandoned after %v on a %d-byte subject starting %q", MatchTimeout, len(s), prefix)
 }
 
+// Pattern returns the original regular expression text.
 func (m *backtrackMatcher) Pattern() string { return m.pattern }
-func (m *backtrackMatcher) Flags() Flags    { return m.flags }
+
+// Flags returns the flags used to compile the expression.
+func (m *backtrackMatcher) Flags() Flags { return m.flags }
 
 // IsBacktracking reports whether m runs on the regexp2 fallback engine.
 func IsBacktracking(m Matcher) bool {

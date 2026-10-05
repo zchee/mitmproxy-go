@@ -130,6 +130,7 @@ type activityConn struct {
 	watchdog *watchdog
 }
 
+// Read reads transport bytes and resets the watchdog when data is received.
 func (c *activityConn) Read(p []byte) (int, error) {
 	n, err := c.Conn.Read(p)
 	if n > 0 {
@@ -138,6 +139,7 @@ func (c *activityConn) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// Write writes transport bytes and resets the watchdog when data is sent.
 func (c *activityConn) Write(p []byte) (int, error) {
 	n, err := c.Conn.Write(p)
 	if n > 0 {

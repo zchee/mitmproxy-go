@@ -556,6 +556,7 @@ type panicError struct {
 	stack []byte
 }
 
+// Error returns the recovered panic value and its stack trace.
 func (e *panicError) Error() string { return fmt.Sprintf("panic: %v\n%s", e.value, e.stack) }
 
 // safeInvokeTree is invokeTree with a handler panic turned into an error.

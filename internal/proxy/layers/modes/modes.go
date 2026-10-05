@@ -52,8 +52,10 @@ func newMode(c *layer.Context, spec hookdata.LayerSpec, _ layer.Layer) (layer.La
 	return &mode{kind: spec.Kind}, nil
 }
 
+// Kind returns the proxy mode's registered layer kind.
 func (m *mode) Kind() hookdata.LayerKind { return m.kind }
 
+// Run opens an eager reverse connection when configured and runs the selected child layer.
 func (m *mode) Run(ctx context.Context, c *layer.Context) error {
 	if m.kind == hookdata.LayerReverse {
 		var server *connection.Server

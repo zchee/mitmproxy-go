@@ -108,6 +108,7 @@ func newServerPool(ctx context.Context, client *connection.Client, dial layer.Di
 	return &serverPool{ctx: ctx, cancel: cancel, client: client, dial: dial, hooks: hooks, do: do, closedDone: make(chan struct{})}
 }
 
+// Open establishes or reuses a server connection, sharing concurrent setup attempts.
 func (p *serverPool) Open(ctx context.Context, srv *connection.Server, opts layer.OpenOptions) (layer.Conn, *connection.Server, error) {
 	if srv == nil {
 		return nil, nil, errors.New("proxy: Open with a nil server")
@@ -396,6 +397,7 @@ func (p *serverPool) connectFailed(entry *poolEntry, cause error) error {
 	return errors.Join(cause, err)
 }
 
+// Upgrade applies setup once to a pooled connection and returns its wrapped transport.
 func (p *serverPool) Upgrade(ctx context.Context, srv *connection.Server, setup func(context.Context, layer.Conn, *connection.Server) (layer.Conn, error)) (layer.Conn, *connection.Server, error) {
 	if srv == nil || setup == nil {
 		return nil, nil, errors.New("proxy: Upgrade requires a pooled server and a setup")
@@ -460,6 +462,7 @@ func (p *serverPool) Upgrade(ctx context.Context, srv *connection.Server, setup 
 	return conn, entry.srv, nil
 }
 
+// Lookup returns a successfully established, live pooled connection without waiting.
 func (p *serverPool) Lookup(srv *connection.Server) (layer.Conn, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

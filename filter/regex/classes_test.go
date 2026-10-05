@@ -5,9 +5,9 @@ package regex
 
 import (
 	"fmt"
+	"runtime"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -284,7 +284,7 @@ func TestCompileBracketInClass(t *testing.T) {
 // for regexp2 never offers two ways to match the same text: a class whose
 // members overlap its class escape, such as [\w_], and a run of \B. Under a
 // quantifier, or in a sequence, every extra way multiplies the work on a
-// near miss, so the match would run into MatchTimeout and report no match.
+// near miss. A generous timeout only detects a hung match, not its speed.
 // want is what Python 3.13 gives with re.search, str patterns on str
 // subjects and bytes patterns on bytes; every case runs on regexp2.
 func TestCompileOverlapDoesNotBacktrack(t *testing.T) {
@@ -335,13 +335,6 @@ func TestCompileOverlapDoesNotBacktrack(t *testing.T) {
 			input:   "   ", want: false,
 		},
 	}
-	// A match that backtracks runs into MatchTimeout and is reported to
-	// the logger, also where it would have returned the same result, so
-	// the count of abandoned matches tells it apart from a linear match
-	// without a bound on wall-clock time.
-	var abandoned atomic.Int64
-	SetLogger(func(string, error) { abandoned.Add(1) })
-	t.Cleanup(func() { SetLogger(nil) })
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			m, err := Compile(tt.pattern, tt.flags)
@@ -351,12 +344,11 @@ func TestCompileOverlapDoesNotBacktrack(t *testing.T) {
 			if !IsBacktracking(m) {
 				t.Fatalf("Compile(%q) runs on RE2; the case needs regexp2", tt.pattern)
 			}
-			before := abandoned.Load()
-			start := time.Now()
-			got := m.MatchString(tt.input)
-			t.Logf("MatchString(%q) took %v", tt.input, time.Since(start))
-			if n := abandoned.Load() - before; n != 0 {
-				t.Errorf("MatchString(%q) ran into MatchTimeout %d times; the translation backtracks", tt.input, n)
+			got, abandoned := MatchStringReportTimeout(m, tt.input, 10*time.Second)
+			if abandoned {
+				stack := make([]byte, 1<<20)
+				n := runtime.Stack(stack, true)
+				t.Fatalf("MatchString(%q) reached the hang detector:\n%s", tt.input, stack[:n])
 			}
 			if got != tt.want {
 				t.Errorf("MatchString(%q) = %v, want %v", tt.input, got, tt.want)

@@ -218,7 +218,7 @@ func Compile(pattern string, flags Flags) (Matcher, error) {
 		return nil, fmt.Errorf("regex: cannot compile %q: %w", pattern, err)
 	}
 	re.MatchTimeout = MatchTimeout
-	return &backtrackMatcher{re: re, pattern: pattern, flags: eff}, nil
+	return &backtrackMatcher{re: re, pattern: pattern, flags: eff, options: opts}, nil
 }
 
 // compileRE2 compiles src with the standard regexp package, giving $ its
@@ -418,6 +418,34 @@ type backtrackMatcher struct {
 	re      *regexp2.Regexp
 	pattern string
 	flags   Flags
+	options regexp2.RegexOptions
+}
+
+// MatchStringReport searches s and reports whether the fallback engine abandoned
+// the match at MatchTimeout. Unlike Matcher.MatchString, it never calls Logger.
+// An RE2 match is never abandoned.
+func MatchStringReport(m Matcher, s string) (matched, abandoned bool) {
+	return MatchStringReportTimeout(m, s, MatchTimeout)
+}
+
+// MatchStringReportTimeout is MatchStringReport with a caller-selected fallback
+// limit. It never changes m's timeout, so concurrent calls remain independent.
+// The limit is ignored for RE2 and other Matcher implementations, which report
+// their MatchString result with abandoned false.
+func MatchStringReportTimeout(m Matcher, s string, limit time.Duration) (matched, abandoned bool) {
+	bt, ok := m.(*backtrackMatcher)
+	if !ok {
+		return m.MatchString(s), false
+	}
+	re := bt.re
+	if limit != MatchTimeout {
+		// Regexp contains a mutex and cannot be copied. Recompile its already
+		// validated source for custom limits rather than mutate shared state.
+		re = regexp2.MustCompile(bt.re.String(), bt.options)
+		re.MatchTimeout = limit
+	}
+	matched, err := re.MatchString(s)
+	return matched && err == nil, err != nil
 }
 
 func (m *backtrackMatcher) Match(b []byte) bool { return m.MatchString(string(b)) }

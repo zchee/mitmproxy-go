@@ -66,6 +66,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dlclark/regexp2"
 )
@@ -124,15 +125,25 @@ type Matcher interface {
 }
 
 // Logger receives the regexp2 matches that were abandoned because they ran
-// longer than MatchTimeout.
+// longer than MatchTimeout. err never holds the whole subject, which can be
+// a whole message body: it states the time limit, the subject's length and
+// at most its first subjectPrefixLen bytes, quoted.
 type Logger func(pattern string, err error)
+
+// subjectPrefixLen bounds how much of the subject an abandoned match
+// reports: enough to tell which message it was, little enough to keep the
+// log line short and the message body out of the log.
+const subjectPrefixLen = 64
 
 var logger atomic.Pointer[Logger]
 
 func init() {
-	SetLogger(func(pattern string, err error) {
-		slog.Warn("filter regex match abandoned", "pattern", pattern, "error", err)
-	})
+	SetLogger(warnTimeout)
+}
+
+// warnTimeout is the default Logger: a warning through log/slog.
+func warnTimeout(pattern string, err error) {
+	slog.Warn("filter regex match abandoned", "pattern", pattern, "error", err)
 }
 
 // SetLogger replaces the function that receives abandoned matches. A nil
@@ -398,10 +409,27 @@ func (m *backtrackMatcher) Match(b []byte) bool { return m.MatchString(string(b)
 func (m *backtrackMatcher) MatchString(s string) bool {
 	ok, err := m.re.MatchString(s)
 	if err != nil {
-		logTimeout(m.pattern, err)
+		// regexp2's error quotes the whole subject; report a bounded,
+		// escaped prefix instead.
+		logTimeout(m.pattern, timeoutError(s))
 		return false
 	}
 	return ok
+}
+
+// timeoutError describes a match on s that ran into MatchTimeout, with at
+// most the first subjectPrefixLen bytes of s, cut before a character that
+// would not fit.
+func timeoutError(s string) error {
+	prefix := s
+	if len(s) > subjectPrefixLen {
+		n := subjectPrefixLen
+		for n > 0 && !utf8.RuneStart(s[n]) {
+			n--
+		}
+		prefix = s[:n]
+	}
+	return fmt.Errorf("match abandoned after %v on a %d-byte subject starting %q", MatchTimeout, len(s), prefix)
 }
 
 func (m *backtrackMatcher) Pattern() string { return m.pattern }

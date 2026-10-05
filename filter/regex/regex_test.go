@@ -4,7 +4,10 @@
 package regex
 
 import (
+	"bytes"
 	"fmt"
+	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -475,6 +478,66 @@ func TestCatastrophicBacktrackingTimesOut(t *testing.T) {
 	defer mu.Unlock()
 	if diff := gocmp.Diff([]string{pattern}, logged); diff != "" {
 		t.Errorf("logged patterns mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestTimeoutReportOmitsSubject checks what an abandoned match reports: the
+// time limit, the subject's length and at most its first 64 bytes, quoted,
+// never the whole subject, which in a proxy can be a whole message body.
+// The log line of the default Logger stays short however long the subject.
+func TestTimeoutReportOmitsSubject(t *testing.T) {
+	const pattern = "(?=a)(a+)+$"
+	tests := map[string]struct {
+		subject string
+		want    string
+	}{
+		"success: a 1 MiB subject is cut to 64 bytes": {
+			subject: strings.Repeat("a", 1<<20) + "b",
+			want:    `match abandoned after 100ms on a 1048577-byte subject starting "` + strings.Repeat("a", 64) + `"`,
+		},
+		"success: the cut does not split a character": {
+			subject: strings.Repeat("a", 63) + "é" + strings.Repeat("a", 64) + "b",
+			want:    `match abandoned after 100ms on a 130-byte subject starting "` + strings.Repeat("a", 63) + `"`,
+		},
+		"success: control characters are escaped": {
+			subject: "\x1b[31m\n" + strings.Repeat("a", 64) + "b",
+			want:    `match abandoned after 100ms on a 71-byte subject starting "\x1b[31m\n` + strings.Repeat("a", 58) + `"`,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			m, err := Compile(pattern, 0)
+			if err != nil {
+				t.Fatalf("Compile(%q) error = %v", pattern, err)
+			}
+			var buf bytes.Buffer
+			old := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+			t.Cleanup(func() { slog.SetDefault(old) })
+			var got []error
+			SetLogger(func(p string, err error) {
+				got = append(got, err)
+				warnTimeout(p, err)
+			})
+			t.Cleanup(func() { SetLogger(nil) })
+
+			if m.MatchString(tt.subject) {
+				t.Fatalf("MatchString() = true, want false after timeout")
+			}
+			if len(got) != 1 {
+				t.Fatalf("logger called %d times, want 1", len(got))
+			}
+			if diff := gocmp.Diff(tt.want, got[0].Error()); diff != "" {
+				t.Errorf("reported error mismatch (-want +got):\n%s", diff)
+			}
+			line := buf.String()
+			if !strings.Contains(line, "level=WARN") || !strings.Contains(line, "pattern="+strconv.Quote(pattern)) {
+				t.Errorf("log line %q lacks the level or the pattern", line)
+			}
+			if len(line) > 512 {
+				t.Errorf("log line is %d bytes, want at most 512: %.200q", len(line), line)
+			}
+		})
 	}
 }
 

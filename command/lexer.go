@@ -121,9 +121,15 @@ func isSpace(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if !unicode.Is(unicode.White_Space, r) && (r < '\x1c' || r > '\x1f') {
+		if !isSpaceRune(r) {
 			return false
 		}
 	}
 	return true
+}
+
+// isSpaceRune reports whether Python's str.isspace() holds for the single
+// code point r. str.strip() trims these same code points.
+func isSpaceRune(r rune) bool {
+	return unicode.Is(unicode.White_Space, r) || ('\x1c' <= r && r <= '\x1f')
 }

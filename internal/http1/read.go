@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -42,7 +43,8 @@ func ReadRequestHead(r *bufio.Reader) (RequestHead, error) {
 		return RequestHead{}, err
 	}
 	req.TimestampStart = float64(time.Now().UnixNano()) / 1e9
-	return RequestHead{Request: req, Raw: raw, Consumed: len(raw), Target: target, wire: snapshotHead(raw, start, req.Headers, requestLine(req))}, nil
+	words := []byte(req.Method + " " + string(target) + " " + req.HTTPVersion)
+	return RequestHead{Request: req, Raw: raw, Consumed: len(raw), Target: target, wire: snapshotHead(raw, start, req.Headers, requestLine(req), words)}, nil
 }
 
 // ReadResponseHead reads a complete status line and header block. EOF, malformed
@@ -63,7 +65,9 @@ func ReadResponseHead(r *bufio.Reader) (ResponseHead, error) {
 		return ResponseHead{}, err
 	}
 	resp.TimestampStart = float64(time.Now().UnixNano()) / 1e9
-	return ResponseHead{Response: resp, Raw: raw, Consumed: len(raw), wire: snapshotHead(raw, start, resp.Headers, responseLine(resp))}, nil
+	canonical := responseLine(resp)
+	words := bytes.TrimSuffix(canonical, []byte("\r\n"))
+	return ResponseHead{Response: resp, Raw: raw, Consumed: len(raw), wire: snapshotHead(raw, start, resp.Headers, canonical, words)}, nil
 }
 
 func readHead(r *bufio.Reader, skipEmpty bool) ([]byte, [][]byte, int, error) {
@@ -246,9 +250,19 @@ func readResponseLine(line []byte) (*httpmsg.Response, error) {
 	return &httpmsg.Response{HTTPVersion: parts[0], StatusCode: code, Reason: remaining}, nil
 }
 
-func snapshotHead(raw []byte, start int, headers httpmsg.Headers, canonical []byte) wireHead {
+// snapshotHead records which wire bytes assembly may reuse. Bytes are reused
+// only where every recipient reads them as the proxy did: a start line whose
+// SP/HTAB-separated words equal the parsed words, and a field whose value is
+// the parsed value apart from surrounding SP/HTAB. Other whitespace the parser
+// accepted, such as VT, FF or a bare CR, is a spelling that stricter parsers
+// read differently, so such lines are re-emitted from the parsed values that
+// framed the message, as upstream always does.
+func snapshotHead(raw []byte, start int, headers httpmsg.Headers, canonical, words []byte) wireHead {
 	lineEnd := bytes.IndexByte(raw[start:], '\n') + start + 1
 	wire := wireHead{line: raw[:lineEnd], canonicalLine: canonical}
+	if !sameWords(trimLineEnd(raw[start:lineEnd]), words) {
+		wire.canonicalLine = nil
+	}
 	for rest := raw[lineEnd:]; len(rest) > 0; {
 		n := bytes.IndexByte(rest, '\n') + 1
 		line := rest[:n]
@@ -265,7 +279,7 @@ func snapshotHead(raw []byte, start int, headers httpmsg.Headers, canonical []by
 			joined := append([]byte{' '}, bytes.Trim(line, asciiWhitespace)...)
 			joined = append(joined, '\r', '\n')
 			if !bytes.Equal(line, joined) {
-				last.folds++
+				last.rewrites++
 			}
 			last.normalized = append(last.normalized, joined...)
 			last.raw = raw[len(raw)-len(rest)-len(line)-len(last.raw) : len(raw)-len(rest)]
@@ -274,5 +288,30 @@ func snapshotHead(raw []byte, start int, headers httpmsg.Headers, canonical []by
 			wire.fields = append(wire.fields, wireField{field: httpmsg.Field{Name: bytes.Clone(field.Name), Value: bytes.Clone(field.Value)}, raw: line})
 		}
 	}
+	// Folded fields are already re-emitted. The parsed value of a field is
+	// complete only after its continuation lines, hence the separate pass.
+	for i := range wire.fields {
+		field := &wire.fields[i]
+		if field.normalized != nil {
+			continue
+		}
+		_, value, _ := bytes.Cut(trimLineEnd(field.raw), []byte{':'})
+		if !bytes.Equal(bytes.Trim(value, " \t"), field.field.Value) {
+			field.normalized = appendField(nil, field.field)
+			field.rewrites = 1
+		}
+	}
 	return wire
+}
+
+// trimLineEnd removes the LF and at most one CR before it, as readHead does.
+func trimLineEnd(line []byte) []byte {
+	return bytes.TrimSuffix(bytes.TrimSuffix(line, []byte{'\n'}), []byte{'\r'})
+}
+
+// sameWords reports whether a and b hold the same words separated by runs of
+// SP or HTAB, the separators every HTTP/1 parser accepts.
+func sameWords(a, b []byte) bool {
+	isBlank := func(r rune) bool { return r == ' ' || r == '\t' }
+	return slices.EqualFunc(slices.Collect(bytes.FieldsFuncSeq(a, isBlank)), slices.Collect(bytes.FieldsFuncSeq(b, isBlank)), bytes.Equal)
 }

@@ -112,6 +112,66 @@ func TestLayerWireRoundTrips(t *testing.T) {
 	}
 }
 
+// TestLayerForwardsFramingInterpretation runs with validate_inbound_headers on.
+// The proxy frames each message by its parsed header values, so the peer must
+// receive those values, not wire bytes that a lenient parser read the same way
+// and a strict one would read differently.
+func TestLayerForwardsFramingInterpretation(t *testing.T) {
+	const okResponse = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+	tests := map[string]struct {
+		request, forward, response, delivered string
+	}{
+		"success: transfer encoding with form feed": {
+			request:   "POST http://example.com/ HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\f\r\n\r\n5\r\nhello\r\n0\r\n\r\n",
+			forward:   "POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n",
+			response:  okResponse,
+			delivered: okResponse,
+		},
+		"success: content length with vertical tab": {
+			request:   "POST http://example.com/ HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\v\r\n\r\nhello",
+			forward:   "POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhello",
+			response:  okResponse,
+			delivered: okResponse,
+		},
+		"success: content length with bare CR": {
+			request:   "POST http://example.com/ HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\r\n\r\nhello",
+			forward:   "POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhello",
+			response:  okResponse,
+			delivered: okResponse,
+		},
+		"success: request line with vertical tab": {
+			request:   "POST\v/ HTTP/1.1\r\nHost: example.com\r\nContent-Length: 0\r\n\r\n",
+			forward:   "POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 0\r\n\r\n",
+			response:  okResponse,
+			delivered: okResponse,
+		},
+		"success: chunk size line is re-framed": {
+			request:   "POST http://example.com/ HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n5;ext=1 \t\r\nhello\r\n0\r\n\r\n",
+			forward:   "POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n",
+			response:  okResponse,
+			delivered: okResponse,
+		},
+		"success: response framing with form feed": {
+			request:   "GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n",
+			forward:   "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n",
+			response:  "HTTP/1.1 200 OK\r\nContent-Length: 2\f\r\n\r\nok",
+			delivered: "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newLayerSession(t, nil)
+			s.start(hookdata.HTTPModeRegular)
+			write(t, s.client, tt.request)
+			origin := await(t, s.pool.origins)
+			expectRead(t, origin, tt.forward)
+			write(t, origin, tt.response)
+			expectRead(t, s.client, tt.delivered)
+			finishLayerSession(t, s, []string{"requestheaders", "request", "responseheaders", "response"})
+		})
+	}
+}
+
 func TestLayerRequestRejections(t *testing.T) {
 	tests := map[string]struct {
 		request, message string

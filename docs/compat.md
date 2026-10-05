@@ -320,7 +320,7 @@ invalid; an odd cipher suite length leaves its last byte to be read as the compr
 | Head lines have no separate limit (`mitmproxy/net/http/http1/read.py`). | `MaxLineBytes` limits each physical head line to 64 KiB including its newline; excess returns `ErrLineTooLong`. | Bound allocations before a line delimiter arrives. |
 | The number of header fields is unlimited (`mitmproxy/net/http/http1/read.py`). | `MaxHeaderFields` permits 10,000 logical fields per head; excess returns `ErrTooManyHeaders`. Continuations count toward byte limits, not as new fields. | Bound per-field metadata. |
 | An empty head is ignored until the next receive event (`mitmproxy/proxy/layers/http/_http1.py`, h11's receive buffer). | The blocking request-head reader skips leading empty lines in the same call. They count toward `MaxHeadBytes` and remain in `Raw` and `Consumed`. | A blocking reader has no receive-event boundary; it must continue to the request or EOF. |
-| Every assembled head uses canonical spaces and CRLF (`mitmproxy/net/http/http1/assemble.py`). | Passing the original head to assembly preserves unchanged raw start lines and fields. Obs-folded fields use upstream's joined value. No original means canonical assembly. | Preserve byte fidelity where the proxy need not rewrite a field. |
+| Every assembled head uses canonical spaces and CRLF (`mitmproxy/net/http/http1/assemble.py`). | Passing the original head to assembly preserves unchanged raw start lines and fields, including their SP/HTAB spacing and LF-only line endings. Obs-folded fields use upstream's joined value. A start line whose words are separated by other whitespace the parser accepts (VT, FF, bare CR) or whose status code is spelled differently from its integer, and a field whose value carries such whitespace around it, are re-emitted from the parsed values as upstream does. No original means canonical assembly. | Preserve byte fidelity where the proxy need not rewrite a field, but never forward a spelling a stricter parser reads differently from the values the proxy framed the message by. |
 | Status integers use Python's unbounded `int` (`mitmproxy/net/http/http1/read.py`). | Signs and digit separators are accepted, but the value must fit Go's `int` (64 bits on supported targets). | The shared response model stores an `int`. |
 | Malformed head input raises `ValueError` with its input repr (`mitmproxy/net/http/http1/read.py`). | The same detail follows an `ErrInvalidHead` prefix; transport truncation is `io.ErrUnexpectedEOF`, and clean EOF is `io.EOF`. | Callers can distinguish syntax, transport, and each resource limit with `errors.Is`. |
 | A chunk-size line permits 1–20 hexadecimal digits and unlimited extension bytes (h11 `_abnf.py`, `_readers.py`). | `MaxChunkLineBytes` caps the complete line at 4096 bytes, returning `ErrChunkLineTooLong`; numeric values beyond int64 are rejected. | Bound framing memory without allocating from the declared chunk size. |
@@ -329,10 +329,10 @@ invalid; an odd cipher suite length leaves its last byte to be read as the compr
 | Whole-message assembly requires non-missing `raw_content` (`mitmproxy/net/http/http1/assemble.py`). | Heads and bodies have separate APIs. `BodyWriter` consumes fragments, rejects excess declared-length data and checks completeness on `Close`; it never reads `RawContent`. | Stream without buffering an entire message or confusing absent content with an empty fragment. |
 
 `FidelityCounter` is per proxy and safe for concurrent use. Assembly records an altered start line, each normalized
-obs-fold continuation, a changed non-framing header block, and each changed framing-header family (`Content-Length`,
-`Transfer-Encoding`) separately. The framing families are excluded from the general header-block count. Unchanged
-raw bytes, generated heads without an original, and messages changed by an addon do not increment it; parsing never
-increments it.
+obs-fold continuation, each field re-emitted because its wire value carried whitespace other than SP and HTAB, a
+changed non-framing header block, and each changed framing-header family (`Content-Length`, `Transfer-Encoding`)
+separately. The framing families are excluded from the general header-block count. Unchanged raw bytes, generated
+heads without an original, and messages changed by an addon do not increment it; parsing never increments it.
 
 ## internal/proxy/layers/httplayer
 

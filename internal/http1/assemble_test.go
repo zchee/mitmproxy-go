@@ -62,6 +62,18 @@ func TestHeadFidelity(t *testing.T) {
 		"addon excluded":         {raw: "GET / HTTP/1.1\r\nX: one\r\n\ttwo\r\n\r\n", want: "GET /edited HTTP/1.1\r\nX: one\r\n two\r\n\r\n", addon: true, changePath: "/edited"},
 		"proxy target rewrite":   {raw: "GET / HTTP/1.1\r\nX:y\r\n\r\n", want: "GET /edited HTTP/1.1\r\nX:y\r\n\r\n", changePath: "/edited", count: 1},
 		"framing rewrite":        {raw: "GET / HTTP/1.1\r\nContent-Length: 1\r\nX:y\r\n\r\n", want: "GET / HTTP/1.1\r\nContent-Length: 2\r\nX:y\r\n\r\n", length: "2", count: 1},
+		// The proxy frames a message by the trimmed value, so a value whose
+		// wire bytes carry other trimmed whitespace leaves in the trimmed form.
+		"transfer encoding form feed":    {raw: "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\f\r\nX:y\r\n\r\n", want: "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\nX:y\r\n\r\n", count: 1},
+		"content length vertical tab":    {raw: "POST / HTTP/1.1\r\nContent-Length:\v5\v\r\nX:y\r\n\r\n", want: "POST / HTTP/1.1\r\nContent-Length: 5\r\nX:y\r\n\r\n", count: 1},
+		"content length bare CR":         {raw: "POST / HTTP/1.1\r\nContent-Length: 5\r\r\nX:y\r\n\r\n", want: "POST / HTTP/1.1\r\nContent-Length: 5\r\nX:y\r\n\r\n", count: 1},
+		"content length bare CR LF only": {raw: "POST / HTTP/1.1\nContent-Length: 5\r\r\nX:y\n\n", want: "POST / HTTP/1.1\nContent-Length: 5\r\nX:y\n\n", count: 1},
+		"other header control bytes":     {raw: "GET / HTTP/1.1\r\nX: \fone\v\r\nY: two \t\r\n\r\n", want: "GET / HTTP/1.1\r\nX: one\r\nY: two \t\r\n\r\n", count: 1},
+		"both framing families":          {raw: "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\f\r\nContent-Length: 5\v\r\n\r\n", want: "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\nContent-Length: 5\r\n\r\n", count: 2},
+		"request line vertical tab":      {raw: "GET\v/ HTTP/1.1\r\nX:y\r\n\r\n", want: "GET / HTTP/1.1\r\nX:y\r\n\r\n", count: 1},
+		"request line form feed":         {raw: "GET /\fHTTP/1.1\r\nX:y\r\n\r\n", want: "GET / HTTP/1.1\r\nX:y\r\n\r\n", count: 1},
+		"request line bare CR":           {raw: "GET / HTTP/1.1\r\r\nX:y\r\n\r\n", want: "GET / HTTP/1.1\r\nX:y\r\n\r\n", count: 1},
+		"request line tab kept":          {raw: "GET\t/ HTTP/1.1\r\nX:y\r\n\r\n", want: "GET\t/ HTTP/1.1\r\nX:y\r\n\r\n"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -77,6 +89,36 @@ func TestHeadFidelity(t *testing.T) {
 			}
 			var counter FidelityCounter
 			if got := string(AssembleRequestHead(head.Request, &head, tt.addon, &counter)); got != tt.want {
+				t.Fatalf("got %q want %q", got, tt.want)
+			}
+			if got := counter.Load(); got != tt.count {
+				t.Fatalf("normalizations=%d want %d", got, tt.count)
+			}
+		})
+	}
+}
+
+func TestResponseHeadFidelity(t *testing.T) {
+	tests := map[string]struct {
+		raw, want string
+		count     uint64
+	}{
+		"unchanged spacing":         {raw: "HTTP/1.1  200\tNot  Found\r\nX:y\r\n\r\n", want: "HTTP/1.1  200\tNot  Found\r\nX:y\r\n\r\n"},
+		"empty reason":              {raw: "HTTP/1.1 204\r\n\r\n", want: "HTTP/1.1 204\r\n\r\n"},
+		"Python integer status":     {raw: "HTTP/1.1 +0_204 No Content\r\n\r\n", want: "HTTP/1.1 204 No Content\r\n\r\n", count: 1},
+		"vertical tab separator":    {raw: "HTTP/1.1\v200 OK\r\n\r\n", want: "HTTP/1.1 200 OK\r\n\r\n", count: 1},
+		"control byte in reason":    {raw: "HTTP/1.1 200 O\vK\r\n\r\n", want: "HTTP/1.1 200 O\vK\r\n\r\n"},
+		"content length form feed":  {raw: "HTTP/1.1 200 OK\r\nContent-Length: 2\f\r\n\r\n", want: "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n", count: 1},
+		"transfer encoding bare CR": {raw: "HTTP/1.1 200 OK\nTransfer-Encoding: chunked\r\r\n\n", want: "HTTP/1.1 200 OK\nTransfer-Encoding: chunked\r\n\n", count: 1},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			head, err := ReadResponseHead(bufio.NewReader(strings.NewReader(tt.raw)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var counter FidelityCounter
+			if got := string(AssembleResponseHead(head.Response, &head, false, &counter)); got != tt.want {
 				t.Fatalf("got %q want %q", got, tt.want)
 			}
 			if got := counter.Load(); got != tt.count {

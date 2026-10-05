@@ -102,13 +102,16 @@ func (c *FidelityCounter) Load() uint64 {
 	return c.count.Load()
 }
 
+// A non-nil normalized means raw is not reused: the field is re-emitted from
+// its parsed value, and rewrites counts the normalizations that implies.
 type wireField struct {
 	field      httpmsg.Field
 	raw        []byte
 	normalized []byte
-	folds      uint64
+	rewrites   uint64
 }
 
+// A nil canonicalLine means the raw start line is never reused.
 type wireHead struct {
 	line          []byte
 	canonicalLine []byte

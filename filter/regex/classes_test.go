@@ -359,7 +359,8 @@ func TestCompileOverlapDoesNotBacktrack(t *testing.T) {
 
 // TestTranslateClassesLinear checks that the translation reads a pattern
 // in one pass. Looking ahead to the end of the pattern from every group
-// takes seconds on these 2 MB patterns; one pass takes milliseconds.
+// takes 6 s or more on these 2 MB patterns; one pass takes milliseconds,
+// and the bound leaves room for the race detector on a slow runner.
 func TestTranslateClassesLinear(t *testing.T) {
 	tests := map[string]struct {
 		unit string
@@ -376,7 +377,7 @@ func TestTranslateClassesLinear(t *testing.T) {
 			if _, err := translateClasses(body, Unicode, true, false); err != nil {
 				t.Fatalf("translateClasses() error = %v", err)
 			}
-			if elapsed := time.Since(start); elapsed > time.Second {
+			if elapsed := time.Since(start); elapsed > 3*time.Second {
 				t.Errorf("translateClasses() on %d bytes took %v; the scan is not linear", len(body), elapsed)
 			}
 		})

@@ -247,6 +247,51 @@ func TestDecodeLimitAllocations(t *testing.T) {
 	}
 }
 
+// TestDecodeLimitZstdWindowFloor checks the 8 MiB floor of the zstd bound:
+// a frame whose declared window lies above the limit but within 8 MiB, the
+// window RFC 9659 lets HTTP senders use, decodes when its content fits the
+// limit, and a frame whose window is above 8 MiB and above the limit is
+// refused. The frames carry no content size, so only the window can decide.
+func TestDecodeLimitZstdWindowFloor(t *testing.T) {
+	tests := map[string]struct {
+		window  int
+		size    int
+		limit   int64
+		refused bool
+	}{
+		"success: 1 MiB window under a 768 KiB limit": {window: 1 << 20, size: 512 << 10, limit: 768 << 10},
+		"success: 8 MiB window under a 4 MiB limit":   {window: 8 << 20, size: 2 << 20, limit: 4 << 20},
+		"error: 16 MiB window under a 4 MiB limit":    {window: 16 << 20, size: 2 << 20, limit: 4 << 20, refused: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			content := bytes.Repeat([]byte("mitmproxy zstd window floor "), tt.size/28+1)[:tt.size]
+			data := zstdStream(t, content, zstd.WithWindowSize(tt.window))
+			var h zstd.Header
+			if err := h.Decode(data); err != nil {
+				t.Fatalf("frame header: %v", err)
+			}
+			if h.HasFCS || h.SingleSegment || h.WindowSize != uint64(tt.window) {
+				t.Fatalf("frame header declares window %d (content size %v, single segment %v); want window %d without a content size", h.WindowSize, h.HasFCS, h.SingleSegment, tt.window)
+			}
+
+			got, err := DecodeLimit(data, "zstd", tt.limit)
+			if tt.refused {
+				if got != nil || !errors.Is(err, ErrSizeLimit) || !errors.Is(err, zstd.ErrWindowSizeExceeded) {
+					t.Errorf("DecodeLimit(limit %d) = %d bytes, %v; want no output and an error wrapping ErrSizeLimit and zstd.ErrWindowSizeExceeded", tt.limit, len(got), err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("DecodeLimit(limit %d) error: %v", tt.limit, err)
+			}
+			if !bytes.Equal(got, content) {
+				t.Errorf("DecodeLimit(limit %d) returned %d bytes that differ from the %d bytes encoded", tt.limit, len(got), len(content))
+			}
+		})
+	}
+}
+
 // zstdWideWindow is a zstd frame of 27 bytes whose header declares a 32 MiB
 // window without the single-segment flag: Decode accepts it, while
 // DecodeLimit refuses it for any limit below 32 MiB because the bound for

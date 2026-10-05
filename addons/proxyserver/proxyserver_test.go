@@ -36,8 +36,8 @@ import (
 )
 
 // Upstream test_proxyserver.py coverage:
-// test_start_stop: TestStartStop covers listener and connection lifetimes with TCP.
-// test_inject: TestInject uses a reverse TCP stream rather than HTTP CONNECT.
+// test_start_stop: TestStartStop covers TCP; proxytest.TestHTTPStartStop covers HTTP.
+// test_inject: TestInject covers reverse TCP; proxytest.TestCONNECTInjection covers CONNECT.
 // test_inject_fail: TestInjectFail covers TCP; WebSocket and UDP inject commands
 // require their unimplemented protocol layers. Go's command types reject strings.
 // test_warn_no_nextlayer: TestWarnNoNextLayer.

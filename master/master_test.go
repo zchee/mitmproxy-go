@@ -231,6 +231,89 @@ func TestRun(t *testing.T) {
 	}
 }
 
+// TestShutdownWithError stops Run through ShutdownWithError and checks
+// what Run returns: the first recorded error, wrapped in an ExitError when
+// it is not one already, never replaced by later calls or plain Shutdown.
+func TestShutdownWithError(t *testing.T) {
+	cause := errors.New("write stream file: no space left on device")
+	exit := &master.ExitError{Err: errors.New("already an exit error")}
+	tests := map[string]struct {
+		beforeRun bool // stop before Run starts instead of from running
+		stop      func(m *master.Master)
+		wantCause error // matched with errors.Is; nil means Run returns nil
+		wantSame  error // when set, Run must return exactly this error value
+	}{
+		"success: the cause is wrapped in an ExitError": {
+			stop:      func(m *master.Master) { m.ShutdownWithError(cause) },
+			wantCause: cause,
+		},
+		"success: the first error wins over later calls and Shutdown": {
+			stop: func(m *master.Master) {
+				m.ShutdownWithError(cause)
+				m.ShutdownWithError(errors.New("a later failure"))
+				m.Shutdown()
+			},
+			wantCause: cause,
+		},
+		"success: an ExitError is returned as it is": {
+			stop:      func(m *master.Master) { m.ShutdownWithError(exit) },
+			wantCause: exit,
+			wantSame:  exit,
+		},
+		"success: a nil error behaves as Shutdown": {
+			stop: func(m *master.Master) { m.ShutdownWithError(nil) },
+		},
+		"success: an error recorded before Run stops it at once": {
+			beforeRun: true,
+			stop:      func(m *master.Master) { m.ShutdownWithError(cause) },
+			wantCause: cause,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			r := &recorder{}
+			if !tt.beforeRun {
+				r.ran = make(chan struct{})
+			}
+			m := newMaster(t, r)
+			if tt.beforeRun {
+				tt.stop(m)
+			}
+			result := make(chan error, 1)
+			go func() { result <- m.Run(t.Context()) }()
+			if !tt.beforeRun {
+				within(t, "the running hook", func() { <-r.ran })
+				tt.stop(m)
+			}
+			var err error
+			within(t, "Run", func() { err = <-result })
+
+			if tt.wantCause == nil {
+				if err != nil {
+					t.Fatalf("Run error = %v, want nil", err)
+				}
+				return
+			}
+			if !errors.Is(err, tt.wantCause) {
+				t.Fatalf("Run error = %v, want it to match %v", err, tt.wantCause)
+			}
+			ex, ok := errors.AsType[*master.ExitError](err)
+			if !ok {
+				t.Fatalf("Run error = %v, want an ExitError", err)
+			}
+			if ex.ExitCode() != 1 {
+				t.Fatalf("ExitCode() = %d, want 1", ex.ExitCode())
+			}
+			if tt.wantSame != nil && err != tt.wantSame {
+				t.Fatalf("Run error = %#v, want the recorded ExitError unchanged", err)
+			}
+			if tt.beforeRun && slices.Contains(r.got(), "running") {
+				t.Error("running fired although the master was already shut down")
+			}
+		})
+	}
+}
+
 func TestNewDefaultsToCoreOptions(t *testing.T) {
 	m := master.New(master.Config{Logger: discard})
 	defer func() {

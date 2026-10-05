@@ -7,8 +7,10 @@ package master
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/command"
@@ -50,6 +52,7 @@ type Master struct {
 
 	shutdownOnce sync.Once
 	shutdown     chan struct{}
+	exitErr      atomic.Pointer[error]
 }
 
 // New returns a Master with no addons.
@@ -107,8 +110,10 @@ func (m *Master) Call(ctx context.Context, name string, args ...any) (any, error
 //
 // The done hook runs whenever running was invoked, even if it failed. Run
 // always closes the master, including on a pre-running startup failure, and
-// returns the first startup, running, done or Close error. Run must be called
-// outside dispatch and at most once per Master.
+// returns the first startup, running, done or Close error. When Run stops
+// because [Master.ShutdownWithError] recorded an error, it returns that
+// error, wrapped in an [*ExitError] when it is not one already. Run must be
+// called outside dispatch and at most once per Master.
 func (m *Master) Run(ctx context.Context) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -135,11 +140,11 @@ func (m *Master) Run(ctx context.Context) (err error) {
 		case <-ctx.Done():
 			cancel()
 			<-setup
-			return nil
+			return m.shutdownResult()
 		case <-m.shutdown:
 			cancel()
 			<-setup
-			return nil
+			return m.shutdownResult()
 		}
 		if ec != nil {
 			if err := ec.ShutdownIfErrored(ctx); err != nil {
@@ -149,9 +154,9 @@ func (m *Master) Run(ctx context.Context) (err error) {
 	}
 	select {
 	case <-ctx.Done():
-		return nil
+		return m.shutdownResult()
 	case <-m.shutdown:
-		return nil
+		return m.shutdownResult()
 	default:
 	}
 
@@ -177,7 +182,7 @@ func (m *Master) Run(ctx context.Context) (err error) {
 	case <-ctx.Done():
 	case <-m.shutdown:
 	}
-	return nil
+	return m.shutdownResult()
 }
 
 // Close stops firing configure for option changes, delivers the log
@@ -191,7 +196,36 @@ func (m *Master) Close(ctx context.Context) error {
 }
 
 // Shutdown asks [Master.Run] to stop. It may be called from any goroutine,
-// any number of times.
+// any number of times. It never replaces an error recorded by
+// [Master.ShutdownWithError].
 func (m *Master) Shutdown() {
 	m.shutdownOnce.Do(func() { close(m.shutdown) })
+}
+
+// ShutdownWithError asks [Master.Run] to stop and return err, the way a
+// fatal addon failure such as a stream-file write error must end the
+// process with exit status 1 instead of os.Exit. The first non-nil error
+// wins: later calls and [Master.Shutdown] never replace it. Run wraps the
+// recorded error in an [*ExitError] when it is not one already. A nil err
+// behaves as Shutdown. It may be called from any goroutine, any number of
+// times.
+func (m *Master) ShutdownWithError(err error) {
+	if err != nil {
+		m.exitErr.CompareAndSwap(nil, &err)
+	}
+	m.Shutdown()
+}
+
+// shutdownResult returns the error recorded by ShutdownWithError, wrapped
+// in an [*ExitError] when it is not one already, or nil.
+func (m *Master) shutdownResult() error {
+	p := m.exitErr.Load()
+	if p == nil {
+		return nil
+	}
+	err := *p
+	if _, ok := errors.AsType[*ExitError](err); ok {
+		return err
+	}
+	return &ExitError{Err: err}
 }

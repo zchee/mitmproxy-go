@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/zchee/mitmproxy-go/addon"
+	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/internal/http1"
@@ -43,6 +44,7 @@ type streamBody struct {
 type httpStream struct {
 	c        *layer.Context
 	id       StreamID
+	route    routeConfig
 	flow     *flow.HTTPFlow
 	snapshot *layer.Snapshot
 	request  streamBody
@@ -52,6 +54,9 @@ type httpStream struct {
 	responseHook bool
 	errorHook    bool
 	failed       bool
+	// connectEstablished reports the stream answered a CONNECT with a 2xx:
+	// the connection now belongs to a child protocol, not to HTTP.
+	connectEstablished bool
 }
 
 func (s *httpStream) done() bool {
@@ -106,6 +111,40 @@ func (s *httpStream) requestHeaders(ctx context.Context, event RequestHeaders) (
 		return streamOutput{}, err
 	}
 	s.request.headers = true
+
+	if message := validateRequest(s.route.mode, event.Request, s.route.validateInboundHeaders); message != "" {
+		// The head parsed, so handlers see the flow before the refusal, as
+		// upstream registers it with the requestheaders hook first.
+		var err error
+		s.snapshot, err = s.c.Hooks.FireFunc(ctx, func(context.Context) error {
+			s.flow.Request = event.Request
+			s.flow.Request.RawContent = nil
+			return nil
+		}, addon.RequestHeadersHook{Flow: s.flow})
+		if err != nil {
+			return streamOutput{}, err
+		}
+		return s.fail(ctx, message, RequestValidationFailed)
+	}
+	if event.Request.Method == "CONNECT" {
+		return s.handleConnect(ctx, event)
+	}
+	var clientTLS bool
+	var server connection.Server
+	if err := s.c.Do(ctx, func(context.Context) error {
+		clientTLS = s.c.Data.Client.TLS
+		server = *s.c.Data.Server
+		return nil
+	}); err != nil {
+		return streamOutput{}, err
+	}
+	if message := normalizeRequest(s.route, clientTLS, &server, event.Request); message != "" {
+		// Upstream refuses without registering the flow or firing hooks:
+		// nothing useful can be shown without a destination.
+		s.failed = true
+		return streamOutput{events: []Event{ResponseProtocolError{ID: s.id, Message: message, Code: DestinationUnknown}}}, nil
+	}
+
 	size, _ := http1.ExpectedBodySize(event.Request, nil)
 	tooLarge, stream, err := s.checkSize(size.Length)
 	if err != nil {

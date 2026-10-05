@@ -11,6 +11,13 @@ so that it is not mistaken for a port bug.
 
 Anything not listed here is meant to behave as upstream does; a difference that is not on this page is a bug.
 
+## internal/htpasswd
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| The UTF-8 password file has no size bound (`mitmproxy/utils/htpasswd.py`). | Files larger than 8 MiB are refused. | Bound memory used when loading configuration. |
+| A malformed bcrypt hash can raise from `check_password` (`mitmproxy/utils/htpasswd.py:81`); the authentication addon catches it. | `File.Check` returns false for malformed hashes. | The boolean checking API fails closed without requiring its caller to catch a parser error. |
+
 ## connection
 
 No behavioural differences.

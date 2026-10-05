@@ -4,6 +4,7 @@
 package httplayer
 
 import (
+	"context"
 	"errors"
 	"io"
 	"testing"
@@ -88,7 +89,11 @@ func TestLayerEarlyResponseKeepsUploadUntilOriginCloses(t *testing.T) {
 }
 
 func TestLayerUpgrade(t *testing.T) {
-	s := newLayerSession(t, nil, "connection_strategy=lazy")
+	s := newLayerSession(t, nil, "connection_strategy=lazy", "rawtcp=true")
+	observer := &upgradeObserver{}
+	if err := s.m.Do(t.Context(), func(ctx context.Context) error { return s.m.Addons.Add(ctx, observer) }); err != nil {
+		t.Fatal(err)
+	}
 	s.start(hookdata.HTTPModeRegular)
 	write(t, s.client, "GET http://origin.test/ HTTP/1.1\r\nConnection: Upgrade\r\nUpgrade: custom\r\n\r\nclient greeting")
 	origin := await(t, s.pool.origins)
@@ -109,5 +114,11 @@ func TestLayerUpgrade(t *testing.T) {
 	}
 	if err := await(t, s.done); err != nil {
 		t.Fatal(err)
+	}
+	if diff := gocmp.Diff([]string{"tcp_start", "tcp_end"}, observer.lifecycle); diff != "" {
+		t.Fatalf("upgrade lifecycle (-want +got):\n%s", diff)
+	}
+	if diff := gocmp.Diff(map[bool]string{true: "client greetinglater client bytes", false: "server greetinglater server bytes"}, observer.content); diff != "" {
+		t.Fatalf("upgrade message hooks (-want +got):\n%s", diff)
 	}
 }

@@ -126,12 +126,18 @@ func (l *httpLayer) Run(ctx context.Context, c *layer.Context) error {
 			return l.tunnel(ctx, c, client, stream)
 		}
 		if stream.snapshot != nil && stream.snapshot.Response != nil && stream.snapshot.Response.StatusCode == 101 {
+			if !c.Data.Options.Bool("rawtcp") {
+				if c.Logger != nil {
+					c.Logger.WarnContext(ctx, "Sent HTTP 101 response, but no protocol is enabled to upgrade to.")
+				}
+				// Retire both directions; the handler closes its owned transports
+				// when Run returns. Announce EOF after the completed response.
+				return c.Client.CloseWrite()
+			}
 			if endpoint, ok := server.endpoint.(*http1Client); ok {
 				c.Client = c.Record(prefixed(client.takeover(), client.conn))
 				c.Server = c.Record(prefixed(endpoint.takeover(), endpoint.conn))
-				// Non-HTTP upgrade bytes pass through unchanged; they are not a
-				// second HTTP exchange or a separately observed TCP flow.
-				child, err := layer.Build(ctx, c, hookdata.LayerStack{{Kind: hookdata.LayerTCP, Ignore: true}})
+				child, err := layer.Build(ctx, c, hookdata.LayerStack{{Kind: hookdata.LayerTCP}})
 				if err != nil {
 					return err
 				}

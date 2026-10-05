@@ -553,3 +553,12 @@ TLS and protocol layers:
 |---|---|---|
 | The constructor installs a process-global Python logging handler (`mitmproxy/addons/eventstore.py`). | Entries arrive through the master's existing `add_log` dispatch. | Embedders own logger composition; store mutation remains under the dispatch lock. |
 | Synchronous addition and refresh signals (`mitmproxy/addons/eventstore.py`). | Bounded event channels; overflow closes and removes the subscriber, which must resnapshot. Subscribe and cancel require the dispatch lock. | A slow frontend cannot block the dispatcher or retain an unbounded notification queue. |
+
+## addons/cut
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| `cut.save` creates files with mode 0666 under the process umask (`mitmproxy/addons/cut.py:125,136`). | New files are created with mode 0600; existing permissions are unchanged. | Extracted headers and bodies may contain credentials. |
+| `extract` traverses arbitrary Python attributes and formats arbitrary objects with `str` (`mitmproxy/addons/cut.py:48-72`). | Traverses the Go model's exported fields using Python-style names and its explicitly supported computed properties. Unknown attributes return empty text. Nonprimitive model objects use their Go text representation. | Go models do not carry dynamic Python instance attributes or bound Python methods. |
+| Clipboard support is always available to import; backend errors use pyperclip text (`mitmproxy/addons/cut.py:150-176`). | `cut.clip` is registered in every build. Without the `clipboard` tag it returns `cut.clip: clipboard support is not compiled in (build with -tags clipboard)`; tagged builds log clipboard-library failures. | Desktop clipboard support remains opt-in. |
+| File errors use Python's OS diagnostic text (`mitmproxy/addons/cut.py:147-148`). | Logs Go OS diagnostic text. | The runtime supplies filesystem diagnostics. |

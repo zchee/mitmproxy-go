@@ -114,6 +114,9 @@ func TestWatchdogTCPHookAndInterceptionIsolation(t *testing.T) {
 		}),
 	)
 	idle := dial(t, p.Addr)
+	// Finish the idle connection's startup hooks before another hook can hold
+	// dispatch; waiting for dispatch suspends that connection's watchdog.
+	awaitHook(t, p, "server_connected")
 	intercepted := dial(t, p.Addr)
 	if _, err := io.WriteString(intercepted, "intercepted"); err != nil {
 		t.Fatal(err)

@@ -202,6 +202,9 @@ func TestWatchdogHTTPHookAndInterceptionIsolation(t *testing.T) {
 	p := proxytest.Start(t, proxytest.WithOrigin("example.test", origin), proxytest.WithAddons(hooks), proxytest.WithOptions(map[string]any{"tcp_timeout": 1}))
 	t.Cleanup(release)
 	idle := dial(t, p.Addr)
+	// The silent HTTP client must finish its connection hook before another
+	// request holds dispatch and leaves this client's watchdog suspended.
+	awaitHook(t, p, "client_connected")
 	intercepted := dial(t, p.Addr)
 	if _, err := io.WriteString(intercepted, "GET http://example.test/intercepted HTTP/1.1\r\nHost: example.test\r\n\r\n"); err != nil {
 		t.Fatal(err)

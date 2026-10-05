@@ -228,6 +228,9 @@ func (c *http1Client) readWait(ctx context.Context, completed bool) error {
 
 		c.mu.Lock()
 		c.waiting = false
+		// A state-change kick can race a successful read. Clear it while
+		// holding mu so no expired deadline survives into the next exchange.
+		_ = c.conn.SetReadDeadline(time.Time{})
 		if n > 0 {
 			c.waitBuf = append(c.waitBuf, buf[:n]...)
 		}
@@ -251,7 +254,6 @@ func (c *http1Client) readWait(ctx context.Context, completed bool) error {
 			return err
 		case isTimeout(err):
 			// A kick: re-check the state with a cleared deadline.
-			_ = c.conn.SetReadDeadline(time.Time{})
 		case errors.Is(err, io.EOF):
 			if state == http1Pipe && !completed {
 				continue

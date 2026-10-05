@@ -341,7 +341,7 @@ func hasScannedEscape(pattern string) bool {
 			continue
 		}
 		i++
-		if c := pattern[i]; isShorthand(c) || c == 'b' || c == 'B' || c == 'u' || c == 'U' || foreignEscape(pattern, i-1) != nil {
+		if c := pattern[i]; isShorthand(c) || c == 'b' || c == 'B' || c == 'u' || c == 'U' || '1' <= c && c <= '9' || foreignEscape(pattern, i-1) != nil {
 			return true
 		}
 	}
@@ -354,7 +354,7 @@ func hasScannedEscape(pattern string) bool {
 // Python reads \x and then no hex digit.
 func foreignEscape(src string, i int) error {
 	switch e := src[i+1]; {
-	case e == 'p' || e == 'P':
+	case e == 'p' || e == 'P' || e == 'k':
 		return fmt.Errorf(`bad escape \%c`, e)
 	case e == 'x' && i+2 < len(src) && src[i+2] == '{':
 		return errors.New(`incomplete escape \x`)
@@ -447,6 +447,10 @@ type scope struct {
 	verbose bool
 	uni     bool // Unicode classes: a str pattern outside (?a)
 	start   int  // where the group opens in the regexp2 output
+	gid     int  // the number of a capturing group, or 0
+	// cond says that the group is a conditional, and bar that a | has
+	// been read at its own level.
+	cond, bar bool
 }
 
 // checkCharsetFlags checks the a, u and L letters of one inline flag group,
@@ -486,6 +490,139 @@ type classTranslator struct {
 	// atomic lists the offsets in bt where a possessive repeat's atomic
 	// group opens; see openAtomic.
 	atomic []int
+	// groups counts the capturing groups opened so far; open[gid] says
+	// that group gid has not been closed yet, and names maps a group name
+	// to its number. condRefs lists the group numbers that conditionals
+	// test, which Python checks once the whole pattern is read.
+	groups   int
+	open     []bool
+	names    map[string]int
+	condRefs []int
+}
+
+// openGroup numbers a new capturing group and marks it open.
+func (t *classTranslator) openGroup() int {
+	if t.open == nil {
+		t.open = []bool{false}
+	}
+	t.groups++
+	t.open = append(t.open, true)
+	return t.groups
+}
+
+// groupRef checks a backreference to group gid the way Python does: the
+// group must exist so far and be closed.
+func (t *classTranslator) groupRef(gid int) error {
+	switch {
+	case gid > t.groups:
+		return fmt.Errorf("invalid group reference %d", gid)
+	case t.open[gid]:
+		return errors.New("cannot refer to an open group")
+	}
+	return nil
+}
+
+// numberEscape reads the escape at src[i] that starts with a digit from 1
+// to 9 as Python does: three octal digits are an octal escape, otherwise
+// one or two digits are a group number. It returns the escape for regexp2,
+// which would read \10 as an octal escape where Python reads group 10.
+func (t *classTranslator) numberEscape(src string, i int) (string, int, error) {
+	isOctal := func(c byte) bool { return '0' <= c && c <= '7' }
+	j := i + 2
+	if j < len(src) && '0' <= src[j] && src[j] <= '9' {
+		j++
+		if isOctal(src[i+1]) && isOctal(src[i+2]) && j < len(src) && isOctal(src[j]) {
+			j++
+			v, _ := strconv.ParseUint(src[i+1:j], 8, 32)
+			if v > 0o377 {
+				return "", 0, fmt.Errorf("octal escape value %s outside of range 0-0o377", src[i:j])
+			}
+			return `\x{` + strconv.FormatUint(v, 16) + `}`, j, nil
+		}
+	}
+	gid, _ := strconv.Atoi(src[i+1 : j])
+	if err := t.groupRef(gid); err != nil {
+		return "", 0, err
+	}
+	return `\k<` + src[i+1:j] + `>`, j, nil
+}
+
+// groupName reads a group name that starts at src[i] and ends with term,
+// and returns it and the index after term, with Python's errors for a
+// missing terminator and an empty name.
+func groupName(src string, i int, term byte) (string, int, error) {
+	j := strings.IndexByte(src[i:], term)
+	switch {
+	case j < 0:
+		return "", 0, fmt.Errorf("missing %c, unterminated name", term)
+	case j == 0:
+		return "", 0, errors.New("missing group name")
+	}
+	return src[i : i+j], i + j + 1, nil
+}
+
+// checkGroupName rejects a group name Python rejects: one that is not an
+// identifier and, in a bytes pattern, one that is not ASCII.
+func checkGroupName(name string, str bool) error {
+	ascii := true
+	for i := range len(name) {
+		ascii = ascii && name[i] < utf8.RuneSelf
+	}
+	if !str && !ascii || !isIdentifier(name) {
+		return fmt.Errorf("bad character in group name %s", pyRepr(name, !str))
+	}
+	return nil
+}
+
+// isIdentifier approximates Python's str.isidentifier: a letter, letter
+// number or underscore, then also marks, digits and connector punctuation.
+// Python uses the XID properties, which leave out a few characters that
+// NFKC normalisation changes; Go's unicode package has no XID tables.
+func isIdentifier(s string) bool {
+	for i, r := range s {
+		start := r == '_' || unicode.In(r, unicode.L, unicode.Nl, unicode.Other_ID_Start)
+		if i == 0 && !start || i > 0 && !start && !unicode.In(r, unicode.Mn, unicode.Mc, unicode.Nd, unicode.Pc, unicode.Other_ID_Continue) {
+			return false
+		}
+		if unicode.In(r, unicode.Pattern_Syntax, unicode.Pattern_White_Space) {
+			return false
+		}
+	}
+	return s != ""
+}
+
+// pyRepr quotes s as Python's repr does, or as its ascii when ascii is
+// set, for the error messages that name a group.
+func pyRepr(s string, ascii bool) string {
+	quote := byte('\'')
+	if strings.Contains(s, "'") && !strings.Contains(s, `"`) {
+		quote = '"'
+	}
+	var b strings.Builder
+	b.WriteByte(quote)
+	for _, r := range s {
+		switch {
+		case r == rune(quote) || r == '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < ' ' || r == 0x7f || (ascii || !unicode.IsPrint(r)) && r >= utf8.RuneSelf && r <= 0xff:
+			fmt.Fprintf(&b, `\x%02x`, r)
+		case (ascii || !unicode.IsPrint(r)) && r > 0xff && r <= 0xffff:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		case (ascii || !unicode.IsPrint(r)) && r > 0xffff:
+			fmt.Fprintf(&b, `\U%08x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte(quote)
+	return b.String()
 }
 
 // translation is a pattern rewritten for each engine.
@@ -606,6 +743,16 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			}
 			atom = t.bt.Len()
 			switch e := src[i+1]; {
+			case '1' <= e && e <= '9':
+				text, end, err := t.numberEscape(src, i)
+				if err != nil {
+					return translation{}, err
+				}
+				t.re2.WriteString(src[i:end])
+				t.bt.WriteString(text)
+				t.re2OK = t.re2OK && strings.HasPrefix(text, `\x`)
+				i = end
+				continue
 			case e == 'u' || e == 'U':
 				text, end, err := codePointEscape(src, i, str)
 				if err != nil {
@@ -655,6 +802,92 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 				t.both("(?:)")
 			}
 			i = len(src) - len(rest)
+		case c == '(' && strings.HasPrefix(src[i:], "(?P="):
+			// A named backreference, which regexp2 spells \k<name>.
+			name, end, err := groupName(src, i+4, ')')
+			if err != nil {
+				return translation{}, err
+			}
+			if err := checkGroupName(name, str); err != nil {
+				return translation{}, err
+			}
+			gid, ok := t.names[name]
+			if !ok {
+				return translation{}, fmt.Errorf("unknown group name %s", pyRepr(name, !str))
+			}
+			if err := t.groupRef(gid); err != nil {
+				return translation{}, err
+			}
+			atom, open = t.bt.Len(), false
+			t.re2.WriteString(src[i:end])
+			t.bt.WriteString(`\k<` + name + `>`)
+			t.re2OK = false
+			i = end
+		case c == '(' && strings.HasPrefix(src[i:], "(?P<"):
+			// A named group, which regexp2 spells (?<name>...).
+			name, end, err := groupName(src, i+4, '>')
+			if err != nil {
+				return translation{}, err
+			}
+			if err := checkGroupName(name, str); err != nil {
+				return translation{}, err
+			}
+			if was, ok := t.names[name]; ok {
+				return translation{}, fmt.Errorf("redefinition of group name %s as group %d; was group %d", pyRepr(name, !str), t.groups+1, was)
+			}
+			if t.names == nil {
+				t.names = map[string]int{}
+			}
+			next := cur
+			next.start, next.gid, next.cond, next.bar = t.bt.Len(), t.openGroup(), false, false
+			t.names[name] = next.gid
+			stack = append(stack, next)
+			atom, open, header = -1, false, false
+			t.re2.WriteString(src[i:end])
+			t.bt.WriteString("(?<" + name + ">")
+			i = end
+		case c == '(' && strings.HasPrefix(src[i:], "(?("):
+			// A conditional on a group, by number or name. Python checks
+			// the numbers once the pattern is read, the names now.
+			cond, end, err := groupName(src, i+3, ')')
+			if err != nil {
+				return translation{}, err
+			}
+			if strings.Trim(cond, "0123456789") == "" {
+				gid, err := strconv.Atoi(cond)
+				switch {
+				case err != nil:
+					return translation{}, fmt.Errorf("invalid group reference %s", cond)
+				case gid == 0:
+					return translation{}, errors.New("bad group number")
+				}
+				t.condRefs = append(t.condRefs, gid)
+			} else {
+				if err := checkGroupName(cond, str); err != nil {
+					return translation{}, err
+				}
+				if _, ok := t.names[cond]; !ok {
+					return translation{}, fmt.Errorf("unknown group name %s", pyRepr(cond, !str))
+				}
+			}
+			next := cur
+			next.start, next.gid, next.cond, next.bar = t.bt.Len(), 0, true, false
+			stack = append(stack, next)
+			atom, open, header = -1, false, false
+			t.both(src[i:end])
+			i = end
+		case c == '(' && strings.HasPrefix(src[i:], "(?") && len(src) > i+2 && unknownExtension(src[i+2:]):
+			// Group syntax Python does not have, such as the (?<name>,
+			// (?'name' and (?| that regexp2 or RE2 would accept.
+			r, _ := utf8.DecodeRuneInString(src[i+2:])
+			if r == 'P' || r == '<' {
+				r2, _ := utf8.DecodeRuneInString(src[i+3:])
+				if i+3 >= len(src) {
+					return translation{}, errors.New("unexpected end of pattern")
+				}
+				return translation{}, fmt.Errorf("unknown extension ?%c%c", r, r2)
+			}
+			return translation{}, fmt.Errorf("unknown extension ?%c", r)
 		case c == '(':
 			if err := checkGlobalFlags(src[i:]); err != nil {
 				return translation{}, err
@@ -663,7 +896,10 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			if err != nil {
 				return translation{}, err
 			}
-			next.start = t.bt.Len()
+			next.start, next.gid, next.cond, next.bar = t.bt.Len(), 0, false, false
+			if !strings.HasPrefix(src[i+1:], "?") {
+				next.gid = t.openGroup()
+			}
 			stack = append(stack, next)
 			atom = -1
 			// Neither engine knows the a, u and L flags; drop them from
@@ -688,11 +924,23 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			i++
 		case c == ')':
 			atom, header = -1, false
+			closing := ")"
 			if len(stack) > 1 {
-				atom = stack[len(stack)-1].start
+				top := stack[len(stack)-1]
+				atom = top.start
+				if top.gid > 0 {
+					t.open[top.gid] = false
+				}
+				// regexp2 fails a conditional without a no branch where
+				// the yes branch cannot match, as in (a)?(?(1)b)c on "c";
+				// an explicit empty one behaves as Python's.
+				if top.cond && !top.bar {
+					closing = "|)"
+				}
 				stack = stack[:len(stack)-1]
 			}
-			t.both(")")
+			t.re2.WriteByte(')')
+			t.bt.WriteString(closing)
 			i++
 		case c == '#' && cur.verbose:
 			end := len(src)
@@ -709,6 +957,9 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			case cur.verbose && strings.IndexByte(" \t\n\r\v\f", c) >= 0:
 			case c == '|' || c == '^' || c == '$':
 				atom = -1
+				if c == '|' {
+					stack[len(stack)-1].bar = true
+				}
 			case utf8.RuneStart(c):
 				atom = t.bt.Len()
 			}
@@ -717,7 +968,25 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			i++
 		}
 	}
+	for _, gid := range t.condRefs {
+		if gid > t.groups {
+			return translation{}, fmt.Errorf("invalid group reference %d", gid)
+		}
+	}
 	return translation{re2: t.re2.String(), re2OK: t.re2OK, backtrack: openAtomic(t.bt.String(), t.atomic), unicodeBoundary: t.uniBoundary}, nil
+}
+
+// unknownExtension reports whether rest, the text after "(?", starts group
+// syntax Python does not have. Python knows (?P<name>, (?P=name), (?:, (?#,
+// (?=, (?!, (?<=, (?<!, (?(, (?> and the inline flags.
+func unknownExtension(rest string) bool {
+	switch {
+	case strings.HasPrefix(rest, "P"):
+		return !strings.HasPrefix(rest, "P<") && !strings.HasPrefix(rest, "P=")
+	case strings.HasPrefix(rest, "<"):
+		return !strings.HasPrefix(rest, "<=") && !strings.HasPrefix(rest, "<!")
+	}
+	return strings.IndexByte(":#=!(>aiLmsux-", rest[0]) < 0
 }
 
 // openAtomic returns s with (?> inserted at each offset in at, in one pass,

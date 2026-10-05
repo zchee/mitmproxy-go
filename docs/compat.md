@@ -100,6 +100,12 @@ Reproduced on purpose (compatibility, not differences):
   CPython defines them to be (`(?>a*)`), and atomic groups `(?>...)`, which `regexp2` runs as written. A `?` or `+` after
   a lazy or possessive suffix is `multiple repeat`, and a possessive repeat of nothing, of `^` or of `\b` is `nothing to
   repeat`, as in Python.
+- Python's named groups, backreferences and conditionals: `(?P<name>...)`, `(?P=name)`, `\N` with one or two digits
+  (three octal digits are an octal escape) and `(?(name)yes|no)`, with Python's errors for an unknown, open, missing or
+  redefined group and a name that is not an identifier, and `unknown extension` for the group syntax only the Go engines
+  know, such as `(?<name>...)` and `(?'name'...)`. A group name is checked with Go's Unicode letter, mark, digit and
+  connector categories, where Python uses the XID properties; they differ only on a few characters that NFKC
+  normalisation changes.
 - pyparsing's grammar as mitmproxy uses it: `a&b` is one bare word, expressions side by side inside parentheses are an
   error, tabs are expanded before parsing, and an operator name must be followed by whitespace, a non-ASCII character
   or the end of the input.

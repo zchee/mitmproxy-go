@@ -59,6 +59,12 @@
 //     atomic group (?>a*), which is how CPython defines it, and the
 //     pattern goes to regexp2: RE2 has neither form, and regexp2 has
 //     atomic groups but reads *+ as two repeats.
+//   - Python's named group (?P<name>...), named backreference (?P=name)
+//     and numbered backreference \N become regexp2's (?<name>...),
+//     \k<name> and \k<N>: regexp2 rejects the first two and reads \10 as
+//     an octal escape where Python reads group 10. A conditional without
+//     a no branch gets an empty one, which regexp2 needs to match as
+//     Python does.
 //
 // A known difference that is not translated: Python's bytes patterns treat
 // input as Latin-1 bytes and fold case for ASCII only, while both Go engines

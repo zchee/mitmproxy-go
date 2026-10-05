@@ -382,51 +382,74 @@ func TestCompilePythonRejects(t *testing.T) {
 		pattern string
 		wantErr string
 	}{
-		"error: ? after a comment after *":         {pattern: `a*(?#c)?`, wantErr: "multiple repeat"},
-		"error: ? after a comment after {n}":       {pattern: `a{2}(?#c)?`, wantErr: "multiple repeat"},
-		"error: ? after a comment after ?":         {pattern: `a?(?#c)?`, wantErr: "multiple repeat"},
-		"error: ? after a comment after a lazy *":  {pattern: `a*?(?#c)?`, wantErr: "multiple repeat"},
-		"error: ? after two comments":              {pattern: `a*(?#c)(?#d)?`, wantErr: "multiple repeat"},
-		"error: {,} after a comment":               {pattern: `a*(?#c){,}`, wantErr: "multiple repeat"},
-		"error: repeat of an escaped backslash":    {pattern: `\\*(?#c)?`, wantErr: "multiple repeat"},
-		"error: * after a comment after a comment": {pattern: `a(?#c)*(?#d)?`, wantErr: "multiple repeat"},
-		"error: ? after verbose whitespace":        {pattern: `(?x)a* ?`, wantErr: "multiple repeat"},
-		"error: ? after a verbose comment":         {pattern: "(?x)a*#c\n?", wantErr: "multiple repeat"},
-		"error: ? after a comment and whitespace":  {pattern: `(?x)a* (?#c) ?`, wantErr: "multiple repeat"},
-		"error: {n} after verbose whitespace":      {pattern: `(?x)a{2} ?`, wantErr: "multiple repeat"},
-		"error: scoped verbose whitespace":         {pattern: `(?x:a* ?)`, wantErr: "multiple repeat"},
-		"error: \\x{...}":                          {pattern: `\x{41}`, wantErr: `incomplete escape \x`},
-		"error: \\x{...} in a class":               {pattern: `[\x{41}]`, wantErr: `incomplete escape \x`},
-		"error: \\x{...} in a class with \\w":      {pattern: `[\w\x{41}]`, wantErr: `incomplete escape \x`},
-		"error: \\p{...}":                          {pattern: `\p{L}`, wantErr: `bad escape \p`},
-		"error: \\p{...} in a class with \\d":      {pattern: `[\d\p{L}]`, wantErr: `bad escape \p`},
-		"error: \\P{...} in a class":               {pattern: `[\P{L}]`, wantErr: `bad escape \P`},
-		"error: minimum above maximum":             {pattern: `a{2,1}`, wantErr: "min repeat greater than max repeat"},
-		"error: suffix after a lazy suffix":        {pattern: `a*?+`, wantErr: "multiple repeat"},
-		"error: suffix after a possessive suffix":  {pattern: `a*++`, wantErr: "multiple repeat"},
-		"error: lazy after possessive":             {pattern: `a*+?`, wantErr: "multiple repeat"},
-		"error: possessive after lazy +":           {pattern: `a+?+`, wantErr: "multiple repeat"},
-		"error: possessive after lazy {n}":         {pattern: `a{2}?+`, wantErr: "multiple repeat"},
-		"error: braces after a star":               {pattern: `a*{2}`, wantErr: "multiple repeat"},
-		"error: possessive at the start":           {pattern: `*+`, wantErr: "nothing to repeat"},
-		"error: possessive opening a group":        {pattern: `(*+)`, wantErr: "nothing to repeat"},
-		"error: possessive after a bar":            {pattern: `a|*+`, wantErr: "nothing to repeat"},
-		"error: possessive after \\b":              {pattern: `\b*+`, wantErr: "nothing to repeat"},
-		"error: possessive after ^":                {pattern: `^*+`, wantErr: "nothing to repeat"},
-		"error: \\p without braces in a class":     {pattern: `[\pL]`, wantErr: `bad escape \p`},
-		"success: comment before a quantifier":     {pattern: `a(?#c)?`},
-		"success: lazy quantifiers":                {pattern: `a*?b+?`},
-		"success: comments without a quantifier":   {pattern: `a*(?#c)(?#d)`},
-		"success: escaped star before a comment":   {pattern: `a\*(?#c)?`},
-		"success: group before a comment":          {pattern: `(?:a*)(?#c)?`},
-		"success: class before a comment":          {pattern: `[a*](?#c)?`},
-		"success: literal brace after a comment":   {pattern: `a*(?#c){x`},
-		"success: empty braces after a comment":    {pattern: `a*(?#c){}`},
-		"success: open brace after a comment":      {pattern: `a*(?#c){1,`},
-		"success: verbose whitespace before {n}":   {pattern: `(?x)a {2}`},
-		"success: optional open paren":             {pattern: `\(?a`},
-		"success: escaped p and x":                 {pattern: `\\p\\x{41}`},
-		"success: \\x with two digits":             {pattern: `[\x41]\x41`},
+		"error: ? after a comment after *":               {pattern: `a*(?#c)?`, wantErr: "multiple repeat"},
+		"error: ? after a comment after {n}":             {pattern: `a{2}(?#c)?`, wantErr: "multiple repeat"},
+		"error: ? after a comment after ?":               {pattern: `a?(?#c)?`, wantErr: "multiple repeat"},
+		"error: ? after a comment after a lazy *":        {pattern: `a*?(?#c)?`, wantErr: "multiple repeat"},
+		"error: ? after two comments":                    {pattern: `a*(?#c)(?#d)?`, wantErr: "multiple repeat"},
+		"error: {,} after a comment":                     {pattern: `a*(?#c){,}`, wantErr: "multiple repeat"},
+		"error: repeat of an escaped backslash":          {pattern: `\\*(?#c)?`, wantErr: "multiple repeat"},
+		"error: * after a comment after a comment":       {pattern: `a(?#c)*(?#d)?`, wantErr: "multiple repeat"},
+		"error: ? after verbose whitespace":              {pattern: `(?x)a* ?`, wantErr: "multiple repeat"},
+		"error: ? after a verbose comment":               {pattern: "(?x)a*#c\n?", wantErr: "multiple repeat"},
+		"error: ? after a comment and whitespace":        {pattern: `(?x)a* (?#c) ?`, wantErr: "multiple repeat"},
+		"error: {n} after verbose whitespace":            {pattern: `(?x)a{2} ?`, wantErr: "multiple repeat"},
+		"error: scoped verbose whitespace":               {pattern: `(?x:a* ?)`, wantErr: "multiple repeat"},
+		"error: \\x{...}":                                {pattern: `\x{41}`, wantErr: `incomplete escape \x`},
+		"error: \\x{...} in a class":                     {pattern: `[\x{41}]`, wantErr: `incomplete escape \x`},
+		"error: \\x{...} in a class with \\w":            {pattern: `[\w\x{41}]`, wantErr: `incomplete escape \x`},
+		"error: \\p{...}":                                {pattern: `\p{L}`, wantErr: `bad escape \p`},
+		"error: \\p{...} in a class with \\d":            {pattern: `[\d\p{L}]`, wantErr: `bad escape \p`},
+		"error: \\P{...} in a class":                     {pattern: `[\P{L}]`, wantErr: `bad escape \P`},
+		"error: unknown group before its definition":     {pattern: `(?P=n)(?P<n>a)`, wantErr: "unknown group name 'n'"},
+		"error: unknown group name":                      {pattern: `(?P<n>a)(?P=m)`, wantErr: "unknown group name 'm'"},
+		"error: unterminated backreference name":         {pattern: `(?P<n>a)(?P=n`, wantErr: "missing ), unterminated name"},
+		"error: unterminated group name":                 {pattern: `(?P<n`, wantErr: "missing >, unterminated name"},
+		"error: empty backreference name":                {pattern: `(?P<n>a)(?P=)`, wantErr: "missing group name"},
+		"error: empty group name":                        {pattern: `(?P<>a)`, wantErr: "missing group name"},
+		"error: digit as a backreference name":           {pattern: `(?P<n>a)(?P=1)`, wantErr: "bad character in group name '1'"},
+		"error: name starting with a digit":              {pattern: `(?P<1n>a)`, wantErr: "bad character in group name '1n'"},
+		"error: unknown name in a conditional":           {pattern: `(?P<n>a)?(?(m)b|c)`, wantErr: "unknown group name 'm'"},
+		"error: conditional on a missing group":          {pattern: `(a)?(?(2)b|c)`, wantErr: "invalid group reference 2"},
+		"error: conditional on group 1 of none":          {pattern: `(?(1)a)`, wantErr: "invalid group reference 1"},
+		"error: conditional on group 0":                  {pattern: `(a)(?(0)b)`, wantErr: "bad group number"},
+		"error: lookahead as a condition":                {pattern: `(?(?=a)a|b)`, wantErr: "bad character in group name '?=a'"},
+		"error: redefined group name":                    {pattern: `(?P<n>a)(?P<n>b)`, wantErr: "redefinition of group name 'n' as group 2; was group 1"},
+		"error: named backreference to an open group":    {pattern: `(?P<n>(?P=n)a)`, wantErr: "cannot refer to an open group"},
+		"error: numbered backreference to an open group": {pattern: `((.)\1+)`, wantErr: "cannot refer to an open group"},
+		"error: backreference to a missing group":        {pattern: `((((((((((a))))))))))\41`, wantErr: "invalid group reference 41"},
+		"error: forward backreference":                   {pattern: `\2(a)(b)`, wantErr: "invalid group reference 2"},
+		"error: octal escape out of range":               {pattern: `\477`, wantErr: "octal escape value \\477 outside of range 0-0o377"},
+		"error: unknown extension ?P":                    {pattern: `(?Px)`, wantErr: "unknown extension ?Px"},
+		"error: named group without P":                   {pattern: `(?<n>a)`, wantErr: "unknown extension ?<n"},
+		"error: quoted group name":                       {pattern: `(?'n'a)`, wantErr: "unknown extension ?'"},
+		"error: backreference spelled \\k":               {pattern: `(?P<n>a)\k<n>`, wantErr: "bad escape \\k"},
+		"error: minimum above maximum":                   {pattern: `a{2,1}`, wantErr: "min repeat greater than max repeat"},
+		"error: suffix after a lazy suffix":              {pattern: `a*?+`, wantErr: "multiple repeat"},
+		"error: suffix after a possessive suffix":        {pattern: `a*++`, wantErr: "multiple repeat"},
+		"error: lazy after possessive":                   {pattern: `a*+?`, wantErr: "multiple repeat"},
+		"error: possessive after lazy +":                 {pattern: `a+?+`, wantErr: "multiple repeat"},
+		"error: possessive after lazy {n}":               {pattern: `a{2}?+`, wantErr: "multiple repeat"},
+		"error: braces after a star":                     {pattern: `a*{2}`, wantErr: "multiple repeat"},
+		"error: possessive at the start":                 {pattern: `*+`, wantErr: "nothing to repeat"},
+		"error: possessive opening a group":              {pattern: `(*+)`, wantErr: "nothing to repeat"},
+		"error: possessive after a bar":                  {pattern: `a|*+`, wantErr: "nothing to repeat"},
+		"error: possessive after \\b":                    {pattern: `\b*+`, wantErr: "nothing to repeat"},
+		"error: possessive after ^":                      {pattern: `^*+`, wantErr: "nothing to repeat"},
+		"error: \\p without braces in a class":           {pattern: `[\pL]`, wantErr: `bad escape \p`},
+		"success: comment before a quantifier":           {pattern: `a(?#c)?`},
+		"success: lazy quantifiers":                      {pattern: `a*?b+?`},
+		"success: comments without a quantifier":         {pattern: `a*(?#c)(?#d)`},
+		"success: escaped star before a comment":         {pattern: `a\*(?#c)?`},
+		"success: group before a comment":                {pattern: `(?:a*)(?#c)?`},
+		"success: class before a comment":                {pattern: `[a*](?#c)?`},
+		"success: literal brace after a comment":         {pattern: `a*(?#c){x`},
+		"success: empty braces after a comment":          {pattern: `a*(?#c){}`},
+		"success: open brace after a comment":            {pattern: `a*(?#c){1,`},
+		"success: verbose whitespace before {n}":         {pattern: `(?x)a {2}`},
+		"success: optional open paren":                   {pattern: `\(?a`},
+		"success: escaped p and x":                       {pattern: `\\p\\x{41}`},
+		"success: \\x with two digits":                   {pattern: `[\x41]\x41`},
 	}
 	for name, tt := range tests {
 		for _, mode := range []Flags{0, Unicode} {
@@ -575,6 +598,62 @@ func TestCompilePossessive(t *testing.T) {
 				}
 				if got := IsBacktracking(m); got == tt.re2 {
 					t.Errorf("IsBacktracking(Compile(%q)) = %v, want %v", tt.pattern, got, !tt.re2)
+				}
+				for _, p := range tt.probes {
+					if got := m.MatchString(p.input); got != p.want {
+						t.Errorf("Compile(%q).MatchString(%q) = %v, want %v", tt.pattern, p.input, got, p.want)
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestCompileGroupReferences checks Python's named groups, named and
+// numbered backreferences and conditionals against Python 3.13's
+// re.search. regexp2 spells a named group (?<name>...) and a named
+// backreference \k<name>, and reads \10 as an octal escape where Python
+// reads group 10. strOnly rows hold a non-ASCII name, which a bytes pattern
+// rejects.
+func TestCompileGroupReferences(t *testing.T) {
+	type probe struct {
+		input string
+		want  bool
+	}
+	tests := map[string]struct {
+		pattern string
+		probes  []probe
+		strOnly bool
+	}{
+		"success: named backreference":               {pattern: `(?P<n>a)(?P=n)`, probes: []probe{{"aa", true}, {"ab", false}}},
+		"success: named backreference after text":    {pattern: `(?P<n>a)x(?P=n)`, probes: []probe{{"axa", true}, {"axb", false}}},
+		"success: repeated named backreference":      {pattern: `(?P<n>a)(?P=n)+`, probes: []probe{{"aaa", true}}},
+		"success: backreference in a flag group":     {pattern: `(?P<n>a|b)(?i:(?P=n))`, probes: []probe{{"aA", true}, {"ab", false}}},
+		"success: name with digits":                  {pattern: `(?P<n1>a)(?P=n1)`, probes: []probe{{"aa", true}}},
+		"success: number of a named group":           {pattern: `(?P<n>a)\1`, probes: []probe{{"aa", true}}},
+		"success: numbered and named":                {pattern: `(a)(?P<b>b)\2(?P=b)`, probes: []probe{{"abbb", true}}},
+		"success: named conditional":                 {pattern: `(?P<n>a)?(?(n)b|c)`, probes: []probe{{"ab", true}, {"c", true}, {"x", false}}},
+		"success: named conditional without no":      {pattern: `(?P<n>a)?(?(n)b)`, probes: []probe{{"ab", true}, {"x", true}}},
+		"success: repeated conditional":              {pattern: `(?P<n>a)(?(n)x|y)+`, probes: []probe{{"axx", true}}},
+		"success: conditional before \\Z":            {pattern: `(?P<n>x)?(?(n)a|b)\Z`, probes: []probe{{"b", true}, {"xa", true}, {"xc", false}}},
+		"success: numbered conditional":              {pattern: `(a)?(?(1)b|c)`, probes: []probe{{"ab", true}, {"c", true}}},
+		"success: conditional without no, then text": {pattern: `(a)?(?(1)b)c`, probes: []probe{{"c", true}, {"ab", false}, {"abc", true}}},
+		"success: two-digit backreference":           {pattern: `((((((((((a))))))))))\10`, probes: []probe{{"aa", true}, {"a", false}}},
+		"success: two digits, then a digit":          {pattern: `(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)(l)\119`, probes: []probe{{"abcdefghijklk9", true}, {"abcdefghijkla9", false}}},
+		"success: three octal digits":                {pattern: `(a)\101`, probes: []probe{{"aA", true}, {"aa", false}}},
+		"success: backreference, comment, digit":     {pattern: `(a)\1(?#c)0`, probes: []probe{{"aa0", true}, {"a\x010", false}}},
+		"success: non-ASCII name":                    {pattern: "(?P<é>a)(?P=é)", probes: []probe{{"aa", true}}, strOnly: true},
+	}
+	for name, tt := range tests {
+		modes := []Flags{0, Unicode}
+		if tt.strOnly {
+			modes = []Flags{Unicode}
+		}
+		for _, mode := range modes {
+			t.Run(fmt.Sprintf("%s/unicode=%v", name, mode != 0), func(t *testing.T) {
+				m, err := Compile(tt.pattern, mode)
+				if err != nil {
+					t.Fatalf("Compile(%q) error = %v", tt.pattern, err)
 				}
 				for _, p := range tt.probes {
 					if got := m.MatchString(p.input); got != p.want {

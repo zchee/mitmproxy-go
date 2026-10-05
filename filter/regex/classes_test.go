@@ -371,18 +371,19 @@ func TestCompileOverlapDoesNotBacktrack(t *testing.T) {
 // and the bound leaves room for the race detector on a slow runner.
 func TestTranslateClassesLinear(t *testing.T) {
 	tests := map[string]struct {
-		unit string
+		prefix, unit string
 	}{
 		"success: lookaheads":            {unit: "(?=a)"},
 		"success: unclosed flag letters": {unit: "(?i"},
-		"success: named groups":          {unit: "(?P<n>a)"},
+		"success: named backreferences":  {prefix: "(?P<n>a)", unit: "(?P=n)"},
+		"success: numbered groups":       {unit: `(a)\1`},
 		"success: comments":              {unit: "a(?#)"},
 		"success: possessive repeats":    {unit: "a*+"},
 		"success: possessive groups":     {unit: "(a)++"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			body := strings.Repeat(tt.unit, 2<<20/len(tt.unit))
+			body := tt.prefix + strings.Repeat(tt.unit, 2<<20/len(tt.unit))
 			start := time.Now()
 			if _, err := translateClasses(body, Unicode, true, false); err != nil {
 				t.Fatalf("translateClasses() error = %v", err)

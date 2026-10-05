@@ -5408,6 +5408,36 @@
     {
       "expr": "~u \"\\\\b*+\"",
       "ok": false
+    },
+    {
+      "expr": "~u \"(?P<n>a)(?P=n)\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "(?P<n>a)(?P=n)"
+      ],
+      "describe": "url matches /(?P<n>a)(?P=n)/i",
+      "dump": "FUrl(?P<n>a)(?P=n)\n",
+      "describe_case_sensitive": "url matches /(?P<n>a)(?P=n)/"
+    },
+    {
+      "expr": "~b \"(?<n>a)\"",
+      "ok": false
+    },
+    {
+      "expr": "~u \"(a)?(?(1)b)c\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "(a)?(?(1)b)c"
+      ],
+      "describe": "url matches /(a)?(?(1)b)c/i",
+      "dump": "FUrl(a)?(?(1)b)c\n",
+      "describe_case_sensitive": "url matches /(a)?(?(1)b)c/"
+    },
+    {
+      "expr": "~b \"((.)\\\\1+)\"",
+      "ok": false
     }
   ]
 }

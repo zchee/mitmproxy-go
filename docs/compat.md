@@ -96,6 +96,10 @@ Reproduced on purpose (compatibility, not differences):
   repeat`).
 - Python's repeats without a minimum, `{,n}` and `{,}`, which repeat from 0 where both Go engines read them as text, and
   `\uXXXX` and `\UXXXXXXXX` in `str` patterns, which neither Go engine reads as Python does.
+- Python 3.11's possessive repeats (`a*+`, `a++`, `a?+`, `a{m,n}+`), which run on `regexp2` as the atomic groups
+  CPython defines them to be (`(?>a*)`), and atomic groups `(?>...)`, which `regexp2` runs as written. A `?` or `+` after
+  a lazy or possessive suffix is `multiple repeat`, and a possessive repeat of nothing, of `^` or of `\b` is `nothing to
+  repeat`, as in Python.
 - pyparsing's grammar as mitmproxy uses it: `a&b` is one bare word, expressions side by side inside parentheses are an
   error, tabs are expanded before parsing, and an operator name must be followed by whitespace, a non-ASCII character
   or the end of the input.

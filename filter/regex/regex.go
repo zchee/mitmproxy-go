@@ -55,6 +55,10 @@
 //   - \uXXXX and \UXXXXXXXX in a str pattern become \x{...}: RE2 knows
 //     neither and regexp2 lacks \U. A bytes pattern rejects both, as Python
 //     does.
+//   - A possessive repeat such as a*+, [ab]++ or (x|y){2,}+ becomes the
+//     atomic group (?>a*), which is how CPython defines it, and the
+//     pattern goes to regexp2: RE2 has neither form, and regexp2 has
+//     atomic groups but reads *+ as two repeats.
 //
 // A known difference that is not translated: Python's bytes patterns treat
 // input as Latin-1 bytes and fold case for ASCII only, while both Go engines

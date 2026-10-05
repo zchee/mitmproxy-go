@@ -402,6 +402,17 @@ func TestCompilePythonRejects(t *testing.T) {
 		"error: \\p{...} in a class with \\d":      {pattern: `[\d\p{L}]`, wantErr: `bad escape \p`},
 		"error: \\P{...} in a class":               {pattern: `[\P{L}]`, wantErr: `bad escape \P`},
 		"error: minimum above maximum":             {pattern: `a{2,1}`, wantErr: "min repeat greater than max repeat"},
+		"error: suffix after a lazy suffix":        {pattern: `a*?+`, wantErr: "multiple repeat"},
+		"error: suffix after a possessive suffix":  {pattern: `a*++`, wantErr: "multiple repeat"},
+		"error: lazy after possessive":             {pattern: `a*+?`, wantErr: "multiple repeat"},
+		"error: possessive after lazy +":           {pattern: `a+?+`, wantErr: "multiple repeat"},
+		"error: possessive after lazy {n}":         {pattern: `a{2}?+`, wantErr: "multiple repeat"},
+		"error: braces after a star":               {pattern: `a*{2}`, wantErr: "multiple repeat"},
+		"error: possessive at the start":           {pattern: `*+`, wantErr: "nothing to repeat"},
+		"error: possessive opening a group":        {pattern: `(*+)`, wantErr: "nothing to repeat"},
+		"error: possessive after a bar":            {pattern: `a|*+`, wantErr: "nothing to repeat"},
+		"error: possessive after \\b":              {pattern: `\b*+`, wantErr: "nothing to repeat"},
+		"error: possessive after ^":                {pattern: `^*+`, wantErr: "nothing to repeat"},
 		"error: \\p without braces in a class":     {pattern: `[\pL]`, wantErr: `bad escape \p`},
 		"success: comment before a quantifier":     {pattern: `a(?#c)?`},
 		"success: lazy quantifiers":                {pattern: `a*?b+?`},
@@ -495,6 +506,82 @@ func TestCompileBraceRepeat(t *testing.T) {
 					}
 				})
 			}
+		}
+	}
+}
+
+// TestCompilePossessive checks Python 3.11's possessive quantifiers and
+// atomic groups against Python 3.13's re.search. A possessive repeat keeps
+// everything it matched, so a*+a never matches where a*a does; it runs on
+// regexp2 as the atomic group (?>a*), which CPython defines it to be.
+// strOnly rows hold a non-ASCII character, which a bytes pattern reads as
+// two Latin-1 characters.
+func TestCompilePossessive(t *testing.T) {
+	type probe struct {
+		input string
+		want  bool
+	}
+	tests := map[string]struct {
+		pattern string
+		probes  []probe
+		strOnly bool
+		// re2 marks a row without a possessive repeat, which stays on RE2.
+		re2 bool
+	}{
+		"success: *+ keeps the whole run":    {pattern: `a*+a`, probes: []probe{{"aaa", false}, {"b", false}}},
+		"success: *+ before the end":         {pattern: `^a*+$`, probes: []probe{{"aaa", true}, {"", true}}},
+		"success: *+ before $":               {pattern: `a*+$`, probes: []probe{{"aa", true}}},
+		"success: ++":                        {pattern: `a++a`, probes: []probe{{"aaa", false}}},
+		"success: ?+":                        {pattern: `a?+a`, probes: []probe{{"a", false}, {"aa", true}}},
+		"success: {m,n}+":                    {pattern: `a{1,3}+a`, probes: []probe{{"aaa", false}, {"aaaa", true}}},
+		"success: {,}+":                      {pattern: `a{,}+a`, probes: []probe{{"aa", false}}},
+		"success: {,n}+":                     {pattern: `a{,2}+a`, probes: []probe{{"aa", false}, {"aaa", true}}},
+		"success: {n}+":                      {pattern: `a{2}+`, probes: []probe{{"aa", true}, {"a", false}}},
+		"success: class":                     {pattern: `[ab]++b`, probes: []probe{{"aab", false}, {"aabc", false}}},
+		"success: one-character class":       {pattern: `[a]*+a`, probes: []probe{{"aa", false}}},
+		"success: group with alternatives":   {pattern: `(?:ab|a)++b`, probes: []probe{{"abab", false}, {"aab", false}}},
+		"success: capturing group":           {pattern: `(a|ab)++c`, probes: []probe{{"abc", false}, {"ac", true}}},
+		"success: single-member group":       {pattern: `(?:a)*+a`, probes: []probe{{"aa", false}}},
+		"success: scoped flag group":         {pattern: `(?s:.)*+x`, probes: []probe{{"ax", false}}},
+		"success: nested":                    {pattern: `(a*+)*+b`, probes: []probe{{"aab", true}}},
+		"success: lookahead":                 {pattern: `(?=a)*+a`, probes: []probe{{"a", true}}},
+		"success: class escape":              {pattern: `\d*+1`, probes: []probe{{"111", false}}},
+		"success: word class escape":         {pattern: `\w++!`, probes: []probe{{"ab!", true}}},
+		"success: hex escape":                {pattern: `\x41*+A`, probes: []probe{{"AA", false}}},
+		"success: escaped paren":             {pattern: `\(*+\(`, probes: []probe{{"((", false}}},
+		"success: dot":                       {pattern: `.*+x`, probes: []probe{{"abx", false}}},
+		"success: comment before quantifier": {pattern: `a(?#c)*+a`, probes: []probe{{"aaa", false}}},
+		"success: verbose":                   {pattern: `(?x)a *+ a`, probes: []probe{{"aaa", false}}},
+		"success: ignore case":               {pattern: `(?i)A*+a`, probes: []probe{{"aaa", false}}},
+		"success: escaped plus is greedy":    {pattern: `a\++`, probes: []probe{{"a++", true}}, re2: true},
+		"success: literal brace then +":      {pattern: `a{x}+`, probes: []probe{{"a{x}}}", true}, {"a{x", false}}, re2: true},
+		"success: atomic group":              {pattern: `(?>a*)a`, probes: []probe{{"aaa", false}}},
+		"success: atomic group then b":       {pattern: `(?>a*)b`, probes: []probe{{"aab", true}}},
+		"success: atomic alternation":        {pattern: `(?>a|ab)c`, probes: []probe{{"abc", false}, {"ac", true}}},
+		"success: empty atomic group":        {pattern: `(?>)`, probes: []probe{{"a", true}}},
+		"success: non-ASCII character":       {pattern: "\u00e9*+\u00e9", probes: []probe{{"\u00e9\u00e9", false}}, strOnly: true},
+		"success: \\u escape":                {pattern: `\u00e9*+\u00e9`, probes: []probe{{"\u00e9\u00e9", false}}, strOnly: true},
+	}
+	for name, tt := range tests {
+		modes := []Flags{0, Unicode}
+		if tt.strOnly {
+			modes = []Flags{Unicode}
+		}
+		for _, mode := range modes {
+			t.Run(fmt.Sprintf("%s/unicode=%v", name, mode != 0), func(t *testing.T) {
+				m, err := Compile(tt.pattern, mode)
+				if err != nil {
+					t.Fatalf("Compile(%q) error = %v", tt.pattern, err)
+				}
+				if got := IsBacktracking(m); got == tt.re2 {
+					t.Errorf("IsBacktracking(Compile(%q)) = %v, want %v", tt.pattern, got, !tt.re2)
+				}
+				for _, p := range tt.probes {
+					if got := m.MatchString(p.input); got != p.want {
+						t.Errorf("Compile(%q).MatchString(%q) = %v, want %v", tt.pattern, p.input, got, p.want)
+					}
+				}
+			})
 		}
 	}
 }
@@ -717,7 +804,7 @@ func FuzzCompile(f *testing.F) {
 		`[[:alpha:]]`, `x[[:digit:]\d]`, `[\w.-[]`, `[^[\d]`,
 		`(?ias:x)`, `(?sai:x)`, `(?a)(?u:\d)`, `(?L:\w)`, `(?ai-s:\w)`,
 		`(?#a\)b)c`, `a(?#c)*b`, `(a)\1(?#c)0`, "(?x) (?i)a", "(?x)a # (?i)\nb", `(?i-i:a)`, `(?a-:x)`, `\N{DIGIT ZERO}`,
-		"(?i)x(?=)|(?-i:[\u212a-\u212b])", `a*(?#c)?`, `(?x)a* ?`, `a{,2}`, `a{00,}`, `a{2,1}`, `\u0041`, `[\U0001F600]`, `\u004`, `[\w\x{41}]`, `[\d\p{L}]`, `\.js$`, `(a$)+`, `a\Z`, `\B`, `(?=a)(a+)+$`,
+		"(?i)x(?=)|(?-i:[\u212a-\u212b])", `a*(?#c)?`, `(?x)a* ?`, `a*+a`, `(a|ab)++c`, `(?>a*)b`, `a*?+`, `\b*+`, `a{,2}`, `a{00,}`, `a{2,1}`, `\u0041`, `[\U0001F600]`, `\u004`, `[\w\x{41}]`, `[\d\p{L}]`, `\.js$`, `(a$)+`, `a\Z`, `\B`, `(?=a)(a+)+$`,
 		strings.Repeat("(?=a)", 64), strings.Repeat(`\B`, 32),
 	}
 	for _, s := range seeds {

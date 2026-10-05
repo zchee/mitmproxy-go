@@ -446,6 +446,7 @@ type scope struct {
 	fold    bool // IgnoreCase
 	verbose bool
 	uni     bool // Unicode classes: a str pattern outside (?a)
+	start   int  // where the group opens in the regexp2 output
 }
 
 // checkCharsetFlags checks the a, u and L letters of one inline flag group,
@@ -482,6 +483,9 @@ type classTranslator struct {
 	re2OK bool
 	// uniBoundary says that a \b stands where the classes are Unicode.
 	uniBoundary bool
+	// atomic lists the offsets in bt where a possessive repeat's atomic
+	// group opens; see openAtomic.
+	atomic []int
 }
 
 // translation is a pattern rewritten for each engine.
@@ -521,9 +525,10 @@ func (t *classTranslator) both(s string) {
 // sends every other \b and \B to regexp2, where they become lookarounds.
 func translateClasses(body string, flags Flags, str, verbose bool) (translation, error) {
 	// A class can hold a [ only if the body has two of them. Verbose
-	// whitespace can stand between two quantifiers, and a { may start a
-	// repeat to rewrite.
-	if !verbose && !hasScannedEscape(body) && !strings.ContainsAny(body, "{") && !strings.Contains(body, "(?") && strings.Count(body, "[") < 2 {
+	// whitespace can stand between two quantifiers, a { may start a repeat
+	// to rewrite, and a + after a quantifier makes it possessive.
+	possessive := strings.Contains(body, "*+") || strings.Contains(body, "++") || strings.Contains(body, "?+")
+	if !verbose && !possessive && !hasScannedEscape(body) && !strings.ContainsAny(body, "{") && !strings.Contains(body, "(?") && strings.Count(body, "[") < 2 {
 		return translation{re2: body, re2OK: true, backtrack: body}, nil
 	}
 	t := &classTranslator{src: body, str: str, re2OK: true}
@@ -537,8 +542,13 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 	// a lazy quantifier in a*(?#c)?, so the scanner tracks whether the
 	// last token was a repeat, whether ignored text has followed it, and
 	// whether the last token opened a group, after which ? starts the
-	// group's syntax.
-	var repeat, gap, open bool
+	// group's syntax. A possessive repeat X*+ is the atomic group (?>X*),
+	// as CPython defines it; regexp2 has atomic groups and RE2 has neither
+	// form. atom is where the item a quantifier repeats starts in the
+	// regexp2 output, or -1 where nothing can be repeated; header says
+	// that the text of a group header such as (?P<name> is being read.
+	var repeat, gap, open, suffixed, header bool
+	atom := -1
 	for i := 0; i < len(src); {
 		cur := stack[len(stack)-1]
 		c := src[i]
@@ -551,10 +561,26 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			if c == '*' || c == '+' || c == '?' && !open {
 				n = 1
 			}
-			if n > 0 && repeat && gap {
-				return translation{}, errors.New("multiple repeat")
+			if n > 0 && repeat {
+				// Only a ? or + right after a quantifier is its suffix.
+				if gap || suffixed || n > 1 || c == '*' {
+					return translation{}, errors.New("multiple repeat")
+				}
+				suffixed = true
+				i++
+				if c == '?' {
+					t.both("?")
+					continue
+				}
+				if atom < 0 {
+					return translation{}, errors.New("nothing to repeat")
+				}
+				t.atomic = append(t.atomic, atom)
+				t.bt.WriteByte(')')
+				t.re2OK = false
+				continue
 			}
-			repeat, gap, open = n > 0, false, c == '('
+			repeat, gap, open, suffixed = n > 0, false, c == '(', false
 			if n > 0 {
 				text := src[i : i+n]
 				if c == '{' {
@@ -578,6 +604,7 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			if err := foreignEscape(src, i); err != nil {
 				return translation{}, err
 			}
+			atom = t.bt.Len()
 			switch e := src[i+1]; {
 			case e == 'u' || e == 'U':
 				text, end, err := codePointEscape(src, i, str)
@@ -595,11 +622,20 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 				t.re2.WriteString(src[i : i+2])
 				t.bt.WriteString(boundary(e, cur.uni))
 				t.uniBoundary = t.uniBoundary || e == 'b' && cur.uni
+				atom = -1
 			default:
-				t.both(src[i : i+2])
+				// \A and \z (from \Z) are positions; nothing repeats them.
+				if e == 'A' || e == 'z' {
+					atom = -1
+				}
+				end := escapeEnd(src, i)
+				t.both(src[i:end])
+				i = end
+				continue
 			}
 			i += 2
 		case c == '[':
+			atom = t.bt.Len()
 			end, err := t.class(i, cur)
 			if err != nil {
 				return translation{}, err
@@ -627,7 +663,9 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			if err != nil {
 				return translation{}, err
 			}
+			next.start = t.bt.Len()
 			stack = append(stack, next)
+			atom = -1
 			// Neither engine knows the a, u and L flags; drop them from
 			// the group's header, wherever they stand in it.
 			if on, off, n, ok := flagGroup(src[i+1:]); ok && strings.ContainsAny(on, "auL") {
@@ -645,10 +683,13 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 				open = false
 				continue
 			}
+			header = strings.HasPrefix(src[i+1:], "?")
 			t.both("(")
 			i++
 		case c == ')':
+			atom, header = -1, false
 			if len(stack) > 1 {
+				atom = stack[len(stack)-1].start
 				stack = stack[:len(stack)-1]
 			}
 			t.both(")")
@@ -661,12 +702,42 @@ func translateClasses(body string, flags Flags, str, verbose bool) (translation,
 			t.both(src[i:end])
 			i = end
 		default:
+			switch {
+			case header:
+				// (?:, (?=, (?!, (?>, (?<=, (?<! and (?P<name> end here.
+				header = strings.IndexByte(":=!>", c) < 0
+			case cur.verbose && strings.IndexByte(" \t\n\r\v\f", c) >= 0:
+			case c == '|' || c == '^' || c == '$':
+				atom = -1
+			case utf8.RuneStart(c):
+				atom = t.bt.Len()
+			}
 			t.re2.WriteByte(c)
 			t.bt.WriteByte(c)
 			i++
 		}
 	}
-	return translation{re2: t.re2.String(), re2OK: t.re2OK, backtrack: t.bt.String(), unicodeBoundary: t.uniBoundary}, nil
+	return translation{re2: t.re2.String(), re2OK: t.re2OK, backtrack: openAtomic(t.bt.String(), t.atomic), unicodeBoundary: t.uniBoundary}, nil
+}
+
+// openAtomic returns s with (?> inserted at each offset in at, in one pass,
+// so that a pattern with many possessive repeats still translates in
+// linear time. Two repeats can open at the same offset, as in (a*+)*+.
+func openAtomic(s string, at []int) string {
+	if len(at) == 0 {
+		return s
+	}
+	slices.Sort(at)
+	var b strings.Builder
+	b.Grow(len(s) + 3*len(at))
+	prev := 0
+	for _, o := range at {
+		b.WriteString(s[prev:o])
+		b.WriteString("(?>")
+		prev = o
+	}
+	b.WriteString(s[prev:])
+	return b.String()
 }
 
 // skipIgnored returns s without the text Python ignores at its start: (?#

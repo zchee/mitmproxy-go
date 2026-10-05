@@ -62,8 +62,9 @@ var dollarExprs = []string{
 const markerDollarExpr = `~marker "red:$"`
 
 // extraExprs take the regexp2 path, pin value formatting, combine
-// operators, or use a repeat such as {,2} that both Go engines would read
-// as text.
+// operators, use a repeat such as {,2} that both Go engines would read
+// as text, or a possessive repeat, which keeps what it matched: the last
+// row selects the flows holding "hello" only if hel*+lo matches nothing.
 var extraExprs = []string{
 	`~bs "two$\n"`, `~bs "(?:two$)+"`, `~b "hello(?!x)"`, `~h "^content-length: 7\r$"`,
 	`~meta "^b: string$"`, `~meta "'key': 'value'"`, `~meta "^d: b\"by'tes\"$"`, `~meta "\[1, 2.5, None, True\]"`,
@@ -71,6 +72,7 @@ var extraExprs = []string{
 	"~dst example.com:443", "~c 404", "~bq compressed", "~bq not.gzip", "~b dns.google", "~bs 8.8.4.4", "~u dns.google",
 	"~http & !~s", "~tcp | ~udp", "!(~q | ~s ) & ~http", "~websocket & ~bs me", "~b binary ~http",
 	`~b "hel{,2}o"`,
+	`~b "hel++o" & !~b "hel*+lo"`,
 }
 
 // classExprs use \d, \w, \s, \b and their complements on the oracle's

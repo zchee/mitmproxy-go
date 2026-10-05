@@ -5367,6 +5367,47 @@
     {
       "expr": "~u \"a{2,1}\"",
       "ok": false
+    },
+    {
+      "expr": "~u \"a*+a\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "a*+a"
+      ],
+      "describe": "url matches /a*+a/i",
+      "dump": "FUrla*+a\n",
+      "describe_case_sensitive": "url matches /a*+a/"
+    },
+    {
+      "expr": "~b \"(a|ab)++c\"",
+      "ok": true,
+      "tree": [
+        "FBod",
+        "(a|ab)++c"
+      ],
+      "describe": "body matches /(a|ab)++c/is",
+      "dump": "FBod(a|ab)++c\n",
+      "describe_case_sensitive": "body matches /(a|ab)++c/s"
+    },
+    {
+      "expr": "~u \"(?>a*)b\"",
+      "ok": true,
+      "tree": [
+        "FUrl",
+        "(?>a*)b"
+      ],
+      "describe": "url matches /(?>a*)b/i",
+      "dump": "FUrl(?>a*)b\n",
+      "describe_case_sensitive": "url matches /(?>a*)b/"
+    },
+    {
+      "expr": "~b \"a*?+\"",
+      "ok": false
+    },
+    {
+      "expr": "~u \"\\\\b*+\"",
+      "ok": false
     }
   ]
 }

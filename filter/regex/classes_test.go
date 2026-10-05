@@ -377,6 +377,8 @@ func TestTranslateClassesLinear(t *testing.T) {
 		"success: unclosed flag letters": {unit: "(?i"},
 		"success: named groups":          {unit: "(?P<n>a)"},
 		"success: comments":              {unit: "a(?#)"},
+		"success: possessive repeats":    {unit: "a*+"},
+		"success: possessive groups":     {unit: "(a)++"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

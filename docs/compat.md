@@ -545,3 +545,10 @@ TLS and protocol layers:
 |---|---|---|
 | Synchronous Python signals (`mitmproxy/addons/view.py`). | Bounded event channels; overflow closes and removes the subscriber, which must resnapshot. | A slow frontend cannot block the dispatch lock. Channel subscribe/cancel and store access require that lock. |
 | `intercept`, `resume` and `kill` are directly dispatched hooks (`mitmproxy/addons/view.py`). | Runtime changes arrive through `update`; direct methods remain available. | The Go core dispatches the shared update hook for lifecycle notifications. |
+
+## addons/eventstore
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| The constructor installs a process-global Python logging handler (`mitmproxy/addons/eventstore.py`). | Entries arrive through the master's existing `add_log` dispatch. | Embedders own logger composition; store mutation remains under the dispatch lock. |
+| Synchronous addition and refresh signals (`mitmproxy/addons/eventstore.py`). | Bounded event channels; overflow closes and removes the subscriber, which must resnapshot. Subscribe and cancel require the dispatch lock. | A slow frontend cannot block the dispatcher or retain an unbounded notification queue. |

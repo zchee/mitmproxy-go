@@ -22,10 +22,14 @@ import (
 	"github.com/zchee/mitmproxy-go/options"
 )
 
-// Upstream test_marker belongs to the console renderer, not this addon.
-// Upstream intercept/resume/kill methods have no Go hook counterpart: core
-// dispatches Update instead. WebSocket changes also reach Update, as upstream
-// view.py has no websocket_* handlers.
+// Upstream cases and handlers without an addon counterpart:
+//
+//	Upstream             Go path / reason
+//	test_marker          Console render_marker is outside the view addon.
+//	intercept            Core dispatches Update after interception.
+//	resume               Core dispatches Update after resuming.
+//	kill                 Core dispatches Update after killing.
+//	websocket_*          Upstream view.py has no such handlers; Update refreshes it.
 func TestUpstreamView(t *testing.T) {
 	tests := map[string]struct{ run func(*testing.T, *View) }{
 		"test_order_refresh": {func(t *testing.T, v *View) {

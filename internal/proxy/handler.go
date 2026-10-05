@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strconv"
 	"time"
 
@@ -312,8 +313,19 @@ func dialServer(ctx context.Context, srv *connection.Server) (layer.Conn, error)
 		return nil, fmt.Errorf("proxy: transport protocol %q is not supported yet", srv.TransportProtocol)
 	}
 	dialer := net.Dialer{}
-	if srv.Sockname != nil && srv.Sockname.Host != "" {
-		dialer.LocalAddr = &net.TCPAddr{IP: net.ParseIP(srv.Sockname.Host)}
+	if srv.Sockname != nil {
+		local := &net.TCPAddr{Port: srv.Sockname.Port}
+		if srv.Sockname.Host != "" {
+			source, err := netip.ParseAddr(srv.Sockname.Host)
+			if err != nil {
+				return nil, fmt.Errorf("proxy: invalid source address %q: %w", srv.Sockname.Host, err)
+			}
+			local.IP, local.Zone = source.AsSlice(), source.Zone()
+		}
+		if srv.Sockname.Scope != nil && srv.Sockname.Scope.ScopeID != 0 {
+			local.Zone = strconv.FormatUint(uint64(srv.Sockname.Scope.ScopeID), 10)
+		}
+		dialer.LocalAddr = local
 	}
 	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(srv.Address.Host, strconv.Itoa(srv.Address.Port)))
 	if err != nil {

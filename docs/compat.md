@@ -572,3 +572,12 @@ TLS and protocol layers:
 | Upstream behaviour | Go behaviour | Reason |
 |---|---|---|
 | Calling `response` without a response raises `AssertionError` (`mitmproxy/addons/server_side_events.py`). | Returns an error stating that a response is required. | Malformed manually built Go flows should return an error rather than panic. |
+
+## addons/commandhistory
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| History files are read without a size limit (`mitmproxy/addons/command_history.py:38`). | Refuses files larger than 16 MiB before splitting lines; an unsuccessful reload retains current history. | Bound memory used by configuration-file loading under the addon dispatch lock. |
+| History text uses Python's default text-file encoding (`mitmproxy/addons/command_history.py:38,46,58`). | Uses strict UTF-8 on every platform. Windows writes retain Python's CRLF newline translation. | A portable, deterministic history-file encoding instead of a process-locale-dependent codec. |
+| Append and vacuum create files with mode 0666 under the process umask (`mitmproxy/addons/command_history.py:46,58`). | Creates new files with mode 0600; existing files keep their permissions. | History can contain sensitive command arguments. |
+| Failed writes and deletion log Python exception details (`mitmproxy/addons/command_history.py:48,61,76`). | Preserves `Failed writing to <path>:` and `Failed deleting <path>:` prefixes with Go filesystem details. | Diagnostics belong to the runtime in use. |

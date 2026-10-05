@@ -533,3 +533,9 @@ TLS and protocol layers:
 |---|---|---|
 | `ModifySpec.read_replacement` reads an `@` file without a size limit (`mitmproxy/addons/modifyheaders.py:21-33`). | Replacement files larger than 16 MiB are rejected during configure and on each later read. | Bound memory retained under the addon dispatch lock; file changes still take effect immediately. |
 | Invalid file diagnostics include Python's `OSError` details; invalid subject patterns include Python's `re.error` details (`mitmproxy/addons/modifyheaders.py:36-53`). | The `Invalid file path:` and `Invalid regular expression` prefixes are retained; details come from Go's filesystem and the shared Python-syntax regex compiler. | Diagnostics belong to the implementation in use. |
+## addons/serverplayback
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Replay files are read without a combined size or flow-count limit (`mitmproxy/addons/serverplayback.py`, `mitmproxy/io/io.py`). | One file-loading operation accepts at most 512 MiB and 100,000 flows. | Bound memory retained from user-supplied replay files. |
+| Matching uses SHA-256 of Python's request-key list repr (`mitmproxy/addons/serverplayback.py`). | Uses the same inputs and Python-compatible list, tuple and byte reprs, including the uppercase method accessor; the key is not persisted. HTTP flows built manually without a request are skipped instead of raising. | Keep the same matching equivalence without a Python runtime; invalid Go values must not panic. |

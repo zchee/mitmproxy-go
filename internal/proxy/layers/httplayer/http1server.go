@@ -174,7 +174,6 @@ func (s *http1Server) readBody(ctx context.Context) error {
 		}
 		s.body = nil
 		s.mu.Lock()
-		connect := strings.ToUpper(s.request.Method) == "CONNECT"
 		s.markDoneLocked(true, false, true)
 		closing := s.state == http1Done && !s.handingOver && s.responseDone
 		s.mu.Unlock()
@@ -184,11 +183,7 @@ func (s *http1Server) readBody(ctx context.Context) error {
 			// client, so announce the closure.
 			s.closeWrite()
 		}
-		if !connect {
-			// A CONNECT request has no end of message, as upstream: the
-			// exchange turns into a byte stream instead of completing.
-			s.queue = append(s.queue, RequestEndOfMessage{ID: id})
-		}
+		s.queue = append(s.queue, RequestEndOfMessage{ID: id})
 		return nil
 	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
 		return err
@@ -293,7 +288,6 @@ func (s *http1Server) readPipe(ctx context.Context) error {
 		return nil
 	case errors.Is(err, io.EOF):
 		s.finish()
-		s.queue = append(s.queue, RequestEndOfMessage{ID: id})
 		return nil
 	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
 		return err

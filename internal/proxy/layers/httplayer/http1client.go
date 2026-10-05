@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/zchee/mitmproxy-go/httpmsg"
@@ -371,7 +370,6 @@ func (c *http1Client) readBody(ctx context.Context) error {
 		}
 		c.body = nil
 		c.mu.Lock()
-		connect := strings.ToUpper(c.request.Method) == "CONNECT"
 		c.markDoneLocked(false, true, true)
 		closing := c.state == http1Done && c.requestDone
 		c.mu.Unlock()
@@ -380,11 +378,7 @@ func (c *http1Client) readBody(ctx context.Context) error {
 			// fully written: announce that nothing more follows.
 			c.closeWrite()
 		}
-		if !connect {
-			// A successful CONNECT has no end of message, as upstream: the
-			// exchange turns into a byte stream instead of completing.
-			c.queue = append(c.queue, ResponseEndOfMessage{ID: id})
-		}
+		c.queue = append(c.queue, ResponseEndOfMessage{ID: id})
 		return nil
 	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
 		return err
@@ -421,7 +415,6 @@ func (c *http1Client) readPipe(ctx context.Context) error {
 		return nil
 	case errors.Is(err, io.EOF):
 		c.finish()
-		c.queue = append(c.queue, ResponseEndOfMessage{ID: id})
 		return nil
 	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
 		return err

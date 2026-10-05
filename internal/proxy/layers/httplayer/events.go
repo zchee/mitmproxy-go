@@ -85,11 +85,14 @@ type ResponseTrailers struct {
 }
 
 // RequestEndOfMessage ends a request, including one with EndStream set.
+// For CONNECT it completes the HTTP message, not the tunnel's write direction.
 type RequestEndOfMessage struct {
 	ID StreamID
 }
 
 // ResponseEndOfMessage ends the final response, including one with EndStream set.
+// A successful CONNECT or 101 ends its HTTP message before the separately
+// negotiated tunnel or upgrade begins; this event does not close that transport.
 type ResponseEndOfMessage struct {
 	ID StreamID
 }

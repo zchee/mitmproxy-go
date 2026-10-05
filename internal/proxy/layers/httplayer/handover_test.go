@@ -45,6 +45,11 @@ func TestHTTP1ConnectHandoverClearsReadDeadline(t *testing.T) {
 	} else if _, ok := event.(RequestHeaders); !ok {
 		t.Fatalf("first event = %T, want request headers", event)
 	}
+	if event, err := endpoint.Receive(t.Context()); err != nil {
+		t.Fatal(err)
+	} else if _, ok := event.(RequestEndOfMessage); !ok {
+		t.Fatalf("second event = %T, want request end of message", event)
+	}
 	response := &httpmsg.Response{HTTPVersion: "HTTP/1.1", StatusCode: 200, Reason: "Connection established"}
 	if err := endpoint.Send(t.Context(), ResponseHeaders{ID: 1, Response: response}); err != nil {
 		t.Fatal(err)

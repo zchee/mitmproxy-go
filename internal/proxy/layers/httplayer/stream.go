@@ -51,10 +51,11 @@ type httpStream struct {
 	request  streamBody
 	response streamBody
 
-	requestSent  bool
-	responseHook bool
-	errorHook    bool
-	failed       bool
+	requestSent    bool
+	responseHook   bool
+	errorHook      bool
+	failed         bool
+	connectRequest bool
 	// connectEstablished reports the stream answered a CONNECT with a 2xx:
 	// the connection now belongs to a child protocol, not to HTTP.
 	connectEstablished bool
@@ -347,6 +348,11 @@ func (s *httpStream) end(ctx context.Context, request bool) (streamOutput, error
 		return streamOutput{}, fmt.Errorf("HTTP stream %d received unexpected end of message", s.id)
 	}
 	body.ending = true
+	if request && s.connectRequest {
+		// CONNECT has its own hooks; HTTP completion is not a tunnel FIN.
+		body.done = true
+		return streamOutput{}, nil
+	}
 	if body.streaming {
 		out, err := s.transform(ctx, request, []byte{})
 		out.after = func(ctx context.Context) (streamOutput, error) { return s.finish(ctx, request) }

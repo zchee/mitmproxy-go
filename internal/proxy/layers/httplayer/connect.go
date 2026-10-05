@@ -21,9 +21,9 @@ import (
 // Android emulators proxying non-80 ports. A 2xx establishes the tunnel:
 // the stream marks itself established and the layer hands the connection to
 // a child chosen by the next-layer loop, or to the upstream proxy. The
-// request consumed the client's direction: no end of message follows it.
+// request's end event must still be consumed before handing over its reader.
 func (s *httpStream) handleConnect(ctx context.Context, event RequestHeaders) (streamOutput, error) {
-	s.request.done = true
+	s.connectRequest = true
 	var err error
 	s.snapshot, err = s.c.Hooks.FireFunc(ctx, func(context.Context) error {
 		s.flow.Request = event.Request
@@ -104,13 +104,12 @@ func (s *httpStream) handleConnect(ctx context.Context, event RequestHeaders) (s
 	}
 	out.events = append(out.events, ResponseEndOfMessage{ID: s.id})
 
+	s.response.headers = true
+	s.response.done = true
 	if established {
 		s.connectEstablished = true
-		s.response.headers = true
-		s.response.done = true
 		return out, nil
 	}
-	s.failed = true
 	if err := s.notLive(ctx); err != nil {
 		return streamOutput{}, err
 	}

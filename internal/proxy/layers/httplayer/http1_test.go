@@ -230,6 +230,7 @@ func TestHTTP1ServerExchanges(t *testing.T) {
 			extra: "some plain tcp",
 			wantPre: []wireEvent{
 				{Kind: "request headers", ID: 1, Method: "CONNECT", End: true},
+				{Kind: "request end", ID: 1},
 			},
 			status:   200,
 			wantWire: response200,
@@ -243,6 +244,7 @@ func TestHTTP1ServerExchanges(t *testing.T) {
 			pipeline: true,
 			wantPre: []wireEvent{
 				{Kind: "request headers", ID: 1, Method: "CONNECT", End: true},
+				{Kind: "request end", ID: 1},
 			},
 			status:   200,
 			wantWire: response200,
@@ -750,10 +752,10 @@ func TestHTTP1ClientConnect(t *testing.T) {
 	}
 
 	writeAll(t, peer, "HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\nsome plain tcp")
-	// A successful CONNECT has no response end of message: the exchange
-	// becomes a byte stream.
+	// HTTP completion precedes the separately negotiated tunnel byte stream.
 	events := []wireEvent{
 		{Kind: "response headers", ID: 1, Status: 200, End: true},
+		{Kind: "response end", ID: 1},
 		{Kind: "response data", ID: 1, Data: "some plain tcp"},
 	}
 	for _, want := range events {
@@ -814,6 +816,12 @@ func TestHTTP1ClientUpgrade(t *testing.T) {
 	}
 	if got := readExactly(t, peer, len("some more websockets")); got != "some more websockets" {
 		t.Fatalf("upgraded bytes = %q, want %q", got, "some more websockets")
+	}
+	if err := peer.CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
+	if event, err := endpoint.Receive(ctx); event != nil || !errors.Is(err, io.EOF) {
+		t.Fatalf("upgrade transport end = %v, %v; want nil, EOF", event, err)
 	}
 }
 
@@ -1063,7 +1071,7 @@ func TestHTTP1ServerWaitBufferBounded(t *testing.T) {
 	pump := pumpRequests(t, endpoint)
 
 	writeAll(t, peer, "CONNECT example.com:443 HTTP/1.1\r\n\r\n")
-	pump.collect(t, 1)
+	pump.collect(t, 2)
 
 	// Flood the connection before the exchange completes; the endpoint must
 	// bound what it buffers rather than grow without limit.

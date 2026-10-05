@@ -84,6 +84,7 @@ func TestStreamConnect(t *testing.T) {
 		wantHooks   []string
 		wantOpens   int64
 		established bool
+		killed      bool
 	}{
 		"success: tunnel established lazily": {
 			strategy: "lazy",
@@ -147,6 +148,7 @@ func TestStreamConnect(t *testing.T) {
 				{Kind: "response error", ID: 1, Code: Kill, Message: "killed"},
 			},
 			wantHooks: []string{"http_connect"},
+			killed:    true,
 		},
 	}
 	for name, tt := range tests {
@@ -174,15 +176,24 @@ func TestStreamConnect(t *testing.T) {
 			if s.connectEstablished != tt.established {
 				t.Fatalf("connectEstablished = %t, want %t", s.connectEstablished, tt.established)
 			}
-			if tt.established {
+			if !tt.killed {
+				if s.done() {
+					t.Fatal("CONNECT completed before request end of message")
+				}
+				if events := drainStream(t, s, RequestEndOfMessage{ID: 1}); len(events) != 0 {
+					t.Fatalf("CONNECT request end emitted %v, want no output", events)
+				}
+				if diff := gocmp.Diff(tt.wantHooks, a.calls); diff != "" {
+					t.Fatalf("CONNECT request end fired ordinary hooks (-want +got):\n%s", diff)
+				}
 				if !s.done() || s.failed {
-					t.Fatalf("established tunnel: done = %t, failed = %t", s.done(), s.failed)
+					t.Fatalf("CONNECT reply: done = %t, failed = %t", s.done(), s.failed)
 				}
 				if s.c.Data.Server.Address == nil || s.c.Data.Server.Address.Host != "example.com" || s.c.Data.Server.Address.Port != 443 {
 					t.Fatalf("server address = %v, want example.com:443", s.c.Data.Server.Address)
 				}
 			} else if !s.failed {
-				t.Fatal("refused tunnel did not fail the stream")
+				t.Fatal("killed CONNECT did not fail the stream")
 			}
 		})
 	}

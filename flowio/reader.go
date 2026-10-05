@@ -13,6 +13,7 @@ package flowio
 import (
 	"bufio"
 	"bytes"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
@@ -20,22 +21,30 @@ import (
 
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/flow/state"
+	"github.com/zchee/mitmproxy-go/flowio/har"
 	"github.com/zchee/mitmproxy-go/flowio/tnetstring"
 )
 
-// ErrHARNotSupportedYet is returned by [Reader] for a HAR file, which
-// mitmproxy also accepts as a flow file. HAR import is not implemented yet.
-var ErrHARNotSupportedYet = errors.New("flowio: reading HAR files is not supported yet")
+type harReadError struct{ err error }
+
+func (e *harReadError) Error() string {
+	return "Unable to read HAR file. Please provide a valid HAR file"
+}
+func (e *harReadError) Unwrap() error { return e.err }
 
 // utf8BOM is the byte order mark some tools, such as Fiddler, put before a
 // HAR file.
 const utf8BOM = "\xef\xbb\xbf"
 
 // Reader reads flows from a flow file, porting mitmproxy's FlowReader.
+// Files starting with {, optionally immediately preceded by a UTF-8 BOM, are
+// HAR documents, limited to 256 MiB and 1000 nested objects or arrays.
 type Reader struct {
 	r       *bufio.Reader
 	started bool
 	err     error
+	harMode bool
+	entries []jsontext.Value
 }
 
 // NewReader returns a Reader that reads flows from r. It buffers r unless r
@@ -76,8 +85,27 @@ func (r *Reader) next() (flow.Flow, error) {
 			}
 		}
 		if p, _ := r.r.Peek(1); bytes.Equal(p, []byte("{")) {
-			return nil, ErrHARNotSupportedYet
+			r.harMode = true
+			entries, err := har.ReadEntries(r.r)
+			if err != nil {
+				return nil, &harReadError{err}
+			}
+			r.entries = entries
 		}
+	}
+
+	if r.harMode {
+		if len(r.entries) == 0 {
+			return nil, io.EOF
+		}
+		entry := r.entries[0]
+		r.entries[0] = nil
+		r.entries = r.entries[1:]
+		f, err := har.RequestToFlow(entry)
+		if err != nil {
+			return nil, &harReadError{err}
+		}
+		return f, nil
 	}
 
 	v, err := tnetstring.Load(r.r)

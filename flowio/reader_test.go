@@ -170,13 +170,13 @@ func TestReaderErrors(t *testing.T) {
 			data:    encode(t, nanPort),
 			wantErr: "cannot convert float NaN to integer",
 		},
-		"error: HAR file": {
-			data: []byte(`{"log": {"entries": []}}`),
-			is:   ErrHARNotSupportedYet,
+		"error: HAR document without entries": {
+			data:    []byte(`{"log": {}}`),
+			wantErr: "Unable to read HAR file. Please provide a valid HAR file",
 		},
-		"error: HAR file after a byte order mark": {
-			data: []byte(utf8BOM + `{"log": {}}`),
-			is:   ErrHARNotSupportedYet,
+		"error: HAR document without entries after a byte order mark": {
+			data:    []byte(utf8BOM + `{"log": {}}`),
+			wantErr: "Unable to read HAR file. Please provide a valid HAR file",
 		},
 		"error: byte order mark before a tnetstring": {
 			data:    append([]byte(utf8BOM), testutil.Fixture(t, v21Fixture)...),

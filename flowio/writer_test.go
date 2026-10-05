@@ -110,7 +110,7 @@ func rawFlowsOf(t *testing.T, b []byte) []*state.Map {
 			t.Fatal(err)
 		}
 		rest = r
-		out = append(out, fromTnetstring(v).(*state.Map))
+		out = append(out, v.(*state.Map))
 	}
 	return out
 }
@@ -155,15 +155,3 @@ func TestWriterErrors(t *testing.T) {
 type failingWriter struct{ err error }
 
 func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
-
-func TestToTnetstring(t *testing.T) {
-	var nilMap *state.Map
-	got := toTnetstring([]any{nilMap, dictOf("a", []any{dictOf("b", int64(1))}), "s"})
-	enc, err := tnetstring.Dumps(got)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := "30:0:~19:1:a;11:8:1:b;1:1#}]}1:s;]"; string(enc) != want {
-		t.Errorf("encoding = %q, want %q", enc, want)
-	}
-}

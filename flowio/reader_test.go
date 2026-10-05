@@ -35,7 +35,7 @@ func rawFlows(t *testing.T, rel string) []*state.Map {
 			t.Fatalf("%s: flow %d: %v", rel, len(out), err)
 		}
 		rest = r
-		out = append(out, fromTnetstring(v).(*state.Map))
+		out = append(out, v.(*state.Map))
 	}
 	return out
 }
@@ -45,7 +45,7 @@ func encode(t *testing.T, ms ...*state.Map) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	for _, m := range ms {
-		if err := tnetstring.Dump(&buf, toTnetstring(m)); err != nil {
+		if err := tnetstring.Dump(&buf, m); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -151,12 +151,8 @@ func TestReaderAllStopsEarly(t *testing.T) {
 
 func TestReaderErrors(t *testing.T) {
 	bigVersion := state.CopyMap(rawFlows(t, v21Fixture)[0])
-	bigVersion.Set("version", nil)
-	bigInt, err := tnetstring.Dumps(func() any {
-		d := toTnetstring(bigVersion).(*tnetstring.Dict)
-		d.Set("version", new(big.Int).Lsh(big.NewInt(1), 70))
-		return d
-	}())
+	bigVersion.Set("version", new(big.Int).Lsh(big.NewInt(1), 70))
+	bigInt, err := tnetstring.Dumps(bigVersion)
 	if err != nil {
 		t.Fatal(err)
 	}

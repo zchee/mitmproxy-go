@@ -21,12 +21,15 @@
 //	!    boolean             bool                   bool
 //	~    null                nil                    nil
 //	]    list                []any                  []any
-//	}    dictionary          *Dict                  *Dict
+//	}    dictionary          *omap.Map[any]         *omap.Map[any]
 //
 // The ; tag is mitmproxy's extension: the original tnetstring specification
 // has only byte strings. Dictionary keys may be either, as older flow files
-// and addon metadata use byte-string keys; a [Dict] remembers the kind of
-// each key and writes it back with the same tag.
+// and addon metadata use byte-string keys; an [omap.Map] remembers the kind
+// of each key ([omap.Map.SetBytesKey]) and the writer uses the same tag
+// again. A map is keyed by the key's bytes alone, so a dictionary holding
+// both the text key "k" and the byte-string key b"k", which a Python dict
+// can, is a decoding error.
 //
 // The writer reproduces mitmproxy's output byte for byte. Python builds the
 // output right to left, so dictionary entries appear in reverse insertion

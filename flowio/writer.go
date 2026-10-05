@@ -23,7 +23,7 @@ func NewWriter(w io.Writer) *Writer {
 // Add writes f in format [flow.FormatVersion]. Each flow is encoded in full
 // before anything is written, so an encoding error writes nothing.
 func (w *Writer) Add(f flow.Flow) error {
-	b, err := tnetstring.Dumps(toTnetstring(f.GetState()))
+	b, err := tnetstring.Dumps(f.GetState())
 	if err != nil {
 		return err
 	}

@@ -209,28 +209,24 @@ func TestStateKeyOrder(t *testing.T) {
 	}
 }
 
-// fromTnetstring converts a decoded tnetstring value to a state value.
-// Flow files store dictionaries in reverse insertion order, so the keys of
-// the result come out reversed; SetState does not depend on key order.
-func fromTnetstring(t *testing.T, v any) any {
+// requireInt64 fails the test if a decoded state value holds an integer
+// beyond the int64 range, which no fixture is expected to contain. Flow
+// files store dictionaries in reverse insertion order, so the keys of a
+// decoded value come out reversed; SetState does not depend on key order.
+func requireInt64(t *testing.T, v any) {
 	t.Helper()
 	switch x := v.(type) {
-	case *tnetstring.Dict:
-		m := state.NewMap(x.Len())
-		for k, e := range x.All() {
-			m.Set(k, fromTnetstring(t, e))
+	case *state.Map:
+		for _, e := range x.All() {
+			requireInt64(t, e)
 		}
-		return m
 	case []any:
-		out := make([]any, len(x))
-		for i, e := range x {
-			out[i] = fromTnetstring(t, e)
+		for _, e := range x {
+			requireInt64(t, e)
 		}
-		return out
 	case *big.Int:
 		t.Fatalf("integer %v does not fit int64", x)
 	}
-	return v
 }
 
 // loadFixture decodes the first flow of a flow file fixture.
@@ -240,10 +236,11 @@ func loadFixture(t *testing.T, rel string) *state.Map {
 	if err != nil {
 		t.Fatalf("decode %s: %v", rel, err)
 	}
-	m, ok := fromTnetstring(t, v).(*state.Map)
+	m, ok := v.(*state.Map)
 	if !ok {
 		t.Fatalf("%s: top-level value is %T, not a dict", rel, v)
 	}
+	requireInt64(t, m)
 	return m
 }
 

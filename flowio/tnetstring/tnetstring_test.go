@@ -20,10 +20,11 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/internal/testutil"
+	"github.com/zchee/mitmproxy-go/omap"
 )
 
-// entry is an exported mirror of a Dict entry, so go-cmp can diff decoded
-// trees and show key order.
+// entry is an exported mirror of a dictionary entry, so go-cmp can diff
+// decoded trees and show key order.
 type entry struct {
 	Key      string
 	BytesKey bool
@@ -35,7 +36,7 @@ type entry struct {
 // order-sensitive; big integers become their decimal text.
 func plain(v any) any {
 	switch v := v.(type) {
-	case *Dict:
+	case *omap.Map[any]:
 		out := []entry{}
 		for k, val := range v.All() {
 			out = append(out, entry{Key: k, BytesKey: v.IsBytesKey(k), Value: plain(val)})
@@ -69,10 +70,10 @@ func treeDiff(want, got any) string {
 	return fmt.Sprintf("encodings differ: want %q (%v), got %q (%v)", we, werr, ge, gerr)
 }
 
-// dict builds a Dict from alternating keys and values. A string key is a
-// text key and a []byte key a byte-string key.
-func dict(kv ...any) *Dict {
-	d := NewDict(len(kv) / 2)
+// dict builds a dictionary from alternating keys and values. A string key is
+// a text key and a []byte key a byte-string key.
+func dict(kv ...any) *omap.Map[any] {
+	d := omap.NewWithCapacity[any](len(kv) / 2)
 	for i := 0; i < len(kv); i += 2 {
 		switch k := kv[i].(type) {
 		case string:
@@ -234,7 +235,7 @@ func TestDictOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if diff := gocmp.Diff([]string{"b", "a"}, got.(*Dict).Keys()); diff != "" {
+	if diff := gocmp.Diff([]string{"b", "a"}, got.(*omap.Map[any]).Keys()); diff != "" {
 		t.Errorf("decoded key order mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -267,7 +268,7 @@ func TestFlowFiles(t *testing.T) {
 					t.Fatalf("flow %d: %v", flows, err)
 				}
 				rest = r
-				keys := v.(*Dict).Keys()
+				keys := v.(*omap.Map[any]).Keys()
 				if filepath.Base(file) == "corrupted_gzip_body.mitm" && (keys[0] != "websocket" || keys[len(keys)-1] != "version") {
 					t.Errorf("flow %d: keys = %v, want websocket first and version last", flows, keys)
 				}
@@ -296,7 +297,7 @@ func TestDictSemantics(t *testing.T) {
 	tests := map[string]struct {
 		data     string
 		wantKeys []string
-		want     *Dict
+		want     *omap.Map[any]
 	}{
 		"success: byte-string keys stay byte strings": {
 			data:     "16:1:a,1:1#1:b;1:2#}",
@@ -330,7 +331,7 @@ func TestDictSemantics(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Loads(%q) error: %v", tt.data, err)
 			}
-			d := got.(*Dict)
+			d := got.(*omap.Map[any])
 			if diff := gocmp.Diff(tt.wantKeys, d.Keys()); diff != "" {
 				t.Errorf("keys mismatch (-want +got):\n%s", diff)
 			}
@@ -349,8 +350,8 @@ func manyKeyNames(n int) []string {
 	return keys
 }
 
-func manyKeyDict(n int) *Dict {
-	d := &Dict{}
+func manyKeyDict(n int) *omap.Map[any] {
+	d := omap.New[any]()
 	for i, k := range manyKeyNames(n) {
 		d.Set(k, int64(i))
 	}
@@ -366,53 +367,21 @@ func manyKeys(n int) string {
 	return fmt.Sprintf("%d:%s}", payload.Len(), payload.String())
 }
 
-func TestDictAPI(t *testing.T) {
-	var nilDict *Dict
-	if nilDict.Len() != 0 || nilDict.Keys() != nil {
-		t.Errorf("nil Dict: Len = %d, Keys = %v", nilDict.Len(), nilDict.Keys())
-	}
-	if _, ok := nilDict.Get("x"); ok {
-		t.Error("nil Dict: Get reported a key")
-	}
-	for range nilDict.All() {
-		t.Error("nil Dict: All yielded an entry")
-	}
+// TestDictEncoding checks how the writer treats a dictionary's nil value
+// and key kinds; the map's own semantics are tested in package omap.
+func TestDictEncoding(t *testing.T) {
+	var nilDict *omap.Map[any]
 	if enc, err := Dumps(nilDict); err != nil || string(enc) != "0:}" {
-		t.Errorf("Dumps(nil *Dict) = %q, %v; want \"0:}\"", enc, err)
+		t.Errorf("Dumps(nil map) = %q, %v; want \"0:}\"", enc, err)
 	}
 
-	d := manyKeyDict(12)
-	d.Set("k03", "replaced")
-	if v, ok := d.Get("k03"); !ok || v != "replaced" {
-		t.Errorf("Get(k03) = %v, %v; want replaced, true", v, ok)
-	}
-	if diff := gocmp.Diff(manyKeyNames(12), d.Keys()); diff != "" {
-		t.Errorf("Set on an existing key moved it (-want +got):\n%s", diff)
-	}
-	k := NewDict(2)
+	k := omap.NewWithCapacity[any](2)
 	k.Set("t", int64(1))
 	k.SetBytesKey("b", int64(2))
 	k.Set("b", int64(3))
-	if !k.IsBytesKey("b") || k.IsBytesKey("t") || k.IsBytesKey("absent") || nilDict.IsBytesKey("b") {
-		t.Errorf("IsBytesKey: b=%v t=%v absent=%v; want Set to keep the kind of an existing key", k.IsBytesKey("b"), k.IsBytesKey("t"), k.IsBytesKey("absent"))
-	}
 	k.SetBytesKey("t", int64(4))
-	if !k.IsBytesKey("t") {
-		t.Error("SetBytesKey on a text key left it a text key")
-	}
 	if enc, err := Dumps(k); err != nil || string(enc) != "16:1:b,1:3#1:t,1:4#}" {
 		t.Errorf("Dumps = %q, %v; want byte-string keys written with ,", enc, err)
-	}
-
-	var stopped []string
-	for k := range d.All() {
-		stopped = append(stopped, k)
-		if len(stopped) == 2 {
-			break
-		}
-	}
-	if diff := gocmp.Diff([]string{"k00", "k01"}, stopped); diff != "" {
-		t.Errorf("All after break (-want +got):\n%s", diff)
 	}
 }
 
@@ -738,7 +707,7 @@ func randomObject(r *rand.Rand, depth int) any {
 			}
 			return list
 		}
-		d := &Dict{}
+		d := omap.New[any]()
 		for range n {
 			k := make([]string, r.IntN(101))
 			for i := range k {

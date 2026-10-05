@@ -84,11 +84,10 @@ func (r *Reader) next() (flow.Flow, error) {
 	if err != nil {
 		return nil, err
 	}
-	d, ok := v.(*tnetstring.Dict)
+	m, ok := v.(*state.Map)
 	if !ok {
 		return nil, fmt.Errorf("invalid flow: the top-level value is a %s, not a dict", state.TypeName(v))
 	}
-	m := fromTnetstring(d).(*state.Map)
 	if err := migrate(m); err != nil {
 		return nil, err
 	}

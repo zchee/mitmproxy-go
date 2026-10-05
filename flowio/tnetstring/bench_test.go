@@ -6,16 +6,18 @@ package tnetstring
 import (
 	"bytes"
 	"testing"
+
+	"github.com/zchee/mitmproxy-go/omap"
 )
 
 // benchFlow returns a value shaped like an HTTP flow's state: nested
 // dictionaries, header pairs, timestamps and a 4 KiB body.
-func benchFlow() *Dict {
+func benchFlow() *omap.Map[any] {
 	headers := make([]any, 0, 12)
 	for _, h := range []string{"Host", "User-Agent", "Accept", "Accept-Encoding", "Content-Type", "Content-Length", "Cookie", "Cache-Control", "Connection", "Referer", "Origin", "X-Request-Id"} {
 		headers = append(headers, []any{[]byte(h), []byte("value-of-" + h)})
 	}
-	message := func(body int) *Dict {
+	message := func(body int) *omap.Map[any] {
 		return dict(
 			"http_version", "HTTP/1.1",
 			"headers", headers,

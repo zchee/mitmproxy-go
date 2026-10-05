@@ -35,7 +35,7 @@ func TestDifferentialMigrate(t *testing.T) {
 				if err := migrate(m); err != nil {
 					t.Fatalf("flow %d: %v", i, err)
 				}
-				if err := tnetstring.Dump(&got, toTnetstring(m)); err != nil {
+				if err := tnetstring.Dump(&got, m); err != nil {
 					t.Fatalf("flow %d: %v", i, err)
 				}
 			}

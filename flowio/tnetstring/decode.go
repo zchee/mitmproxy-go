@@ -11,6 +11,8 @@ import (
 	"math/big"
 	"strconv"
 	"unicode/utf8"
+
+	"github.com/zchee/mitmproxy-go/omap"
 )
 
 // Loads decodes b, which must hold exactly one tnetstring value.
@@ -186,7 +188,9 @@ func parse(tag byte, data []byte, depth int) (any, error) {
 		if depth >= maxDepth {
 			return nil, syntaxErrorf("not a tnetstring: nesting deeper than %d levels", maxDepth)
 		}
-		d := &Dict{}
+		// No capacity hint: the payload length says nothing trustworthy
+		// about the key count, and the map grows with the keys decoded.
+		d := omap.New[any]()
 		for len(data) > 0 {
 			k, rest, err := pop(data, depth+1)
 			if err != nil {
@@ -210,7 +214,7 @@ func parse(tag byte, data []byte, depth int) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			if i := d.find(key); i >= 0 && d.entries[i].bytesKey != bytesKey {
+			if d.IsBytesKey(key) != bytesKey && d.Has(key) {
 				return nil, syntaxErrorf("not a tnetstring: dictionary has both a byte-string and a text key %q, which this decoder cannot hold apart", key)
 			}
 			if bytesKey {

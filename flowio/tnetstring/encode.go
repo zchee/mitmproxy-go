@@ -10,13 +10,15 @@ import (
 	"slices"
 	"strconv"
 	"unicode/utf8"
+
+	"github.com/zchee/mitmproxy-go/omap"
 )
 
 // Dumps returns the tnetstring encoding of v.
 //
 // See the package documentation for the accepted types. Strings must be valid
-// UTF-8, as Python's str.encode("utf8") requires. A nil *Dict is written as an
-// empty dictionary and a nil []byte as an empty byte string.
+// UTF-8, as Python's str.encode("utf8") requires. A nil *omap.Map[any] is
+// written as an empty dictionary and a nil []byte as an empty byte string.
 func Dumps(v any) ([]byte, error) {
 	var e encoder
 	if err := e.value(v, 0); err != nil {
@@ -163,7 +165,7 @@ func (e *encoder) value(v any, depth int) error {
 			}
 		}
 		e.prefix(e.size() - start)
-	case *Dict:
+	case *omap.Map[any]:
 		if depth >= maxDepth {
 			return fmt.Errorf("tnetstring: value nests deeper than %d levels", maxDepth)
 		}
@@ -171,16 +173,15 @@ func (e *encoder) value(v any, depth int) error {
 		start := e.size()
 		// Walking forwards while prepending leaves the entries in reverse
 		// insertion order, as mitmproxy writes them.
-		for i := range v.Len() {
-			ent := &v.entries[i]
-			if err := e.value(ent.value, depth+1); err != nil {
+		for k, val := range v.All() {
+			if err := e.value(val, depth+1); err != nil {
 				return err
 			}
-			if ent.bytesKey {
+			if v.IsBytesKey(k) {
 				e.prependByte(',')
-				e.prependString(ent.key)
-				e.prefix(len(ent.key))
-			} else if err := e.text(ent.key); err != nil {
+				e.prependString(k)
+				e.prefix(len(k))
+			} else if err := e.text(k); err != nil {
 				return err
 			}
 		}

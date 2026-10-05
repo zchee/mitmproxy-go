@@ -146,12 +146,12 @@ func TestBuildersMatchUpstream(t *testing.T) {
 	}
 }
 
-// fromWire converts a decoded tnetstring value to a state value. tnetstring
-// writes dictionary entries in reverse insertion order, so the keys are
-// reversed back into the order of the Python dictionary.
+// fromWire rebuilds a decoded tnetstring value with every dictionary's keys
+// reversed: tnetstring writes dictionary entries in reverse insertion order,
+// so this restores the order of the Python dictionary.
 func fromWire(v any) any {
 	switch x := v.(type) {
-	case *tnetstring.Dict:
+	case *state.Map:
 		keys := x.Keys()
 		m := state.NewMap(len(keys))
 		for _, k := range slices.Backward(keys) {

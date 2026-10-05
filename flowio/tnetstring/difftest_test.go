@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/zchee/mitmproxy-go/internal/difftest"
+	"github.com/zchee/mitmproxy-go/omap"
 )
 
 // diffScript reads float64 bit patterns as hex, one per line, and writes
@@ -65,7 +66,7 @@ func TestDifferentialFloats(t *testing.T) {
 	if len(lines) != len(floats)+1 {
 		t.Fatalf("got %d output lines, want %d", len(lines), len(floats)+1)
 	}
-	d := NewDict(len(floats))
+	d := omap.NewWithCapacity[any](len(floats))
 	for i, f := range floats {
 		got, err := Dumps(f)
 		if err != nil {

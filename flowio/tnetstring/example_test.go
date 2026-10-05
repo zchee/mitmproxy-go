@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/zchee/mitmproxy-go/flowio/tnetstring"
+	"github.com/zchee/mitmproxy-go/omap"
 )
 
 func ExampleDumps() {
@@ -24,7 +25,7 @@ func ExampleDumps() {
 }
 
 func ExampleDumps_dictOrder() {
-	d := &tnetstring.Dict{}
+	d := omap.New[any]()
 	d.Set("a", int64(1))
 	d.Set("b", int64(2))
 	b, err := tnetstring.Dumps(d)
@@ -41,7 +42,7 @@ func ExampleLoads() {
 	if err != nil {
 		panic(err)
 	}
-	for k, val := range v.(*tnetstring.Dict).All() {
+	for k, val := range v.(*omap.Map[any]).All() {
 		fmt.Println(k, val)
 	}
 	// Output:

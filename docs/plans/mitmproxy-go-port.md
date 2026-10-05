@@ -169,7 +169,7 @@ Public packages (what a Go addon author or embedder imports):
 ```
 flow/        Flow, HTTPFlow, TCPFlow, UDPFlow, DNSFlow, Error, flow state codec (py:flow.py, http.py, tcp.py, udp.py, dns.py)
 flow/state/  state.Map, Decoder and value helpers: the serialised-state vocabulary every model's GetState/SetState uses (py:mitmproxy/coretypes/serializable.py)
-omap/        insertion-ordered string-keyed Map with text and bytes key kinds; state.Map and the options/command registries are built on it
+omap/        insertion-ordered string-keyed Map with text and bytes key kinds; state.Map, the tnetstring codec and the options/command registries are built on it
 connection/  Client, Server, TransportProtocol (py:connection.py)
 httpmsg/     Headers (raw field tuples), Request, Response, Message, URL/cookies/multipart/status (py:http.py:49-179, py:mitmproxy/net/http/*)
 websocket/   WebSocketData, WebSocketMessage, Fragmentizer (py:websocket.py)
@@ -187,7 +187,7 @@ addons/<name>/  one package per upstream addon (py:mitmproxy/addons/*)
 filter/      grammar, 32 tokens, RE2/regexp2 (py:flowfilter.py)
 filter/regex/ pattern compilation: RE2 first, regexp2 for what RE2 lacks, Python class and flag semantics (py:flowfilter.py)
 flowio/      tnetstring, Reader/Writer, compat (18→21), HAR, flowjson (flow_to_json port) (py:mitmproxy/io/*, py:mitmproxy/tools/web/app.py flow_to_json)
-flowio/tnetstring/ mitmproxy's tnetstring dialect: Dumps, Load, Pop, ordered Dict (py:mitmproxy/io/tnetstring.py)
+flowio/tnetstring/ mitmproxy's tnetstring dialect: Dumps, Load, Pop; dictionaries are omap.Map[any], the state.Map type (py:mitmproxy/io/tnetstring.py)
 contentviews/ registry, metadata, views, highlight (py:mitmproxy/contentviews/*, rs:mitmproxy-contentviews, rs:mitmproxy-highlight)
 script/      Starlark loader and bindings (py:mitmproxy/addons/script.py, py:mitmproxy/script/)
 master/      Master, Do, lifecycle (py:master.py)
@@ -615,3 +615,4 @@ Still open:
 - 2026-10-05 (plan date from `date`: 2026-10-05 08:30 JST): `omap` and `flow/state` became public packages (formerly under `internal/`), because exported flow signatures (`GetState`/`SetState`, the `*FromState` constructors, `flow.Base.Metadata`) use `state.Map`, which code outside the module could not name; §3.2 lists both. The upstream research note on tnetstring dict keys is corrected: `_rdumpq` writes a bytes key with `,` and a str key with `;`, and the Go writer does the same.
 - 2026-10-05 (plan date from `date`: 2026-10-05 09:16 JST): text brought in line with the code: P0 deliverable 7 refers `Concurrent` to §3.1 rule 4, which also refuses it in `load`, `configure`, the `done` of `remove`/`clear` and commands; the §3.1 diagram names the planned layer packages `tlslayer` and `httplayer`; §3.2 lists the sub-packages that exist (`addon/addontest`, `addon/eventsequence`, `addon/hookdata`, `filter/regex`, `flowio/tnetstring`, `internal/human`, `internal/strutil`, `internal/version`) and the `internal/netutil` packages under their Go names.
 - 2026-10-05 (plan date from `date`: 2026-10-05 11:16 JST): `go:flow/state` keeps only the reading and comparing vocabulary (`Map`, `NewMap`, `Decoder`, the `As*` conversions, `ListOf`, `Tuple`, `TypeName`, `Copy`, `CopyMap`, `Equal`); the helpers the models use to write their state and to stamp new flows (`Opt`, `OptBytes`, `Bytes`, `BytesList`, `Now`, `NewID`) moved to `go:internal/stateutil`, which §3.2 lists, and three single-caller helpers were inlined. `state.Equal` compares an integer with a float exactly, as Python's `==` does. Revision number unchanged.
+- 2026-10-05 (plan date from `date`: 2026-10-05 11:25 JST): the tnetstring codec decodes dictionaries into `omap.Map[any]` and encodes from it, so `tnetstring.Dict` and flowio's conversion between it and `state.Map` are gone; §3.2 says so. Key order, key kinds and the codec's limits are unchanged. Revision number unchanged.

@@ -61,8 +61,8 @@ func captureClientHello(t *testing.T, cfg *tls.Config) []byte {
 	client, server := net.Pipe()
 	done := make(chan struct{})
 	defer func() {
-		client.Close()
-		server.Close()
+		_ = client.Close()
+		_ = server.Close()
 		<-done
 	}()
 	go func() {

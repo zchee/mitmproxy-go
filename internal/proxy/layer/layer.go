@@ -215,6 +215,12 @@ type Context struct {
 	// layer; see [Recorder].
 	Client Recorder
 
+	// Record wraps a transport with bounded recording and replay. The handler
+	// supplies the constructor. Layers wrap connections obtained from Pool
+	// before publishing them as Server, and call StopRecording at handover
+	// so application bodies do not accumulate in the recording buffer.
+	Record func(Conn) Recorder
+
 	// Hooks fires hooks for this connection. Layers use it for every
 	// hook; see the package rules.
 	Hooks Hooks

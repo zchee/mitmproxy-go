@@ -17,7 +17,9 @@ func TestConformance(t *testing.T) {
 	layertest.Conformance(t, func(t *testing.T) layertest.Session {
 		clientPeer, client := layertest.Pipe(t)
 		serverPeer, server := layertest.Pipe(t)
-		cr, sr := proxy.Record(client), proxy.Record(server)
+		c := &layer.Context{Record: proxy.Record}
+		c.Client, c.Server = c.Record(client), c.Record(server)
+		cr, sr := c.Client, c.Server
 		return layertest.Session{
 			Client: clientPeer, Server: serverPeer,
 			ClientInput: cr, ServerInput: sr,

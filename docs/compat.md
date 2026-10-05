@@ -470,3 +470,9 @@ TLS and protocol layers:
 | HTTP/2 windows are 2^31−1 and data is acknowledged at once (`mitmproxy/proxy/layers/http/_http_h2.py`, `_http2.py`). | Bounded windows: 100 concurrent streams, a 1 MiB initial stream window growing to 16 MiB, and a 128 MiB budget for granted windows; a stream's window is returned only when its data has been consumed. | Memory per connection stays bounded under slow readers. |
 | Server connections are reused by address, TLS, `via` and transport protocol (`mitmproxy/proxy/layers/http/__init__.py`). | The SNI is part of the key as well. | A connection opened for one SNI is never reused for another. |
 | DTLS follows the `tls_version_*` options. | `pion/dtls` speaks DTLS 1.2 only: a version window that contains `TLS1_2` negotiates DTLS 1.2, any other window fails the DTLS connection. | Limit of the only maintained pure-Go DTLS implementation. |
+
+## internal/proxy/modeserver
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Reverse HTTPS opens TCP and UDP listeners (`mitmproxy/proxy/mode_servers.py`, `mitmproxy/proxy/mode_specs.py`). | Reverse HTTPS currently opens TCP listeners only. | The QUIC transport is not implemented yet. |

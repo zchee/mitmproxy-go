@@ -27,6 +27,7 @@ type manifest struct {
 type expectedCase struct {
 	ID       string `json:"id"`
 	Expected string `json:"expected"`
+	Reason   string `json:"reason,omitzero"`
 }
 
 type caseResult struct {

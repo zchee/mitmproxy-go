@@ -23,7 +23,7 @@ import (
 	wsmodel "github.com/zchee/mitmproxy-go/websocket"
 )
 
-const maxFragmentsPerMessage = 65536
+const maxFragmentsPerMessage = 131072
 
 // Config supplies an HTTP 101 handoff. Buffered bytes must have been consumed
 // from the HTTP readers; New copies them and each prefix is replayed only once.
@@ -191,13 +191,28 @@ func (r *relay) run(ctx context.Context, c *layer.Context, clock layer.Clock) (r
 		return received{}, nil
 	}
 	inject := c.Inject
+	var pending *received
 	for {
+		if pending != nil {
+			return r.fail(ctx, c, clock, *pending)
+		}
 		var event received
 		select {
 		case <-ctx.Done():
 			return received{}, ctx.Err()
 		case event = <-failures:
-			return r.fail(ctx, c, clock, event)
+			if _, protocol := errors.AsType[*gows.ProtocolError](event.err); !protocol {
+				return r.fail(ctx, c, clock, event)
+			}
+			pending = new(event)
+			// Each reader can have only one ordinary event waiting. Finish
+			// the opposite reader's already queued write before aborting;
+			// do not wait for new traffic or an opposite Close.
+			select {
+			case event = <-incoming:
+			default:
+				return r.fail(ctx, c, clock, *pending)
+			}
 		case event = <-incoming:
 		case injection, ok := <-inject:
 			if !ok {
@@ -273,7 +288,11 @@ func readMessages(ctx context.Context, conn *gows.Conn, fromClient bool, incomin
 	fail := func(err error) {
 		select {
 		case failures <- received{fromClient: fromClient, err: err}:
-			stopHooks()
+			// A protocol error must not cancel an earlier valid message's
+			// hook or snapshot. EOF still releases intercepted hooks.
+			if _, protocol := errors.AsType[*gows.ProtocolError](err); !protocol {
+				stopHooks()
+			}
 		case <-ctx.Done():
 		}
 	}

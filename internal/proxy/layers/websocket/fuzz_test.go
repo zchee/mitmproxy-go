@@ -6,6 +6,7 @@ package websocket
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"unicode/utf8"
@@ -108,8 +109,12 @@ func FuzzReadMessages(f *testing.F) {
 					t.Fatal("terminal event has neither Close nor error")
 				}
 				await(t, done)
-				if stopCount != 1 {
-					t.Fatalf("hook cancellations=%d", stopCount)
+				wantStops := 1
+				if _, protocol := errors.AsType[*gows.ProtocolError](event.err); protocol {
+					wantStops = 0
+				}
+				if stopCount != wantStops {
+					t.Fatalf("hook cancellations=%d, want %d", stopCount, wantStops)
 				}
 				for i, content := range delivered {
 					if !bytes.Equal(content, copies[i]) {

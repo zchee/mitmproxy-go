@@ -15,10 +15,18 @@ HTTP 101 WebSocket handoff; a standalone gows result is not proxy evidence.
 `cases.json` independently freezes the 517 IDs exposed by the pinned image's
 `autobahntestsuite.case.Cases` catalogue, before any proxy report is produced.
 Expected behavior comes from the case definitions and compression offers:
-478 `OK`, 3 `INFORMATIONAL`, and 36 `UNIMPLEMENTED`. The latter require a
+471 `OK`, 7 `NON-STRICT`, 3 `INFORMATIONAL`, and 36 `UNIMPLEMENTED`. The latter require a
 server compression window below 15 bits; the stdlib compression backend declines
-those offers instead of advertising an unsupported window. Expected `FAILED`
-or `UNCLEAN` entries are forbidden. The runner uses every explicit manifest ID,
+those offers instead of advertising an unsupported window. The only class-derived
+proxy overrides are 3.2, 3.3, 4.1.3, 4.1.4, 4.2.3, 4.2.4, and 5.15: each sends a
+valid message immediately before a protocol fault. The proxy forwards already
+decoded valid messages and queued writes, then fails the offending hop immediately,
+as upstream mitmproxy does. An origin echo still in flight is not awaited, unlike
+an echo server's strict behavior. Each override records this reason in the manifest.
+Expected `FAILED`
+or `UNCLEAN` entries are forbidden. Fragment history is bounded to 131,072 entries
+per message: this admits highly fragmented valid messages while rejecting
+unbounded empty-fragment streams with close 1009. The runner uses every explicit manifest ID,
 without exclusions, and requires exactly one agent with exactly those IDs and
 matching behavior. Close behavior must also be accepted, never `FAILED` or
 `UNCLEAN`. Missing, extra, duplicate, malformed, or oversized evidence fails.

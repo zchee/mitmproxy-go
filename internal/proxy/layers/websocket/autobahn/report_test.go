@@ -65,6 +65,39 @@ func TestValidateReport(t *testing.T) {
 	}
 }
 
+func TestProxyProtocolFaultExpectations(t *testing.T) {
+	catalogue, err := loadJSON[manifest]("cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const reason = "proxy fails the offending hop immediately; the origin echo of the preceding valid message may still be in flight"
+	tests := map[string]struct{ Reason string }{
+		"3.2":   {reason},
+		"3.3":   {reason},
+		"4.1.3": {reason},
+		"4.1.4": {reason},
+		"4.2.3": {reason},
+		"4.2.4": {reason},
+		"5.15":  {reason},
+	}
+	got := make(map[string]struct{ Reason string })
+	counts := make(map[string]int)
+	for _, expected := range catalogue.Cases {
+		counts[expected.Expected]++
+		if expected.Expected == "NON-STRICT" {
+			got[expected.ID] = struct{ Reason string }{expected.Reason}
+		} else if expected.Reason != "" {
+			t.Fatalf("unexpected proxy override reason for %s", expected.ID)
+		}
+	}
+	if diff := gocmp.Diff(tests, got); diff != "" {
+		t.Fatal(diff)
+	}
+	if diff := gocmp.Diff(map[string]int{"OK": 471, "NON-STRICT": 7, "INFORMATIONAL": 3, "UNIMPLEMENTED": 36}, counts); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
 func TestJSONFiles(t *testing.T) {
 	tests := map[string]struct {
 		data      []byte

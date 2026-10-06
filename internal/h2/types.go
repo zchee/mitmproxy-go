@@ -93,6 +93,7 @@ type request struct {
 	code   http2.ErrCode
 	debug  []byte
 	result chan result
+	done   <-chan struct{}
 }
 
 type requestKind uint8
@@ -105,6 +106,7 @@ const (
 	cancelStream
 	shutdown
 	waitSendCredit
+	streamDone
 )
 
 func newRequest(ctx context.Context, kind requestKind) *request {

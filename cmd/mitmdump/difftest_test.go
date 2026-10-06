@@ -124,11 +124,9 @@ async def main():
     opts = options.Options()
     master = DumpMaster(opts, with_termlog=True, with_dumper=True)
     unported = {"scripts", "dns_name_servers", "dns_use_hosts_file", "strip_ech"}
-    # UDP and WebSocket proxy layers are not yet linked into the binary.
-    unported_commands = {"inject.udp", "inject.websocket"}
     result = {
         "options": {name: option.default for name, option in opts._options.items() if name not in unported},
-        "commands": sorted(cmd.signature_help().strip() for name, cmd in master.commands.commands.items() if not name.startswith("script.") and name not in unported_commands),
+        "commands": sorted(cmd.signature_help().strip() for name, cmd in master.commands.commands.items() if not name.startswith("script.")),
     }
     print(json.dumps(result))
 

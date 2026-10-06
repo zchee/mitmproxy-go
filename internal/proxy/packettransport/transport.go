@@ -158,7 +158,7 @@ func (l *Listener) readLoop() {
 		key := addr.Network() + "\x00" + addr.String()
 		conn := l.tuples[key]
 		if conn == nil {
-			ctx, cancel := context.WithCancel(l.ctx)
+			ctx, cancel := context.WithCancelCause(l.ctx)
 			conn = &TupleConn{listener: l, key: key, peer: cloneAddr(addr), ctx: ctx, cancel: cancel, wake: make(chan struct{})}
 			l.tuples[key] = conn
 			select {
@@ -210,7 +210,7 @@ func (l *Listener) finishLocked(conn *TupleConn, err error) {
 	if l.tuples[conn.key] == conn {
 		delete(l.tuples, conn.key)
 	}
-	conn.cancel()
+	conn.cancel(conn.err)
 	if l.active != nil && l.active.conn == conn {
 		_ = l.socket.SetWriteDeadline(time.Now())
 	}
@@ -269,7 +269,7 @@ type TupleConn struct {
 	key           string
 	peer          net.Addr
 	ctx           context.Context
-	cancel        context.CancelFunc
+	cancel        context.CancelCauseFunc
 	packets       [][]byte
 	bytes         int
 	wake          chan struct{}

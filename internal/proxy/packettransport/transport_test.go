@@ -192,7 +192,7 @@ func TestTupleBounds(t *testing.T) {
 				var filler *TupleConn
 				for i := range test.count {
 					if i%perTuple == 0 {
-						ctx, cancel := context.WithCancel(t.Context())
+						ctx, cancel := context.WithCancelCause(t.Context())
 						key := "budget:" + strconv.Itoa(i)
 						filler = &TupleConn{listener: listener, key: key, ctx: ctx, cancel: cancel, wake: make(chan struct{}), peer: peer.LocalAddr()}
 						listener.tuples[key] = filler

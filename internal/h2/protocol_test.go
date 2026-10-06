@@ -433,7 +433,11 @@ func TestBodyLengthAndEarlyResponseRejections(t *testing.T) {
 			if err := p.framer.WriteData(stream, true, []byte(test.body)); err != nil {
 				t.Fatal(err)
 			}
-			wire := p.frame(t, func(f wireFrame) bool { return f.kind == http2.FrameGoAway })
+			wantKind := http2.FrameRSTStream
+			if test.response {
+				wantKind = http2.FrameGoAway
+			}
+			wire := p.frame(t, func(f wireFrame) bool { return f.kind == wantKind })
 			if wire.code != http2.ErrCodeProtocol {
 				t.Fatalf("protocol code = %v", wire.code)
 			}

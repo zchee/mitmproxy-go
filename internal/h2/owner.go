@@ -26,23 +26,25 @@ type queuedEvent struct {
 }
 
 type streamState struct {
-	id            layer.StreamIdentity
-	done          chan struct{}
-	window        streamWindow
-	outWindow     int64
-	queue         []queuedEvent
-	receiver      *request
-	sender        *request
-	creditWaiter  *request
-	offset        int
-	inHeaders     bool
-	outHeaders    bool
-	remoteEnd     bool
-	localEnd      bool
-	failed        error
-	receipt       *consumption
-	contentLength int64
-	received      int64
+	id             layer.StreamIdentity
+	done           chan struct{}
+	window         streamWindow
+	outWindow      int64
+	queue          []queuedEvent
+	receiver       *request
+	sender         *request
+	creditWaiter   *request
+	offset         int
+	inHeaders      bool
+	outHeaders     bool
+	remoteEnd      bool
+	localEnd       bool
+	failed         error
+	receipt        *consumption
+	contentLength  int64
+	received       int64
+	requestMethod  string
+	responseStatus string
 }
 
 func (s *streamState) closeDone() {
@@ -196,7 +198,11 @@ func (o *owner) run(reads <-chan readFrame, writes chan<- *writeFrame, written <
 				}
 				o.lastActivity = o.e.cfg.Clock.Now()
 				if err := o.frame(incoming.frame); err != nil {
-					o.fail(err)
+					if stream, ok := errors.AsType[*StreamError](err); ok {
+						o.cancel(o.streams[stream.Identity.Stream], stream.Code, err, true)
+					} else {
+						o.fail(err)
+					}
 				} else if len(o.controls) > MaxConcurrentStreams*2 || len(o.connectionEvents) > MaxConcurrentStreams {
 					o.fail(protocolError(http2.ErrCodeEnhanceYourCalm, "HTTP/2 control queue limit exceeded"))
 				}
@@ -560,6 +566,13 @@ func (o *owner) checkSend(s *streamState, event Event) error {
 			return streamError(s.id, http2.ErrCodeEnhanceYourCalm, "h2: outbound headers exceed peer limit")
 		}
 	}
+	if o.e.cfg.Client && event.Kind == Headers {
+		for _, field := range event.Headers {
+			if field.Name == ":method" {
+				s.requestMethod = field.Value
+			}
+		}
+	}
 	return nil
 }
 
@@ -912,6 +925,11 @@ func (o *owner) headers(id uint32, fields []hpack.HeaderField, end bool) error {
 				return err
 			}
 			s.inHeaders = true
+			for _, field := range fields {
+				if field.Name == ":status" {
+					s.responseStatus = field.Value
+				}
+			}
 			if err := s.setContentLength(fields); err != nil {
 				return err
 			}
@@ -970,8 +988,13 @@ func checkPseudo(fields []hpack.HeaderField, response bool) error {
 }
 
 func (s *streamState) checkLength(end bool) error {
-	if s.contentLength >= 0 && (s.received > s.contentLength || end && s.received != s.contentLength) {
-		return protocolError(http2.ErrCodeProtocol, "InvalidBodyLengthError: Expected "+strconv.FormatInt(s.contentLength, 10)+" bytes, received "+strconv.FormatInt(s.received, 10))
+	length := s.contentLength
+	// HEAD and bodyless status codes describe a representation, not DATA bytes.
+	if s.responseStatus != "" && (s.requestMethod == "HEAD" || s.responseStatus == "204" || s.responseStatus == "304" || strings.HasPrefix(s.responseStatus, "1")) {
+		length = 0
+	}
+	if length >= 0 && (s.received > length || end && s.received != length) {
+		return streamError(s.id, http2.ErrCodeProtocol, "InvalidBodyLengthError: Expected "+strconv.FormatInt(length, 10)+" bytes, received "+strconv.FormatInt(s.received, 10))
 	}
 	return nil
 }

@@ -21,10 +21,45 @@ origin_pid=""
 proxy_pid=""
 suite_pid=""
 guard_pid=""
+sampler_pid=""
+
+capture_resources() {
+  {
+    date -u '+%Y-%m-%dT%H:%M:%SZ'
+    df -h "$PWD" || true
+    du -sh "$report" || true
+    if [[ "$(uname -s)" = Linux ]]; then
+      free -m || true
+      swapon --show || true
+      ps -eo pid,rss,comm --sort=-rss | head -n 16 || true
+    else
+      ps -axo pid,rss,comm | sort -k2 -nr | head -n 16 || true
+    fi
+    if [[ -s "$report/container.id" ]]; then
+      local container
+      container="$(<"$report/container.id")"
+      tail -n 4 "$report/suite.log" || true
+      docker stats --no-stream --format '{{json .}}' "$container" || true
+      if [[ "$(uname -s)" = Linux ]]; then
+        local field value
+        for field in memory.events memory.peak memory.current memory.max memory.swap.max; do
+          # Docker can drop the scope on exit; retain the latest readable values.
+          if value="$(sudo cat "/sys/fs/cgroup/system.slice/docker-${container}.scope/$field" 2>&1)"; then
+            printf '%s\n' "$value" >|"$report/cgroup-$field.txt"
+          fi
+          printf '%s: %s\n' "$field" "$value"
+        done
+      fi
+    fi
+  } >>"$report/resource-samples.log" 2>&1
+}
 
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
+  [[ -z "$sampler_pid" ]] || kill "$sampler_pid" 2>/dev/null || true
+  [[ -z "$sampler_pid" ]] || wait "$sampler_pid" 2>/dev/null || true
+  capture_resources || true
   if [[ $status -ne 0 ]]; then
     [[ -z "$proxy_pid" ]] || kill -QUIT "$proxy_pid" 2>/dev/null || true
     [[ -z "$origin_pid" ]] || kill -QUIT "$origin_pid" 2>/dev/null || true
@@ -32,10 +67,16 @@ cleanup() {
   [[ -z "$guard_pid" ]] || kill "$guard_pid" 2>/dev/null || true
   [[ -z "$suite_pid" ]] || kill "$suite_pid" 2>/dev/null || true
   [[ -z "$guard_pid" ]] || wait "$guard_pid" 2>/dev/null || true
-  [[ -z "$suite_pid" ]] || wait "$suite_pid" 2>/dev/null || true
+  if [[ -n "$suite_pid" ]]; then
+    local suite_status=0
+    wait "$suite_pid" 2>/dev/null || suite_status=$?
+    printf '%s\n' "$suite_status" >|"$report/suite-exit-status.txt"
+  fi
   if [[ -f "$report/container.id" ]]; then
     local container
     container="$(<"$report/container.id")"
+    docker inspect --format '{{.State.Status}} oom={{.State.OOMKilled}} exit={{.State.ExitCode}} err={{.State.Error}} finished={{.State.FinishedAt}}' "$container" >|"$report/container-state.txt" 2>&1 || true
+    docker stats --no-stream "$container" >|"$report/container-stats.txt" 2>&1 || true
     docker rm -f "$container" >/dev/null 2>&1 || true
   fi
   [[ -z "$proxy_pid" ]] || kill "$proxy_pid" 2>/dev/null || true
@@ -78,12 +119,22 @@ fi
 [[ "$container_host" != *:* ]] || container_host="[$container_host]"
 image="$("$helper" configure "$report/cases.json" "$report/config.template.json" "ws://$container_host:$proxy_port" "$report/fuzzingclient.json")"
 timeout_seconds="$("$helper" seconds "${WS_GATE_TIMEOUT_SECONDS:-1800}")"
-docker run --rm --cidfile "$report/container.id" --network=host --add-host=host.docker.internal:host-gateway -v "$report:/reports" "$image" wstest -m fuzzingclient -s /reports/fuzzingclient.json >|"$report/suite.log" 2>&1 &
+docker run --env PYTHONUNBUFFERED=1 --cidfile "$report/container.id" --network=host --add-host=host.docker.internal:host-gateway -v "$report:/reports" "$image" wstest -m fuzzingclient -s /reports/fuzzingclient.json >|"$report/suite.log" 2>&1 &
 suite_pid=$!
+(
+  while kill -0 "$suite_pid" 2>/dev/null; do
+    capture_resources || true
+    sleep 15
+  done
+) &
+sampler_pid=$!
 "$helper" guard "$timeout_seconds" "$suite_pid" >|"$report/guard.log" 2>&1 &
 guard_pid=$!
-wait "$suite_pid"
+suite_status=0
+wait "$suite_pid" || suite_status=$?
+printf '%s\n' "$suite_status" >|"$report/suite-exit-status.txt"
 suite_pid=""
+[[ $suite_status -eq 0 ]] || exit "$suite_status"
 kill "$guard_pid" 2>/dev/null || true
 wait "$guard_pid" 2>/dev/null || true
 guard_pid=""

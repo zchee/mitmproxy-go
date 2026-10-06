@@ -60,8 +60,23 @@ jobs:
           fi
           sudo systemctl start docker
           docker info
+          free -m >| "${NETWORK_GATE_OUTPUT}/host-memory-before.txt" 2>&1 || true
+          swapon --show >| "${NETWORK_GATE_OUTPUT}/swap-before.txt" 2>&1 || true
+          df -h "${GITHUB_WORKSPACE}" >| "${NETWORK_GATE_OUTPUT}/disk-before.txt" 2>&1 || true
       - name: Run isolated acceptance measurements
         run: bash hack/network-gate.sh
+      - name: Capture runner resource diagnostics
+        if: always()
+        run: |
+          mkdir -p "${NETWORK_GATE_OUTPUT}"
+          date -u '+%Y-%m-%dT%H:%M:%SZ' >| "${NETWORK_GATE_OUTPUT}/resource-snapshot.txt"
+          free -m >| "${NETWORK_GATE_OUTPUT}/host-memory-after.txt" 2>&1 || true
+          swapon --show >| "${NETWORK_GATE_OUTPUT}/swap-after.txt" 2>&1 || true
+          df -h "${GITHUB_WORKSPACE}" >| "${NETWORK_GATE_OUTPUT}/disk-after.txt" 2>&1 || true
+          sudo journalctl -k -n 200 --no-pager >| "${NETWORK_GATE_OUTPUT}/kernel.log" 2>&1 || true
+          sudo journalctl -u systemd-oomd -n 50 --no-pager >| "${NETWORK_GATE_OUTPUT}/oomd.log" 2>&1 || true
+          systemctl status systemd-oomd --no-pager >| "${NETWORK_GATE_OUTPUT}/oomd-status.txt" 2>&1 || true
+          docker stats --no-stream >| "${NETWORK_GATE_OUTPUT}/docker-stats.txt" 2>&1 || true
       - name: Upload measurements and diagnostics
         if: always()
         uses: actions/upload-artifact@v7

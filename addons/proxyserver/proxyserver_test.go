@@ -70,6 +70,7 @@ func TestOptionMetadata(t *testing.T) {
 		"normalize_outbound_headers": {options.TypeBool, true, "Normalize outgoing HTTP/2 header names, but emit a warning when doing so. HTTP/2 does not allow uppercase header names. This option makes sure that HTTP/2 headers set in custom scripts are lowercased before they are sent.", nil},
 		"validate_inbound_headers":   {options.TypeBool, true, "Make sure that incoming HTTP requests and responses are not malformed. Disabling this option makes mitmproxy vulnerable to HTTP smuggling attacks.", nil},
 		"connect_addr":               {options.TypeOptStr, (*string)(nil), "Set the local IP address that mitmproxy should use when connecting to upstream servers.", nil},
+		"max_client_connections":     {options.TypeInt, 0, "Maximum number of concurrent client connections; 0 means unlimited.", nil},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -99,6 +100,7 @@ func TestOptions(t *testing.T) {
 		"invalid body limit":       {map[string]any{"body_size_limit": new("invalid")}, "Invalid body_size_limit specification: invalid"},
 		"invalid source address":   {map[string]any{"connect_addr": new("invalid")}, "Invalid value for connect_addr: 'invalid'. Specify a valid IP address."},
 		"invalid mode":             {map[string]any{"mode": []string{"invalid!"}}, "Invalid proxy mode specification: invalid! (unknown mode)"},
+		"negative connection cap":  {map[string]any{"max_client_connections": -1}, "max_client_connections must be nonnegative."},
 		"duplicate address":        {map[string]any{"mode": []string{"regular", "reverse:example.com"}}, "Cannot spawn multiple servers on the same address: 127.0.0.1:0"},
 		"most frequent duplicate":  {map[string]any{"mode": []string{"regular@10001", "reverse:a@10001", "regular@10002", "reverse:b@10002", "reverse:c@10002"}}, "Cannot spawn multiple servers on the same address: 127.0.0.1:10002"},
 		"valid limits":             {map[string]any{"stream_large_bodies": new("1m"), "body_size_limit": new("1m")}, ""},
@@ -409,6 +411,37 @@ func TestStartStop(t *testing.T) {
 	if ps.ActiveConnections(t.Context()) != 1 {
 		t.Fatal("stopping listeners canceled accepted client")
 	}
+	_ = client.Close()
+	await(t, hooks.ended)
+}
+
+func TestConnectionLimitWarning(t *testing.T) {
+	m, ps, logs, hooks := fixture(t, true)
+	origin := echoOrigin(t)
+	update(t, m, map[string]any{"mode": []string{"reverse:tcp://" + origin.Addr().String()}, "max_client_connections": 1})
+	if err := ps.SetupServers(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	client := dial(t, ps.ListenAddrs()[0].String())
+	exchange(t, client, "a", "A")
+	await(t, hooks.started)
+	denied := dial(t, ps.ListenAddrs()[0].String())
+	var buf [1]byte
+	if n, err := denied.Read(buf[:]); n != 0 || err == nil {
+		t.Fatalf("denied client read = %d, %v", n, err)
+	} else if timeout, ok := errors.AsType[net.Error](err); ok && timeout.Timeout() {
+		stack := make([]byte, 1<<20)
+		t.Fatalf("denied client remained open\n%s", stack[:runtime.Stack(stack, true)])
+	}
+	want := "Client connection from " + denied.LocalAddr().String() + " refused: max_client_connections (1) reached."
+	waitState(t, logs, func() bool { return strings.Contains(logs.String(), want) })
+	if got := strings.Count(logs.String(), want); got != 1 {
+		t.Fatalf("refusal logged %d times, want once: %s", got, logs.String())
+	}
+	if got := ps.ActiveConnections(t.Context()); got != 1 {
+		t.Fatalf("denied client changed active connections to %d", got)
+	}
+	_ = denied.Close()
 	_ = client.Close()
 	await(t, hooks.ended)
 }

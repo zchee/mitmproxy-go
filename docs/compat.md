@@ -501,6 +501,7 @@ Options that only the Go port has (`testdata/options-go-only.txt`; not registere
 | `content_decode_limit` | str | `256m` | Upper bound on the decoded size of a message body (parsed as a byte size). A body that would decode to more counts as undecodable: `Content` and `Text` fail and `ContentOrRaw`/`TextOrRaw` return the raw bytes. Upstream decodes without a bound. |
 | `local_redirector_path` | str | `""` | Path to the local mode redirector; empty means it is downloaded into the configuration directory on first use. |
 | `otel_exporter_endpoint` | str | `""` | OTLP endpoint for OpenTelemetry traces and metrics; empty disables the exporter. |
+| `max_client_connections` | int | `0` | Maximum concurrent accepted clients across all proxy modes; 0 means unlimited. Excess clients are closed before connection hooks and registry entry. |
 | `pprof_addr` | str | `""` | Loopback address that serves `net/http/pprof`; empty disables it. |
 | `script_max_steps` | int | `0` | Maximum Starlark execution steps per script hook call; 0 means no limit. |
 
@@ -531,6 +532,7 @@ TLS and protocol layers:
 
 | Upstream | Go | Reason |
 |---|---|---|
+| No global cap on concurrent accepted clients (`mitmproxy/addons/proxyserver.py`, `mitmproxy/proxy/mode_servers.py`). | The Go-only `max_client_connections` integer defaults to 0 (unlimited). A positive cap is shared across all mode listeners; excess clients are closed immediately after accept, warned once, and never registered as active connections. Lowering the cap retains existing clients. | Bound concurrent sockets and handler resources without changing HTTP idle-deadline semantics. |
 | `configure` accepts every parseable proxy mode; backends without an implementation fail later, at listen time (`mitmproxy/addons/proxyserver.py`). | `configure` rejects modes whose server backend is not implemented with `Proxy mode <spec> is not supported by mitmproxy-go yet.` | Failing at configure time names the unsupported mode instead of starting a server that cannot serve it. |
 | `inject.websocket` and `inject.udp` commands (`mitmproxy/addons/proxyserver.py`). | Only `inject.tcp` is registered. | The WebSocket and UDP protocol layers are not implemented yet. |
 | `server_connect` refuses a TCP destination on a listen port only for the four literal host strings `localhost`, `127.0.0.1`, `::1` and the listen host (`mitmproxy/addons/proxyserver.py`). | The TCP dialer's `Control` checks each resolved address actually dialled against the current listeners on the same port: any loopback or unspecified address, the bound address, and, for a wildcard listener, every local interface address. This covers every address spelling, including libc numeric forms, and names that resolve to the proxy, without resolving names twice. The pre-dial host check remains; both checks use upstream's refusal text. Custom dialers must delegate to `ProxyServer.Dialer()` to retain the dial-time guard. | Checking only a host string lets a DNS name or another numeric spelling loop one unauthenticated request into the proxy without end; checking the dialled address also prevents DNS rebinding from bypassing the guard. |

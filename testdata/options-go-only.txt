@@ -1,5 +1,6 @@
 content_decode_limit	str	"256m"	Maximum size of a decoded HTTP body. Bodies exceeding this limit are treated as undecodable.
 local_redirector_path	str	""	Path to the local mode redirector. Empty means it is downloaded into the configuration directory on first use.
+max_client_connections	int	0	Maximum number of concurrent client connections; 0 means unlimited.
 otel_exporter_endpoint	str	""	OTLP endpoint that OpenTelemetry traces and metrics are exported to. Empty disables the exporter.
 pprof_addr	str	""	Serve net/http/pprof on this loopback address, for example 127.0.0.1:6060. Empty disables it.
 script_max_steps	int	0	Maximum number of Starlark execution steps per script hook call. 0 means no limit.

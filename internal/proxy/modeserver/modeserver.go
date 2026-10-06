@@ -39,6 +39,8 @@ type Config struct {
 	ListenPort *int
 	// Logger receives listen, accept and connection failures.
 	Logger *slog.Logger
+	// ClientLimiter shares admission capacity across instances. Nil is unlimited.
+	ClientLimiter *ClientLimiter
 }
 
 // Instance owns a mode's TCP listeners. Start and Stop serialize lifecycle work
@@ -48,6 +50,7 @@ type Config struct {
 type Instance struct {
 	mode       modespec.Mode
 	handler    *proxy.Handler
+	limiter    *ClientLimiter
 	host       string
 	port       int
 	top        hookdata.LayerSpec
@@ -98,7 +101,7 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	i := &Instance{mode: mode, handler: cfg.Handler, host: host, port: port, top: hookdata.LayerSpec{Kind: kind}, logger: logger}
+	i := &Instance{mode: mode, handler: cfg.Handler, limiter: cfg.ClientLimiter, host: host, port: port, top: hookdata.LayerSpec{Kind: kind}, logger: logger}
 	i.listenTCP = new(net.ListenConfig).Listen
 	i.state.Store(&instanceState{})
 	return i, nil
@@ -235,7 +238,13 @@ func (i *Instance) accept(ctx context.Context, listener net.Listener) {
 			}
 			return
 		}
+		if admitted, limit := i.limiter.acquire(); !admitted {
+			_ = client.Close()
+			i.logger.Warn(fmt.Sprintf("Client connection from %s refused: max_client_connections (%d) reached.", client.RemoteAddr(), limit))
+			continue
+		}
 		go func() {
+			defer i.limiter.release()
 			if err := i.handler.Handle(ctx, client, i.mode.String(), i.top); err != nil {
 				i.logger.Error("Handling proxy connection", "error", err)
 			}

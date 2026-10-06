@@ -42,6 +42,7 @@ type ProxyServer struct {
 	opts        *options.Manager
 	handler     *proxy.Handler
 	connections *proxy.Connections
+	limiter     modeserver.ClientLimiter
 	logger      *slog.Logger
 	isRunning   bool
 	connectAddr *connection.Address
@@ -99,6 +100,7 @@ func (p *ProxyServer) Load(ctx context.Context, loader *addon.Loader) error {
 		{"normalize_outbound_headers", options.TypeBool, true, "Normalize outgoing HTTP/2 header names, but emit a warning when doing so. HTTP/2 does not allow uppercase header names. This option makes sure that HTTP/2 headers set in custom scripts are lowercased before they are sent.", nil},
 		{"validate_inbound_headers", options.TypeBool, true, "Make sure that incoming HTTP requests and responses are not malformed. Disabling this option makes mitmproxy vulnerable to HTTP smuggling attacks.", nil},
 		{"connect_addr", options.TypeOptStr, nil, "Set the local IP address that mitmproxy should use when connecting to upstream servers.", nil},
+		{"max_client_connections", options.TypeInt, 0, "Maximum number of concurrent client connections; 0 means unlimited.", nil},
 	} {
 		if err := loader.AddOption(ctx, spec.name, spec.typ, spec.def, spec.help, spec.choices...); err != nil {
 			return err
@@ -113,6 +115,13 @@ func (p *ProxyServer) Load(ctx context.Context, loader *addon.Loader) error {
 // Configure validates option changes and schedules listener updates only when
 // mode or server changes. Changing listen defaults alone leaves listeners intact.
 func (p *ProxyServer) Configure(_ context.Context, updated map[string]struct{}) error {
+	if _, changed := updated["max_client_connections"]; changed {
+		limit := p.opts.Int("max_client_connections")
+		if limit < 0 {
+			return options.Errorf("max_client_connections must be nonnegative.")
+		}
+		p.limiter.SetLimit(limit)
+	}
 	for _, name := range []string{"stream_large_bodies", "body_size_limit"} {
 		if _, changed := updated[name]; changed {
 			value := p.opts.OptStr(name)
@@ -202,7 +211,7 @@ func (p *ProxyServer) run() {
 }
 
 func (p *ProxyServer) configuredInstances() ([]*modeserver.Instance, error) {
-	cfg := modeserver.Config{Handler: p.handler, ListenHost: p.opts.Str("listen_host"), ListenPort: p.opts.OptInt("listen_port"), Logger: p.logger}
+	cfg := modeserver.Config{Handler: p.handler, ClientLimiter: &p.limiter, ListenHost: p.opts.Str("listen_host"), ListenPort: p.opts.OptInt("listen_port"), Logger: p.logger}
 	var instances []*modeserver.Instance
 	var addresses []connection.Address
 	counts := make(map[connection.Address]int)

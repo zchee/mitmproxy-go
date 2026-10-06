@@ -647,3 +647,10 @@ Replay API: `proxy.Replay` takes a `ReplayRunner` supplied as `httplayer.Replay`
 | Upstream | Go | Reason |
 |---|---|---|
 | Authorization retention by host is unbounded (`mitmproxy/addons/stickyauth.py:35`). | Holds at most 100,000 hosts and 16 MiB of retained string bytes. Overflow drops growing writes without failing the flow and warns once until a smaller overwrite releases bytes. Existing values remain usable; disabling the option retains the jar. | Bound traffic-driven state without turning a retention limit into a flow error. |
+
+## addons/updatealtsvc
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Alt-Svc substitutions have no explicit size bound and operate on Python header text with surrogate escapes (`mitmproxy/addons/update_alt_svc.py:11-12,33`). | Uses filter/regex's 256 MiB transformation limits and Unicode digit tables. Invalid UTF-8 or an exceeded limit returns a hook error without changing the header. | Bound work under dispatch and retain the shared regex compiler's text contract. |
+| A missing response, client connection or listener address raises a Python exception (`mitmproxy/addons/update_alt_svc.py:25,28,31`). | Missing data needed for a rewrite returns a hook error; an invalid stored proxy-mode string is treated as non-reverse. | Malformed hand-built Go flows must not panic; valid flows preserve upstream guards. |

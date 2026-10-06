@@ -115,8 +115,9 @@ func TestNextLayerReasks(t *testing.T) {
 		if len(data.DataClient) == 6 {
 			data.Layer = hookdata.LayerStack{{Kind: "test-selected"}}
 		}
-		// A handler owns its input snapshot, not the bytes awaiting replay.
-		data.DataClient[0] = 'X'
+		if cap(data.DataClient) != len(data.DataClient) {
+			t.Errorf("hook view capacity = %d, want %d", cap(data.DataClient), len(data.DataClient))
+		}
 		return nil
 	})
 	done := startSelection(t, t.Context(), c)

@@ -38,6 +38,7 @@ type NextLayer struct {
 	hosts        map[string][]regex.Matcher
 	logger       *slog.Logger
 	matchTimeout time.Duration
+	hellos       map[*connection.Client]*tlsparse.ClientHelloParser
 }
 
 // New returns a layer selection addon using opts, whose core options include
@@ -82,11 +83,20 @@ func (a *NextLayer) log() *slog.Logger {
 	return slog.Default()
 }
 
+// ClientDisconnected releases incomplete ClientHello parsing state for client.
+func (a *NextLayer) ClientDisconnected(_ context.Context, client *connection.Client) error {
+	delete(a.hellos, client)
+	return nil
+}
+
 // NextLayer preserves an existing decision or selects an outermost-first stack.
 // Incomplete HTTP or TLS sniffing leaves Layer nil for the caller to retry.
 // Sniffing that reaches the buffer limit falls back to raw TCP with a warning.
 func (a *NextLayer) NextLayer(ctx context.Context, d *hookdata.NextLayer) error {
 	if d.Layer != nil {
+		if d.Context != nil {
+			delete(a.hellos, d.Context.Client)
+		}
 		return nil
 	}
 	if d.Context == nil || d.Context.Client == nil || d.Context.Server == nil {
@@ -106,14 +116,17 @@ func (a *NextLayer) NextLayer(ctx context.Context, d *hookdata.NextLayer) error 
 	case errors.Is(err, errNeedsMoreData):
 		a.log().DebugContext(ctx, "Deferring layer decision, not enough data", "client_bytes", len(d.DataClient))
 	case err != nil:
+		delete(a.hellos, d.Context.Client)
 		return err
 	default:
 		d.Layer = stack
+		delete(a.hellos, d.Context.Client)
 	}
 	return nil
 }
 
 func (a *NextLayer) sniffFallback(ctx context.Context, d *hookdata.NextLayer) {
+	delete(a.hellos, d.Context.Client)
 	a.log().WarnContext(ctx, "Protocol sniff limit reached; falling back to raw TCP", "limit", sniffLimit)
 	d.Layer = hookdata.LayerStack{{Kind: hookdata.LayerTCP}}
 }
@@ -124,8 +137,16 @@ func (a *NextLayer) choose(ctx context.Context, d *hookdata.NextLayer) (hookdata
 	var hello *tlsparse.ClientHello
 	var incomplete bool
 	if isTLS {
+		if a.hellos == nil {
+			a.hellos = make(map[*connection.Client]*tlsparse.ClientHelloParser)
+		}
+		parser := a.hellos[c.Client]
+		if parser == nil {
+			parser = new(tlsparse.ClientHelloParser)
+			a.hellos[c.Client] = parser
+		}
 		var err error
-		hello, err = tlsparse.ParseClientHello(d.DataClient)
+		hello, err = parser.Parse(d.DataClient)
 		if errors.Is(err, tlsparse.ErrTooLarge) {
 			return nil, err
 		}

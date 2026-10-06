@@ -42,9 +42,11 @@ type Context struct {
 type NextLayer struct {
 	// Context is the context of the connection.
 	Context *Context
-	// DataClient is the data received from the client so far.
+	// DataClient is a read-only view of the data received from the client so
+	// far, valid only for the duration of the hook. Copy it to retain it.
 	DataClient []byte
-	// DataServer is the data received from the server so far.
+	// DataServer is a read-only view of the data received from the server so
+	// far, valid only for the duration of the hook. Copy it to retain it.
 	DataServer []byte
 	// Layer is the stack of layers to use next, outermost first. A handler
 	// sets it; nil leaves the decision to the handlers after it, or to a

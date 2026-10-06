@@ -24,8 +24,8 @@ type sniffRead struct {
 	err  error
 }
 
-// nextLayer retains input independently of hook arguments: handlers may edit
-// their view, and a read completed during a hook must still replay at handover.
+// nextLayer lends hooks read-only views of the received bytes. The recorder
+// independently retains replay bytes, including reads completed during a hook.
 func nextLayer(ctx context.Context, c *layer.Context) (layer.Layer, error) {
 	if c == nil || c.Data == nil || c.Client == nil || c.Hooks == nil || c.Do == nil {
 		return nil, errors.New("proxy: next layer requires client, metadata, hooks and dispatch")
@@ -77,8 +77,8 @@ func nextLayer(ctx context.Context, c *layer.Context) (layer.Layer, error) {
 			if len(read.data) != 0 {
 				received[read.side] = append(received[read.side], read.data...)
 				_, err := c.Hooks.FireFunc(ctx, func(context.Context) error {
-					data.DataClient = bytes.Clone(received[0])
-					data.DataServer = bytes.Clone(received[1])
+					data.DataClient = slices.Clip(received[0])
+					data.DataServer = slices.Clip(received[1])
 					return nil
 				}, addon.NextLayerHook{Data: data})
 				if err != nil {

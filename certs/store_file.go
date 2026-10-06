@@ -117,6 +117,10 @@ func readPEMFile(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return readPEM(file)
+}
+
+func readPEM(file *os.File) ([]byte, error) {
 	raw, err := io.ReadAll(io.LimitReader(file, maxPEMSize+1))
 	if err := errors.Join(err, file.Close()); err != nil {
 		return nil, err

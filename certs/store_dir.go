@@ -22,17 +22,43 @@ import (
 // `<basename>-dhparam.pem` holding [DefaultDHParam]. Loading an existing
 // directory preserves the CA identity; passphrase decrypts an encrypted
 // CA file as [FromFiles] describes.
-func FromStore(path, basename string, keySize int, passphrase []byte) (*Store, error) {
-	caFile := filepath.Join(path, basename+"-ca.pem")
-	dhparamFile := filepath.Join(path, basename+"-dhparam.pem")
-	if _, err := os.Stat(caFile); errors.Is(err, os.ErrNotExist) {
-		if err := createStore(path, basename, keySize); err != nil {
+func FromStore(path, basename string, keySize int, passphrase []byte) (result *Store, err error) {
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, root.Close()) }()
+	if err := checkStoreDirectory(root); err != nil {
+		return nil, err
+	}
+	caName := basename + "-ca.pem"
+	dhparamName := basename + "-dhparam.pem"
+	if _, err := root.Stat(caName); errors.Is(err, os.ErrNotExist) {
+		if err := createStore(root, basename, keySize); err != nil {
 			return nil, err
 		}
 	} else if err != nil {
 		return nil, err
 	}
-	return FromFiles(caFile, dhparamFile, passphrase)
+	file, err := root.Open(caName)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := readPEM(file)
+	if err != nil {
+		return nil, err
+	}
+	store, err := storeFromPEM(raw, filepath.Join(path, caName), passphrase)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureStoreDHParam(root, dhparamName); err != nil {
+		return nil, err
+	}
+	return store, nil
 }
 
 // FromFiles loads a store whose CA file holds the private key and the CA
@@ -43,25 +69,45 @@ func FromStore(path, basename string, keySize int, passphrase []byte) (*Store, e
 // older than its 0.11 layout. An encrypted private key without a
 // passphrase returns [ErrPassphraseRequired]. The CA file is limited to
 // 8 MiB.
-func FromFiles(caFile, dhparamFile string, passphrase []byte) (*Store, error) {
+func FromFiles(caFile, dhparamFile string, passphrase []byte) (result *Store, err error) {
 	raw, err := readPEMFile(caFile)
 	if err != nil {
 		return nil, err
 	}
-	key, err := loadPEMPrivateKey(raw, passphrase)
+	store, err := storeFromPEM(raw, caFile, passphrase)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(dhparamFile); err != nil {
+	root, err := os.OpenRoot(filepath.Dir(dhparamFile))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, root.Close()) }()
+	if err := ensureStoreDHParam(root, filepath.Base(dhparamFile)); err != nil {
+		return nil, err
+	}
+	return store, nil
+}
+
+func ensureStoreDHParam(root *os.Root, name string) error {
+	if _, err := root.Stat(name); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			return nil, err
+			return err
 		}
-		if err := checkStoreDirectory(filepath.Dir(dhparamFile)); err != nil {
-			return nil, err
+		if err := checkStoreDirectory(root); err != nil {
+			return err
 		}
-		if err := writeStoreFile(dhparamFile, []byte(DefaultDHParam), 0o600); err != nil && !errors.Is(err, os.ErrExist) {
-			return nil, err
+		if err := writeStoreFile(root, name, []byte(DefaultDHParam), 0o600); err != nil && !errors.Is(err, os.ErrExist) {
+			return err
 		}
+	}
+	return nil
+}
+
+func storeFromPEM(raw []byte, caFile string, passphrase []byte) (*Store, error) {
+	key, err := loadPEMPrivateKey(raw, passphrase)
+	if err != nil {
+		return nil, err
 	}
 	chain, err := parsePEMCertificates(raw)
 	if err != nil {
@@ -88,11 +134,8 @@ func FromFiles(caFile, dhparamFile string, passphrase []byte) (*Store, error) {
 
 // createStore writes a new CA without replacing existing store files. Key
 // files and DH parameters are owner-only; certificates use the process umask.
-func createStore(path, basename string, keySize int) error {
-	if err := os.MkdirAll(path, 0o700); err != nil {
-		return err
-	}
-	if err := checkStoreDirectory(path); err != nil {
+func createStore(root *os.Root, basename string, keySize int) error {
+	if err := checkStoreDirectory(root); err != nil {
 		return err
 	}
 	key, ca, err := CreateCA(basename, basename, keySize)
@@ -118,7 +161,7 @@ func createStore(path, basename string, keySize int) error {
 		{basename + "-dhparam.pem", []byte(DefaultDHParam), 0o600},
 	}
 	for _, file := range files {
-		if err := writeStoreFile(filepath.Join(path, file.name), file.content, file.mode); err != nil {
+		if err := writeStoreFile(root, file.name, file.content, file.mode); err != nil {
 			if errors.Is(err, os.ErrExist) {
 				if file.name == basename+"-ca.pem" {
 					// Another creator owns this CA identity and its companion files.
@@ -132,8 +175,8 @@ func createStore(path, basename string, keySize int) error {
 	return nil
 }
 
-func writeStoreFile(path string, content []byte, mode os.FileMode) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode) //nolint:gosec // Public certificates use the process umask; secret files pass 0600.
+func writeStoreFile(root *os.Root, name string, content []byte, mode os.FileMode) error {
+	file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode) //nolint:gosec // Public certificates use the process umask; secret files pass 0600.
 	if err != nil {
 		return err
 	}

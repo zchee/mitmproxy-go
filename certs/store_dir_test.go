@@ -290,7 +290,16 @@ func TestCreateStorePreservesExistingFiles(t *testing.T) {
 			if err := os.WriteFile(path, want, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if err := createStore(dir, "mitmproxy", 2048); err != nil {
+			root, err := os.OpenRoot(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := root.Close(); err != nil {
+					t.Error(err)
+				}
+			})
+			if err := createStore(root, "mitmproxy", 2048); err != nil {
 				t.Fatal(err)
 			}
 			got, err := os.ReadFile(path)
@@ -331,6 +340,92 @@ func TestFromStoreRefusesWritableDirectory(t *testing.T) {
 				t.Fatalf("refused directory received %d store files", len(entries))
 			}
 		})
+	}
+}
+
+func TestStoreWritesStayInVerifiedDirectory(t *testing.T) {
+	tests := map[string]struct{ name string }{
+		"success: private CA":    {name: "mitmproxy-ca.pem"},
+		"success: DH parameters": {name: "mitmproxy-dhparam.pem"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			parent := t.TempDir()
+			dir := filepath.Join(parent, "confdir")
+			verified := filepath.Join(parent, "verified")
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			root, err := os.OpenRoot(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := root.Close(); err != nil {
+					t.Error(err)
+				}
+			})
+			if err := checkStoreDirectory(root); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(dir, verified); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(dir, 0o777); err != nil { //nolint:gosec // Deliberately unsafe replacement used to exercise the directory boundary.
+				t.Fatal(err)
+			}
+			if runtime.GOOS != "windows" {
+				if err := os.Chmod(dir, 0o777); err != nil { //nolint:gosec // Ignore the process umask for the adversarial replacement.
+					t.Fatal(err)
+				}
+			}
+			want := []byte("verified directory only")
+			if err := writeStoreFile(root, tt.name, want, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, tt.name)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("replacement directory received a file: %v", err)
+			}
+			got, err := os.ReadFile(filepath.Join(verified, tt.name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := gocmp.Diff(want, got); diff != "" {
+				t.Errorf("pinned-directory file (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestStoreExclusiveWriteRefusesSymlink(t *testing.T) {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := root.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	const name = "mitmproxy-ca.pem"
+	target := filepath.Join(t.TempDir(), "target")
+	want := []byte("existing target")
+	if err := os.WriteFile(target, want, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeStoreFile(root, name, []byte("replacement"), 0o600); err == nil {
+		t.Fatal("exclusive write accepted a symlink")
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := gocmp.Diff(want, got); diff != "" {
+		t.Errorf("symlink target changed (-want +got):\n%s", diff)
 	}
 }
 

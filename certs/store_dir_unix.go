@@ -11,8 +11,9 @@ import (
 	"syscall"
 )
 
-func checkStoreDirectory(path string) error {
-	info, err := os.Stat(path)
+func checkStoreDirectory(root *os.Root) error {
+	path := root.Name()
+	info, err := root.Stat(".")
 	if err != nil {
 		return err
 	}

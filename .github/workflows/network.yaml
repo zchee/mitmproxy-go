@@ -31,9 +31,9 @@ jobs:
       HTTP_SMALL_FRAME_HEAP_TEST: TestHTTP2LoadHeapSmallWindow
       HTTP_SSE_TEST: TestHTTP2LoadSSELatency
       HTTP_NETEM_TEST: TestHTTP2LoadNetem
-      WS_GATE_RUNNER: ""
-      WS_CASE_MANIFEST: ""
-      WS_GATE_CONFIG: ""
+      WS_GATE_RUNNER: internal/proxy/layers/websocket/autobahn/run.sh
+      WS_CASE_MANIFEST: internal/proxy/layers/websocket/autobahn/cases.json
+      WS_GATE_CONFIG: internal/proxy/layers/websocket/autobahn/fuzzingclient.json
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -49,7 +49,7 @@ jobs:
           set -x
           date -u '+%Y-%m-%dT%H:%M:%SZ'
           sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes iproute2
+          sudo apt-get install --no-install-recommends --yes iproute2 jq
           if ! command -v docker; then
             sudo apt-get install --no-install-recommends --yes docker.io
           fi

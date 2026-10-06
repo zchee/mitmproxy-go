@@ -24,12 +24,16 @@ done
 [[ -f "${WS_GATE_RUNNER}" ]] || fail 'missing WebSocket harness'
 [[ -s "${WS_CASE_MANIFEST}" ]] || fail 'missing or empty frozen Autobahn case manifest'
 [[ -s "${WS_GATE_CONFIG}" ]] || fail 'missing pinned Autobahn configuration'
+command -v jq >/dev/null || fail 'missing JSON summary validator jq'
+report="${output}/autobahn"
+[[ ! -e "${report}" && ! -L "${report}" ]] || fail 'Autobahn report directory must be fresh'
 
 readonly image='crossbario/autobahn-testsuite@sha256:519915fb568b04c9383f70a1c405ae3ff44ab9e35835b085239c258b6fac3074'
 printf '%s\n' "${image}" >| "${output}/autobahn-image.txt"
-cp "${WS_CASE_MANIFEST}" "${output}/autobahn-expected-cases.txt"
+cp "${WS_CASE_MANIFEST}" "${output}/autobahn-expected-cases.json"
 cp "${WS_GATE_CONFIG}" "${output}/autobahn-config.json"
 go version
+jq --version
 ip -Version
 tc -Version
 sysctl --version
@@ -132,4 +136,12 @@ run_test netem-whole-transfer "${HTTP_NETEM_TEST}" 600s
 
 # The WebSocket harness owns its Docker topology and echo/proxy lifetimes.
 # It verifies report equality with the frozen manifest and pinned config.
-timeout --signal=TERM --kill-after=15s 1200s bash "${WS_GATE_RUNNER}" 2>&1 | tee "${output}/autobahn-runner.log"
+timeout --signal=TERM --kill-after=15s 1200s bash "${WS_GATE_RUNNER}" "${report}" \
+  2>&1 | tee "${output}/autobahn-runner.log"
+[[ -s "${report}/summary.json" ]] || fail 'missing Autobahn success summary'
+expected="$(jq -e '.cases | length | select(. > 0)' "${WS_CASE_MANIFEST}")"
+jq -e -s --arg image "${image}" --argjson expected "${expected}" '
+  length == 1 and (.[0] |
+    .image == $image and .total == $expected and
+    .verified == .total and .failed == 0 and .report == "clients/index.json")
+' "${report}/summary.json" || fail 'incomplete Autobahn success summary'

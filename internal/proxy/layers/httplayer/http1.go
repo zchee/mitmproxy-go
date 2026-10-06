@@ -85,6 +85,7 @@ type http1Conn struct {
 	wire     *wireStore
 	fidelity *http1.FidelityCounter
 	logger   *slog.Logger
+	clock    layer.Clock
 
 	send chan struct{}
 
@@ -152,6 +153,41 @@ func (c *http1Conn) readCtx(ctx context.Context, read func() (int, error)) (int,
 	}
 	if err != nil && ctx.Err() != nil && isTimeout(err) {
 		return n, ctx.Err()
+	}
+	return n, err
+}
+
+// readHeadCtx bounds a complete head independently of incoming-byte activity.
+// The first client head is timed immediately; later request heads and origin
+// responses wait for their first byte, leaving idle time to the watchdog.
+func (c *http1Conn) readHeadCtx(ctx context.Context, waitByte bool, read func() (int, error)) (int, error) {
+	if waitByte {
+		if _, err := c.readCtx(ctx, func() (int, error) {
+			_, err := c.br.Peek(1)
+			return 0, err
+		}); err != nil {
+			return 0, err
+		}
+	}
+	clock := c.clock
+	if clock == nil {
+		clock = layer.WallClock
+	}
+	headCtx, cancel := context.WithCancelCause(ctx)
+	fired := make(chan struct{})
+	stop := clock.AfterFunc(layer.HeadReadTimeout, func() {
+		cancel(context.DeadlineExceeded)
+		close(fired)
+	})
+	defer func() {
+		if !stop() {
+			<-fired
+		}
+		cancel(nil)
+	}()
+	n, err := c.readCtx(headCtx, read)
+	if err != nil && headCtx.Err() != nil {
+		return n, context.Cause(headCtx)
 	}
 	return n, err
 }

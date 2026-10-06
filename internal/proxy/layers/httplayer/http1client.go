@@ -280,7 +280,7 @@ func (c *http1Client) readHead(ctx context.Context) error {
 	}
 	c.mu.Unlock()
 	var head http1.ResponseHead
-	_, err := c.readCtx(ctx, func() (int, error) {
+	_, err := c.readHeadCtx(ctx, true, func() (int, error) {
 		var err error
 		head, err = http1.ReadResponseHead(c.br)
 		return 0, err

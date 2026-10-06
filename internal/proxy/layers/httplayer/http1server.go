@@ -108,7 +108,7 @@ func (s *http1Server) readHead(ctx context.Context) error {
 	s.mu.Unlock()
 	id := s.streamID()
 	var head http1.RequestHead
-	_, err := s.readCtx(ctx, func() (int, error) {
+	_, err := s.readHeadCtx(ctx, id != 1, func() (int, error) {
 		var err error
 		head, err = http1.ReadRequestHead(s.br)
 		return 0, err

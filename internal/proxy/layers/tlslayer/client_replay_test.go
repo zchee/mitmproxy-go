@@ -4,6 +4,7 @@
 package tlslayer
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/tls"
 	"encoding/binary"
@@ -44,6 +45,11 @@ func TestClientTLSRawReplay(t *testing.T) {
 				}
 			}}
 			s := newClientSession(t, observer)
+			// TCP may coalesce small writes. Fragment reads deterministically,
+			// retaining buffered bytes on the connection through raw handover.
+			s.c.Client.StopRecording()
+			fragmented := &fragmentReadConn{Conn: s.c.Client, reader: bufio.NewReader(s.c.Client)}
+			s.c.Client = proxy.Record(fragmented)
 			if tt.open {
 				s.c.Server = proxy.Record(s.raw)
 			}
@@ -54,13 +60,14 @@ func TestClientTLSRawReplay(t *testing.T) {
 			wire := append(helloRecords(message, tt.recordSize), []byte("later records stay exact")...)
 			written := make(chan error, 1)
 			go func() {
-				for _, b := range wire {
-					if _, err := s.clientPeer.Write([]byte{b}); err != nil {
-						written <- err
-						return
-					}
+				n, err := s.clientPeer.Write(wire)
+				if err == nil && n != len(wire) {
+					err = io.ErrShortWrite
 				}
-				written <- s.clientPeer.CloseWrite()
+				if err == nil {
+					err = s.clientPeer.CloseWrite()
+				}
+				written <- err
 			}()
 			// Model the next-layer selector consuming a prefix before handover.
 			prefix := make([]byte, 3)
@@ -91,6 +98,9 @@ func TestClientTLSRawReplay(t *testing.T) {
 			if err := await(t, done); err != nil {
 				t.Fatal(err)
 			}
+			if fragmented.reads != len(wire) {
+				t.Fatalf("one-byte reads = %d, want %d", fragmented.reads, len(wire))
+			}
 			var want []string
 			if !tt.wireCap && !tt.handshakeCap {
 				want = []string{"tls_clienthello"}
@@ -106,6 +116,20 @@ func TestClientTLSRawReplay(t *testing.T) {
 			}
 		})
 	}
+}
+
+type fragmentReadConn struct {
+	layer.Conn
+	reader *bufio.Reader
+	reads  int
+}
+
+func (c *fragmentReadConn) Read(p []byte) (int, error) {
+	n, err := c.reader.Read(p[:min(len(p), 1)])
+	if n > 0 {
+		c.reads++
+	}
+	return n, err
 }
 
 // Upstream TestClientTLS.test_server_required, with an additional upstream

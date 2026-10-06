@@ -31,6 +31,7 @@ type Endpoint struct {
 	wake     chan struct{}
 	done     chan struct{}
 	started  atomic.Bool
+	draining atomic.Bool
 	budget   atomic.Pointer[layer.BudgetSnapshot]
 	failure  atomic.Pointer[result]
 }
@@ -131,7 +132,7 @@ func (e *Endpoint) call(r *request) (Event, error) {
 }
 
 func (e *Endpoint) endError() error {
-	if failure := e.failure.Load(); failure != nil {
+	if failure := e.failure.Load(); failure != nil && failure.err != nil {
 		return failure.err
 	}
 	return io.EOF
@@ -157,9 +158,16 @@ func (e *Endpoint) ReceiveStream(ctx context.Context, id layer.StreamIdentity) (
 // OpenStream allocates a monotonic odd stream identity in client mode. It waits
 // for the peer's first SETTINGS and its concurrent-stream limit. An omitted
 // limit is capped at MaxConcurrentStreams. Context cancellation wakes it.
-// Opening after received or locally sent GOAWAY fails.
+// Opening after received GOAWAY returns ErrDraining without writing request bytes.
+// Opening after locally sent GOAWAY also fails.
 func (e *Endpoint) OpenStream(ctx context.Context) (layer.StreamIdentity, error) {
+	if e.draining.Load() {
+		return layer.StreamIdentity{}, ErrDraining
+	}
 	event, err := e.call(newRequest(ctx, openStream))
+	if err != nil && e.draining.Load() {
+		err = ErrDraining
+	}
 	return event.Identity, err
 }
 
@@ -234,7 +242,11 @@ func (e *Endpoint) Run(ctx context.Context) error {
 	writes := make(chan *writeFrame)
 	written := make(chan writeResult, 1)
 	var workers sync.WaitGroup
-	stopIO := context.AfterFunc(ctx, func() { _ = e.conn.SetDeadline(time.Unix(1, 0)) })
+	ioStopped := make(chan struct{})
+	stopIO := context.AfterFunc(ctx, func() {
+		_ = e.conn.SetDeadline(time.Unix(1, 0))
+		close(ioStopped)
+	})
 	workers.Go(func() { e.readFrames(ctx, reads) })
 	workers.Go(func() { e.writeFrames(ctx, writes, written) })
 	o := newOwner(e, ctx)
@@ -244,7 +256,10 @@ func (e *Endpoint) Run(ctx context.Context) error {
 	// the gap before waiting for the workers that borrow the connection.
 	_ = e.conn.SetDeadline(time.Unix(1, 0))
 	workers.Wait()
-	stopIO()
+	// The deadline callback must not outlive Run's borrowed connection lifetime.
+	if !stopIO() {
+		<-ioStopped
+	}
 	o.closeAll(err)
 	e.failure.Store(&result{err: err})
 	close(e.done)

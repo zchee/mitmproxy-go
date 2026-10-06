@@ -88,6 +88,10 @@ type Event struct {
 	Err          error
 }
 
+// ErrDraining rejects OpenStream after GOAWAY before any request bytes are written.
+// Already accepted streams may continue until the endpoint finishes draining.
+var ErrDraining = errors.New("h2: connection is draining")
+
 // StreamError is a typed rejection of an unknown, closed or foreign stream.
 type StreamError struct {
 	Identity layer.StreamIdentity

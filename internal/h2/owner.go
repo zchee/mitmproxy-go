@@ -7,9 +7,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/net/http2"
@@ -157,7 +159,10 @@ func (o *owner) run(reads <-chan readFrame, writes chan<- *writeFrame, written <
 			return o.abortError
 		}
 		o.fulfill()
-		if o.shutdown && o.budget.streams == 0 && o.active == nil && o.prepared == nil && len(o.controls) == 0 {
+		if o.shutdown {
+			o.settle()
+		}
+		if o.shutdown && o.budget.streams == 0 && o.active == nil && o.prepared == nil && len(o.controls) == 0 && (!o.e.draining.Load() || len(o.streams) == 0 && len(o.connectionEvents) == 0) {
 			return nil
 		}
 		if o.fatalSent && o.active == nil && o.prepared == nil {
@@ -190,6 +195,22 @@ func (o *owner) run(reads <-chan readFrame, writes chan<- *writeFrame, written <
 			o.request(r)
 		case incoming := <-input:
 			if incoming.err != nil {
+				const wsaECONNRESET = syscall.Errno(10054)
+				reset := errors.Is(incoming.err, syscall.ECONNRESET) || runtime.GOOS == "windows" && errors.Is(incoming.err, wsaECONNRESET)
+				if o.e.draining.Load() && (errors.Is(incoming.err, io.EOF) || reset) {
+					complete := true
+					for _, s := range o.streams {
+						if s.failed == nil && (!s.remoteEnd || !s.localEnd) {
+							complete = false
+							break
+						}
+					}
+					if complete {
+						// A drained peer may close before consumers receive its final events.
+						reads = nil
+						continue
+					}
+				}
 				_, protocol := errors.AsType[*ProtocolError](incoming.err)
 				_, connection := errors.AsType[http2.ConnectionError](incoming.err)
 				if stream, ok := errors.AsType[http2.StreamError](incoming.err); ok {
@@ -502,6 +523,10 @@ func (o *owner) request(r *request) {
 		}
 		s.receiver = r
 	case openStream:
+		if o.e.draining.Load() {
+			r.complete(Event{}, ErrDraining)
+			return
+		}
 		if !o.e.cfg.Client || o.goaway {
 			r.complete(Event{}, errors.New("h2: endpoint cannot open a stream"))
 			return
@@ -846,7 +871,8 @@ func (o *owner) frame(frame http2.Frame) error {
 			o.cancel(s, f.ErrCode, streamError(s.id, f.ErrCode, "stream reset by client ("+f.ErrCode.String()+")"), false)
 		}
 	case *http2.GoAwayFrame:
-		o.goaway = true
+		o.goaway, o.shutdown = true, true
+		o.e.draining.Store(true)
 		o.connectionEvents = append(o.connectionEvents, Event{Kind: GoAway, Code: f.ErrCode, LastStreamID: f.LastStreamID, Err: errors.New("HTTP/2 connection closed: " + string(f.DebugData()))})
 		for _, s := range o.streams {
 			if s.id.Stream > f.LastStreamID || f.ErrCode != http2.ErrCodeNo {
@@ -854,7 +880,7 @@ func (o *owner) frame(frame http2.Frame) error {
 			}
 		}
 		for _, r := range o.opens {
-			r.complete(Event{}, errors.New("h2: GOAWAY received"))
+			r.complete(Event{}, ErrDraining)
 		}
 		o.opens = nil
 	case *http2.PingFrame:

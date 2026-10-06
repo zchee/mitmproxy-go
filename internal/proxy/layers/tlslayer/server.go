@@ -178,6 +178,9 @@ func (p *serverTLSPool) Upgrade(ctx context.Context, srv *connection.Server, set
 // Lookup implements [layer.ServerPool].
 func (p *serverTLSPool) Lookup(srv *connection.Server) (layer.Conn, bool) { return p.inner.Lookup(srv) }
 
+// Retire implements [layer.ServerPool].
+func (p *serverTLSPool) Retire(srv *connection.Server) { p.inner.Retire(srv) }
+
 // markTLS records that TLS will eventually be established with srv, before
 // the pool keys or dials the connection.
 func (p *serverTLSPool) markTLS(ctx context.Context, srv *connection.Server) error {

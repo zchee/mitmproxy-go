@@ -70,11 +70,12 @@ type poolFlight struct {
 }
 
 type poolEntry struct {
-	key      poolKey
-	srv      *connection.Server
-	flight   *poolFlight
-	upgraded bool
-	retired  bool
+	key       poolKey
+	srv       *connection.Server
+	flight    *poolFlight
+	upgraded  bool
+	retired   bool
+	leaseOnly bool
 
 	// Transport state is independent of addon-visible metadata. It lets
 	// Lookup reject a closed transport without acquiring dispatch.
@@ -467,7 +468,7 @@ func (p *serverPool) Lookup(srv *connection.Server) (layer.Conn, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	entry := p.find(srv)
-	if p.closed || entry == nil || entry.state.Load() == uint32(connection.Closed) {
+	if p.closed || entry == nil || entry.leaseOnly || entry.state.Load() == uint32(connection.Closed) {
 		return nil, false
 	}
 	select {
@@ -475,6 +476,16 @@ func (p *serverPool) Lookup(srv *connection.Server) (layer.Conn, bool) {
 		return entry.flight.conn, entry.flight.err == nil && entry.flight.conn != nil
 	default:
 		return nil, false
+	}
+}
+
+// Retire removes a server from new acquisitions while preserving active leases.
+func (p *serverPool) Retire(srv *connection.Server) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if entry := p.find(srv); entry != nil && !entry.leaseOnly {
+		entry.retired, entry.leaseOnly = true, true
+		p.version++
 	}
 }
 

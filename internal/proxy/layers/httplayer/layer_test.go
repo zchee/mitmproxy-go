@@ -110,6 +110,17 @@ func (p *pipePool) Upgrade(_ context.Context, srv *connection.Server, _ func(con
 
 func (*pipePool) Lookup(*connection.Server) (layer.Conn, bool) { return nil, false }
 
+// Retire drops the cached lease without closing either side of its real socket.
+func (p *pipePool) Retire(srv *connection.Server) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for key, entry := range p.cached {
+		if entry.srv == srv {
+			delete(p.cached, key)
+		}
+	}
+}
+
 type layerSession struct {
 	t        *testing.T
 	m        *master.Master

@@ -50,6 +50,9 @@ func (p *fakePool) Upgrade(_ context.Context, srv *connection.Server, _ func(con
 
 func (*fakePool) Lookup(*connection.Server) (layer.Conn, bool) { return nil, false }
 
+// Retire is a no-op for the CONNECT test adapter with no reusable transport.
+func (*fakePool) Retire(*connection.Server) {}
+
 func connectRequest() RequestHeaders {
 	return RequestHeaders{ID: 1, EndStream: true, Request: &httpmsg.Request{
 		HTTPVersion: "HTTP/1.1", Method: "CONNECT",

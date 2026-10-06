@@ -346,6 +346,23 @@ func (p *upstreamPool) Lookup(srv *connection.Server) (layer.Conn, bool) {
 	return p.base.Lookup(entry.proxy)
 }
 
+// Retire removes an origin from reuse and retires its physical proxy connection.
+// Existing leases keep their transports until their protocol owner closes them.
+func (p *upstreamPool) Retire(srv *connection.Server) {
+	p.mu.Lock()
+	entry := p.origins[srv]
+	if entry != nil {
+		for key, current := range p.entries {
+			if current == entry {
+				delete(p.entries, key)
+			}
+		}
+		srv = entry.proxy
+	}
+	p.mu.Unlock()
+	p.base.Retire(srv)
+}
+
 // Upgrade applies setup once to a pooled origin connection and waits for the result.
 func (p *upstreamPool) Upgrade(ctx context.Context, srv *connection.Server, setup func(context.Context, layer.Conn, *connection.Server) (layer.Conn, error)) (layer.Conn, *connection.Server, error) {
 	if srv == nil || setup == nil {

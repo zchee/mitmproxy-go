@@ -110,6 +110,9 @@ func (p *pipePool) Upgrade(ctx context.Context, srv *connection.Server, setup fu
 
 func (p *pipePool) Lookup(*connection.Server) (layer.Conn, bool) { return nil, false }
 
+// Retire is a no-op for the single-transport test adapter.
+func (*pipePool) Retire(*connection.Server) {}
+
 type lockedBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer

@@ -433,6 +433,56 @@ func TestPoolLookup(t *testing.T) {
 	}
 }
 
+func TestPoolRetire(t *testing.T) {
+	tests := map[string]struct{ reopen bool }{
+		"success: next Open dials fresh":         {reopen: true},
+		"success: existing lease stays writable": {},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			dialer := &poolDialer{t: t}
+			pool, _ := newPool(t, dialer.dial)
+			conn, srv, err := pool.Open(t.Context(), targetServer(), layer.OpenOptions{Reuse: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pool.Retire(srv)
+			pool.Retire(srv)
+			if _, ok := pool.Lookup(srv); ok {
+				t.Fatal("retired connection remains available to Lookup")
+			}
+			if test.reopen {
+				fresh, actual, err := pool.Open(t.Context(), srv, layer.OpenOptions{Reuse: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if fresh == conn || actual == srv || actual.ID == srv.ID {
+					t.Fatal("retired connection was reused or its metadata overwritten")
+				}
+				if diff := gocmp.Diff(2, dialer.count()); diff != "" {
+					t.Fatal(diff)
+				}
+			}
+			read := make(chan string, 1)
+			go func() {
+				var body [8]byte
+				_, err := io.ReadFull(dialer.peer(0), body[:])
+				if err != nil {
+					read <- err.Error()
+					return
+				}
+				read <- string(body[:])
+			}()
+			if _, err := conn.Write([]byte("accepted")); err != nil {
+				t.Fatalf("lease after retirement: %v", err)
+			}
+			if diff := gocmp.Diff("accepted", await(t, read)); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
 func TestPoolCloseAll(t *testing.T) {
 	recorder := &addontest.Recorder{}
 	dialer := &poolDialer{t: t}

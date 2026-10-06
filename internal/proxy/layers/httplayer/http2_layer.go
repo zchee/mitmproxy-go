@@ -111,7 +111,13 @@ func (o *httpOrigins) acquire(ctx context.Context, c *layer.Context, conn layer.
 			o.workers.Go(func() { _ = engine.Run(o.ctx); _ = recorded.Close() })
 			o.workers.Go(func() {
 				for {
-					if _, err := engine.Receive(o.ctx); err != nil {
+					event, err := engine.Receive(o.ctx)
+					if err != nil || event.Kind == h2.GoAway {
+						if c.Pool != nil {
+							c.Pool.Retire(server)
+						}
+					}
+					if err != nil {
 						return
 					}
 				}
@@ -132,10 +138,19 @@ func (o *httpOrigins) acquire(ctx context.Context, c *layer.Context, conn layer.
 	o.mu.Unlock()
 	select {
 	case <-engine.Done():
+		if c.Pool != nil {
+			c.Pool.Retire(server)
+		}
 		return nil, nil, errOriginInUse
 	default:
 	}
 	identity, err := engine.OpenStream(ctx)
+	if errors.Is(err, h2.ErrDraining) {
+		if c.Pool != nil {
+			c.Pool.Retire(server)
+		}
+		return nil, nil, errOriginInUse
+	}
 	if err != nil {
 		return nil, nil, err
 	}

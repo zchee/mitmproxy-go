@@ -237,6 +237,9 @@ func (*pool) Upgrade(context.Context, *connection.Server, func(context.Context, 
 }
 func (*pool) Lookup(*connection.Server) (layer.Conn, bool) { return nil, false }
 
+// Retire is a no-op for the mode test adapter with no reusable transports.
+func (*pool) Retire(*connection.Server) {}
+
 func TestReverseConnectOrdering(t *testing.T) {
 	tests := map[string]struct {
 		strategy  string

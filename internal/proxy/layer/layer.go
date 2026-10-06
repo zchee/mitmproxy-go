@@ -351,6 +351,10 @@ type ServerPool interface {
 	// Lookup finds an established transport by metadata identity, without
 	// dialing or waiting. It is safe to call concurrently with Open.
 	Lookup(srv *connection.Server) (Conn, bool)
+	// Retire removes srv from Open reuse and Lookup without closing its transport
+	// or changing existing leases. The protocol owner closes it after draining.
+	// Unknown servers are ignored. It is safe to call concurrently with Open.
+	Retire(srv *connection.Server)
 }
 
 // OpenOptions controls reuse and setup of a server connection.

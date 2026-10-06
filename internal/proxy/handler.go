@@ -144,6 +144,7 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn, modeSpec string, to
 		Inject:       queue.messages,
 		NextLayer:    nextLayer,
 		Do:           h.manager.Do,
+		Clock:        layerClock{h.clock},
 		HTTPFidelity: h.fidelity,
 		Logger:       logger,
 	}

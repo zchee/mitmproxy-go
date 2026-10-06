@@ -49,7 +49,7 @@ func TestMake(t *testing.T) {
 		"reverse:http://example.com": {true}, "reverse:https://example.com": {true},
 		"reverse:tcp://example.com:1234": {true}, "reverse:tls://example.com:1234": {true},
 		"transparent": {}, "socks5": {}, "wireguard": {}, "local": {}, "tun": {}, "dns": {},
-		"reverse:udp://example.com:1234": {}, "reverse:dtls://example.com:1234": {},
+		"reverse:udp://example.com:1234": {true}, "reverse:dtls://example.com:1234": {true},
 		"reverse:quic://example.com:1234": {}, "reverse:http3://example.com": {},
 		"reverse:dns://example.com": {},
 	}

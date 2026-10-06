@@ -141,8 +141,6 @@ func TestReverseDestination(t *testing.T) {
 
 func TestReverseRejectsUnsupportedMode(t *testing.T) {
 	tests := map[string]struct{ mode, want string }{
-		"udp":        {"reverse:udp://example.com:53", "udp"},
-		"dtls":       {"reverse:dtls://example.com:443", "dtls"},
 		"http3":      {"reverse:http3://example.com", "http3"},
 		"quic":       {"reverse:quic://example.com:443", "quic"},
 		"dns":        {"reverse:dns://example.com", "dns"},

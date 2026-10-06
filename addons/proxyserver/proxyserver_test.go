@@ -105,6 +105,8 @@ func TestOptions(t *testing.T) {
 		"most frequent duplicate":  {map[string]any{"mode": []string{"regular@10001", "reverse:a@10001", "regular@10002", "reverse:b@10002", "reverse:c@10002"}}, "Cannot spawn multiple servers on the same address: 127.0.0.1:10002"},
 		"valid limits":             {map[string]any{"stream_large_bodies": new("1m"), "body_size_limit": new("1m")}, ""},
 		"valid source":             {map[string]any{"connect_addr": new("1.2.3.4")}, ""},
+		"reverse UDP":              {map[string]any{"mode": []string{"reverse:udp://example.com:1234"}, "server": false}, ""},
+		"reverse DTLS":             {map[string]any{"mode": []string{"reverse:dtls://example.com:1234"}, "server": false}, ""},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -129,7 +131,6 @@ func TestOptions(t *testing.T) {
 func TestUnsupportedModes(t *testing.T) {
 	tests := map[string]struct{}{
 		"transparent": {}, "socks5": {}, "wireguard": {}, "local": {}, "tun": {}, "dns": {},
-		"reverse:udp://example.com:1234": {}, "reverse:dtls://example.com:1234": {},
 		"reverse:quic://example.com:1234": {}, "reverse:http3://example.com": {}, "reverse:dns://example.com": {},
 	}
 	for spec := range tests {

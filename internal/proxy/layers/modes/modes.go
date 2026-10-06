@@ -38,14 +38,14 @@ func newMode(c *layer.Context, spec hookdata.LayerSpec, _ layer.Layer) (layer.La
 		switch reverse.Scheme {
 		case "http", "https", "tls", "tcp":
 		case "udp", "dtls":
-			return nil, fmt.Errorf("modes: reverse scheme %q requires datagram transport support", reverse.Scheme)
+			c.Data.Server.TransportProtocol = connection.UDP
 		case "http3", "quic", "dns":
 			return nil, fmt.Errorf("modes: reverse scheme %q requires QUIC and DNS protocol support", reverse.Scheme)
 		default:
 			return nil, fmt.Errorf("modes: unsupported reverse scheme %q", reverse.Scheme)
 		}
 		c.Data.Server.Address = &connection.Address{Host: reverse.Address.Host, Port: reverse.Address.Port}
-		if (reverse.Scheme == "https" || reverse.Scheme == "tls") && !c.Data.Options.Bool("keep_host_header") {
+		if (reverse.Scheme == "https" || reverse.Scheme == "tls" || reverse.Scheme == "dtls") && !c.Data.Options.Bool("keep_host_header") {
 			c.Data.Server.SNI = new(reverse.Address.Host)
 		}
 	}

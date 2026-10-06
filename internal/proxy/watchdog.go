@@ -29,15 +29,16 @@ func (wallClock) afterFunc(d time.Duration, f func()) watchdogTimer { return tim
 // TimeoutWatchdog in mitmproxy/proxy/server.py. Its callbacks never run with
 // mu held, so expiry may cancel the connection and stop the watchdog.
 type watchdog struct {
-	mu         sync.Mutex
-	clock      watchdogClock
-	timeout    time.Duration
-	deadline   time.Time
-	timer      watchdogTimer
-	generation uint64
-	blockers   int
-	closed     bool
-	expire     func()
+	mu           sync.Mutex
+	clock        watchdogClock
+	timeout      time.Duration
+	deadline     time.Time
+	timer        watchdogTimer
+	generation   uint64
+	blockers     int
+	closed       bool
+	keepDeadline bool
+	expire       func()
 }
 
 func newWatchdog(timeout time.Duration, clock watchdogClock, expire func()) *watchdog {
@@ -76,7 +77,7 @@ func (w *watchdog) scheduleLocked(delay time.Duration) {
 func (w *watchdog) activity() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if !w.closed && w.blockers == 0 {
+	if !w.closed && (w.blockers == 0 || w.keepDeadline) {
 		// Moving only the deadline avoids allocating a timer per I/O.
 		w.deadline = w.clock.now().Add(w.timeout)
 	}
@@ -107,8 +108,12 @@ func (w *watchdog) rearm() {
 	}
 	w.blockers--
 	if w.blockers == 0 {
-		w.deadline = w.clock.now().Add(w.timeout)
-		w.scheduleLocked(w.timeout)
+		if w.keepDeadline {
+			w.scheduleLocked(max(0, w.deadline.Sub(w.clock.now())))
+		} else {
+			w.deadline = w.clock.now().Add(w.timeout)
+			w.scheduleLocked(w.timeout)
+		}
 	}
 }
 

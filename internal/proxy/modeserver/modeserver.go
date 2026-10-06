@@ -1,8 +1,8 @@
 // Copyright 2026 The mitmproxy-go Authors.
 // SPDX-License-Identifier: MIT
 
-// Package modeserver owns the TCP listeners for regular, reverse and upstream
-// proxy modes. Stopping an instance does not interrupt its accepted connections.
+// Package modeserver owns TCP and UDP listeners for regular, reverse and upstream
+// proxy modes. Stopping UDP evicts its tuples; accepted TCP connections may finish.
 package modeserver
 
 import (
@@ -23,6 +23,7 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/human"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/proxy/modespec"
+	"github.com/zchee/mitmproxy-go/internal/proxy/packettransport"
 
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/modes" // Register the top layers passed to Handler.
 )
@@ -43,7 +44,7 @@ type Config struct {
 	ClientLimiter *ClientLimiter
 }
 
-// Instance owns a mode's TCP listeners. Start and Stop serialize lifecycle work
+// Instance owns a mode's TCP or UDP listeners. Start and Stop serialize lifecycle work
 // and must run outside addon dispatch. Read-only accessors are safe in hooks:
 // they read immutable snapshots and never wait for network I/O or handlers.
 // Use New to create an instance; the zero value is not ready to serve.
@@ -62,13 +63,14 @@ type Instance struct {
 }
 
 type instanceState struct {
-	listeners []net.Listener
-	addrs     []connection.Address
-	err       error
+	listeners       []net.Listener
+	packetListeners []*packettransport.Listener
+	addrs           []connection.Address
+	err             error
 }
 
 // New validates the mode and configuration without opening a listener.
-// Only regular, upstream and reverse HTTP, HTTPS, TCP and TLS are supported.
+// Only regular, upstream and reverse HTTP, HTTPS, TCP, TLS, UDP and DTLS are supported.
 // Unsupported modes return the same message used by proxyserver's configure.
 func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 	if mode == nil || cfg.Handler == nil {
@@ -82,7 +84,7 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 		kind = hookdata.LayerUpstream
 	case modespec.ReverseMode:
 		switch m.Scheme {
-		case "http", "https", "tcp", "tls":
+		case "http", "https", "tcp", "tls", "udp", "dtls":
 			kind = hookdata.LayerReverse
 		}
 	}
@@ -111,7 +113,7 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 func (i *Instance) Mode() modespec.Mode { return i.mode }
 
 // IsRunning reports whether the instance has listening sockets.
-func (i *Instance) IsRunning() bool { return len(i.state.Load().listeners) != 0 }
+func (i *Instance) IsRunning() bool { return len(i.state.Load().addrs) != 0 }
 
 // LastError returns the most recent Start or Stop failure, cleared on success.
 func (i *Instance) LastError() error { return i.state.Load().err }
@@ -132,7 +134,14 @@ func (i *Instance) Start(ctx context.Context) error {
 	if i.IsRunning() {
 		return nil
 	}
-	listeners, err := i.listen(ctx)
+	var listeners []net.Listener
+	var packets []*packettransport.Listener
+	var err error
+	if i.mode.TransportProtocol() == modespec.UDP {
+		packets, err = i.listenPackets(ctx)
+	} else {
+		listeners, err = i.listen(ctx)
+	}
 	if err != nil {
 		host := i.host
 		if host == "" {
@@ -146,7 +155,11 @@ func (i *Instance) Start(ctx context.Context) error {
 		i.state.Store(&instanceState{err: err})
 		return err
 	}
-	state := &instanceState{listeners: listeners}
+	state := &instanceState{listeners: listeners, packetListeners: packets}
+	for _, listener := range packets {
+		addr := listener.LocalAddr().(*net.UDPAddr)
+		state.addrs = append(state.addrs, connection.Address{Host: addr.IP.String(), Port: addr.Port})
+	}
 	for _, listener := range listeners {
 		addr := listener.Addr().(*net.TCPAddr)
 		state.addrs = append(state.addrs, connection.Address{Host: addr.IP.String(), Port: addr.Port})
@@ -159,6 +172,9 @@ func (i *Instance) Start(ctx context.Context) error {
 			_ = i.stopLocked()
 		}
 	})
+	for _, listener := range packets {
+		go i.acceptPackets(ctx, listener)
+	}
 	for _, listener := range listeners {
 		go i.accept(ctx, listener)
 	}
@@ -167,9 +183,9 @@ func (i *Instance) Start(ctx context.Context) error {
 }
 
 // Stop closes the listening sockets, clears the bound addresses, and returns
-// any close errors. It never waits for connection goroutines or cancels their
-// context: accepted clients can finish after a mode is removed. Call outside
-// dispatch; cancellation of the Start context ends accepted clients as well.
+// any close errors. UDP tuples are evicted because they share the socket. Stop
+// never waits for connection goroutines or cancels accepted TCP clients.
+// Call outside dispatch; cancellation of the Start context ends all clients.
 func (i *Instance) Stop() error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -178,7 +194,7 @@ func (i *Instance) Stop() error {
 
 func (i *Instance) stopLocked() error {
 	state := i.state.Load()
-	if len(state.listeners) == 0 {
+	if len(state.listeners) == 0 && len(state.packetListeners) == 0 {
 		return nil
 	}
 	if i.stopCancel != nil {
@@ -186,6 +202,11 @@ func (i *Instance) stopLocked() error {
 		i.stopCancel = nil
 	}
 	var errs []error
+	for _, listener := range state.packetListeners {
+		if err := listener.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	for _, listener := range state.listeners {
 		if err := listener.Close(); err != nil {
 			errs = append(errs, err)

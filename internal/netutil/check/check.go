@@ -38,13 +38,19 @@ var idnaProfile = idna.New(idna.MapForLookup(), idna.Transitional(true), idna.St
 // Unlike upstream, a host that ends in a newline is invalid; Python's "$"
 // regular expression anchor accepts one there. An IPv6 zone must also be an
 // RFC 6874 ZoneID, where upstream accepts any zone without "%" or "/".
+// ASCII label bounds apply equally to string and byte-slice IPv6 zones.
 func IsValidHost[T string | []byte](host T) bool {
 	switch h := any(host).(type) {
 	case string:
 		encoded, ok := encodeIDNA(h)
 		return ok && isValidHostBytes(encoded)
 	case []byte:
-		return isValidHostBytes(string(h))
+		text := string(h)
+		if !isASCII(text) {
+			return false
+		}
+		encoded, ok := encodeIDNA(text)
+		return ok && isValidHostBytes(encoded)
 	}
 	return false
 }

@@ -100,6 +100,10 @@ type owner struct {
 	headDeadline     time.Time
 	headStage        string
 	stopHead         func() bool
+	flushDeadline    time.Time
+	stopFlush        func() bool
+	flushError       error
+	abortError       error
 }
 
 func newOwner(e *Endpoint, ctx context.Context) *owner {
@@ -111,6 +115,7 @@ func (o *owner) publish() { o.e.budget.Store(new(o.budget.snapshot())) }
 func (o *owner) run(reads <-chan readFrame, writes chan<- *writeFrame, written <-chan writeResult) error {
 	o.startHead("preface")
 	defer o.finishHead()
+	defer o.finishFlush()
 	if o.e.cfg.Client && o.e.cfg.PingKeepalive > 0 {
 		o.pingTicks = make(chan struct{}, 1)
 		o.schedulePing(o.e.cfg.PingKeepalive)
@@ -122,6 +127,9 @@ func (o *owner) run(reads <-chan readFrame, writes chan<- *writeFrame, written <
 	}()
 	for {
 		o.settle()
+		if o.abortError != nil {
+			return o.abortError
+		}
 		o.fulfill()
 		if o.shutdown && o.budget.streams == 0 && o.active == nil && o.prepared == nil && len(o.controls) == 0 {
 			return nil
@@ -156,7 +164,15 @@ func (o *owner) run(reads <-chan readFrame, writes chan<- *writeFrame, written <
 			o.request(r)
 		case incoming := <-input:
 			if incoming.err != nil {
-				if _, ok := errors.AsType[*ProtocolError](incoming.err); ok {
+				_, protocol := errors.AsType[*ProtocolError](incoming.err)
+				_, connection := errors.AsType[http2.ConnectionError](incoming.err)
+				if stream, ok := errors.AsType[http2.StreamError](incoming.err); ok {
+					if s := o.streams[stream.StreamID]; s != nil {
+						o.cancel(s, stream.Code, streamError(s.id, stream.Code, stream.Error()), true)
+					} else {
+						o.controls = append(o.controls, &writeFrame{kind: writeReset, stream: stream.StreamID, code: stream.Code})
+					}
+				} else if protocol || connection || errors.Is(incoming.err, http2.ErrFrameTooLarge) {
 					o.fail(incoming.err)
 				} else {
 					return terminalError(o.ctx, incoming.err)
@@ -168,6 +184,8 @@ func (o *owner) run(reads <-chan readFrame, writes chan<- *writeFrame, written <
 				o.lastActivity = o.e.cfg.Clock.Now()
 				if err := o.frame(incoming.frame); err != nil {
 					o.fail(err)
+				} else if len(o.controls) > MaxConcurrentStreams*2 || len(o.connectionEvents) > MaxConcurrentStreams {
+					o.fail(protocolError(http2.ErrCodeEnhanceYourCalm, "HTTP/2 control queue limit exceeded"))
 				}
 				close(incoming.accepted)
 			}
@@ -236,9 +254,31 @@ func (o *owner) finishHead() {
 	o.headDeadline = time.Time{}
 }
 
+func (o *owner) beginFlush(err error) {
+	if o.active != nil {
+		o.abortError = err
+		return
+	}
+	o.flushError = err
+	o.flushDeadline = o.e.cfg.Clock.Now().Add(GoAwayFlushGrace)
+	o.stopFlush = o.e.cfg.Clock.AfterFunc(GoAwayFlushGrace, o.e.signal)
+}
+
+func (o *owner) finishFlush() {
+	if o.stopFlush != nil {
+		o.stopFlush()
+		o.stopFlush = nil
+	}
+	o.flushDeadline = time.Time{}
+}
+
 func (o *owner) settle() {
 	if !o.headDeadline.IsZero() && !o.e.cfg.Clock.Now().Before(o.headDeadline) && o.fatal == nil {
 		o.fail(protocolError(http2.ErrCodeProtocol, "HTTP/2 "+o.headStage+" deadline exceeded"))
+		o.beginFlush(o.fatal)
+	}
+	if !o.flushDeadline.IsZero() && !o.e.cfg.Clock.Now().Before(o.flushDeadline) {
+		o.abortError = o.flushError
 	}
 	for _, s := range o.streams {
 		if s.receipt != nil {
@@ -373,7 +413,17 @@ func (o *owner) fulfill() {
 
 func (o *owner) newStream(id uint32) *streamState {
 	if len(o.streams) >= MaxConcurrentStreams*2 {
-		return nil
+		for _, oldID := range o.order {
+			old := o.streams[oldID]
+			if old.failed != nil && old.sender == nil && old.receiver == nil && old.creditWaiter == nil && old.receipt == nil {
+				delete(o.streams, oldID)
+				o.order = slices.DeleteFunc(o.order, func(id uint32) bool { return id == oldID })
+				break
+			}
+		}
+		if len(o.streams) >= MaxConcurrentStreams*2 {
+			return nil
+		}
 	}
 	s := &streamState{id: layer.StreamIdentity{Endpoint: o.e.cfg.Descriptor.Identity, Stream: id}, outWindow: o.peerInitial, contentLength: -1}
 	if !o.budget.reserve(&s.window) {
@@ -454,6 +504,7 @@ func (o *owner) request(r *request) {
 		}
 		o.goaway, o.shutdown = true, true
 		o.shutdownDone = r.ctx.Done()
+		o.beginFlush(protocolError(r.code, "HTTP/2 GOAWAY flush deadline exceeded"))
 		o.controls = append(o.controls, &writeFrame{kind: writeGoAway, stream: o.lastPeer, code: r.code, payload: r.debug, request: r})
 		for _, open := range o.opens {
 			open.complete(Event{}, errors.New("h2: connection shutting down"))
@@ -553,6 +604,9 @@ func (o *owner) nextWrite() *writeFrame {
 }
 
 func (o *owner) wrote(frame *writeFrame) {
+	if frame.kind == writeGoAway {
+		o.finishFlush()
+	}
 	if frame.request == nil {
 		return
 	}
@@ -621,12 +675,21 @@ func (o *owner) fail(err error) {
 	if o.fatal != nil {
 		return
 	}
+	if connection, ok := errors.AsType[http2.ConnectionError](err); ok {
+		err = protocolError(http2.ErrCode(connection), connection.Error())
+	} else if errors.Is(err, http2.ErrFrameTooLarge) {
+		err = protocolError(http2.ErrCodeFrameSize, err.Error())
+	}
+	code := http2.ErrCodeProtocol
+	if protocol, ok := errors.AsType[*ProtocolError](err); ok {
+		code = protocol.Code
+	}
 	o.fatal = err
 	o.goaway = true
 	o.e.cfg.Logger.Error(err.Error())
-	o.connectionEvents = append(o.connectionEvents, Event{Kind: GoAway, Err: err, Code: http2.ErrCodeProtocol, LastStreamID: o.lastPeer})
+	o.connectionEvents = append(o.connectionEvents, Event{Kind: GoAway, Err: err, Code: code, LastStreamID: o.lastPeer})
 	for _, s := range o.streams {
-		o.cancel(s, http2.ErrCodeProtocol, err, false)
+		o.cancel(s, code, err, false)
 	}
 	for _, r := range o.opens {
 		r.complete(Event{}, err)
@@ -765,6 +828,9 @@ func (o *owner) settings(f *http2.SettingsFrame) error {
 		return nil
 	}
 	err := f.ForeachSetting(func(setting http2.Setting) error {
+		if len(o.controls) >= MaxConcurrentStreams*2 {
+			return protocolError(http2.ErrCodeEnhanceYourCalm, "HTTP/2 control queue limit exceeded")
+		}
 		if err := setting.Valid(); err != nil {
 			return err
 		}
@@ -898,7 +964,11 @@ func checkPseudo(fields []hpack.HeaderField, response bool) error {
 			return protocolError(http2.ErrCodeProtocol, "Invalid HTTP/2 response headers")
 		}
 	} else {
-		if pseudo[":method"] == "" || pseudo[":scheme"] == "" || pseudo[":path"] == "" {
+		if pseudo[":method"] == "CONNECT" {
+			if pseudo[":authority"] == "" || pseudo[":scheme"] != "" || pseudo[":path"] != "" {
+				return protocolError(http2.ErrCodeProtocol, "Invalid HTTP/2 CONNECT pseudo headers")
+			}
+		} else if pseudo[":method"] == "" || pseudo[":scheme"] == "" || pseudo[":path"] == "" {
 			return protocolError(http2.ErrCodeProtocol, "Required pseudo header is missing")
 		}
 		for name := range pseudo {

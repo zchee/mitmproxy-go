@@ -50,7 +50,11 @@ func newPipePeer(t *testing.T, cfg Config) *pipePeer {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	p := &pipePeer{endpoint: e, conn: peer, framer: http2.NewFramer(peer, nil), frames: make(chan wireFrame, 256), ctx: ctx, done: make(chan error, 1), readDone: make(chan struct{})}
-	go func() { p.done <- e.Run(ctx) }()
+	go func() {
+		err := e.Run(ctx)
+		_ = conn.Close()
+		p.done <- err
+	}()
 	go func() {
 		defer close(p.readDone)
 		defer close(p.frames)

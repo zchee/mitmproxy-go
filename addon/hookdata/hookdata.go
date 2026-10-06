@@ -14,7 +14,10 @@ import (
 	"crypto"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"strconv"
+
+	dtls "github.com/pion/dtls/v3"
 
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/options"
@@ -110,8 +113,32 @@ type TLS struct {
 	// Config is the TLS configuration for the connection. A tls_start_*
 	// handler sets it; it is the counterpart of mitmproxy's ssl_conn.
 	Config *tls.Config
+	// DTLSConfig is the DTLS configuration set by a tls_start_* handler.
+	// It is used only when IsDTLS is true; Config must then be nil.
+	DTLSConfig *dtls.Config //nolint:staticcheck // Mutable configuration is required for TLS hook overrides.
 	// IsDTLS reports whether the connection uses DTLS.
 	IsDTLS bool
+}
+
+// ErrTLSConfig means the selected transport has no configuration or a
+// configuration for the other transport is present.
+var ErrTLSConfig = errors.New("proxy: missing or wrong-transport TLS configuration")
+
+// ValidateConfig checks that exactly the selected transport has a configuration.
+// It runs under dispatch after tls_start_* handlers have applied overrides,
+// before the caller starts any handshake.
+func (d *TLS) ValidateConfig() error {
+	if d == nil {
+		return ErrTLSConfig
+	}
+	if d.IsDTLS {
+		if d.DTLSConfig == nil || d.Config != nil {
+			return ErrTLSConfig
+		}
+	} else if d.Config == nil || d.DTLSConfig != nil {
+		return ErrTLSConfig
+	}
+	return nil
 }
 
 // QUICTLS is the value of the quic_start_client and quic_start_server

@@ -40,6 +40,14 @@ const (
 	// (py:mitmproxy/proxy/layers/tcp.py TCPLayer). A spec with this kind
 	// may carry Ignore.
 	LayerTCP LayerKind = "tcp"
+	// LayerUDP relays raw datagrams with message capture or Ignore bypass.
+	LayerUDP LayerKind = "udp"
+	// LayerWebSocket relays messages after an HTTP upgrade.
+	LayerWebSocket LayerKind = "websocket"
+	// LayerClientDTLS terminates DTLS with the client over packet transport.
+	LayerClientDTLS LayerKind = "clientdtls"
+	// LayerServerDTLS establishes DTLS with the server over packet transport.
+	LayerServerDTLS LayerKind = "serverdtls"
 )
 
 // HTTPMode says how an HTTP layer interprets request targets
@@ -66,9 +74,9 @@ type LayerSpec struct {
 	// HTTPMode is the HTTP layer's mode. It is set only when Kind is
 	// [LayerHTTP].
 	HTTPMode HTTPMode
-	// Ignore makes a [LayerTCP] layer relay bytes without creating a flow
-	// or firing hooks, as mitmproxy's TCPLayer(ignore=True). It is set only
-	// when Kind is [LayerTCP].
+	// Ignore makes a [LayerTCP] or [LayerUDP] relay without creating a flow
+	// or firing hooks, as mitmproxy's TCPLayer/UDPLayer(ignore=True).
+	// It is set only for those two kinds.
 	Ignore bool
 }
 

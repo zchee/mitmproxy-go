@@ -82,3 +82,11 @@ These are installed by CI and are not module dependencies.
 | `github.com/hashicorp/golang-lru/v2` | MPL-2.0; the certificate cache is a hand-written 100-entry FIFO, as upstream's `CertStore` is. |
 | `gopkg.in/yaml.v3` | Archived |
 | `github.com/google/martian/v3` | Archived |
+
+## DTLS hook configuration
+
+`addon/hookdata` now imports the pinned `github.com/pion/dtls/v3 v3.1.10`:
+TLS hooks retain `*tls.Config` and expose `*dtls.Config` separately, selected
+by `IsDTLS`. The mutable pion config is retained for hook overrides despite
+its deprecation in favor of immutable options-based constructors. Upgrades
+must retain the typed hook override contract or migrate all consumers together.

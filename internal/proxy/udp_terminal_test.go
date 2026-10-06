@@ -29,8 +29,8 @@ func TestUDPRelayTerminalInterception(t *testing.T) {
 			defer cancel()
 			opening := make(chan struct{})
 			terminal := func(ctx context.Context, f *flow.UDPFlow) error {
-				if ctx.Err() != nil || ctx.Done() != nil {
-					t.Error("terminal hook context is cancellable")
+				if deadline, ok := ctx.Deadline(); !ok || deadline.IsZero() || ctx.Err() != nil || ctx.Done() == nil {
+					t.Error("terminal hook context lacks an active cleanup deadline")
 				}
 				if !f.Live {
 					t.Error("terminal hook must observe live flow before cleanup")

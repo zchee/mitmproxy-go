@@ -15,8 +15,9 @@ func TestProtocolTimeouts(t *testing.T) {
 		got  time.Duration
 		want time.Duration
 	}{
-		"head deadline independent of idle": {got: HeadReadTimeout, want: 30 * time.Second},
-		"UDP tuple idle expiry":             {got: UDPIdleTimeout, want: 20 * time.Second},
+		"head deadline independent of idle":    {got: HeadReadTimeout, want: 30 * time.Second},
+		"terminal cleanup independent of idle": {got: TerminalHookTimeout, want: 30 * time.Second},
+		"UDP tuple idle expiry":                {got: UDPIdleTimeout, want: 20 * time.Second},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

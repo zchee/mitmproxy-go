@@ -34,7 +34,8 @@ func init() {
 // tcpLayer relays a raw TCP connection. A nil flow is the ignore mode:
 // bytes are forwarded as they arrive, without a flow and without hooks.
 type tcpLayer struct {
-	flow *flow.TCPFlow
+	flow                *flow.TCPFlow
+	terminalHookTimeout time.Duration
 }
 
 // Kind identifies this layer as a TCP relay.
@@ -44,7 +45,12 @@ func (*tcpLayer) Kind() hookdata.LayerKind { return hookdata.LayerTCP }
 func (l *tcpLayer) Run(ctx context.Context, c *layer.Context) (result error) {
 	if l.flow != nil {
 		defer func() {
-			endCtx := context.WithoutCancel(ctx)
+			timeout := l.terminalHookTimeout
+			if timeout == 0 {
+				timeout = layer.TerminalHookTimeout
+			}
+			endCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+			defer cancel()
 			var hook addon.Hook = addon.TCPEndHook{Flow: l.flow}
 			failed := result != nil && ctx.Err() == nil && !errors.Is(result, net.ErrClosed) && !errors.Is(result, io.EOF)
 			if failed {

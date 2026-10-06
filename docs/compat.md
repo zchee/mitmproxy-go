@@ -525,12 +525,14 @@ arrived or may still be in flight. All 517 cases still run; no `FAILED` or `UNCL
 | Upstream | Go | Reason |
 |---|---|---|
 | Every captured TCP flow receives `tcp_end` or `tcp_error` (`mitmproxy/proxy/layers/tcp.py`). | Every captured flow emits exactly one terminal hook, including on shutdown, idle expiry and cancellation: `tcp_end` for closure or cancellation, `tcp_error` for opening or relay failure. A failed terminal half-close is transport closure; its underlying error remains in the returned error. The hook uses `WithoutCancel`; dispatch then clears `Live`, including on dial failure. An interception retained into or requested during a terminal hook is immediately resumed. | Preserve upstream's terminal-hook lifecycle and release the finished connection. Unlike upstream's suspended hook coroutine, a terminal interception cannot retain a connection owner after its transport has finished. |
+| TCP lifecycle hook dispatch has no separate cleanup deadline (`mitmproxy/proxy/layers/tcp.py`). | Terminal hooks and the following dispatch-owned `Live=false` callback share a detached 30-second cleanup context, independent of the connection idle timeout. | Cooperative addon work must honor this context to release a finished owner. Dispatch-lock admission and arbitrary addon code that ignores context are not bounded by this policy. |
 
 ## internal/proxy/layers/udplayer
 
 | Upstream | Go | Reason |
 |---|---|---|
 | Every UDP flow receives `udp_end` or `udp_error`, and a connection-close event emits `udp_end` before clearing `live` (`mitmproxy/proxy/layers/udp.py:44-51,121-126`). | Every captured flow emits exactly one terminal hook, including on shutdown, idle expiry and cancellation: `udp_end` for closure or cancellation, `udp_error` for failure. The hook uses `WithoutCancel`; dispatch then clears `Live`, including on dial failure. An interception retained into or requested during a terminal hook is immediately resumed. | Preserve upstream's terminal-hook lifecycle and release the finished tuple. Unlike upstream's suspended hook coroutine, a terminal interception cannot retain a connection owner after its transport has finished. |
+| UDP lifecycle hook dispatch has no separate cleanup deadline (`mitmproxy/proxy/layers/udp.py`). | Terminal hooks and the following dispatch-owned `Live=false` callback share a detached 30-second cleanup context, independent of the tuple idle timeout. | Cooperative addon work must honor this context to release a finished owner. Dispatch-lock admission and arbitrary addon code that ignores context are not bounded by this policy. |
 
 ## Decided for code that is not written yet
 

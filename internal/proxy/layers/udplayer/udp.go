@@ -36,8 +36,9 @@ func init() {
 }
 
 type udpLayer struct {
-	flow   *flow.UDPFlow
-	flowID string
+	flow                *flow.UDPFlow
+	flowID              string
+	terminalHookTimeout time.Duration
 }
 
 // Kind identifies this layer as a UDP relay.
@@ -47,7 +48,12 @@ func (*udpLayer) Kind() hookdata.LayerKind { return hookdata.LayerUDP }
 func (l *udpLayer) Run(ctx context.Context, c *layer.Context) (result error) {
 	if l.flow != nil {
 		defer func() {
-			endCtx := context.WithoutCancel(ctx)
+			timeout := l.terminalHookTimeout
+			if timeout == 0 {
+				timeout = layer.TerminalHookTimeout
+			}
+			endCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+			defer cancel()
 			var hook addon.Hook = addon.UDPEndHook{Flow: l.flow}
 			failed := result != nil && ctx.Err() == nil && !errors.Is(result, net.ErrClosed) && !errors.Is(result, io.EOF)
 			if failed {

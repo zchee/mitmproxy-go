@@ -29,8 +29,8 @@ func TestTerminalHooksReleaseInterception(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			intercepted := make(chan struct{})
 			terminal := func(ctx context.Context, f *flow.TCPFlow) error {
-				if ctx.Err() != nil || ctx.Done() != nil {
-					t.Error("terminal hook context is cancellable")
+				if deadline, ok := ctx.Deadline(); !ok || deadline.IsZero() || ctx.Err() != nil || ctx.Done() == nil {
+					t.Error("terminal hook context lacks an active cleanup deadline")
 				}
 				f.Intercept()
 				return nil

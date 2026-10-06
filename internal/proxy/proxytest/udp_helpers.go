@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
+	"github.com/zchee/mitmproxy-go/internal/proxy/packettransport"
 )
 
 // StartUDPEchoOrigin starts a UDP4 origin on an ephemeral loopback port. Each
@@ -16,8 +17,12 @@ import (
 // closes the socket and joins the reader before returning.
 func StartUDPEchoOrigin(t testing.TB) *Origin {
 	t.Helper()
-	conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := packettransport.ConfigureSocketBuffers(conn); err != nil {
+		_ = conn.Close()
 		t.Fatal(err)
 	}
 	done := make(chan struct{})

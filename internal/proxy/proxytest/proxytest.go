@@ -52,6 +52,7 @@ import (
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/httplayer"
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/tcplayer"
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/tlslayer"
+	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/udplayer"
 )
 
 // Proxy is a running in-process proxy. Its listeners close when the test

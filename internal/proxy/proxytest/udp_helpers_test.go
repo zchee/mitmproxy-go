@@ -15,6 +15,7 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
+	"github.com/zchee/mitmproxy-go/internal/proxy/packettransport"
 	"github.com/zchee/mitmproxy-go/internal/proxy/proxytest"
 )
 
@@ -24,6 +25,7 @@ func TestUDPEchoOrigin(t *testing.T) {
 		"success: text datagram":           {payload: []byte("echo")},
 		"success: binary datagram":         {payload: []byte{0, 0xff, '\n', 0}},
 		"success: multi-kilobyte datagram": {payload: bytes.Repeat([]byte{0xa5}, 8192)},
+		"success: maximum datagram":        {payload: bytes.Repeat([]byte{0x5a}, layer.MaxUDPPacketBytes)},
 	}
 	for name, test := range tests {
 		var addr string
@@ -35,6 +37,9 @@ func TestUDPEchoOrigin(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = client.Close() })
+			if err := packettransport.ConfigureSocketBuffers(client.(*net.UDPConn)); err != nil {
+				t.Fatal(err)
+			}
 			if err := client.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
 				t.Fatal(err)
 			}

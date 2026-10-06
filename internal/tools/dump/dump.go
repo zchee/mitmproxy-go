@@ -57,6 +57,7 @@ import (
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/modes"
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/tcplayer"
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/tlslayer"
+	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/udplayer"
 )
 
 // Config configures a Master.

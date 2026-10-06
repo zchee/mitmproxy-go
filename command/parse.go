@@ -153,7 +153,7 @@ func (m *Manager) callStrings(ctx context.Context, name string, args []string) (
 
 	n := len(c.Params)
 	variadic := n > 0 && c.Params[n-1].Variadic
-	if (!variadic && len(args) != n) || (variadic && len(args) < n-1) {
+	if len(args) < c.required || (!variadic && len(args) > n) {
 		params := make([]string, n)
 		for i, p := range c.Params {
 			params[i] = p.String()

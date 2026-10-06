@@ -31,6 +31,8 @@ import (
 	"github.com/zchee/mitmproxy-go/master"
 	"github.com/zchee/mitmproxy-go/options"
 	"github.com/zchee/mitmproxy-go/tcp"
+	"github.com/zchee/mitmproxy-go/udp"
+	"github.com/zchee/mitmproxy-go/websocket"
 )
 
 // ProxyServer runs listeners and provides the live-connection commands.
@@ -109,7 +111,13 @@ func (p *ProxyServer) Load(ctx context.Context, loader *addon.Loader) error {
 	if err := loader.AddCommand("proxyserver.active_connections", p.ActiveConnections); err != nil {
 		return err
 	}
-	return loader.AddCommand("inject.tcp", p.InjectTCP, command.WithParams("flow", "to_client", "message"))
+	if err := loader.AddCommand("inject.tcp", p.InjectTCP, command.WithParams("flow", "to_client", "message")); err != nil {
+		return err
+	}
+	if err := loader.AddCommand("inject.websocket", p.InjectWebSocket, command.WithParams("flow", "to_client", "message", "is_text"), command.WithDefault("is_text", true)); err != nil {
+		return err
+	}
+	return loader.AddCommand("inject.udp", p.InjectUDP, command.WithParams("flow", "to_client", "message"))
 }
 
 // Configure validates option changes and schedules listener updates only when
@@ -312,6 +320,42 @@ func (p *ProxyServer) InjectTCP(ctx context.Context, f flow.Flow, toClient bool,
 		return nil
 	}
 	err := p.handler.Inject(ctx, layer.Injected{Flow: f, Message: tcp.NewMessage(!toClient, message)})
+	if errors.Is(err, proxy.ErrFlowNotLive) {
+		p.logger.Warn("Flow is not from a live connection.")
+		return nil
+	}
+	return err
+}
+
+// InjectWebSocket implements inject.websocket. Non-WebSocket and non-live flows
+// log the upstream warning. isText selects text rather than binary messages;
+// toClient selects the recipient. Queue and message errors reach the caller.
+func (p *ProxyServer) InjectWebSocket(ctx context.Context, f flow.Flow, toClient bool, message []byte, isText bool) error {
+	hf, ok := f.(*flow.HTTPFlow)
+	if !ok || hf == nil || hf.WebSocket == nil {
+		p.logger.Warn("Cannot inject WebSocket messages into non-WebSocket flows.")
+		return nil
+	}
+	opcode := websocket.OpBinary
+	if isText {
+		opcode = websocket.OpText
+	}
+	err := p.handler.Inject(ctx, layer.Injected{Flow: f, Message: websocket.NewMessage(opcode, !toClient, message)})
+	if errors.Is(err, proxy.ErrFlowNotLive) {
+		p.logger.Warn("Flow is not from a live connection.")
+		return nil
+	}
+	return err
+}
+
+// InjectUDP implements inject.udp. Non-UDP and non-live flows log the upstream
+// warning. toClient selects the recipient; queue and message errors reach the caller.
+func (p *ProxyServer) InjectUDP(ctx context.Context, f flow.Flow, toClient bool, message []byte) error {
+	if _, ok := f.(*flow.UDPFlow); !ok {
+		p.logger.Warn("Cannot inject UDP messages into non-UDP flows.")
+		return nil
+	}
+	err := p.handler.Inject(ctx, layer.Injected{Flow: f, Message: udp.NewMessage(!toClient, message)})
 	if errors.Is(err, proxy.ErrFlowNotLive) {
 		p.logger.Warn("Flow is not from a live connection.")
 		return nil

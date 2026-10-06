@@ -223,7 +223,13 @@ func (l *httpLayer) Run(ctx context.Context, c *layer.Context) error {
 				if err != nil {
 					return err
 				}
-				if err := c.Do(ctx, func(context.Context) error { c.Data.Layers = append(c.Data.Layers, child); return nil }); err != nil {
+				if err := c.Do(ctx, func(context.Context) error {
+					// The upgrade retains the HTTP flow until WebSocket end, so
+					// injection must remain available before WebSocket start.
+					stream.flow.Live = true
+					c.Data.Layers = append(c.Data.Layers, child)
+					return nil
+				}); err != nil {
 					return err
 				}
 				return child.Run(ctx, c)

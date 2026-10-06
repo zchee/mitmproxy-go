@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"runtime"
 	"slices"
@@ -26,6 +27,7 @@ import (
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/addons/errorcheck"
 	"github.com/zchee/mitmproxy-go/addons/nextlayer"
+	"github.com/zchee/mitmproxy-go/command"
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
@@ -39,8 +41,8 @@ import (
 // Upstream test_proxyserver.py coverage:
 // test_start_stop: TestStartStop covers TCP; proxytest.TestHTTPStartStop covers HTTP.
 // test_inject: TestInject covers reverse TCP; proxytest.TestCONNECTInjection covers CONNECT.
-// test_inject_fail: TestInjectFail covers TCP; WebSocket and UDP inject commands
-// require their unimplemented protocol layers. Go's command types reject strings.
+// test_inject_fail: TestInjectFail covers TCP, WebSocket and UDP warnings;
+// TestInjectInvalidFlowArguments verifies Go's command types reject strings.
 // test_warn_no_nextlayer: TestWarnNoNextLayer.
 // test_self_connect: TestSelfConnect.
 // test_options: TestOptions, TestOptionMetadata and TestUnsupportedModes.
@@ -494,21 +496,81 @@ func TestInject(t *testing.T) {
 }
 
 func TestInjectFail(t *testing.T) {
-	m, _, logs, _ := fixture(t, false)
 	tests := map[string]struct {
-		f    flow.Flow
-		want string
+		command string
+		f       flow.Flow
+		want    string
 	}{
-		"non TCP":  {testflow.TFlow(), "Cannot inject TCP messages into non-TCP flows."},
-		"not live": {testflow.TTCPFlow(), "Flow is not from a live connection."},
+		"error: non TCP":            {"inject.tcp", testflow.TFlow(), "Cannot inject TCP messages into non-TCP flows."},
+		"error: TCP not live":       {"inject.tcp", testflow.TTCPFlow(), "Flow is not from a live connection."},
+		"error: non WebSocket HTTP": {"inject.websocket", testflow.TFlow(), "Cannot inject WebSocket messages into non-WebSocket flows."},
+		"error: non WebSocket TCP":  {"inject.websocket", testflow.TTCPFlow(), "Cannot inject WebSocket messages into non-WebSocket flows."},
+		"error: WebSocket not live": {"inject.websocket", testflow.TWebSocketFlow(), "Flow is not from a live connection."},
+		"error: non UDP":            {"inject.udp", testflow.TFlow(), "Cannot inject UDP messages into non-UDP flows."},
+		"error: UDP not live":       {"inject.udp", testflow.TUDPFlow(), "Flow is not from a live connection."},
+		"error: nil WebSocket flow": {"inject.websocket", (*flow.HTTPFlow)(nil), "Cannot inject WebSocket messages into non-WebSocket flows."},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if _, err := m.Call(t.Context(), "inject.tcp", tt.f, true, []byte("test")); err != nil {
+			m, _, logs, _ := fixture(t, false)
+			if _, err := m.Call(t.Context(), tt.command, tt.f, true, []byte("test")); err != nil {
 				t.Fatal(err)
 			}
 			if !strings.Contains(logs.String(), tt.want) {
 				t.Fatal(logs.String())
+			}
+		})
+	}
+}
+
+func TestInjectInvalidFlowArguments(t *testing.T) {
+	tests := map[string]struct{}{"inject.tcp": {}, "inject.websocket": {}, "inject.udp": {}}
+	for name := range tests {
+		t.Run(name, func(t *testing.T) {
+			m, _, logs, _ := fixture(t, false)
+			if _, err := m.Call(t.Context(), name, "@focus", true, []byte("test")); !errors.Is(err, command.ErrArgumentMismatch) {
+				t.Fatalf("string flow argument = %v, want ErrArgumentMismatch", err)
+			}
+			if got := logs.String(); got != "" {
+				t.Fatalf("invalid arguments reached injection: %s", got)
+			}
+		})
+	}
+}
+
+func TestInjectionCommandMetadata(t *testing.T) {
+	tests := map[string]struct {
+		names []string
+		types []string
+	}{
+		"inject.tcp":       {[]string{"flow", "to_client", "message"}, []string{"Flow", "Bool", "Bytes"}},
+		"inject.websocket": {[]string{"flow", "to_client", "message", "is_text"}, []string{"Flow", "Bool", "Bytes", "Bool"}},
+		"inject.udp":       {[]string{"flow", "to_client", "message"}, []string{"Flow", "Bool", "Bytes"}},
+	}
+	m, _, _, _ := fixture(t, false)
+	commands := maps.Collect(m.Commands.Commands())
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			c := commands[name]
+			if c == nil || c.Return != nil {
+				t.Fatalf("injection command missing or has a return identity: %+v", c)
+			}
+			var names, types []string
+			for _, p := range c.Params {
+				names = append(names, p.Name)
+				types = append(types, p.Type.Name())
+				if p.Variadic {
+					t.Fatalf("injection parameter %s is variadic", p.Name)
+				}
+			}
+			if diff := gocmp.Diff(tt.names, names); diff != "" {
+				t.Fatal(diff)
+			}
+			if diff := gocmp.Diff(tt.types, types); diff != "" {
+				t.Fatal(diff)
+			}
+			if want := name + " " + strings.Join(tt.names, " "); c.SignatureHelp() != want {
+				t.Fatalf("signature = %q, want %q", c.SignatureHelp(), want)
 			}
 		})
 	}

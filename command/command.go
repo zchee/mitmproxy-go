@@ -69,6 +69,8 @@ type Command struct {
 	Return Type
 
 	fn       reflect.Value
+	defaults []reflect.Value
+	required int
 	hasValue bool // fn returns a value before the optional error
 	hasErr   bool // fn's last result is an error
 }
@@ -99,6 +101,7 @@ type options struct {
 	help      string
 	names     []string
 	overrides []argumentOverride
+	defaults  map[string]any
 }
 
 // WithHelp sets the command's help text. Surrounding whitespace is removed
@@ -123,6 +126,21 @@ func WithParams(names ...string) Option {
 // binds to. It is the counterpart of mitmproxy's command.argument decorator.
 func WithArgument(name string, t Type) Option {
 	return func(o *options) { o.overrides = append(o.overrides, argumentOverride{name: name, typ: t}) }
+}
+
+// WithDefault supplies the native value used when the parameter named name is
+// omitted from a native or string call. Defaults must be assignable to the Go
+// parameter types and cover trailing fixed parameters; a variadic parameter
+// cannot have a default. Registration refuses invalid defaults with [ErrSignature].
+// Supplied string arguments are parsed before defaults are applied, as upstream's
+// bind/apply_defaults does. Signature help continues to show parameter names only.
+func WithDefault(name string, value any) Option {
+	return func(o *options) {
+		if o.defaults == nil {
+			o.defaults = make(map[string]any)
+		}
+		o.defaults[name] = value
+	}
 }
 
 var (
@@ -203,6 +221,38 @@ func newCommand(name string, fn any, opts ...Option) (*Command, error) {
 		c.Params[i].Type = t
 	}
 
+	c.required = n
+	if ft.IsVariadic() {
+		c.required--
+	}
+	if len(o.defaults) > 0 {
+		c.defaults = make([]reflect.Value, n)
+		for pname, value := range o.defaults {
+			i, ok := index[pname]
+			if !ok {
+				return nil, fmt.Errorf("%w: command %s: no parameter named %q", ErrSignature, name, pname)
+			}
+			if c.Params[i].Variadic {
+				return nil, fmt.Errorf("%w: command %s: variadic parameter %s cannot have a default", ErrSignature, name, pname)
+			}
+			v, err := argValue(value, ft.In(first+i))
+			if err != nil {
+				return nil, fmt.Errorf("%w: command %s: default for %s: %w", ErrSignature, name, pname, err)
+			}
+			c.defaults[i] = v
+		}
+		for i, p := range c.Params {
+			if p.Variadic {
+				break
+			}
+			if c.defaults[i].IsValid() {
+				c.required = min(c.required, i)
+			} else if i >= c.required {
+				return nil, fmt.Errorf("%w: command %s: required parameter %s follows a default", ErrSignature, name, p.Name)
+			}
+		}
+	}
+
 	if err := c.setReturn(ft); err != nil {
 		return nil, fmt.Errorf("command %s: %w", name, err)
 	}
@@ -252,12 +302,12 @@ func (c *Command) call(ctx context.Context, args []any) (any, error) {
 	ft := c.fn.Type()
 	n := len(c.Params)
 	variadic := n > 0 && c.Params[n-1].Variadic
-	if (!variadic && len(args) != n) || (variadic && len(args) < n-1) {
-		return nil, fmt.Errorf("%w: %s takes %s, got %d", ErrArgumentMismatch, c.Name, arity(n, variadic), len(args))
+	if len(args) < c.required || (!variadic && len(args) > n) {
+		return nil, fmt.Errorf("%w: %s takes %s, got %d", ErrArgumentMismatch, c.Name, arity(n, c.required, variadic), len(args))
 	}
 
 	const first = 1
-	in := make([]reflect.Value, 0, len(args)+first)
+	in := make([]reflect.Value, 0, max(len(args), n)+first)
 	// Manager.Call refuses a nil ctx, but a Runner hands run a context of
 	// its own. Going through a pointer keeps the parameter's interface type,
 	// so even a nil one is a valid Value rather than a reflect panic.
@@ -270,6 +320,10 @@ func (c *Command) call(ctx context.Context, args []any) (any, error) {
 			return nil, fmt.Errorf("%w: %s argument %s: %w", ErrArgumentMismatch, c.Name, c.Params[pi].Name, err)
 		}
 		in = append(in, v)
+	}
+
+	for i := len(args); i < n && !c.Params[i].Variadic; i++ {
+		in = append(in, c.defaults[i])
 	}
 
 	out := c.fn.Call(in)
@@ -309,10 +363,12 @@ func argValue(arg any, pt reflect.Type) (reflect.Value, error) {
 }
 
 // arity describes how many arguments a command takes.
-func arity(n int, variadic bool) string {
+func arity(n, required int, variadic bool) string {
 	switch {
 	case variadic:
-		return fmt.Sprintf("at least %d arguments", n-1)
+		return fmt.Sprintf("at least %d arguments", required)
+	case required < n:
+		return fmt.Sprintf("between %d and %d arguments", required, n)
 	case n == 1:
 		return "1 argument"
 	default:

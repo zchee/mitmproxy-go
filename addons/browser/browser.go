@@ -210,7 +210,7 @@ func (b *Browser) Done(_ context.Context) error {
 	}
 	var errs []error
 	for _, browser := range b.browser {
-		if err := browser.cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		if err := killProcess(browser.cmd.Process); err != nil && !errors.Is(err, os.ErrProcessDone) {
 			errs = append(errs, err)
 		}
 	}

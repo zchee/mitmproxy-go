@@ -11,23 +11,42 @@ import (
 	"io"
 	"log/slog"
 
+	"github.com/zchee/mitmproxy-go/addons/anticache"
+	"github.com/zchee/mitmproxy-go/addons/anticomp"
 	"github.com/zchee/mitmproxy-go/addons/block"
+	"github.com/zchee/mitmproxy-go/addons/blocklist"
 	"github.com/zchee/mitmproxy-go/addons/browser"
+	"github.com/zchee/mitmproxy-go/addons/clientplayback"
+	"github.com/zchee/mitmproxy-go/addons/commandhistory"
+	"github.com/zchee/mitmproxy-go/addons/comment"
 	"github.com/zchee/mitmproxy-go/addons/core"
+	"github.com/zchee/mitmproxy-go/addons/cut"
+	"github.com/zchee/mitmproxy-go/addons/disableh2c"
 	"github.com/zchee/mitmproxy-go/addons/dumper"
 	"github.com/zchee/mitmproxy-go/addons/errorcheck"
+	"github.com/zchee/mitmproxy-go/addons/export"
 	"github.com/zchee/mitmproxy-go/addons/keepserving"
+	"github.com/zchee/mitmproxy-go/addons/maplocal"
+	"github.com/zchee/mitmproxy-go/addons/mapremote"
+	"github.com/zchee/mitmproxy-go/addons/modifybody"
+	"github.com/zchee/mitmproxy-go/addons/modifyheaders"
 	"github.com/zchee/mitmproxy-go/addons/nextlayer"
 	"github.com/zchee/mitmproxy-go/addons/onboarding"
 	"github.com/zchee/mitmproxy-go/addons/proxyauth"
 	"github.com/zchee/mitmproxy-go/addons/proxyserver"
 	"github.com/zchee/mitmproxy-go/addons/readfile"
 	"github.com/zchee/mitmproxy-go/addons/save"
+	"github.com/zchee/mitmproxy-go/addons/savehar"
+	"github.com/zchee/mitmproxy-go/addons/serverplayback"
+	"github.com/zchee/mitmproxy-go/addons/stickyauth"
+	"github.com/zchee/mitmproxy-go/addons/stickycookie"
 	"github.com/zchee/mitmproxy-go/addons/termlog"
 	"github.com/zchee/mitmproxy-go/addons/tlsconfig"
+	"github.com/zchee/mitmproxy-go/addons/updatealtsvc"
 	"github.com/zchee/mitmproxy-go/addons/upstreamauth"
 	"github.com/zchee/mitmproxy-go/internal/http1"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
+	"github.com/zchee/mitmproxy-go/internal/version"
 	"github.com/zchee/mitmproxy-go/master"
 	"github.com/zchee/mitmproxy-go/options"
 
@@ -81,11 +100,7 @@ type Master struct {
 // file reader and the startup error check.
 //
 // The default_addons entries without a ported counterpart are, in
-// upstream's order: strip_dns_https_records, blocklist, anticache,
-// anticomp, clientplayback, command_history, comment, cut, disable_h2c,
-// export, script, dns_resolver, serverplayback, mapremote, maplocal,
-// modifybody, modifyheaders, stickyauth, stickycookie, savehar and
-// update_alt_svc.
+// upstream's order: strip_dns_https_records, script and dns_resolver.
 func New(ctx context.Context, cfg Config) (*Master, error) {
 	opts := cfg.Options
 	if opts == nil {
@@ -120,13 +135,31 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		core.New(m.Addons),
 		browser.New(opts, m.Addons),
 		block.New(opts),
+		blocklist.New(opts),
+		anticache.New(opts),
+		anticomp.New(opts),
+		clientplayback.New(m),
+		commandhistory.New(opts),
+		comment.New(m.Addons),
+		cut.New(),
+		disableh2c.New(),
+		export.New(opts),
 		onboarding.New(opts),
 		proxyauth.New(opts),
 		ps,
 		nextlayer.New(opts),
+		serverplayback.New(m),
+		mapremote.New(opts),
+		maplocal.New(opts),
+		modifybody.New(opts),
+		modifyheaders.New(opts),
+		stickyauth.New(opts),
+		stickycookie.New(opts),
 		save.New(opts, m.ShutdownWithError),
+		savehar.New(opts, version.Version),
 		tlsconfig.New(opts),
 		upstreamauth.New(opts),
+		updatealtsvc.New(opts),
 	)
 	if cfg.WithDumper {
 		addons = append(addons, dumper.New(opts, cfg.Stdout))

@@ -11,6 +11,7 @@ import (
 	json "encoding/json/v2"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,6 +19,9 @@ import (
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/httpmsg"
 )
+
+// MaxEntries bounds the number of entries materialized from one HAR document.
+const MaxEntries = 100_000
 
 const (
 	maxDocumentSize = 256 << 20
@@ -82,10 +86,13 @@ func FixHeaders(headers jsontext.Value) (httpmsg.Headers, error) {
 	return result, nil
 }
 
-// ReadEntries reads one complete HAR document, limited to 256 MiB and 1000
-// nested objects or arrays. Memory grows with bytes actually read, never with a
-// declared length. It requires log.entries to be an array and rejects trailing
-// JSON values. Entry validation occurs in RequestToFlow.
+// ReadEntries reads one complete HAR document, limited to 256 MiB, 1000
+// nested objects or arrays, and [MaxEntries] entries. Memory grows with bytes
+// actually read, never with a declared length. It requires log.entries to be
+// an array and rejects trailing JSON values. Duplicate log and entries keys
+// keep the last value, as Python's json.loads does; only the final array is
+// materialized and subject to the entry bound. Entry validation occurs in
+// RequestToFlow.
 func ReadEntries(r io.Reader) ([]jsontext.Value, error) {
 	return readEntries(r, maxDocumentSize)
 }
@@ -116,18 +123,48 @@ func readEntries(r io.Reader, limit int64) ([]jsontext.Value, error) {
 			return nil, err
 		}
 	}
+	// Keep repeated log objects as raw values so an earlier object cannot
+	// merge fields into the final object selected by Python's last-key rule.
 	var document struct {
-		Log *struct {
-			Entries *[]jsontext.Value `json:"entries"`
-		} `json:"log"`
+		Log jsontext.Value `json:"log"`
 	}
 	if err := json.Unmarshal(b.Bytes(), &document, jsontext.AllowDuplicateNames(true)); err != nil {
 		return nil, err
 	}
-	if document.Log == nil || document.Log.Entries == nil {
+	var log struct {
+		Entries jsontext.Value `json:"entries"`
+	}
+	if len(document.Log) == 0 || document.Log.Kind() == 'n' {
 		return nil, errors.New("HAR document is missing log.entries")
 	}
-	return *document.Log.Entries, nil
+	if err := json.Unmarshal(document.Log, &log, jsontext.AllowDuplicateNames(true)); err != nil {
+		return nil, err
+	}
+	if len(log.Entries) == 0 || log.Entries.Kind() == 'n' {
+		return nil, errors.New("HAR document is missing log.entries")
+	}
+	if log.Entries.Kind() != '[' {
+		return nil, errors.New("HAR entries must be an array")
+	}
+	d.Reset(bytes.NewReader(log.Entries), jsontext.AllowDuplicateNames(true))
+	if _, err := d.ReadToken(); err != nil {
+		return nil, err
+	}
+	entries := []jsontext.Value{}
+	for d.PeekKind() != ']' {
+		if len(entries) == MaxEntries {
+			return nil, errors.New("HAR exceeds entry-count limit")
+		}
+		value, err := d.ReadValue()
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, slices.Clone(value))
+	}
+	if _, err := d.ReadToken(); err != nil {
+		return nil, err
+	}
+	return entries, nil
 }
 
 type entry struct {

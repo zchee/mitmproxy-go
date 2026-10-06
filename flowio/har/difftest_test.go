@@ -20,6 +20,32 @@ import (
 	"github.com/zchee/mitmproxy-go/omap"
 )
 
+func TestDifferentialDuplicateEntries(t *testing.T) {
+	tests := map[string]struct{ input string }{
+		"success: last entries wins":               {input: `{"log":{"entries":[1],"entries":[2,3]}}`},
+		"success: last log wins":                   {input: `{"log":{"entries":[1]},"log":{"entries":[2,3]}}`},
+		"success: earlier invalid entries ignored": {input: `{"log":{"entries":0,"entries":[2,3]}}`},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			want := difftest.Python(t, `import json,sys
+sys.stdout.write(json.dumps(json.load(sys.stdin)["log"]["entries"], separators=(",", ":")))
+`, []byte(tt.input))
+			entries, err := har.ReadEntries(bytes.NewBufferString(tt.input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := json.Marshal(entries)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(string(want), string(got)); diff != "" {
+				t.Errorf("duplicate entries (-Python +Go):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestDifferentialStartedDateTime(t *testing.T) {
 	tests := map[string]struct{ stamp string }{
 		"success: UTC":            {"2023-03-29T17:37:42Z"},

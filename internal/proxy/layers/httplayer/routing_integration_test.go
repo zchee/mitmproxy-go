@@ -165,6 +165,7 @@ type interceptHTTPAddon struct {
 	clientClosed chan struct{}
 }
 
+// RequestHeaders intercepts and reports the flow when header interception is enabled.
 func (a *interceptHTTPAddon) RequestHeaders(_ context.Context, f *flow.HTTPFlow) error {
 	if a.headers {
 		f.Intercept()

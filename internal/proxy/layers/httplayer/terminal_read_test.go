@@ -24,6 +24,7 @@ type terminalDataConn struct {
 	firstBody chan struct{}
 }
 
+// Read signals the first body read and returns data with an unexpected EOF on the next read.
 func (c *terminalDataConn) Read(b []byte) (int, error) {
 	n, err := c.Conn.Read(b)
 	c.reads++

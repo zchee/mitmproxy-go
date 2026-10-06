@@ -23,6 +23,7 @@ import (
 // clientSignal reports each client connection without blocking the hook.
 type clientSignal struct{ connected chan struct{} }
 
+// ClientConnected reports the connection without blocking when the signal channel is full.
 func (c *clientSignal) ClientConnected(context.Context, *connection.Client) error {
 	select {
 	case c.connected <- struct{}{}:

@@ -102,7 +102,7 @@ func (a *NextLayer) NextLayer(ctx context.Context, d *hookdata.NextLayer) error 
 	if d.Context == nil || d.Context.Client == nil || d.Context.Server == nil {
 		return errors.New("nextlayer: missing connection context")
 	}
-	if d.Context.Client.TransportProtocol != connection.TCP {
+	if d.Context.Client.TransportProtocol != connection.TCP && d.Context.Client.TransportProtocol != connection.UDP {
 		return nil
 	}
 	if len(d.DataClient) >= sniffLimit {
@@ -127,15 +127,29 @@ func (a *NextLayer) NextLayer(ctx context.Context, d *hookdata.NextLayer) error 
 
 func (a *NextLayer) sniffFallback(ctx context.Context, d *hookdata.NextLayer) {
 	delete(a.hellos, d.Context.Client)
-	a.log().WarnContext(ctx, "Protocol sniff limit reached; falling back to raw TCP", "limit", sniffLimit)
-	d.Layer = hookdata.LayerStack{{Kind: hookdata.LayerTCP}}
+	kind, protocol := hookdata.LayerTCP, "TCP"
+	if d.Context.Client.TransportProtocol == connection.UDP {
+		kind, protocol = hookdata.LayerUDP, "UDP"
+	}
+	a.log().WarnContext(ctx, "Protocol sniff limit reached; falling back to raw "+protocol, "limit", sniffLimit)
+	d.Layer = hookdata.LayerStack{{Kind: kind}}
 }
 
 func (a *NextLayer) choose(ctx context.Context, d *hookdata.NextLayer) (hookdata.LayerStack, error) {
 	c := d.Context
-	isTLS := tlsparse.StartsLikeTLSRecord(d.DataClient)
+	isUDP := c.Client.TransportProtocol == connection.UDP
+	isTLS := !isUDP && tlsparse.StartsLikeTLSRecord(d.DataClient)
+	isDTLS := isUDP && tlsparse.StartsLikeDTLSRecord(d.DataClient)
 	var hello *tlsparse.ClientHello
 	var incomplete bool
+	if isDTLS {
+		var err error
+		hello, err = tlsparse.ParseDTLSClientHello(d.DataClient)
+		if errors.Is(err, tlsparse.ErrTooLarge) {
+			return nil, err
+		}
+		incomplete = err == nil && hello == nil
+	}
 	if isTLS {
 		if a.hellos == nil {
 			a.hellos = make(map[*connection.Client]*tlsparse.ClientHelloParser)
@@ -157,7 +171,29 @@ func (a *NextLayer) choose(ctx context.Context, d *hookdata.NextLayer) (hookdata
 		return nil, err
 	}
 	if ignored {
-		return hookdata.LayerStack{{Kind: hookdata.LayerTCP, Ignore: !a.opts.Bool("show_ignored_hosts")}}, nil
+		kind := hookdata.LayerTCP
+		if isUDP {
+			kind = hookdata.LayerUDP
+		}
+		return hookdata.LayerStack{{Kind: kind, Ignore: !a.opts.Bool("show_ignored_hosts")}}, nil
+	}
+
+	if isUDP {
+		if len(c.Layers) == 1 {
+			if top, ok := c.Layers[0].(interface{ Kind() hookdata.LayerKind }); ok && top.Kind() == hookdata.LayerReverse {
+				return reverseStack(c.Client.ProxyMode, isDTLS)
+			}
+		}
+		if isDTLS {
+			return hookdata.LayerStack{{Kind: hookdata.LayerServerDTLS}, {Kind: hookdata.LayerClientDTLS}}, nil
+		}
+		for _, pattern := range a.hosts["udp_hosts"] {
+			if c.Server.Address != nil && a.matchHost(ctx, "udp_hosts", pattern, c.Server.Address.Host) ||
+				c.Client.SNI != nil && a.matchHost(ctx, "udp_hosts", pattern, *c.Client.SNI) {
+				return hookdata.LayerStack{{Kind: hookdata.LayerUDP}}, nil
+			}
+		}
+		return hookdata.LayerStack{{Kind: hookdata.LayerUDP}}, nil
 	}
 
 	if len(c.Layers) == 1 {
@@ -212,7 +248,7 @@ func (a *NextLayer) ignoreConnection(ctx context.Context, d *hookdata.NextLayer,
 	if address := c.Server.Address; address != nil {
 		port := ":" + strconv.Itoa(address.Port)
 		hosts = append(hosts, address.Host+port)
-		if len(d.DataServer) == 0 && httpPrefix.Match(d.DataClient) {
+		if c.Client.TransportProtocol == connection.TCP && len(d.DataServer) == 0 && httpPrefix.Match(d.DataClient) {
 			match := hostHeader.FindSubmatch(d.DataClient)
 			if match == nil {
 				return false, errNeedsMoreData
@@ -289,15 +325,24 @@ func reverseStack(spec string, clientTLS bool) (hookdata.LayerStack, error) {
 		app = hookdata.LayerSpec{Kind: hookdata.LayerHTTP, HTTPMode: hookdata.HTTPModeTransparent}
 	case "tcp", "tls":
 		app = hookdata.LayerSpec{Kind: hookdata.LayerTCP}
+	case "udp", "dtls":
+		app = hookdata.LayerSpec{Kind: hookdata.LayerUDP}
 	default:
 		return nil, nil
 	}
 	stack := make(hookdata.LayerStack, 0, 3)
-	if reverse.Scheme == "https" || reverse.Scheme == "tls" {
+	switch reverse.Scheme {
+	case "https", "tls":
 		stack = append(stack, hookdata.LayerSpec{Kind: hookdata.LayerServerTLS})
+	case "dtls":
+		stack = append(stack, hookdata.LayerSpec{Kind: hookdata.LayerServerDTLS})
 	}
 	if clientTLS {
-		stack = append(stack, hookdata.LayerSpec{Kind: hookdata.LayerClientTLS})
+		kind := hookdata.LayerClientTLS
+		if app.Kind == hookdata.LayerUDP {
+			kind = hookdata.LayerClientDTLS
+		}
+		stack = append(stack, hookdata.LayerSpec{Kind: kind})
 	}
 	return append(stack, app), nil
 }

@@ -27,6 +27,9 @@ type sniffRead struct {
 // nextLayer lends hooks read-only views of the received bytes. The recorder
 // independently retains replay bytes, including reads completed during a hook.
 func nextLayer(ctx context.Context, c *layer.Context) (layer.Layer, error) {
+	if c != nil && c.ClientPackets != nil {
+		return nextPacketLayer(ctx, c)
+	}
 	if c == nil || c.Data == nil || c.Client == nil || c.Hooks == nil || c.Do == nil {
 		return nil, errors.New("proxy: next layer requires client, metadata, hooks and dispatch")
 	}

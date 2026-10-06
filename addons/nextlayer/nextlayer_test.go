@@ -31,15 +31,11 @@ const (
 
 // Deferred upstream cases (test_next_layer.py):
 // Test group              | Case names                              | Required protocol
-// test_ignore_connection  | dtls sni; incomplete dtls client hello; invalid dtls client hello | DTLS
 // test_ignore_connection  | quic sni; invalid quic; fragmented quic hello | QUIC
 // test_next_layer         | explicit proxy: experimental http3       | QUIC
-// test_next_layer         | reverse proxy: udp -> udp; reverse proxy: dtls -> dtls; reverse proxy: dtls -> udp; reverse proxy: udp -> dtls | UDP/DTLS
 // test_next_layer         | reverse proxy: dns                       | DNS
 // test_next_layer         | reverse proxy: http3; reverse proxy: http3 in https mode; reverse proxy: quic | QUIC
-// test_next_layer         | transparent proxy: dtls                  | DTLS
 // test_next_layer         | transparent proxy: quic; transparent proxy: existing quic session; transparent proxy: http3 via ALPN | QUIC
-// test_next_layer         | transparent proxy: raw udp; transparent proxy: udp_hosts | UDP
 // test_next_layer         | transparent proxy: dns over udp; transparent proxy: dns over tcp; wireguard proxy: dns should not be ignored | DNS
 // test_next_layer         | transparent proxy: non-http quic; transparent proxy: http3 not ignored but with ignoring active | QUIC
 // test_starts_like_quic   | all assertions                           | QUIC

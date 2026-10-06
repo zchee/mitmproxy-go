@@ -80,9 +80,9 @@ func clientHelloSNI(t *testing.T, sni string) string {
 }
 
 // TestClientCertificateStaysInDirectory proves that a peer-chosen server
-// name selects at most a file directly inside the client_certs directory.
-// A decoy key pair beside the directory must never load, whether the name
-// arrives through a parsed ClientHello or reaches clientCertificate directly.
+// name selects at most a basename inside the client_certs directory. Operator
+// symlinks may point elsewhere; traversal from a parsed ClientHello or directly
+// through clientCertificate must never select the decoy beside the directory.
 func TestClientCertificateStaysInDirectory(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "client-certs")
@@ -106,6 +106,17 @@ func TestClientCertificateStaysInDirectory(t *testing.T) {
 			sni:    func(*testing.T) string { return "example.com" },
 			host:   "192.0.2.1",
 			wantCN: "example.com",
+		},
+		"success: operator symlink selects an external key store": {
+			sni: func(t *testing.T) string {
+				t.Helper()
+				if err := os.Symlink(filepath.Join(root, "secret.pem"), filepath.Join(dir, "example.test.pem")); err != nil {
+					t.Fatal(err)
+				}
+				return "example.test"
+			},
+			host:   "192.0.2.1",
+			wantCN: "outside-the-directory",
 		},
 		"success: address host without a server name": {
 			host:   "example.com",

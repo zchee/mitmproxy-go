@@ -34,10 +34,14 @@ func TestDTLSReverseHandlerAcceptance(t *testing.T) {
 	tests := map[string]struct {
 		serverFirst bool
 		noSNI       bool
+		lateRecord  []byte
 	}{
 		"success: eager origin handshake with SNI": {serverFirst: true},
 		"success: lazy origin handshake with SNI":  {},
 		"success: empty SNI on explicit listener":  {serverFirst: true, noSNI: true},
+		"success: late alert does not reopen origin": {
+			lateRecord: []byte{21, 0xfe, 0xfd, 0, 1, 0, 0, 0, 0, 0, 1, 0, 2, 1, 0},
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -96,7 +100,7 @@ func TestDTLSReverseHandlerAcceptance(t *testing.T) {
 				// Leave the session open until the client has consumed the final reply.
 				<-ctx.Done()
 			}()
-			observer := &dtlsAcceptanceObserver{serverFirst: tt.serverFirst, ended: make(chan struct{})}
+			observer := &dtlsAcceptanceObserver{serverFirst: tt.serverFirst, ended: make(chan struct{}), disconnected: make(chan struct{}, 16)}
 			mode := "reverse:dtls://" + listener.Addr().String()
 			if tt.noSNI {
 				mode += "@127.0.0.1:0"
@@ -209,7 +213,30 @@ func TestDTLSReverseHandlerAcceptance(t *testing.T) {
 				buf := make([]byte, 1<<20)
 				t.Fatalf("UDP end hook hung: %v\n%s", ctx.Err(), buf[:runtime.Stack(buf, true)])
 			}
+			if len(tt.lateRecord) != 0 {
+				select {
+				case <-observer.disconnected:
+				case <-ctx.Done():
+					t.Fatal("original tuple did not close:", ctx.Err())
+				}
+				lateSocket, err := net.ListenPacket("udp4", socket.LocalAddr().String())
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = lateSocket.Close() })
+				if _, err := lateSocket.WriteTo(tt.lateRecord, peer); err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case <-observer.disconnected:
+				case <-ctx.Done():
+					t.Fatal("late record tuple did not close:", ctx.Err())
+				}
+			}
 			if err := p.Master.Do(ctx, func(context.Context) error {
+				if observer.originOpens != 1 {
+					return fmt.Errorf("origin connection attempts = %d, want 1", observer.originOpens)
+				}
 				if observer.sni != serverName {
 					return fmt.Errorf("tls_clienthello SNI = %q, want %q", observer.sni, serverName)
 				}
@@ -244,19 +271,30 @@ func TestDTLSReverseHandlerAcceptance(t *testing.T) {
 
 // Hook state is read only from hooks or the master's dispatch callback.
 type dtlsAcceptanceObserver struct {
-	serverFirst bool
-	sni         string
-	events      []string
-	lifecycle   []string
-	messages    []*udp.Message
-	ended       chan struct{}
-	failure     string
+	serverFirst  bool
+	sni          string
+	events       []string
+	disconnected chan struct{}
+	originOpens  int
+	plainClient  bool
+	lifecycle    []string
+	messages     []*udp.Message
+	ended        chan struct{}
+	failure      string
 }
 
 func (o *dtlsAcceptanceObserver) ClientDisconnected(_ context.Context, client *connection.Client) error {
 	if client.Error != nil {
 		o.failure = *client.Error
 	}
+	if o.disconnected != nil {
+		o.disconnected <- struct{}{}
+	}
+	return nil
+}
+
+func (o *dtlsAcceptanceObserver) ServerConnect(context.Context, *hookdata.ServerConnection) error {
+	o.originOpens++
 	return nil
 }
 
@@ -309,7 +347,7 @@ func (o *dtlsAcceptanceObserver) established(event string, d *hookdata.TLS) erro
 }
 
 func (o *dtlsAcceptanceObserver) UDPStart(_ context.Context, f *flow.UDPFlow) error {
-	if f.ClientConn.TransportProtocol != connection.UDP || !f.ClientConn.TLSEstablished() {
+	if f.ClientConn.TransportProtocol != connection.UDP || (!o.plainClient && !f.ClientConn.TLSEstablished()) {
 		return errors.New("UDP flow started before client DTLS establishment")
 	}
 	o.lifecycle = append(o.lifecycle, "udp_start")

@@ -33,6 +33,18 @@ func (l *serverDTLS) Run(ctx context.Context, c *layer.Context) error {
 	if c.RecordPackets == nil || (c.OpenPackets == nil && c.ServerPackets == nil) {
 		return errors.New("tlslayer: server DTLS requires a packet transport and recorder")
 	}
+	if c.ClientPackets != nil {
+		first, _, err := c.ClientPackets.PeekPacket()
+		if err != nil {
+			return err
+		}
+		// A late record can recreate an evicted tuple, but cannot start a new
+		// DTLS session. Do not turn its readmission into an origin handshake.
+		if len(first) >= 3 && first[1] == 0xfe && (first[2] == 0xfd || first[2] == 0xfe) && (first[0] == 20 || first[0] == 21 || first[0] == 23) {
+			c.Logger.InfoContext(ctx, "Discarding DTLS record without an initial ClientHello.")
+			return nil
+		}
+	}
 	state := &dtlsServerState{c: c, raw: c.ServerPackets, openRaw: c.OpenPackets}
 	if err := c.Do(ctx, func(context.Context) error {
 		if c.Data.Server.TransportProtocol != connection.UDP {

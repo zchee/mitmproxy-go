@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"slices"
 	"sync"
 	"time"
@@ -40,8 +41,27 @@ type tcpLayer struct {
 func (*tcpLayer) Kind() hookdata.LayerKind { return hookdata.LayerTCP }
 
 // Run relays both TCP directions and emits lifecycle hooks for captured flows.
-func (l *tcpLayer) Run(ctx context.Context, c *layer.Context) error {
+func (l *tcpLayer) Run(ctx context.Context, c *layer.Context) (result error) {
 	if l.flow != nil {
+		defer func() {
+			endCtx := context.WithoutCancel(ctx)
+			var hook addon.Hook = addon.TCPEndHook{Flow: l.flow}
+			failed := result != nil && ctx.Err() == nil && !errors.Is(result, net.ErrClosed) && !errors.Is(result, io.EOF)
+			if failed {
+				hook = addon.TCPErrorHook{Flow: l.flow}
+			}
+			_, hookErr := c.Hooks.FireFunc(endCtx, func(context.Context) error {
+				if failed {
+					l.flow.Error = flow.NewError(result.Error())
+				}
+				return nil
+			}, hook)
+			endErr := c.Do(endCtx, func(context.Context) error {
+				l.flow.Live = false
+				return nil
+			})
+			result = errors.Join(result, hookErr, endErr)
+		}()
 		if _, err := c.Hooks.Fire(ctx, addon.TCPStartHook{Flow: l.flow}); err != nil {
 			return err
 		}
@@ -56,14 +76,7 @@ func (l *tcpLayer) Run(ctx context.Context, c *layer.Context) error {
 		}
 		opened, actual, err := c.Pool.Open(ctx, metadata, layer.OpenOptions{})
 		if err != nil {
-			if l.flow == nil {
-				return err
-			}
-			_, hookErr := c.Hooks.FireFunc(ctx, func(context.Context) error {
-				l.flow.Error = flow.NewError(err.Error())
-				return nil
-			}, addon.TCPErrorHook{Flow: l.flow})
-			return errors.Join(err, hookErr)
+			return err
 		}
 		c.Server = c.Record(opened)
 		if err := c.Do(ctx, func(context.Context) error {
@@ -78,16 +91,7 @@ func (l *tcpLayer) Run(ctx context.Context, c *layer.Context) error {
 	}
 	c.Server.StopRecording()
 	c.Client.StopRecording()
-	err := l.relay(ctx, c, c.Server)
-	if l.flow == nil {
-		return err
-	}
-	_, hookErr := c.Hooks.Fire(ctx, addon.TCPEndHook{Flow: l.flow})
-	endErr := c.Do(context.WithoutCancel(ctx), func(context.Context) error {
-		l.flow.Live = false
-		return nil
-	})
-	return errors.Join(err, hookErr, endErr)
+	return l.relay(ctx, c, c.Server)
 }
 
 type received struct {
@@ -186,7 +190,7 @@ func (l *tcpLayer) relay(ctx context.Context, c *layer.Context, server layer.Con
 		if event.err != nil {
 			remaining--
 			if err := dst.CloseWrite(); err != nil {
-				return err
+				return errors.Join(net.ErrClosed, err)
 			}
 		}
 	}

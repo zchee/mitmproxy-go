@@ -46,6 +46,11 @@ func (r *HookRunner) FireFunc(ctx context.Context, prepare func(context.Context)
 	intercepted := false
 	finish := func(context.Context) {
 		if f != nil {
+			switch hook.(type) {
+			case addon.TCPEndHook, addon.TCPErrorHook, addon.UDPEndHook, addon.UDPErrorHook:
+				// A terminal hook cannot suspend a connection that has finished.
+				f.Common().Resume()
+			}
 			intercepted = f.Common().Intercepted()
 			if !intercepted {
 				snapshot = capture(f)

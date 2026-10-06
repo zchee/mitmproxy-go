@@ -31,6 +31,8 @@ type udpRelayAddon struct {
 	start     func(context.Context, *flow.UDPFlow) error
 	message   func(context.Context, *flow.UDPFlow) error
 	connect   func(context.Context, *hookdata.ServerConnection) error
+	end       func(context.Context, *flow.UDPFlow) error
+	failed    func(context.Context, *flow.UDPFlow) error
 	connected chan connection.Address
 }
 
@@ -44,6 +46,20 @@ func (a *udpRelayAddon) UDPStart(ctx context.Context, f *flow.UDPFlow) error {
 func (a *udpRelayAddon) UDPMessage(ctx context.Context, f *flow.UDPFlow) error {
 	if a.message != nil {
 		return a.message(ctx, f)
+	}
+	return nil
+}
+
+func (a *udpRelayAddon) UDPEnd(ctx context.Context, f *flow.UDPFlow) error {
+	if a.end != nil {
+		return a.end(ctx, f)
+	}
+	return nil
+}
+
+func (a *udpRelayAddon) UDPError(ctx context.Context, f *flow.UDPFlow) error {
+	if a.failed != nil {
+		return a.failed(ctx, f)
 	}
 	return nil
 }
@@ -67,6 +83,7 @@ type udpRelayConfig struct {
 	addon                      *udpRelayAddon
 	tuple                      *packettransport.TupleConn
 	peer                       *net.UDPConn
+	ctx                        context.Context
 }
 
 type udpRelayFixture struct {
@@ -177,9 +194,13 @@ func startUDPRelay(t *testing.T, config udpRelayConfig) *udpRelayFixture {
 	if config.clock != nil {
 		f.handler.clock = config.clock
 	}
+	ctx := config.ctx
+	if ctx == nil {
+		ctx = t.Context()
+	}
 	go func() {
 		defer close(f.done)
-		f.done <- f.handler.HandlePackets(t.Context(), tuple, "reverse:udp://"+origin.LocalAddr().String(), hookdata.LayerSpec{Kind: topKind})
+		f.done <- f.handler.HandlePackets(ctx, tuple, "reverse:udp://"+origin.LocalAddr().String(), hookdata.LayerSpec{Kind: topKind})
 	}()
 	t.Cleanup(func() {
 		f.connections.Close()
@@ -450,8 +471,8 @@ func TestUDPRelayIdleExpiry(t *testing.T) {
 			if f.connections.Len() != 0 || f.tuple.Context().Err() == nil {
 				t.Fatal("expired tuple was not evicted")
 			}
-			if got := udpHooks(f.recorder); slices.Contains(got, "udp_end") || slices.Contains(got, "udp_error") {
-				t.Fatalf("terminal hooks fired after idle cancellation: %v", got)
+			if got := udpHooks(f.recorder); !slices.Contains(got, "udp_end") || slices.Contains(got, "udp_error") {
+				t.Fatalf("idle cancellation must emit udp_end only: %v", got)
 			}
 		})
 	}
@@ -504,8 +525,8 @@ func TestUDPRelayInterceptionCancellation(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			if slices.Contains(udpHooks(f.recorder), "udp_end") || f.connections.Len() != 0 {
-				t.Fatal("shutdown did not skip terminal interception and evict the tuple")
+			if !slices.Contains(udpHooks(f.recorder), "udp_end") || f.connections.Len() != 0 {
+				t.Fatal("shutdown did not emit udp_end and evict the tuple")
 			}
 		})
 	}

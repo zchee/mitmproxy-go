@@ -48,6 +48,8 @@ type observer struct {
 	events  []string
 	flow    *flow.TCPFlow
 	message func(context.Context, *flow.TCPFlow) error
+	end     func(context.Context, *flow.TCPFlow) error
+	failed  func(context.Context, *flow.TCPFlow) error
 	started chan *flow.TCPFlow
 }
 
@@ -68,16 +70,22 @@ func (a *observer) TCPMessage(ctx context.Context, f *flow.TCPFlow) error {
 	return nil
 }
 
-func (a *observer) TCPEnd(_ context.Context, f *flow.TCPFlow) error {
+func (a *observer) TCPEnd(ctx context.Context, f *flow.TCPFlow) error {
 	a.events = append(a.events, "tcp_end")
 	if !f.Live {
 		return errors.New("tcp_end must observe a live flow")
 	}
+	if a.end != nil {
+		return a.end(ctx, f)
+	}
 	return nil
 }
 
-func (a *observer) TCPError(_ context.Context, _ *flow.TCPFlow) error {
+func (a *observer) TCPError(ctx context.Context, f *flow.TCPFlow) error {
 	a.events = append(a.events, "tcp_error")
+	if a.failed != nil {
+		return a.failed(ctx, f)
+	}
 	return nil
 }
 
@@ -249,6 +257,9 @@ func TestOpenConnectionError(t *testing.T) {
 	if s.observed.flow.Error.Msg != want.Error() {
 		t.Fatalf("flow error = %v", s.observed.flow.Error)
 	}
+	if s.observed.flow.Live {
+		t.Fatal("failed flow is still live")
+	}
 }
 
 // Upstream test_simple: both directions are forwarded through message hooks.
@@ -370,6 +381,12 @@ func TestCancelUnblocksReaders(t *testing.T) {
 	s.cancel()
 	if err := await(t, s.done); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancel = %v", err)
+	}
+	if diff := gocmp.Diff([]string{"tcp_start", "tcp_end"}, a.events); diff != "" {
+		t.Fatal(diff)
+	}
+	if a.flow.Live || a.flow.Intercepted() {
+		t.Fatal("canceled flow is still live or intercepted")
 	}
 }
 

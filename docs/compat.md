@@ -518,11 +518,17 @@ behavior of an echo server. The frozen Autobahn expectations therefore accept ei
 3.2, 3.3, 3.4, 4.1.3, 4.1.4, 4.1.5, 4.2.3, 4.2.4, 4.2.5 and 5.15: the preceding valid message's echo may already have
 arrived or may still be in flight. All 517 cases still run; no `FAILED` or `UNCLEAN` expectation is permitted.
 
+## internal/proxy/layers/tcplayer
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Every captured TCP flow receives `tcp_end` or `tcp_error` (`mitmproxy/proxy/layers/tcp.py`). | Every captured flow emits exactly one terminal hook, including on shutdown, idle expiry and cancellation: `tcp_end` for closure or cancellation, `tcp_error` for opening or relay failure. A failed terminal half-close is transport closure; its underlying error remains in the returned error. The hook uses `WithoutCancel`; dispatch then clears `Live`, including on dial failure. An interception retained into or requested during a terminal hook is immediately resumed. | Preserve upstream's terminal-hook lifecycle and release the finished connection. Unlike upstream's suspended hook coroutine, a terminal interception cannot retain a connection owner after its transport has finished. |
+
 ## internal/proxy/layers/udplayer
 
 | Upstream | Go | Reason |
 |---|---|---|
-| Every UDP flow receives `udp_end` or `udp_error`, and a connection-close event emits `udp_end` before clearing `live` (`mitmproxy/proxy/layers/udp.py:44-51,121-126`). | Proxy shutdown or idle cancellation does not fire terminal UDP hooks. Ordinary transport closure emits one `udp_end`; terminal hooks use the real connection context, while clearing `Live` uses `WithoutCancel`, including dial failure. Cancellation releases intercepted hooks and evicts the tuple. | Match the Go TCP relay's cancellation contract: shutdown cannot wait on intercepted addon work, but a closed transport must still become non-live and refuse injection. |
+| Every UDP flow receives `udp_end` or `udp_error`, and a connection-close event emits `udp_end` before clearing `live` (`mitmproxy/proxy/layers/udp.py:44-51,121-126`). | Every captured flow emits exactly one terminal hook, including on shutdown, idle expiry and cancellation: `udp_end` for closure or cancellation, `udp_error` for failure. The hook uses `WithoutCancel`; dispatch then clears `Live`, including on dial failure. An interception retained into or requested during a terminal hook is immediately resumed. | Preserve upstream's terminal-hook lifecycle and release the finished tuple. Unlike upstream's suspended hook coroutine, a terminal interception cannot retain a connection owner after its transport has finished. |
 
 ## Decided for code that is not written yet
 

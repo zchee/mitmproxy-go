@@ -39,11 +39,19 @@ func await[T any](t *testing.T, ch <-chan T) T {
 }
 
 type runnerAddon struct {
-	request func(context.Context, *flow.HTTPFlow) error
-	update  func(context.Context, []flow.Flow) error
+	request  func(context.Context, *flow.HTTPFlow) error
+	response func(context.Context, *flow.HTTPFlow) error
+	update   func(context.Context, []flow.Flow) error
 }
 
 func (a *runnerAddon) Request(ctx context.Context, f *flow.HTTPFlow) error { return a.request(ctx, f) }
+
+func (a *runnerAddon) Response(ctx context.Context, f *flow.HTTPFlow) error {
+	if a.response != nil {
+		return a.response(ctx, f)
+	}
+	return nil
+}
 
 func (a *runnerAddon) Update(ctx context.Context, flows []flow.Flow) error {
 	if a.update != nil {

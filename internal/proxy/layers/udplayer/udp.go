@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"slices"
 	"sync"
 	"time"
@@ -46,10 +47,23 @@ func (*udpLayer) Kind() hookdata.LayerKind { return hookdata.LayerUDP }
 func (l *udpLayer) Run(ctx context.Context, c *layer.Context) (result error) {
 	if l.flow != nil {
 		defer func() {
-			result = errors.Join(result, c.Do(context.WithoutCancel(ctx), func(context.Context) error {
+			endCtx := context.WithoutCancel(ctx)
+			var hook addon.Hook = addon.UDPEndHook{Flow: l.flow}
+			failed := result != nil && ctx.Err() == nil && !errors.Is(result, net.ErrClosed) && !errors.Is(result, io.EOF)
+			if failed {
+				hook = addon.UDPErrorHook{Flow: l.flow}
+			}
+			_, hookErr := c.Hooks.FireFunc(endCtx, func(context.Context) error {
+				if failed {
+					l.flow.Error = flow.NewError(result.Error())
+				}
+				return nil
+			}, hook)
+			endErr := c.Do(endCtx, func(context.Context) error {
 				l.flow.Live = false
 				return nil
-			}))
+			})
+			result = errors.Join(result, hookErr, endErr)
 		}()
 		if _, err := c.Hooks.Fire(ctx, addon.UDPStartHook{Flow: l.flow}); err != nil {
 			return err
@@ -62,14 +76,7 @@ func (l *udpLayer) Run(ctx context.Context, c *layer.Context) (result error) {
 		}
 		opened, actual, err := c.OpenPackets(ctx, metadata)
 		if err != nil {
-			if l.flow == nil {
-				return err
-			}
-			_, hookErr := c.Hooks.FireFunc(ctx, func(context.Context) error {
-				l.flow.Error = flow.NewError(err.Error())
-				return nil
-			}, addon.UDPErrorHook{Flow: l.flow})
-			return errors.Join(err, hookErr)
+			return err
 		}
 		c.ServerPackets = c.RecordPackets(opened)
 		if err := c.Do(ctx, func(context.Context) error {
@@ -84,12 +91,7 @@ func (l *udpLayer) Run(ctx context.Context, c *layer.Context) (result error) {
 	}
 	c.ServerPackets.StopRecording()
 	c.ClientPackets.StopRecording()
-	err := l.relay(ctx, c)
-	if l.flow == nil {
-		return err
-	}
-	_, hookErr := c.Hooks.Fire(ctx, addon.UDPEndHook{Flow: l.flow})
-	return errors.Join(err, hookErr)
+	return l.relay(ctx, c)
 }
 
 type received struct {

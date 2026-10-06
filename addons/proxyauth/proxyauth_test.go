@@ -292,14 +292,20 @@ func TestPasswords(t *testing.T) {
 		spec, username, password string
 		accepted                 bool
 	}{
-		"single correct":          {"test:test", "test", "test", true},
-		"single wrong password":   {"test:test", "test", "wrong", false},
-		"single wrong user":       {"test:test", "wrong", "test", false},
-		"htpasswd home":           {"@~/htpasswd", "test", "test", true},
-		"htpasswd wrong password": {"@~/htpasswd", "test", "wrong", false},
-		"htpasswd wrong user":     {"@~/htpasswd", "wrong", "test", false},
-		"any empty":               {"any", "", "", true},
-		"any arbitrary":           {"any", "user", "p:a:s:s", true},
+		"single correct":                    {"test:test", "test", "test", true},
+		"single wrong password":             {"test:test", "test", "wrong", false},
+		"single same-length wrong password": {"test:test", "test", "tesx", false},
+		"single shorter wrong password":     {"test:test", "test", "tes", false},
+		"single empty wrong password":       {"test:test", "test", "", false},
+		"single wrong user":                 {"test:test", "wrong", "test", false},
+		"single same-length wrong user":     {"test:test", "tesx", "test", false},
+		"single shorter wrong user":         {"test:test", "tes", "test", false},
+		"single empty credentials":          {":", "", "", true},
+		"htpasswd home":                     {"@~/htpasswd", "test", "test", true},
+		"htpasswd wrong password":           {"@~/htpasswd", "test", "wrong", false},
+		"htpasswd wrong user":               {"@~/htpasswd", "wrong", "test", false},
+		"any empty":                         {"any", "", "", true},
+		"any arbitrary":                     {"any", "user", "p:a:s:s", true},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

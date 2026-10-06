@@ -78,6 +78,7 @@ Anything not listed here is meant to behave as upstream does; a difference that 
 
 | Upstream behaviour | Go behaviour | Reason |
 |---|---|---|
+| Stream and `save.file` outputs use mode 0666 under the process umask (`mitmproxy/addons/save.py`). | New recording files use mode 0600 in both overwrite and append modes; existing files retain their permissions. Authentication metadata is preserved as upstream records it. | Flow recordings can contain passwords, cookies and bodies; restrict new files to their owner rather than remove compatible metadata. |
 | Stream paths use local, naive `datetime.today().strftime`, including the host C library's locale and directive extensions (`mitmproxy/addons/save.py`). | Uses timefmt-go v0.1.9 with local wall-clock fields; bare `%z` and `%Z` render empty and `%%` remains escaped. `E`/`O` modifiers are not interpreted: `%EC`, `%Ey`, `%EY`, `%Od` and `%Om` remain literal. Unsupported directives such as `%q` also remain literal, including `%`; Python's result is platform-dependent. Month/day names and composite formats use timefmt-go's English/C-style output rather than the process locale. Other modifiers and extensions follow timefmt-go. | Use the pure-Go formatter without recreating platform-specific libc strftime. `TestStrftimePath` checks the naive timezone rules, escaped percents and literal unsupported directives. |
 
 ## connection

@@ -25,6 +25,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -230,6 +231,61 @@ func TestSaveCommand(t *testing.T) {
 			if !tt.wantErr {
 				if n := len(readFlows(t, path)); n != tt.count {
 					t.Fatalf("saved %d, want %d", n, tt.count)
+				}
+			}
+		})
+	}
+}
+
+func TestRecordingFilePermissions(t *testing.T) {
+	tests := map[string]struct {
+		stream bool
+		append bool
+	}{
+		"success: new command file":        {},
+		"success: new command append file": {append: true},
+		"success: new stream file":         {stream: true},
+		"success: new stream append file":  {stream: true, append: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "recording.mitm")
+			_, manager := setup(t, nil)
+			spec := path
+			if tt.append {
+				spec = "+" + path
+			}
+			f := testflow.TFlow(testflow.WithResponse)
+			credentials := []any{"recorded-user", "recorded-password"}
+			f.Metadata.Set("proxyauth", credentials)
+			if tt.stream {
+				if err := configure(t, manager, map[string]any{"save_stream_file": new(spec)}); err != nil {
+					t.Fatal(err)
+				}
+				if err := manager.Hook(t.Context(), addon.ResponseHook{Flow: f}); err != nil {
+					t.Fatal(err)
+				}
+				if err := configure(t, manager, map[string]any{"save_stream_file": nil}); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := manager.Call(t.Context(), "save.file", []flow.Flow{f}, command.Path(spec)); err != nil {
+				t.Fatal(err)
+			}
+			flows := readFlows(t, path)
+			if len(flows) != 1 {
+				t.Fatalf("saved %d flows, want 1", len(flows))
+			}
+			got, _ := flows[0].Common().Metadata.Get("proxyauth")
+			if diff := gocmp.Diff(credentials, got); diff != "" {
+				t.Fatalf("recorded credentials changed (-want +got):\n%s", diff)
+			}
+			if runtime.GOOS != "windows" {
+				info, err := os.Stat(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff := gocmp.Diff(os.FileMode(0o600), info.Mode().Perm()); diff != "" {
+					t.Errorf("recording permissions (-want +got):\n%s", diff)
 				}
 			}
 		})

@@ -6,7 +6,10 @@ package proxyauth
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -102,7 +105,23 @@ func (p *ProxyAuth) Configure(_ context.Context, updated map[string]struct{}) er
 			if strings.Contains(password, ":") {
 				return options.Errorf("Invalid single-user auth specification.")
 			}
-			validate = func(u, pw string) bool { return u == user && pw == password }
+			wantUser := sha256.Sum256([]byte(user))
+			wantPassword := sha256.Sum256([]byte(password))
+			var wantLengths [16]byte
+			binary.LittleEndian.PutUint64(wantLengths[:8], uint64(len(user)))
+			binary.LittleEndian.PutUint64(wantLengths[8:], uint64(len(password)))
+			validate = func(u, pw string) bool {
+				// Fixed-size digests keep secret lengths and matching prefixes out of the comparison time.
+				gotUser := sha256.Sum256([]byte(u))
+				gotPassword := sha256.Sum256([]byte(pw))
+				var gotLengths [16]byte
+				binary.LittleEndian.PutUint64(gotLengths[:8], uint64(len(u)))
+				binary.LittleEndian.PutUint64(gotLengths[8:], uint64(len(pw)))
+				userEqual := subtle.ConstantTimeCompare(gotUser[:], wantUser[:])
+				passwordEqual := subtle.ConstantTimeCompare(gotPassword[:], wantPassword[:])
+				lengthsEqual := subtle.ConstantTimeCompare(gotLengths[:], wantLengths[:])
+				return userEqual&passwordEqual&lengthsEqual == 1
+			}
 		default:
 			return options.Errorf("Invalid proxyauth specification.")
 		}

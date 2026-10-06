@@ -154,7 +154,7 @@ func (s *Save) rotate() error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil { //nolint:gosec // The process umask decides, as it does for Python's mkdir(parents=True).
 		return err
 	}
-	file, err := os.OpenFile(path, mode, 0o666) //nolint:gosec // The process umask decides, as it does for upstream's open(); the dump file is the user's own recording.
+	file, err := os.OpenFile(path, mode, 0o600) //nolint:gosec // G304: The recording path is supplied by the operator.
 	if err != nil {
 		return err
 	}
@@ -220,7 +220,7 @@ func (s *Save) Done(context.Context) error {
 
 func (s *Save) save(ctx context.Context, flows []flow.Flow, spec command.Path) error {
 	path, mode := pathMode(string(spec))
-	file, err := os.OpenFile(path, mode, 0o666) //nolint:gosec // The process umask decides, as it does for upstream's open(); the dump file is the user's own recording.
+	file, err := os.OpenFile(path, mode, 0o600) //nolint:gosec // G304: The recording path is supplied by the operator.
 	if err != nil {
 		return &command.Error{Err: err}
 	}

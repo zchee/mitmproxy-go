@@ -633,3 +633,11 @@ Replay API: `proxy.Replay` takes a `ReplayRunner` supplied as `httplayer.Replay`
 |---|---|---|
 | Status codes are parsed with Python arbitrary-precision integers (`mitmproxy/addons/blocklist.py:31`). | Preserves Python decimal syntax, but codes must fit Go native int; Unicode digits follow Go tables. | The HTTP response model stores an int; no meaningful HTTP status needs arbitrary precision. |
 | Synthetic responses identify the server as mitmproxy (`mitmproxy/addons/blocklist.py:80`). | Uses `mitmproxy-go <version>`. | Identify the program blocking the request. |
+
+## addons/stickycookie
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Cookie retention is unbounded (`mitmproxy/addons/stickycookie.py:37-39,78`). | The ordered jar holds at most 100,000 cookies and 16 MiB of retained string bytes. At overflow, growing writes are dropped without failing the flow; a warning is emitted once until a deletion or smaller overwrite frees capacity. | Bound traffic-driven state while continuing proxy traffic and allowing cookie deletion. |
+| A missing response raises AssertionError, and a bare Domain or Path attribute can cause a later type error (`mitmproxy/addons/stickycookie.py:60-68`). | Missing responses return a hook error. Valueless Domain and Path attributes use the request domain and root path. | Malformed hand-built flows and cookie attributes must not panic. |
+| Cookie-domain comparisons use the reference Python Unicode lowercase database (`http.cookiejar`, used by `mitmproxy/addons/stickycookie.py:27-32`). | Uses the pinned x/text lowercase tables, preserving lowercase expansions and contextual mappings. | Unicode assignments can differ between runtime versions. |

@@ -70,12 +70,13 @@ type poolFlight struct {
 }
 
 type poolEntry struct {
-	key       poolKey
-	srv       *connection.Server
-	flight    *poolFlight
-	upgraded  bool
-	retired   bool
-	leaseOnly bool
+	key         poolKey
+	srv         *connection.Server
+	flight      *poolFlight
+	upgraded    bool
+	retired     bool
+	leaseOnly   bool
+	endComplete bool
 
 	// Transport state is independent of addon-visible metadata. It lets
 	// Lookup reject a closed transport without acquiring dispatch.
@@ -174,7 +175,7 @@ func (p *serverPool) claim(ctx context.Context, key poolKey, srv, snapshot *conn
 		}
 		version := p.version
 		var candidates []*poolEntry
-		duplicate := false
+		duplicate := snapshot.TimestampStart != nil || snapshot.TimestampEnd != nil
 		for _, entry := range p.entries {
 			duplicate = duplicate || entry.srv == srv
 			if !opts.Reuse || entry.retired || entry.key != key {
@@ -237,7 +238,12 @@ func (p *serverPool) claim(ctx context.Context, key poolKey, srv, snapshot *conn
 		p.entries = append(p.entries, entry)
 		p.version++
 		p.workers.Go(func() {
-			defer close(flight.done)
+			defer func() {
+				close(flight.done)
+				p.mu.Lock()
+				p.removeCompleted(entry)
+				p.mu.Unlock()
+			}()
 			flight.conn, flight.err = p.establish(entry, opts.Setup)
 		})
 		p.mu.Unlock()
@@ -426,7 +432,12 @@ func (p *serverPool) Upgrade(ctx context.Context, srv *connection.Server, setup 
 		entry.flight, entry.upgraded = flight, true
 		p.version++
 		p.workers.Go(func() {
-			defer close(flight.done)
+			defer func() {
+				close(flight.done)
+				p.mu.Lock()
+				p.removeCompleted(entry)
+				p.mu.Unlock()
+			}()
 			wrapped, err := setup(p.ctx, conn, entry.srv)
 			if err == nil {
 				err = p.ctx.Err()
@@ -544,8 +555,32 @@ func (p *serverPool) end(entry *poolEntry, cause error) error {
 			}
 			return nil
 		}, addon.ServerDisconnectedHook{Data: &hookdata.ServerConnection{Server: entry.srv, Client: p.client}})
+		p.mu.Lock()
+		entry.endComplete = true
+		p.removeCompleted(entry)
+		p.mu.Unlock()
 	})
 	return errors.Join(cause, entry.endErr)
+}
+
+// removeCompleted requires mu. Failed flights remain cached; a live transport,
+// including an accepted draining lease, keeps its bookkeeping until Close.
+func (p *serverPool) removeCompleted(entry *poolEntry) {
+	if !entry.endComplete || entry.state.Load() != uint32(connection.Closed) {
+		return
+	}
+	select {
+	case <-entry.flight.done:
+	default:
+		return
+	}
+	if entry.flight.err != nil || entry.flight.conn == nil {
+		return
+	}
+	if index := slices.Index(p.entries, entry); index >= 0 {
+		p.entries = slices.Delete(p.entries, index, index+1)
+		p.version++
+	}
 }
 
 func nowSeconds() float64 {

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"runtime"
 	"testing"
 	"time"
 
@@ -123,9 +124,23 @@ func TestDTLSPacketCloseIsolatesTuple(t *testing.T) {
 	if _, err := other.WriteTo([]byte("still alive"), listener.LocalAddr()); err != nil {
 		t.Fatal(err)
 	}
-	tuple, err := listener.Accept(t.Context())
-	if err != nil {
-		t.Fatalf("DTLS close affected listener: %v", err)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	var tuple *packettransport.TupleConn
+	for {
+		tuple, err = listener.Accept(ctx)
+		if err != nil {
+			stack := make([]byte, 1<<20)
+			t.Fatalf("DTLS close affected listener: %v\n%s", err, stack[:runtime.Stack(stack, true)])
+		}
+		if tuple.RemoteAddr().String() == other.LocalAddr().String() {
+			break
+		}
+		// A late DTLS close alert may re-admit the old peer's address. Keep
+		// that tuple open so subsequent alerts cannot create more accepts.
+		if tuple.RemoteAddr().String() != packets.RemoteAddr().String() {
+			t.Fatalf("listener admitted unexpected peer %v", tuple.RemoteAddr())
+		}
 	}
 	buf := make([]byte, 32)
 	n, _, err := tuple.ReadFrom(buf)

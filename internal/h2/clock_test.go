@@ -5,7 +5,11 @@ package h2
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"io"
+	"net"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -63,6 +67,129 @@ func (c *testClock) advance(d time.Duration) {
 	}
 }
 
+type observingConn struct {
+	net.Conn
+	writes chan struct{}
+}
+
+func (c *observingConn) Write(data []byte) (int, error) {
+	c.writes <- struct{}{}
+	return c.Conn.Write(data)
+}
+
+func TestUnresponsivePeerShutdown(t *testing.T) {
+	tests := map[string]struct {
+		shutdown bool
+		blocked  bool
+	}{
+		"error: head deadline interrupts blocked preface": {blocked: true},
+		"error: head deadline bounds GOAWAY flush":        {},
+		"error: shutdown interrupts blocked DATA":         {shutdown: true, blocked: true},
+		"error: shutdown bounds GOAWAY flush":             {shutdown: true},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			clock := &testClock{now: time.Unix(0, 0), scheduled: make(chan struct{}, 16)}
+			conn, peer := net.Pipe()
+			observed := &observingConn{Conn: conn, writes: make(chan struct{}, 32)}
+			e, err := New(observed, Config{Client: true, Clock: clock, Descriptor: layer.EndpointDescriptor{Identity: "endpoint"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			go func() { _ = e.Run(ctx) }()
+			t.Cleanup(func() { cancel(); _ = conn.Close(); _ = peer.Close(); <-e.Done() })
+			<-clock.scheduled
+			if test.blocked && !test.shutdown {
+				<-observed.writes
+				clock.advance(layer.HeadReadTimeout)
+			} else {
+				preface := make([]byte, len(http2.ClientPreface))
+				if _, err := io.ReadFull(peer, preface); err != nil {
+					t.Fatal(err)
+				}
+				fr := http2.NewFramer(peer, peer)
+				for range 2 {
+					if _, err := fr.ReadFrame(); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := fr.WriteSettings(http2.Setting{ID: http2.SettingInitialWindowSize, Val: InitialStreamWindow}); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := fr.ReadFrame(); err != nil {
+					t.Fatal(err)
+				}
+				id, err := e.OpenStream(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				sent := make(chan error, 1)
+				go func() { sent <- e.Send(ctx, Event{Kind: Headers, Identity: id, Headers: requestFields()}) }()
+				if _, err := fr.ReadFrame(); err != nil {
+					t.Fatal(err)
+				}
+				if err := <-sent; err != nil {
+					t.Fatal(err)
+				}
+				for range 5 {
+					<-observed.writes
+				}
+				if test.shutdown {
+					if test.blocked {
+						go func() { sent <- e.Send(ctx, Event{Kind: Data, Identity: id, Data: []byte("blocked")}) }()
+						<-observed.writes
+					}
+					go func() { _ = e.Shutdown(ctx, http2.ErrCodeNo, nil) }()
+				} else {
+					if err := fr.WriteHeaders(http2.HeadersFrameParam{StreamID: id.Stream, BlockFragment: []byte{0x88}}); err != nil {
+						t.Fatal(err)
+					}
+					<-clock.scheduled
+					clock.advance(layer.HeadReadTimeout)
+				}
+				if !test.blocked {
+					<-clock.scheduled
+					<-observed.writes
+					clock.advance(GoAwayFlushGrace)
+				}
+			}
+			select {
+			case <-e.Done():
+			case <-ctx.Done():
+				buf := make([]byte, 1<<20)
+				n := runtime.Stack(buf, true)
+				t.Fatalf("unresponsive peer cleanup hung:\n%s", buf[:n])
+			}
+			protocol, ok := errors.AsType[*ProtocolError](e.endError())
+			if !ok || !protocol.Timeout() {
+				t.Fatalf("unresponsive peer error = %v", e.endError())
+			}
+			if got := e.Budget(); got.Granted != 0 {
+				t.Fatalf("unresponsive peer reservation = %+v", got)
+			}
+		})
+	}
+}
+
+func TestKeepaliveStopsAfterDisconnect(t *testing.T) {
+	clock := &testClock{now: time.Unix(0, 0)}
+	p := newPipePeer(t, Config{Client: true, Clock: clock, PingKeepalive: time.Minute})
+	p.settings(t)
+	if err := p.conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	<-p.endpoint.Done()
+	clock.advance(10 * time.Minute)
+	clock.mu.Lock()
+	defer clock.mu.Unlock()
+	for _, timer := range clock.timers {
+		if !timer.stopped {
+			t.Fatal("timer survived connection shutdown")
+		}
+	}
+}
+
 func TestHeadDeadlineAndKeepalive(t *testing.T) {
 	tests := map[string]struct {
 		headers bool
@@ -115,8 +242,20 @@ func TestHeadDeadlineAndKeepalive(t *testing.T) {
 			} else {
 				clock.advance(layer.HeadReadTimeout)
 			}
-			wire := p.frame(t, func(f wireFrame) bool { return f.kind == http2.FrameGoAway })
-			if wire.code != http2.ErrCodeProtocol || !bytes.Contains(wire.data, []byte("deadline exceeded")) {
+			var wire wireFrame
+			if test.headers {
+				wire = p.frame(t, func(f wireFrame) bool { return f.kind == http2.FrameGoAway })
+			} else {
+				// Initial SETTINGS may still be in flight when the preface expires.
+				// An active writer is interrupted rather than delaying the timeout.
+				for frame := range p.frames {
+					if frame.kind == http2.FrameGoAway {
+						wire = frame
+						break
+					}
+				}
+			}
+			if wire.kind == http2.FrameGoAway && (wire.code != http2.ErrCodeProtocol || !bytes.Contains(wire.data, []byte("deadline exceeded"))) {
 				t.Fatalf("deadline GOAWAY = %+v", wire)
 			}
 			<-p.endpoint.Done()

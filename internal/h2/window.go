@@ -3,9 +3,15 @@
 
 package h2
 
-import "github.com/zchee/mitmproxy-go/internal/proxy/layer"
+import (
+	"time"
+
+	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
+)
 
 const (
+	// GoAwayFlushGrace bounds shutdown writes to an unresponsive peer.
+	GoAwayFlushGrace = time.Second
 	// InitialStreamWindow is the advertised per-stream receive window.
 	InitialStreamWindow = 1 << 20
 	// MaxStreamWindow caps growth of one stream's receive reservation.

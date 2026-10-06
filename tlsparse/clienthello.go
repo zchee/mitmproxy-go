@@ -51,10 +51,11 @@ type extension struct {
 	protocols [][]byte
 }
 
-// ClientHello is a parsed TLS ClientHello message. It is immutable: the
+// ClientHello is a parsed TLS or DTLS ClientHello message. It is immutable: the
 // accessors return copies.
 type ClientHello struct {
 	raw          []byte
+	dtls         bool
 	cipherSuites []uint16
 	extensions   []extension
 }
@@ -70,16 +71,23 @@ type ClientHello struct {
 // declare, and a server_name or ALPN extension that cannot be decoded makes
 // the whole message invalid.
 func NewClientHello(raw []byte) (*ClientHello, error) {
+	return newClientHello(raw, false)
+}
+
+func newClientHello(raw []byte, dtls bool) (*ClientHello, error) {
 	raw = bytes.Clone(raw)
 	if raw == nil {
 		raw = []byte{}
 	}
 	p := parser{buf: raw}
-	ch := &ClientHello{raw: raw}
+	ch := &ClientHello{raw: raw, dtls: dtls}
 
 	p.skip(2)  // client_version
 	p.skip(32) // random
 	p.skip(int(p.u8()))
+	if dtls {
+		p.skip(int(p.u8())) // cookie
+	}
 	// mitmproxy reads half the declared length's worth of suites; the odd
 	// byte of an odd length is read as the compression methods' length.
 	n := int(p.u16()) / 2
@@ -190,16 +198,25 @@ func (ch *ClientHello) Extensions() []Extension {
 	return out
 }
 
+// IsDTLS reports whether the message was parsed from DTLS records. Check it
+// before requesting a synthetic TLS record from RawBytes.
+func (ch *ClientHello) IsDTLS() bool { return ch.dtls }
+
 // RawBytes returns the ClientHello message body as the client sent it. With
 // wrapInRecord, the body is wrapped in a synthetic TLS record and handshake
 // header, the format some tools expect; the record version is always TLS
 // 1.2, whatever the client sent, as in mitmproxy. The record header would
 // hold a length that does not fit 16 bits for a body larger than 65,531
 // bytes, so the wrapped form is nil for such a body; mitmproxy raises
-// OverflowError there (docs/compat.md).
+// OverflowError there (docs/compat.md). For DTLS, RawBytes(false) returns the
+// exact handshake body, an extension over mitmproxy's NotImplementedError;
+// RawBytes(true) returns nil because a TLS record would misrepresent the wire.
 func (ch *ClientHello) RawBytes(wrapInRecord bool) []byte {
 	if !wrapInRecord {
 		return bytes.Clone(ch.raw)
+	}
+	if ch.dtls {
+		return nil
 	}
 	n := len(ch.raw)
 	if n > maxWrappedBodySize {

@@ -108,7 +108,15 @@ func (o *httpOrigins) acquire(ctx context.Context, c *layer.Context, conn layer.
 				return nil, nil, err
 			}
 			engine := entry.h2
-			o.workers.Go(func() { _ = engine.Run(o.ctx); _ = recorded.Close() })
+			o.workers.Go(func() {
+				_ = engine.Run(o.ctx)
+				_ = recorded.Close()
+				o.mu.Lock()
+				if o.entries[conn] == entry {
+					delete(o.entries, conn)
+				}
+				o.mu.Unlock()
+			})
 			o.workers.Go(func() {
 				for {
 					event, err := engine.Receive(o.ctx)

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dlclark/regexp2"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -95,6 +96,11 @@ func TestSubstitutionMatchBudget(t *testing.T) {
 			p, err := CompilePattern(test.pattern, 0)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if p.bt != nil {
+				// Measure match capacity independently of the fallback deadline.
+				p.bt.MatchTimeout = regexp2.DefaultMatchTimeout
+				p.nonempty.MatchTimeout = regexp2.DefaultMatchTimeout
 			}
 			out, err := p.SubString("", test.subject, 0)
 			if out != "" || err == nil || err.Error() != "regex: too many matches" {

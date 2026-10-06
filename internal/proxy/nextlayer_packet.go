@@ -20,8 +20,13 @@ import (
 
 type packetHeadTimeout struct{}
 
-func (packetHeadTimeout) Error() string   { return "proxy: DTLS protocol head read timed out" }
-func (packetHeadTimeout) Timeout() bool   { return true }
+// Error identifies expiration of the DTLS protocol-head read deadline.
+func (packetHeadTimeout) Error() string { return "proxy: DTLS protocol head read timed out" }
+
+// Timeout classifies the expired protocol-head deadline as a network timeout.
+func (packetHeadTimeout) Timeout() bool { return true }
+
+// Temporary reports that protocol selection cannot retry after its deadline expires.
 func (packetHeadTimeout) Temporary() bool { return false }
 
 func nextPacketLayer(ctx context.Context, c *layer.Context) (layer.Layer, error) {

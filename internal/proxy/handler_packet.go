@@ -22,7 +22,10 @@ import (
 
 type layerClock struct{ watchdogClock }
 
-func (c layerClock) Now() time.Time                                  { return c.now() }
+// Now reads the handler's injected clock for protocol deadlines.
+func (c layerClock) Now() time.Time { return c.now() }
+
+// AfterFunc schedules f on the handler's clock and returns a function that stops a pending callback.
 func (c layerClock) AfterFunc(d time.Duration, f func()) func() bool { return c.afterFunc(d, f).Stop }
 
 // HandlePackets owns an accepted UDP tuple until its top layer finishes.
@@ -211,8 +214,10 @@ type connectedPackets struct {
 	buffer [layer.MaxUDPPacketBytes + 1]byte
 }
 
+// Context returns the socket lifetime that is cancelled when the origin closes.
 func (c *connectedPackets) Context() context.Context { return c.ctx }
 
+// Close closes the origin socket and cancels its lifetime, treating an already-closed socket as success.
 func (c *connectedPackets) Close() error {
 	c.stop()
 	err := c.UDPConn.Close()
@@ -223,6 +228,7 @@ func (c *connectedPackets) Close() error {
 	return err
 }
 
+// ReadFrom reads one origin datagram, truncating only its copy and rejecting oversized packets.
 func (c *connectedPackets) ReadFrom(p []byte) (int, net.Addr, error) {
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
@@ -237,6 +243,7 @@ func (c *connectedPackets) ReadFrom(p []byte) (int, net.Addr, error) {
 	return copy(p, c.buffer[:n]), c.RemoteAddr(), nil
 }
 
+// WriteTo sends one bounded datagram to the fixed origin, rejecting a different destination.
 func (c *connectedPackets) WriteTo(p []byte, addr net.Addr) (int, error) {
 	if addr != nil && addr.String() != c.RemoteAddr().String() {
 		return 0, errors.New("proxy: packet peer differs from fixed origin")

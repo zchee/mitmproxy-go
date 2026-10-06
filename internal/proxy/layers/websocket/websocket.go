@@ -68,8 +68,10 @@ type relay struct {
 	clientCompressed, serverCompressed bool
 }
 
+// Kind identifies this relay as WebSocket for connection-layer inspection.
 func (*relay) Kind() hookdata.LayerKind { return hookdata.LayerWebSocket }
 
+// Run relays upgraded peers through serial hooks and finalizes the HTTP flow before returning joined errors.
 func (r *relay) Run(ctx context.Context, c *layer.Context) error {
 	if c == nil || c.Hooks == nil || c.Do == nil {
 		return errors.New("websocket: Run requires hooks and dispatch")

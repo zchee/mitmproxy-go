@@ -23,6 +23,7 @@ type activityPackets struct {
 	watchdog *watchdog
 }
 
+// ReadFrom forwards a datagram read and records idle activity only when it succeeds.
 func (c *activityPackets) ReadFrom(p []byte) (int, net.Addr, error) {
 	n, addr, err := c.PacketTransport.ReadFrom(p)
 	if err == nil {
@@ -31,6 +32,7 @@ func (c *activityPackets) ReadFrom(p []byte) (int, net.Addr, error) {
 	return n, addr, err
 }
 
+// WriteTo forwards a datagram write and records idle activity only when it succeeds.
 func (c *activityPackets) WriteTo(p []byte, addr net.Addr) (int, error) {
 	n, err := c.PacketTransport.WriteTo(p, addr)
 	if err == nil {

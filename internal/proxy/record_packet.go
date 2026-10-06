@@ -91,6 +91,7 @@ func (r *packetRecorder) nextPacket() (recordedPacket, error) {
 	return packet, nil
 }
 
+// ReadFrom consumes one datagram from replay or transport, truncating only the copy into p.
 func (r *packetRecorder) ReadFrom(p []byte) (int, net.Addr, error) {
 	r.mu.Lock()
 	if err := r.closedErrorLocked(); err != nil {
@@ -124,6 +125,7 @@ func (r *packetRecorder) ReadFrom(p []byte) (int, net.Addr, error) {
 	return copy(p, packet.payload), packet.addr, packet.err
 }
 
+// PeekPacket returns the next buffered datagram without consuming it or copying its payload.
 func (r *packetRecorder) PeekPacket() ([]byte, net.Addr, error) {
 	packet, err := r.nextPacket()
 	if err != nil {
@@ -132,6 +134,7 @@ func (r *packetRecorder) PeekPacket() ([]byte, net.Addr, error) {
 	return packet.payload, packet.addr, packet.err
 }
 
+// BufferedPackets counts unread recorded datagrams, or returns zero after closure.
 func (r *packetRecorder) BufferedPackets() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -141,6 +144,7 @@ func (r *packetRecorder) BufferedPackets() int {
 	return len(r.packets) - r.pos
 }
 
+// StopRecording disables capture and rewinds the captured packets for exactly one replay.
 func (r *packetRecorder) StopRecording() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -150,6 +154,7 @@ func (r *packetRecorder) StopRecording() {
 	}
 }
 
+// Close discards captured packets before closing the underlying packet transport.
 func (r *packetRecorder) Close() error {
 	r.mu.Lock()
 	r.closed = true

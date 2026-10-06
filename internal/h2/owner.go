@@ -69,6 +69,7 @@ type consumption struct {
 	wake func()
 }
 
+// Complete marks the payload consumed once and wakes the endpoint only if completion wins.
 func (r *consumption) Complete() bool {
 	won := r.Receipt.Complete()
 	if won {
@@ -77,6 +78,7 @@ func (r *consumption) Complete() bool {
 	return won
 }
 
+// Invalidate abandons the payload once and wakes the endpoint only if invalidation wins.
 func (r *consumption) Invalidate() bool {
 	won := r.Receipt.Invalidate()
 	if won {

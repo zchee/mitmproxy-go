@@ -252,6 +252,7 @@ func (s *http2Stream) send(ctx context.Context, event Event) error {
 
 type http2Client struct{ http2Stream }
 
+// Receive converts the next stream event to a response event and returns transport errors unchanged.
 func (c *http2Client) Receive(ctx context.Context) (ResponseEvent, error) {
 	event, err := c.receive(ctx, false, nil)
 	if err != nil {
@@ -260,6 +261,7 @@ func (c *http2Client) Receive(ctx context.Context) (ResponseEvent, error) {
 	return event.(ResponseEvent), nil
 }
 
+// Send maps a request event onto this stream, including cancellation for protocol errors.
 func (c *http2Client) Send(ctx context.Context, event RequestEvent) error { return c.send(ctx, event) }
 
 type http2Server struct {
@@ -267,6 +269,7 @@ type http2Server struct {
 	head *h2.Event
 }
 
+// Receive consumes the initial request head once before reading subsequent request events from the stream.
 func (s *http2Server) Receive(ctx context.Context) (RequestEvent, error) {
 	head := s.head
 	s.head = nil
@@ -277,6 +280,7 @@ func (s *http2Server) Receive(ctx context.Context) (RequestEvent, error) {
 	return event.(RequestEvent), nil
 }
 
+// Send maps a response event onto this stream, sending an error response or reset for protocol errors.
 func (s *http2Server) Send(ctx context.Context, event ResponseEvent) error { return s.send(ctx, event) }
 
 func h2StreamFailure(err error, fallback ErrorCode) ErrorCode {

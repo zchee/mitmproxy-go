@@ -222,8 +222,10 @@ var WallClock Clock = wallClock{}
 
 type wallClock struct{}
 
+// Now reads the system clock for protocol deadlines.
 func (wallClock) Now() time.Time { return time.Now() }
 
+// AfterFunc schedules f on a system timer and returns a function that stops a pending callback.
 func (wallClock) AfterFunc(d time.Duration, f func()) func() bool {
 	return time.AfterFunc(d, f).Stop
 }

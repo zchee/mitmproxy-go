@@ -82,16 +82,17 @@ func (o *observer) WebSocketEnd(_ context.Context, f *flow.HTTPFlow) error {
 }
 
 type session struct {
-	client, server *gows.Conn
-	flow           *flow.HTTPFlow
-	observed       *observer
-	manager        *addon.Manager
-	cancel         context.CancelFunc
-	done           chan error
-	finished       chan struct{}
+	client, server       *gows.Conn
+	rawClient, rawServer layer.Conn
+	flow                 *flow.HTTPFlow
+	observed             *observer
+	manager              *addon.Manager
+	cancel               context.CancelFunc
+	done                 chan error
+	finished             chan struct{}
 }
 
-func newSession(t *testing.T, observed *observer, clientCompression, serverCompression bool) *session {
+func newSession(t *testing.T, observed *observer, clientCompression, serverCompression bool, buffers ...[2][]byte) *session {
 	t.Helper()
 	client, clientInput := layertest.Pipe(t)
 	server, serverInput := layertest.Pipe(t)
@@ -105,6 +106,9 @@ func newSession(t *testing.T, observed *observer, clientCompression, serverCompr
 	}
 	f := flow.NewHTTPFlow(connection.NewClient(connection.Address{}, connection.Address{}, 1), connection.NewServer(nil), true)
 	cfg := Config{Flow: f, Client: clientInput, Server: serverInput}
+	if len(buffers) > 0 {
+		cfg.ClientBuffered, cfg.ServerBuffered = buffers[0][0], buffers[0][1]
+	}
 	var clientOptions, serverOptions []gows.ConnOption
 	if clientCompression {
 		cfg.ClientOffer, cfg.ClientResponse = []string{"permessage-deflate"}, []string{"permessage-deflate"}
@@ -118,9 +122,12 @@ func newSession(t *testing.T, observed *observer, clientCompression, serverCompr
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The constructor must own its copied prefix before Run begins reading it.
+	clear(cfg.ClientBuffered)
+	clear(cfg.ServerBuffered)
 	c := &layer.Context{Hooks: &proxy.HookRunner{Manager: manager}, Do: manager.Do}
 	ctx, cancel := context.WithCancel(t.Context())
-	s := &session{client: gows.NewClientConn(client, clientOptions...), server: gows.NewServerConn(server, serverOptions...), flow: f, observed: observed, manager: manager, cancel: cancel, done: make(chan error, 1), finished: make(chan struct{})}
+	s := &session{rawClient: client, rawServer: server, client: gows.NewClientConn(client, clientOptions...), server: gows.NewServerConn(server, serverOptions...), flow: f, observed: observed, manager: manager, cancel: cancel, done: make(chan error, 1), finished: make(chan struct{})}
 	t.Cleanup(func() { cancel(); await(t, s.finished) })
 	go func() { s.done <- l.Run(ctx, c); close(s.finished) }()
 	return s

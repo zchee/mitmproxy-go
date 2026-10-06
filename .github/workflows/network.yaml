@@ -1,0 +1,67 @@
+name: Network gates
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  network-gates:
+    name: isolated network gates
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    env:
+      NETWORK_GATE_OUTPUT: ${{ github.workspace }}/_test/network-gate
+      HTTP_LOAD_TAG: h2load
+      HTTP_LOAD_PACKAGE: ./internal/proxy/layers/httplayer
+      HTTP_LOAD_ENV_NAME: MITMPROXY_GO_HTTP2_LOAD
+      HTTP_LOAD_ENV_VALUE: "1"
+      HTTP_TRANSFER_TEST: TestHTTP2LoadLargeTransfer
+      HTTP_UNRELATED_TEST: TestHTTP2LoadUnrelatedResponse
+      HTTP_HEAP_TEST: TestHTTP2LoadHeapStalls
+      HTTP_SMALL_FRAME_HEAP_TEST: TestHTTP2LoadHeapSmallWindow
+      HTTP_SSE_TEST: TestHTTP2LoadSSELatency
+      HTTP_NETEM_TEST: TestHTTP2LoadNetem
+      WS_GATE_RUNNER: ""
+      WS_CASE_MANIFEST: ""
+      WS_GATE_CONFIG: ""
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Test incomplete gate configurations
+        run: bash hack/network-gate_test.sh
+      - name: Install network tools
+        run: |
+          set -euo pipefail
+          mkdir -p "${NETWORK_GATE_OUTPUT}"
+          exec > >(tee "${NETWORK_GATE_OUTPUT}/setup.log") 2>&1
+          set -x
+          date -u '+%Y-%m-%dT%H:%M:%SZ'
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes iproute2
+          if ! command -v docker; then
+            sudo apt-get install --no-install-recommends --yes docker.io
+          fi
+          sudo systemctl start docker
+          docker info
+      - name: Run isolated acceptance measurements
+        run: bash hack/network-gate.sh
+      - name: Upload measurements and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: network-gate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: _test/network-gate
+          if-no-files-found: error
+          retention-days: 14

@@ -19,7 +19,7 @@ import (
 )
 
 // Browser owns the browsers and temporary profiles started by browser.start.
-// Its methods run under the addon's dispatch lock; process waits run outside it.
+// Its methods run under the addon's dispatch lock; reapers run outside it.
 type Browser struct {
 	opts     *options.Manager
 	manager  *addon.Manager
@@ -31,8 +31,9 @@ type Browser struct {
 }
 
 type browserProcess struct {
-	cmd *exec.Cmd
-	dir string
+	cmd    *exec.Cmd
+	dir    string
+	exited <-chan struct{}
 }
 
 // New returns a browser addon using opts and manager's dispatch domain.
@@ -157,10 +158,12 @@ func (b *Browser) launch(name string, command []string) error {
 		return errors.Join(err, os.RemoveAll(dir))
 	}
 	lifetime := b.lifetime
-	b.browser = append(b.browser, browserProcess{cmd: cmd, dir: dir})
+	exited := make(chan struct{})
+	b.browser = append(b.browser, browserProcess{cmd: cmd, dir: dir, exited: exited})
 	b.workers.Go(func() {
 		// Exit status is immaterial, including the expected kill on shutdown.
 		_ = cmd.Wait()
+		close(exited)
 		<-lifetime.Done()
 		if err := os.RemoveAll(dir); err != nil {
 			_ = b.manager.Do(lifetime, func(ctx context.Context) error {
@@ -201,8 +204,9 @@ const firefoxPrefs = `user_pref("datareporting.policy.firstRunURL", "");` +
 	`user_pref("browser.bookmarks.restore_default_bookmarks", false);` +
 	`user_pref("browser.bookmarks.file", "");`
 
-// Done kills launched browsers and cancels pending work without waiting under
-// the dispatch lock. Reapers remove profiles after the children have exited.
+// Done kills launched browsers and cancels pending work. Windows permits a
+// one-second exit confirmation after a raced access-denied termination error.
+// Reapers remove profiles after the children have exited.
 func (b *Browser) Done(_ context.Context) error {
 	if b.cancel != nil {
 		b.cancel()

@@ -24,9 +24,13 @@ func killProcess(process *os.Process) error {
 		}
 		err = process.Kill()
 		if err != nil {
-			// The reaper or native exit may race Kill; only an exit signal proves
-			// completion. An unsignaled process retains its termination error.
-			status, waitErr = windows.WaitForSingleObject(windows.Handle(handle), 0)
+			// Windows can deny termination while a native exit is tearing down.
+			// Only that error permits a bounded wait for the pinned exit signal.
+			timeout := uint32(0)
+			if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+				timeout = 1000
+			}
+			status, waitErr = windows.WaitForSingleObject(windows.Handle(handle), timeout)
 			if waitErr == nil && status == windows.WAIT_OBJECT_0 {
 				err = os.ErrProcessDone
 			}

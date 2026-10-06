@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	gocmp "github.com/google/go-cmp/cmp"
 	"go.uber.org/goleak"
@@ -163,29 +164,50 @@ func TestStartFailure(t *testing.T) {
 
 func TestExitedBrowserCleanup(t *testing.T) {
 	binary := buildRecorder(t)
-	browser, manager, listener, _ := setupBrowser(t, binary, "chrome")
-	if _, err := manager.Call(t.Context(), "browser.start"); err != nil {
-		t.Fatal(err)
+	tests := map[string]struct{ waitForExit bool }{
+		"success: child already exited":              {waitForExit: true},
+		"success: socket closes before process exit": {},
 	}
-	conn, _ := acceptRecord(t, listener)
-	if _, err := io.WriteString(conn, "0"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := conn.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
-		hang(t, "child did not exit")
-	}
-	var child browserProcess
-	if err := manager.Do(t.Context(), func(ctx context.Context) error {
-		child = browser.browser[0]
-		return browser.Done(ctx)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	waitWorkers(t, browser)
-	if child.cmd.ProcessState == nil {
-		t.Fatal("exited child not reaped")
-	}
-	if _, err := os.Stat(child.dir); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("profile still exists: %v", err)
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			browser, manager, listener, _ := setupBrowser(t, binary, "chrome")
+			if _, err := manager.Call(t.Context(), "browser.start"); err != nil {
+				t.Fatal(err)
+			}
+			conn, _ := acceptRecord(t, listener)
+			if _, err := io.WriteString(conn, "0"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := conn.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+				hang(t, "child did not close its connection")
+			}
+			var child browserProcess
+			if err := manager.Do(t.Context(), func(context.Context) error {
+				child = browser.browser[0]
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if tt.waitForExit {
+				// Socket EOF alone precedes the native process exit signal.
+				select {
+				case <-child.exited:
+				case <-time.After(30 * time.Second):
+					hang(t, "child process did not exit")
+				}
+			}
+			if err := manager.Do(t.Context(), func(ctx context.Context) error {
+				return browser.Done(ctx)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			waitWorkers(t, browser)
+			if child.cmd.ProcessState == nil {
+				t.Fatal("exited child not reaped")
+			}
+			if _, err := os.Stat(child.dir); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("profile still exists: %v", err)
+			}
+		})
 	}
 }

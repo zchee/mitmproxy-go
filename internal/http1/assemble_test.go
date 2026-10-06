@@ -73,6 +73,10 @@ func TestHeadFidelity(t *testing.T) {
 		"request line vertical tab":      {raw: "GET\v/ HTTP/1.1\r\nX:y\r\n\r\n", want: "GET / HTTP/1.1\r\nX:y\r\n\r\n", count: 1},
 		"request line form feed":         {raw: "GET /\fHTTP/1.1\r\nX:y\r\n\r\n", want: "GET / HTTP/1.1\r\nX:y\r\n\r\n", count: 1},
 		"request line bare CR":           {raw: "GET / HTTP/1.1\r\r\nX:y\r\n\r\n", want: "GET / HTTP/1.1\r\nX:y\r\n\r\n", count: 1},
+		"request line leading spaces":    {raw: "  POST / HTTP/1.1\r\nX:y\r\n\r\n", want: "POST / HTTP/1.1\r\nX:y\r\n\r\n", count: 1},
+		"request line leading tab":       {raw: "\tPOST / HTTP/1.1\r\nX:y\r\n\r\n", want: "POST / HTTP/1.1\r\nX:y\r\n\r\n", count: 1},
+		"request line leading blanks LF": {raw: "\n \tPOST / HTTP/1.1\nX:y\n\n", want: "POST / HTTP/1.1\r\nX:y\n\n", count: 1},
+		"request line addon attribution": {raw: "  POST / HTTP/1.1\r\nX:y\r\n\r\n", want: "POST / HTTP/1.1\r\nX:y\r\n\r\n", addon: true},
 		"request line tab kept":          {raw: "GET\t/ HTTP/1.1\r\nX:y\r\n\r\n", want: "GET\t/ HTTP/1.1\r\nX:y\r\n\r\n"},
 	}
 	for name, tt := range tests {
@@ -104,6 +108,7 @@ func TestResponseHeadFidelity(t *testing.T) {
 		count     uint64
 	}{
 		"unchanged spacing":         {raw: "HTTP/1.1  200\tNot  Found\r\nX:y\r\n\r\n", want: "HTTP/1.1  200\tNot  Found\r\nX:y\r\n\r\n"},
+		"leading whitespace":        {raw: " \tHTTP/1.1 200 OK\r\nX:y\r\n\r\n", want: "HTTP/1.1 200 OK\r\nX:y\r\n\r\n", count: 1},
 		"empty reason":              {raw: "HTTP/1.1 204\r\n\r\n", want: "HTTP/1.1 204\r\n\r\n"},
 		"Python integer status":     {raw: "HTTP/1.1 +0_204 No Content\r\n\r\n", want: "HTTP/1.1 204 No Content\r\n\r\n", count: 1},
 		"vertical tab separator":    {raw: "HTTP/1.1\v200 OK\r\n\r\n", want: "HTTP/1.1 200 OK\r\n\r\n", count: 1},

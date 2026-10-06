@@ -14,8 +14,8 @@ import (
 // AssembleRequestHead emits only a request line and headers, never its body.
 // With an original head, unchanged start lines and header fields retain their
 // exact wire bytes except that obs-fold is joined as in upstream, and a line
-// spelled with whitespace other than SP and HTAB, which the parser accepted,
-// is re-emitted from its parsed values. Without one,
+// spelled with leading whitespace or whitespace other than SP and HTAB,
+// which the parser accepted, is re-emitted from its parsed values. Without one,
 // fields use upstream's canonical CRLF and colon-space spelling. The caller
 // must set addonChanged if any addon changed this message; that excludes the
 // entire emission from fidelity accounting. Calls themselves are emissions:

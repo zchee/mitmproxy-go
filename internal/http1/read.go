@@ -252,15 +252,16 @@ func readResponseLine(line []byte) (*httpmsg.Response, error) {
 
 // snapshotHead records which wire bytes assembly may reuse. Bytes are reused
 // only where every recipient reads them as the proxy did: a start line whose
-// SP/HTAB-separated words equal the parsed words, and a field whose value is
-// the parsed value apart from surrounding SP/HTAB. Other whitespace the parser
+// SP/HTAB-separated words equal the parsed words, without leading whitespace,
+// and a field whose value is the parsed value apart from surrounding SP/HTAB.
+// Other whitespace the parser
 // accepted, such as VT, FF or a bare CR, is a spelling that stricter parsers
 // read differently, so such lines are re-emitted from the parsed values that
 // framed the message, as upstream always does.
 func snapshotHead(raw []byte, start int, headers httpmsg.Headers, canonical, words []byte) wireHead {
 	lineEnd := bytes.IndexByte(raw[start:], '\n') + start + 1
 	wire := wireHead{line: raw[:lineEnd], canonicalLine: canonical}
-	if !sameWords(trimLineEnd(raw[start:lineEnd]), words) {
+	if raw[start] == ' ' || raw[start] == '\t' || !sameWords(trimLineEnd(raw[start:lineEnd]), words) {
 		wire.canonicalLine = nil
 	}
 	for rest := raw[lineEnd:]; len(rest) > 0; {

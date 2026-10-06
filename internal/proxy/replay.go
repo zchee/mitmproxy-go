@@ -21,7 +21,7 @@ import (
 // The runner must return after a single request and honor context cancellation.
 type ReplayRunner func(context.Context, *layer.Context, *flow.HTTPFlow, hookdata.HTTPMode) error
 
-// Replay sends f's saved HTTP/1 request through ordinary proxy hooks and writes
+// Replay sends f's saved HTTP request through ordinary proxy hooks and writes
 // the response into f. cfg.Manager and cfg.Options are required; Connections
 // is not used because a replay has no live client socket. A nil mode means
 // direct origin replay; an upstream mode routes through its configured proxy.
@@ -41,8 +41,8 @@ func Replay(ctx context.Context, cfg Config, f *flow.HTTPFlow, mode modespec.Mod
 		if f.Request.RawContent == nil {
 			return errors.New("proxy: replay requires saved content")
 		}
-		if f.Request.IsHTTP2() || f.Request.IsHTTP3() {
-			return errors.New("proxy: replay requires HTTP/1")
+		if f.Request.IsHTTP3() {
+			return errors.New("proxy: replay does not support HTTP/3")
 		}
 		id = f.ID
 		client = f.ClientConn.Clone()

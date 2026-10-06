@@ -156,7 +156,11 @@ func TestLayerSNISelection(t *testing.T) {
 			}
 			request := &httpmsg.Request{Method: "GET", Scheme: "https", Host: "192.0.2.42", Port: 443, Path: "/", HTTPVersion: "HTTP/1.1"}
 			l := &httpLayer{route: routeConfig{mode: modeTransparent}}
-			endpoint, err := l.connect(t.Context(), c, &httpStream{flow: f}, request, newWireStore(), make(map[layer.Conn]*http1Client), nil)
+			origins := newHTTPOrigins(t.Context())
+			defer origins.stop()
+			lazy := &lazyServer{ready: make(chan struct{})}
+			defer lazy.release()
+			endpoint, err := l.connect(t.Context(), c, &httpStream{flow: f}, request, newWireStore(), origins, nil, lazy)
 			if err != nil {
 				t.Fatal(err)
 			}

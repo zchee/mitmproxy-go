@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
@@ -15,6 +16,7 @@ import (
 	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layers/tlslayer"
+	wslayer "github.com/zchee/mitmproxy-go/internal/proxy/layers/websocket"
 	"github.com/zchee/mitmproxy-go/internal/proxy/modespec"
 
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/tcplayer"
@@ -24,8 +26,8 @@ func init() {
 	layer.Register(hookdata.LayerHTTP, newHTTPLayer)
 }
 
-// httpLayer serialises HTTP/1 exchanges over one client connection, the
-// counterpart of upstream's HttpLayer driving an Http1Server
+// httpLayer serialises HTTP/1 exchanges or demultiplexes HTTP/2 streams,
+// the counterpart of upstream's HttpLayer driving a protocol endpoint.
 // (py:mitmproxy/proxy/layers/http). Each exchange runs the stream state
 // machine between the client endpoint and a lazily connected server
 // endpoint; a CONNECT answered with a 2xx ends the loop and hands the
@@ -117,7 +119,15 @@ func (l *httpLayer) Run(ctx context.Context, c *layer.Context) error {
 	// Server endpoints persist across exchanges keyed by their transport:
 	// an endpoint's parse state (buffered bytes, keep-alive position) must
 	// survive into the next exchange that reuses the pooled connection.
-	endpoints := make(map[layer.Conn]*http1Client)
+	endpoints := newHTTPOrigins(ctx)
+	defer endpoints.stop()
+	settings, err := protocolSettings(ctx, c, nil)
+	if err != nil {
+		return err
+	}
+	if settings.descriptor.Protocol == "h2" {
+		return l.runHTTP2(ctx, c, settings, endpoints, wire, setup)
+	}
 	for {
 		stream := &httpStream{c: c, id: client.streamID(), route: l.exchangeRoute(c), wire: wire, clientClosed: client.done}
 		// Observe an inherited or previously used origin while request hooks
@@ -132,44 +142,93 @@ func (l *httpLayer) Run(ctx context.Context, c *layer.Context) error {
 				return err
 			}
 			if conn, ok := c.Pool.Lookup(metadata); ok {
-				endpoint := endpoints[conn]
-				if endpoint == nil {
-					c.Server.StopRecording()
-					endpoint = newHTTP1Client(c.Server, wire, c.HTTPFidelity)
-					endpoint.logger = c.Logger
-					endpoint.clock = c.Clock
-					endpoints[conn] = endpoint
+				endpoint, err := endpoints.idle(ctx, c, conn, metadata, wire)
+				if err != nil {
+					return err
 				}
-				idleCtx, cancel := context.WithCancel(ctx)
-				done := make(chan struct{})
-				go func() {
-					defer close(done)
-					_ = endpoint.readWait(idleCtx, true)
-					if idleCtx.Err() == nil {
-						endpoint.closeWrite()
-					}
-				}()
-				stopIdle = sync.OnceFunc(func() { cancel(); <-done })
+				if endpoint != nil {
+					idleCtx, cancel := context.WithCancel(ctx)
+					done := make(chan struct{})
+					go func() {
+						defer close(done)
+						_ = endpoint.readWait(idleCtx, true)
+						if idleCtx.Err() == nil {
+							endpoint.closeWrite()
+						}
+					}()
+					stopIdle = sync.OnceFunc(func() { cancel(); <-done })
+				}
 			}
 		}
 		server := &lazyServer{ready: make(chan struct{})}
 		server.acquire = func(ctx context.Context, request *httpmsg.Request) (ServerEndpoint, error) {
-			return l.connect(ctx, c, stream, request, wire, endpoints, setup)
+			return l.connect(ctx, c, stream, request, wire, endpoints, setup, server)
 		}
 		driver := &streamDriver{stream: stream, client: client, server: server, beforeRequest: stopIdle}
 		err := driver.run(ctx)
 		stopIdle()
+		server.release()
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
+		if stream.priorKnowledge && !stream.failed {
+			head := wire.takeRequest(stream.id)
+			if head == nil || head.head == nil {
+				return errors.New("httplayer: cleartext preface lost its wire head")
+			}
+			prefix := append(head.head.Raw, client.takeoverExact()...)
+			c.Client = c.Record(prefixed(prefix, client.conn))
+			settings.descriptor.Protocol = "h2"
+			return l.runHTTP2(ctx, c, settings, endpoints, wire, setup)
+		}
+		if stream.h2c != nil && !stream.failed {
+			c.Client = c.Record(prefixed(client.takeoverExact(), client.conn))
+			c.Client.StopRecording()
+			settings.descriptor.Protocol = "h2"
+			settings.upgrade, settings.upgradeFlow = stream.h2c, stream.flow
+			return l.runHTTP2(ctx, c, settings, endpoints, wire, setup)
+		}
 		if stream.connectEstablished {
 			return l.tunnel(ctx, c, client, stream)
 		}
 		if stream.snapshot != nil && stream.snapshot.Response != nil && stream.snapshot.Response.StatusCode == 101 {
-			if !c.Data.Options.Bool("rawtcp") {
+			var websocket, raw bool
+			if err := c.Do(ctx, func(context.Context) error {
+				websocket = c.Data.Options.Bool("websocket")
+				raw = c.Data.Options.Bool("rawtcp")
+				return nil
+			}); err != nil {
+				return err
+			}
+			if websocket && strings.EqualFold(stream.snapshot.Response.Headers.Get("Upgrade"), "websocket") {
+				endpoint, ok := server.endpoint.(*http1Client)
+				if !ok {
+					return errors.New("httplayer: WebSocket upgrade has no HTTP/1 origin")
+				}
+				if err := stream.upgrade.validate(); err != nil {
+					return err
+				}
+				handshake := stream.upgrade
+				child, err := wslayer.New(wslayer.Config{
+					Flow: stream.flow, Client: client.conn, Server: endpoint.conn,
+					ClientBuffered: client.takeoverExact(), ServerBuffered: endpoint.takeoverExact(),
+					ClientOffer:    handshake.clientRequest.Headers.GetAll("Sec-WebSocket-Extensions"),
+					ClientResponse: handshake.clientResponse.Headers.GetAll("Sec-WebSocket-Extensions"),
+					ServerOffer:    handshake.serverRequest.Headers.GetAll("Sec-WebSocket-Extensions"),
+					ServerResponse: handshake.serverResponse.Headers.GetAll("Sec-WebSocket-Extensions"),
+				})
+				if err != nil {
+					return err
+				}
+				if err := c.Do(ctx, func(context.Context) error { c.Data.Layers = append(c.Data.Layers, child); return nil }); err != nil {
+					return err
+				}
+				return child.Run(ctx, c)
+			}
+			if !raw {
 				if c.Logger != nil {
 					c.Logger.WarnContext(ctx, "Sent HTTP 101 response, but no protocol is enabled to upgrade to.")
 				}
@@ -211,7 +270,7 @@ func (l *httpLayer) exchangeRoute(c *layer.Context) routeConfig {
 // is reused when it already points at the destination, a fresh server is
 // created otherwise, the SNI follows the client in transparent mode, and a
 // TLS destination is set up inside the pool's establishment flight.
-func (l *httpLayer) connect(ctx context.Context, c *layer.Context, stream *httpStream, request *httpmsg.Request, wire *wireStore, endpoints map[layer.Conn]*http1Client, setup func(context.Context, layer.Conn, *connection.Server) (layer.Conn, error)) (ServerEndpoint, error) {
+func (l *httpLayer) connect(ctx context.Context, c *layer.Context, stream *httpStream, request *httpmsg.Request, wire *wireStore, endpoints *httpOrigins, setup func(context.Context, layer.Conn, *connection.Server) (layer.Conn, error), lazy *lazyServer) (ServerEndpoint, error) {
 	tls := request.Scheme == "https"
 	var metadata *connection.Server
 	if err := c.Do(ctx, func(context.Context) error {
@@ -250,16 +309,18 @@ func (l *httpLayer) connect(ctx context.Context, c *layer.Context, stream *httpS
 	if err != nil {
 		return nil, err
 	}
-	endpoint, ok := endpoints[conn]
-	if !ok {
-		recorded := c.Record(conn)
-		recorded.StopRecording()
-		endpoint = newHTTP1Client(recorded, wire, c.HTTPFidelity)
-		endpoint.logger = c.Logger
-		endpoint.clock = c.Clock
-		endpoints[conn] = endpoint
-		c.Server = recorded
+	endpoint, release, err := endpoints.acquire(ctx, c, conn, actual, stream, request, wire)
+	if errors.Is(err, errOriginInUse) {
+		opts.Reuse = false
+		conn, actual, err = c.Pool.Open(ctx, metadata, opts)
+		if err == nil {
+			endpoint, release, err = endpoints.acquire(ctx, c, conn, actual, stream, request, wire)
+		}
 	}
+	if err != nil {
+		return nil, err
+	}
+	lazy.releaseOrigin = release
 	if err := c.Do(ctx, func(context.Context) error {
 		c.Data.Server = actual
 		stream.flow.ServerConn = actual
@@ -311,15 +372,71 @@ func (l *httpLayer) tunnel(ctx context.Context, c *layer.Context, client *http1S
 type lazyServer struct {
 	acquire func(context.Context, *httpmsg.Request) (ServerEndpoint, error)
 
-	mu       sync.Mutex
-	endpoint ServerEndpoint
-	failure  *ResponseProtocolError
-	done     bool
-	ready    chan struct{}
+	mu            sync.Mutex
+	endpoint      ServerEndpoint
+	failure       *ResponseProtocolError
+	done          bool
+	ready         chan struct{}
+	releaseOrigin func()
 
 	// responseComplete belongs to the receiving goroutine. Once it sees the
 	// end event, later bytes must stay buffered until routing takes over.
 	responseComplete bool
+}
+
+func (s *lazyServer) release() {
+	if s.releaseOrigin != nil {
+		s.releaseOrigin()
+	}
+}
+
+func (s *lazyServer) needsReadCredit() bool {
+	s.mu.Lock()
+	endpoint := s.endpoint
+	s.mu.Unlock()
+	if endpoint, ok := endpoint.(interface{ needsReadCredit() bool }); ok {
+		return endpoint.needsReadCredit()
+	}
+	return false
+}
+
+func (s *lazyServer) waitStreamDone(ctx context.Context) <-chan struct{} {
+	select {
+	case <-s.ready:
+	case <-ctx.Done():
+		return ctx.Done()
+	}
+	s.mu.Lock()
+	endpoint := s.endpoint
+	s.mu.Unlock()
+	if endpoint, ok := endpoint.(interface {
+		waitStreamDone(context.Context) <-chan struct{}
+	}); ok {
+		return endpoint.waitStreamDone(ctx)
+	}
+	return ctx.Done()
+}
+
+func (s *lazyServer) waitSendCredit(ctx context.Context) error {
+	select {
+	case <-s.ready:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	s.mu.Lock()
+	endpoint := s.endpoint
+	s.mu.Unlock()
+	if endpoint, ok := endpoint.(interface{ waitSendCredit(context.Context) error }); ok {
+		return endpoint.waitSendCredit(ctx)
+	}
+	return nil
+}
+
+func (s *lazyServer) takeReceipt() layer.ConsumptionReceipt {
+	s.mu.Lock()
+	endpoint := s.endpoint
+	s.mu.Unlock()
+	return takeEndpointReceipt(endpoint)
 }
 
 var _ ServerEndpoint = (*lazyServer)(nil)

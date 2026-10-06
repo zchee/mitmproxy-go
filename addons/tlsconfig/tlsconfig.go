@@ -262,18 +262,24 @@ func (t *TLSConfig) TLSStartClient(ctx context.Context, d *hookdata.TLS) error {
 	}
 	cfg.Certificates = []tls.Certificate{certificate}
 
-	// Force HTTP/1 for secure web proxies: CONNECT over HTTP/2 is not
-	// supported, as it is not by upstream.
+	// Force HTTP/1 for the outer TLS session of secure web proxies:
+	// CONNECT over HTTP/2 is not supported, as it is not by upstream.
+	// The HTTP child may already be in the stack; a later client TLS layer
+	// denotes the tunneled session, which may negotiate HTTP/2 normally.
 	clientALPN := client.ALPN
-	if len(d.Context.Layers) == 2 {
+	clientTLSIndex := -1
+	for i, item := range d.Context.Layers {
+		if l, ok := item.(interface{ Kind() hookdata.LayerKind }); ok && l.Kind() == hookdata.LayerClientTLS {
+			clientTLSIndex = i
+		}
+	}
+	if clientTLSIndex == 1 {
 		if top, ok := d.Context.Layers[0].(interface{ Kind() hookdata.LayerKind }); ok && top.Kind() == hookdata.LayerRegular {
 			clientALPN = []byte("http/1.1")
 		}
 	}
-	// Until the proxy speaks HTTP/2 the protocol is selected as if the
-	// http2 option were off (docs/compat.md). The configuration carries
-	// exactly one protocol, or none.
-	if proto := alpnSelect(clientALPN, server.ALPN, client.ALPNOffers, false); proto != nil {
+	// The configuration carries exactly one selected protocol, or none.
+	if proto := alpnSelect(clientALPN, server.ALPN, client.ALPNOffers, t.options.Bool("http2")); proto != nil {
 		cfg.NextProtos = []string{string(proto)}
 	}
 
@@ -307,10 +313,7 @@ func (t *TLSConfig) TLSStartServer(ctx context.Context, d *hookdata.TLS) error {
 	}
 
 	if len(server.ALPNOffers) == 0 {
-		// Until the proxy speaks HTTP/2, the offers are computed as if
-		// the http2 option were off, so both sides stay on HTTP/1
-		// (docs/compat.md).
-		server.ALPNOffers = serverALPNOffers(client.ALPNOffers, false)
+		server.ALPNOffers = serverALPNOffers(client.ALPNOffers, t.options.Bool("http2"))
 	}
 
 	cfg := &tls.Config{

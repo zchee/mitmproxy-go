@@ -366,6 +366,15 @@ func (s *http1Server) Send(ctx context.Context, event ResponseEvent) error {
 }
 
 func (s *http1Server) sendHead(ctx context.Context, response *httpmsg.Response) error {
+	if response.IsHTTP2() || response.IsHTTP3() {
+		response = response.Clone()
+		response.HTTPVersion = "HTTP/1.1"
+		response.Reason = httpmsg.StatusText(response.StatusCode)
+		if len(response.Trailers) != 0 || response.Headers.Has("Trailer") {
+			response.Headers.Del("Content-Length")
+			response.Headers.Set("Transfer-Encoding", "chunked")
+		}
+	}
 	var original *http1.ResponseHead
 	addonChanged := false
 	if entry := s.wire.takeResponse(s.streamID()); entry != nil {

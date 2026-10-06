@@ -331,10 +331,15 @@ func (c *http1Conn) drainBuffered() error {
 	}
 }
 
-// takeover retires an endpoint and returns bytes consumed beyond the finished
-// exchange, stripping the superfluous leading newlines as upstream does at a
-// pipe switch. Both endpoint workers must have stopped before this is called.
+// takeover preserves the upstream raw-pipe convention of stripping buffered
+// leading newlines. Protocol-specific handoffs instead use takeoverExact.
 func (c *http1Conn) takeover() []byte {
+	return bytes.TrimLeft(c.takeoverExact(), "\r\n")
+}
+
+// takeoverExact retires an endpoint and claims every buffered byte exactly once.
+// Both endpoint workers must have stopped before this is called.
+func (c *http1Conn) takeoverExact() []byte {
 	c.mu.Lock()
 	c.state = http1Done
 	buffered := c.waitBuf
@@ -356,7 +361,7 @@ func (c *http1Conn) takeover() []byte {
 	}
 	buffered = append(buffered, c.src.prefix...)
 	c.src.prefix = nil
-	return bytes.TrimLeft(buffered, "\r\n")
+	return buffered
 }
 
 // errorMessage renders err the way upstream embeds it in protocol errors and

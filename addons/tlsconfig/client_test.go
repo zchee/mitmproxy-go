@@ -347,8 +347,24 @@ func TestNoH2Proxy(t *testing.T) {
 		want   []string
 	}{
 		"success: secure web proxy forces http/1.1": {
-			layers: []any{layerStub(hookdata.LayerRegular), 123},
+			layers: []any{layerStub(hookdata.LayerRegular), layerStub(hookdata.LayerClientTLS)},
 			want:   []string{"http/1.1"},
+		},
+		"success: HTTP child preserves the secure proxy exception": {
+			layers: []any{layerStub(hookdata.LayerRegular), layerStub(hookdata.LayerClientTLS), layerStub(hookdata.LayerHTTP)},
+			want:   []string{"http/1.1"},
+		},
+		"success: plain proxy tunnel negotiates h2": {
+			layers: []any{layerStub(hookdata.LayerRegular), layerStub(hookdata.LayerHTTP), layerStub(hookdata.LayerServerTLS), layerStub(hookdata.LayerClientTLS), layerStub(hookdata.LayerHTTP)},
+			want:   []string{"h2"},
+		},
+		"success: secure proxy inner tunnel negotiates h2": {
+			layers: []any{layerStub(hookdata.LayerRegular), layerStub(hookdata.LayerClientTLS), layerStub(hookdata.LayerHTTP), layerStub(hookdata.LayerServerTLS), layerStub(hookdata.LayerClientTLS), layerStub(hookdata.LayerHTTP)},
+			want:   []string{"h2"},
+		},
+		"success: reverse proxy negotiates h2": {
+			layers: []any{layerStub(hookdata.LayerReverse), layerStub(hookdata.LayerClientTLS), layerStub(hookdata.LayerHTTP)},
+			want:   []string{"h2"},
 		},
 		"success: other stacks keep the preset protocol": {
 			want: []string{"h2"},
@@ -486,23 +502,40 @@ func TestTLSStartClientChain(t *testing.T) {
 func TestTLSStartClientALPN(t *testing.T) {
 	t.Parallel()
 	tests := map[string]struct {
-		secure bool
-		offers [][]byte
-		want   string
+		secure         bool
+		disabled       bool
+		preset, origin []byte
+		offers         [][]byte
+		want           string
 	}{
-		"success: h2 capable client negotiates http1":                        {offers: [][]byte{[]byte("h2"), []byte("http/1.1")}, want: "http/1.1"},
-		"success: secure proxy negotiates http1":                             {secure: true, offers: [][]byte{[]byte("h2"), []byte("http/1.1")}, want: "http/1.1"},
-		"success: secure proxy permits a handshake without overlapping ALPN": {secure: true, offers: [][]byte{[]byte("h2")}},
+		"success: h2 capable client negotiates h2":                           {offers: bss("h2", "http/1.1"), want: "h2"},
+		"success: disabled http2 falls back to http1":                        {disabled: true, offers: bss("h2", "http/1.1"), want: "http/1.1"},
+		"success: disabled http2 with only h2 selects nothing":               {disabled: true, offers: bss("h2")},
+		"success: origin selection is mirrored":                              {origin: []byte("http/1.1"), offers: bss("h2", "http/1.1"), want: "http/1.1"},
+		"success: origin refusal is mirrored":                                {origin: []byte{}, offers: bss("h2", "http/1.1")},
+		"success: origin h2 is mirrored":                                     {origin: []byte("h2"), offers: bss("http/1.1", "h2"), want: "h2"},
+		"success: preset wins over origin":                                   {preset: []byte("http/1.1"), origin: []byte("h2"), offers: bss("h2", "http/1.1"), want: "http/1.1"},
+		"success: empty preset selects nothing":                              {preset: []byte{}, offers: bss("h2", "http/1.1")},
+		"success: unoffered preset selects nothing":                          {preset: []byte("custom"), offers: bss("h2", "http/1.1")},
+		"success: secure proxy negotiates http1":                             {secure: true, offers: bss("h2", "http/1.1"), want: "http/1.1"},
+		"success: secure proxy overrides h2 origin":                          {secure: true, origin: []byte("h2"), offers: bss("h2", "http/1.1"), want: "http/1.1"},
+		"success: secure proxy permits a handshake without overlapping ALPN": {secure: true, offers: bss("h2")},
 		"success: no ALPN offered":                                           {},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			tc, _, opts := newTLSConfig(t)
+			tc, m, opts := newTLSConfig(t)
+			if tt.disabled {
+				if err := configure(t, m, opts, map[string]any{"http2": false}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			c := testContext(opts)
 			c.Client.ALPNOffers = tt.offers
+			c.Client.ALPN, c.Server.ALPN = tt.preset, tt.origin
 			if tt.secure {
-				c.Layers = []any{layerStub(hookdata.LayerRegular), 123}
+				c.Layers = []any{layerStub(hookdata.LayerRegular), layerStub(hookdata.LayerClientTLS), layerStub(hookdata.LayerHTTP)}
 			}
 			d := &hookdata.TLS{Conn: &c.Client.Connection, Context: c}
 			if err := tc.TLSStartClient(t.Context(), d); err != nil {

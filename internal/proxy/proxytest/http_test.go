@@ -48,7 +48,7 @@ func TestRegularAndSecureProxyTLS(t *testing.T) {
 				conn = outer
 			}
 			connectTunnel(t, conn, "example.test:443")
-			client := tls.Client(conn, &tls.Config{RootCAs: p.CAPool, ServerName: "example.test", NextProtos: []string{"h2", "http/1.1"}})
+			client := tls.Client(conn, &tls.Config{RootCAs: p.CAPool, ServerName: "example.test", NextProtos: []string{"http/1.1"}})
 			if err := client.HandshakeContext(t.Context()); err != nil {
 				t.Fatal(err)
 			}
@@ -97,6 +97,14 @@ func TestCurlRegularProxy(t *testing.T) {
 	if err != nil {
 		t.Skipf("curl integration requires the curl executable: %v", err)
 	}
+	version, err := exec.CommandContext(t.Context(), curl, "--disable", "--version").Output()
+	if err != nil {
+		t.Fatalf("curl features: %v", err)
+	}
+	wantOffers := []string{"http/1.1"}
+	if strings.Contains(string(version), "HTTP2") {
+		wantOffers = []string{"h2", "http/1.1"}
+	}
 	tests := map[string]struct{ secure bool }{
 		"success: HTTP":                        {},
 		"success: HTTPS with trusted proxy CA": {secure: true},
@@ -104,9 +112,10 @@ func TestCurlRegularProxy(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			var origin *proxytest.Origin
+			var offers <-chan []string
 			scheme := "http"
 			if tt.secure {
-				origin, _ = startALPNOrigin(t)
+				origin, offers = startALPNOrigin(t)
 				scheme = "https"
 			} else {
 				origin = proxytest.StartHTTPOrigin(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -126,6 +135,11 @@ func TestCurlRegularProxy(t *testing.T) {
 			}
 			if diff := gocmp.Diff("secure origin", string(output)); diff != "" {
 				t.Fatal(diff)
+			}
+			if tt.secure {
+				if diff := gocmp.Diff(wantOffers, receive(t, offers)); diff != "" {
+					t.Fatalf("curl origin ALPN offers (-want +got):\n%s", diff)
+				}
 			}
 			awaitHook(t, p, "request")
 			awaitHook(t, p, "response")
@@ -148,7 +162,7 @@ func startALPNOrigin(t *testing.T) (*proxytest.Origin, <-chan []string) {
 	offers := make(chan []string, 16)
 	config := &tls.Config{
 		Certificates: []tls.Certificate{{Certificate: [][]byte{leaf.X509().Raw, ca.X509().Raw}, PrivateKey: key}},
-		NextProtos:   []string{"h2", "http/1.1"},
+		NextProtos:   []string{"http/1.1"},
 		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 			offers <- slices.Clone(hello.SupportedProtos)
 			return nil, nil

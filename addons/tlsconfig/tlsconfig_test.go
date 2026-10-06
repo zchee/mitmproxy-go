@@ -558,10 +558,10 @@ func TestTLSStartServer(t *testing.T) {
 			},
 			origin: &selfSigned,
 			check: func(t *testing.T, c *hookdata.Context, d *hookdata.TLS, clientState, serverState tls.ConnectionState) {
-				if diff := gocmp.Diff(bss("http/1.1", "foo"), c.Server.ALPNOffers); diff != "" {
+				if diff := gocmp.Diff(bss("h2", "http/1.1", "foo"), c.Server.ALPNOffers); diff != "" {
 					t.Errorf("server ALPN offers mismatch (-want +got):\n%s", diff)
 				}
-				if diff := gocmp.Diff([]string{"http/1.1", "foo"}, d.Config.NextProtos); diff != "" {
+				if diff := gocmp.Diff([]string{"h2", "http/1.1", "foo"}, d.Config.NextProtos); diff != "" {
 					t.Errorf("NextProtos mismatch (-want +got):\n%s", diff)
 				}
 			},

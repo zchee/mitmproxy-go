@@ -14,6 +14,7 @@ import (
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/httpmsg"
+	"github.com/zchee/mitmproxy-go/internal/h2"
 	"github.com/zchee/mitmproxy-go/internal/http1"
 	"github.com/zchee/mitmproxy-go/internal/human"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
@@ -42,20 +43,24 @@ type streamBody struct {
 // httpStream is owned by one goroutine. Only flow is shared with addons;
 // snapshot and the two body states belong exclusively to the owner.
 type httpStream struct {
-	c        *layer.Context
-	id       StreamID
-	route    routeConfig
-	wire     *wireStore
-	flow     *flow.HTTPFlow
-	snapshot *layer.Snapshot
-	request  streamBody
-	response streamBody
+	c             *layer.Context
+	id            StreamID
+	route         routeConfig
+	wire          *wireStore
+	flow          *flow.HTTPFlow
+	snapshot      *layer.Snapshot
+	request       streamBody
+	response      streamBody
+	upgrade       websocketHandshake
+	h2c           *h2.UpgradeRequest
+	seededUpgrade bool
 
 	requestSent    bool
 	responseHook   bool
 	errorHook      bool
 	failed         bool
 	connectRequest bool
+	priorKnowledge bool
 	clientClosed   func() bool
 	// clientTerminal is notified by readers; cancel wakes an intercepted hook.
 	clientTerminal context.Context
@@ -111,6 +116,16 @@ func (s *httpStream) requestHeaders(ctx context.Context, event RequestHeaders) (
 	if s.request.headers || event.Request == nil {
 		return streamOutput{}, fmt.Errorf("HTTP stream %d received invalid request headers", s.id)
 	}
+	if s.seededUpgrade {
+		var request *httpmsg.Request
+		if err := s.c.Do(ctx, func(context.Context) error { request = s.flow.Request.Clone(); return nil }); err != nil {
+			return streamOutput{}, err
+		}
+		s.snapshot = &layer.Snapshot{Request: request, Live: true}
+		s.request.headers, s.requestSent = true, true
+		s.request.streaming = !event.EndStream
+		return streamOutput{events: []Event{RequestHeaders{ID: s.id, Request: request.Clone(), EndStream: event.EndStream}}}, nil
+	}
 	if err := s.c.Do(ctx, func(context.Context) error {
 		if event.ReplayFlow != nil {
 			s.flow = event.ReplayFlow
@@ -122,6 +137,9 @@ func (s *httpStream) requestHeaders(ctx context.Context, event RequestHeaders) (
 		return streamOutput{}, err
 	}
 	s.request.headers = true
+	if strings.EqualFold(event.Request.Headers.Get("Upgrade"), "websocket") {
+		s.upgrade.clientRequest = event.Request.Clone()
+	}
 
 	if message := validateRequest(s.route.mode, event.Request, s.route.validateInboundHeaders); message != "" {
 		// The head parsed, so handlers see the flow before the refusal, as
@@ -139,6 +157,17 @@ func (s *httpStream) requestHeaders(ctx context.Context, event RequestHeaders) (
 	}
 	if event.Request.Method == "CONNECT" {
 		return s.handleConnect(ctx, event)
+	}
+	// The cleartext preface remains visible to request hooks, so the default
+	// rejection addon can kill it before any HTTP/2 endpoint is selected.
+	s.priorKnowledge = event.Request.Method == "PRI" && event.Request.Path == "*" && event.Request.HTTPVersion == "HTTP/2.0"
+	if s.priorKnowledge {
+		var err error
+		s.snapshot, err = s.fireHook(ctx, func(context.Context) error {
+			s.flow.Request = event.Request
+			return nil
+		}, addon.RequestHeadersHook{Flow: s.flow})
+		return streamOutput{}, err
 	}
 	var clientTLS bool
 	var server connection.Server
@@ -210,6 +239,9 @@ func (s *httpStream) requestHeaders(ctx context.Context, event RequestHeaders) (
 func (s *httpStream) responseHeaders(ctx context.Context, event ResponseHeaders) (streamOutput, error) {
 	if !s.requestSent || s.response.headers || event.Response == nil {
 		return streamOutput{}, fmt.Errorf("HTTP stream %d received invalid response headers", s.id)
+	}
+	if event.Response.StatusCode == 101 {
+		s.upgrade.serverResponse = event.Response.Clone()
 	}
 	if s.route.validateInboundHeaders {
 		if err := event.Response.ValidateHeaders(); err != nil {
@@ -283,6 +315,9 @@ func (s *httpStream) data(ctx context.Context, request bool, data []byte) (strea
 	body := s.body(request)
 	if !body.headers || body.ending || body.done || body.trailers != nil || len(data) == 0 {
 		return streamOutput{}, fmt.Errorf("HTTP stream %d received unexpected body data", s.id)
+	}
+	if request && s.seededUpgrade {
+		return streamOutput{events: []Event{RequestData{ID: s.id, Data: data}}}, nil
 	}
 	if body.streaming {
 		return s.transform(ctx, request, data)
@@ -396,6 +431,10 @@ func (s *httpStream) finish(ctx context.Context, request bool) (streamOutput, er
 		return streamOutput{}, nil
 	}
 	body := s.body(request)
+	if request && s.seededUpgrade {
+		body.done = true
+		return streamOutput{events: []Event{RequestEndOfMessage{ID: s.id}}}, nil
+	}
 	content := body.body
 	body.body = nil
 	if !body.streaming && content == nil {
@@ -425,6 +464,32 @@ func (s *httpStream) finish(ctx context.Context, request bool) (streamOutput, er
 	body.trailers = nil
 	if s.snapshot.Killed() {
 		return s.fail(ctx, s.snapshot.Error.Msg, Kill)
+	}
+	if request && s.priorKnowledge {
+		var enabled bool
+		if err := s.c.Do(ctx, func(context.Context) error {
+			enabled = !s.c.Data.Client.TLS && (!s.c.Data.Options.Has("http2") || s.c.Data.Options.Bool("http2"))
+			return nil
+		}); err != nil {
+			return streamOutput{}, err
+		}
+		if !enabled {
+			return s.fail(ctx, "Cleartext HTTP/2 is disabled.", GenericClientError)
+		}
+		s.response.done = true
+		return streamOutput{}, s.notLive(ctx)
+	}
+	if request && s.snapshot.Response == nil && strings.EqualFold(s.snapshot.Request.Headers.Get("Upgrade"), "h2c") {
+		var err error
+		s.h2c, err = s.prepareH2C(ctx)
+		if err != nil {
+			return s.fail(ctx, err.Error(), GenericClientError)
+		}
+		if s.h2c != nil {
+			s.response.done = true
+			response := &httpmsg.Response{HTTPVersion: "HTTP/1.1", StatusCode: 101, Reason: "Switching Protocols", Headers: httpmsg.Headers{{Name: []byte("Connection"), Value: []byte("Upgrade")}, {Name: []byte("Upgrade"), Value: []byte("h2c")}}, RawContent: []byte{}}
+			return streamOutput{events: []Event{ResponseHeaders{ID: s.id, Response: response, EndStream: true}, ResponseEndOfMessage{ID: s.id}}}, nil
+		}
 	}
 	if request && s.snapshot.Response != nil && !s.response.headers {
 		return s.syntheticResponse(ctx)

@@ -18,6 +18,12 @@ type driverRead struct {
 	err      error
 	write    bool
 	accepted chan struct{}
+	receipt  layer.ConsumptionReceipt
+}
+
+type driverPermit struct {
+	streaming bool
+	credit    func(context.Context) error
 }
 
 type driverFailure struct {
@@ -31,6 +37,7 @@ type driverFailure struct {
 type driverTurn struct {
 	output  streamOutput
 	pending bool
+	receipt layer.ConsumptionReceipt
 }
 
 type driverWrite struct {
@@ -64,9 +71,21 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 	defer terminateClient()
 	d.stream.clientTerminal, d.stream.cancel = clientTerminal, cancel
 	var workers sync.WaitGroup
+	var turns [3]*driverTurn
+	var activeTurns [2]*driverTurn
 	defer func() {
 		cancel(nil)
 		workers.Wait()
+		for _, turn := range activeTurns {
+			if turn != nil && turn.receipt != nil {
+				turn.receipt.Invalidate()
+			}
+		}
+		for _, turn := range turns {
+			if turn != nil && turn.receipt != nil {
+				turn.receipt.Invalidate()
+			}
+		}
 		if errors.Is(context.Cause(ctx), io.EOF) {
 			// The reader only cancels the owner. Retire shared flow state here,
 			// under dispatch, without waiting on another intercepted hook.
@@ -83,8 +102,26 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 	written := [2]chan driverWritten{make(chan driverWritten, 1), make(chan driverWritten, 1)}
 	failures := make(chan driverFailure, 2)
 	requestReads, responseReads := reads[0], reads[1]
-	workers.Go(func() { readRequests(ctx, terminateClient, d.client, requestReads, failures) })
-	workers.Go(func() { readResponses(ctx, d.server, responseReads, failures) })
+	var permits [2]chan driverPermit
+	var receiving [2]bool
+	for i, endpoint := range []any{d.client, d.server} {
+		if _, controlled := endpoint.(interface{ needsReadCredit() bool }); controlled {
+			permits[i] = make(chan driverPermit)
+		}
+		if endpoint, ok := endpoint.(interface {
+			waitStreamDone(context.Context) <-chan struct{}
+		}); ok {
+			workers.Go(func() {
+				select {
+				case <-endpoint.waitStreamDone(ctx):
+					terminateClient()
+				case <-ctx.Done():
+				}
+			})
+		}
+	}
+	workers.Go(func() { readRequests(ctx, terminateClient, d.client, requestReads, failures, permits[0]) })
+	workers.Go(func() { readResponses(ctx, d.server, responseReads, failures, permits[1]) })
 	workers.Go(func() {
 		writeEvents(ctx, writes[0], written[0], func(ctx context.Context, event Event) error {
 			return d.server.Send(ctx, event.(RequestEvent))
@@ -99,7 +136,6 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 	// The third slot holds terminal output. Old turns are discarded on
 	// termination, but each outstanding Send is still acknowledged before
 	// its writer is reused to deliver the protocol error.
-	var turns [3]*driverTurn
 	var active [2]context.CancelFunc
 	terminated := false
 	for {
@@ -111,6 +147,9 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 				continue
 			}
 			if turn.output.after == nil {
+				if turn.receipt != nil {
+					turn.receipt.Complete()
+				}
 				turns[i] = nil
 				continue
 			}
@@ -119,6 +158,9 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 				return err
 			}
 			if d.stream.failed {
+				if turn.receipt != nil {
+					turn.receipt.Invalidate()
+				}
 				turns[i] = nil
 				turns[2] = &driverTurn{output: out}
 			} else {
@@ -127,6 +169,11 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 		}
 		if d.stream.failed && !terminated {
 			terminated = true
+			for i := range 2 {
+				if turns[i] != nil && !turns[i].pending && turns[i].receipt != nil {
+					turns[i].receipt.Invalidate()
+				}
+			}
 			turns[0] = nil
 			if active[0] != nil {
 				active[0]()
@@ -147,9 +194,21 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 		}
 
 		inputs := reads
+		var allowed [2]chan driverPermit
+		var allowance [2]driverPermit
 		for i := range 2 {
 			if turns[i] != nil {
 				inputs[i] = nil
+			} else if reads[i] != nil && !receiving[i] {
+				allowed[i] = permits[i]
+				allowance[i].streaming = d.stream.body(i == 0).streaming
+				destination := any(d.server)
+				if i == 1 {
+					destination = d.client
+				}
+				if endpoint, ok := destination.(interface{ waitSendCredit(context.Context) error }); ok {
+					allowance[i].credit = endpoint.waitSendCredit
+				}
 			}
 		}
 		var destinations [2]chan driverWrite
@@ -186,23 +245,37 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 		case <-ctx.Done():
 		case failure := <-failures:
 			source, result = failure.source, failure.result
+		case allowed[0] <- allowance[0]:
+			receiving[0] = true
+		case allowed[1] <- allowance[1]:
+			receiving[1] = true
 		case result = <-inputs[0]:
+			receiving[0] = false
 			source = 0
 		case result = <-inputs[1]:
+			receiving[1] = false
 			source = 1
 		case destinations[0] <- next[0]:
+			if headers, ok := next[0].event.(RequestHeaders); ok && d.stream.upgrade.clientRequest != nil {
+				d.stream.upgrade.serverRequest = headers.Request.Clone()
+			}
 			next[0].turn.pending = true
+			activeTurns[0] = next[0].turn
 			active[0], writeCancel[0] = writeCancel[0], nil
 		case destinations[1] <- next[1]:
+			if headers, ok := next[1].event.(ResponseHeaders); ok && headers.Response.StatusCode == 101 {
+				d.stream.upgrade.clientResponse = headers.Response.Clone()
+			}
 			next[1].turn.pending = true
+			activeTurns[1] = next[1].turn
 			active[1], writeCancel[1] = writeCancel[1], nil
 		case ack := <-written[0]:
 			active[0]()
-			active[0] = nil
+			active[0], activeTurns[0] = nil, nil
 			source, result = d.acknowledge(0, ack)
 		case ack := <-written[1]:
 			active[1]()
-			active[1] = nil
+			active[1], activeTurns[1] = nil, nil
 			source, result = d.acknowledge(1, ack)
 		}
 		for _, stop := range writeCancel {
@@ -214,6 +287,9 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 			close(result.accepted)
 		}
 		if source < 0 || d.stream.failed {
+			if result.receipt != nil {
+				result.receipt.Invalidate()
+			}
 			continue
 		}
 		if d.stream.done() && !result.write {
@@ -228,12 +304,12 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 				if errors.Is(result.err, io.EOF) {
 					message = "peer closed connection"
 				}
-				result.event = RequestProtocolError{ID: d.stream.id, Code: ClientDisconnected, Message: message}
+				result.event = RequestProtocolError{ID: d.stream.id, Code: h2StreamFailure(result.err, ClientDisconnected), Message: message}
 			} else {
 				if errors.Is(result.err, io.EOF) {
 					message = "server closed connection"
 				}
-				result.event = ResponseProtocolError{ID: d.stream.id, Code: GenericServerError, Message: message}
+				result.event = ResponseProtocolError{ID: d.stream.id, Code: h2StreamFailure(result.err, GenericServerError), Message: message}
 			}
 		}
 		if _, end := result.event.(RequestEndOfMessage); end {
@@ -241,12 +317,18 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 		}
 		out, err := d.stream.handle(ctx, result.event)
 		if err != nil {
+			if result.receipt != nil {
+				result.receipt.Invalidate()
+			}
 			return err
 		}
 		if d.stream.failed {
+			if result.receipt != nil {
+				result.receipt.Invalidate()
+			}
 			turns[2] = &driverTurn{output: out}
 		} else {
-			turns[source] = &driverTurn{output: out}
+			turns[source] = &driverTurn{output: out, receipt: result.receipt}
 		}
 	}
 }
@@ -255,6 +337,10 @@ func (d *streamDriver) acknowledge(direction int, ack driverWritten) (int, drive
 	ack.turn.pending = false
 	ack.turn.output.events[0] = nil
 	ack.turn.output.events = ack.turn.output.events[1:]
+	if ack.turn.receipt != nil && (ack.err != nil || d.stream.failed) {
+		ack.turn.receipt.Invalidate()
+		ack.turn.receipt = nil
+	}
 	if ack.err == nil || d.stream.failed {
 		return -1, driverRead{}
 	}
@@ -318,7 +404,9 @@ func (s *httpStream) runHook(ctx context.Context, prepare func(context.Context) 
 	}, hook)
 }
 
-func readRequests(ctx context.Context, terminate context.CancelFunc, endpoint ClientEndpoint, out chan<- driverRead, failures chan<- driverFailure) {
+func readRequests(ctx context.Context, terminate context.CancelFunc, endpoint ClientEndpoint, out chan<- driverRead, failures chan<- driverFailure, permits ...<-chan driverPermit) {
+	readCtx, stopReader := driverReaderContext(ctx, endpoint)
+	defer stopReader()
 	if client, ok := endpoint.(*http1Server); ok {
 		client.onReadTermination = terminate
 		defer func() { client.onReadTermination = nil }()
@@ -331,6 +419,10 @@ func readRequests(ctx context.Context, terminate context.CancelFunc, endpoint Cl
 		}
 	}()
 	for {
+		if err := receivePermit(readCtx, endpoint, permits); err != nil && (ctx.Err() != nil || readCtx.Err() == nil) {
+			failure.err = err
+			return
+		}
 		event, err := endpoint.Receive(ctx)
 		if _, failed := event.(RequestProtocolError); failed || err != nil {
 			failure = driverRead{event: event, err: err}
@@ -354,7 +446,7 @@ func readRequests(ctx context.Context, terminate context.CancelFunc, endpoint Cl
 			}
 			return
 		}
-		result := driverRead{event: event}
+		result := driverRead{event: event, receipt: takeEndpointReceipt(endpoint)}
 		if _, headers := event.(RequestHeaders); headers {
 			// A terminal event must not overtake the head that creates its flow.
 			result.accepted = make(chan struct{})
@@ -362,6 +454,9 @@ func readRequests(ctx context.Context, terminate context.CancelFunc, endpoint Cl
 		select {
 		case out <- result:
 		case <-ctx.Done():
+			if result.receipt != nil {
+				result.receipt.Invalidate()
+			}
 			return
 		}
 		if result.accepted != nil {
@@ -374,17 +469,73 @@ func readRequests(ctx context.Context, terminate context.CancelFunc, endpoint Cl
 	}
 }
 
-func readResponses(ctx context.Context, endpoint ServerEndpoint, out chan<- driverRead, failures chan<- driverFailure) {
+func readResponses(ctx context.Context, endpoint ServerEndpoint, out chan<- driverRead, failures chan<- driverFailure, permits ...<-chan driverPermit) {
+	readCtx, stopReader := driverReaderContext(ctx, endpoint)
+	defer stopReader()
 	for {
+		if err := receivePermit(readCtx, endpoint, permits); err != nil && (ctx.Err() != nil || readCtx.Err() == nil) {
+			failures <- driverFailure{source: 1, result: driverRead{err: err}}
+			return
+		}
 		event, err := endpoint.Receive(ctx)
 		if _, failed := event.(ResponseProtocolError); failed || err != nil {
 			failures <- driverFailure{source: 1, result: driverRead{event: event, err: err}}
 			return
 		}
+		result := driverRead{event: event, receipt: takeEndpointReceipt(endpoint)}
 		select {
-		case out <- driverRead{event: event}:
+		case out <- result:
 		case <-ctx.Done():
+			if result.receipt != nil {
+				result.receipt.Invalidate()
+			}
 			return
 		}
+	}
+}
+
+func takeEndpointReceipt(endpoint any) layer.ConsumptionReceipt {
+	if endpoint, ok := endpoint.(interface {
+		takeReceipt() layer.ConsumptionReceipt
+	}); ok {
+		return endpoint.takeReceipt()
+	}
+	return nil
+}
+
+// A source reset must wake a reader waiting on destination credit, without
+// consuming more source DATA or cancelling an unrelated multiplexed stream.
+func driverReaderContext(ctx context.Context, endpoint any) (context.Context, context.CancelFunc) {
+	observer, ok := endpoint.(interface {
+		waitStreamDone(context.Context) <-chan struct{}
+	})
+	if !ok {
+		return ctx, func() {}
+	}
+	readCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		select {
+		case <-observer.waitStreamDone(readCtx):
+			cancel()
+		case <-readCtx.Done():
+		}
+	}()
+	return readCtx, func() { cancel(); <-done }
+}
+
+func receivePermit(ctx context.Context, endpoint any, permits []<-chan driverPermit) error {
+	if len(permits) == 0 || permits[0] == nil {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case permit := <-permits[0]:
+		if permit.streaming && permit.credit != nil && endpoint.(interface{ needsReadCredit() bool }).needsReadCredit() {
+			return permit.credit(ctx)
+		}
+		return nil
 	}
 }

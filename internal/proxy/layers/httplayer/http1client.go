@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/zchee/mitmproxy-go/httpmsg"
@@ -116,6 +117,17 @@ func (c *http1Client) sendHead(ctx context.Context, request *httpmsg.Request) er
 	c.singleUse = request.IsHTTP2() || request.IsHTTP3()
 	id := c.id
 	c.mu.Unlock()
+	if request.IsHTTP2() || request.IsHTTP3() {
+		request = request.Clone()
+		request.HTTPVersion = "HTTP/1.1"
+		if !request.Headers.Has("Host") && request.Authority != "" {
+			request.Headers.Insert(0, "Host", request.Authority)
+		}
+		request.Authority = ""
+		if cookies := request.Headers.GetAll("Cookie"); len(cookies) > 1 {
+			request.Headers.Set("Cookie", strings.Join(cookies, "; "))
+		}
+	}
 	var original *http1.RequestHead
 	addonChanged := false
 	if entry := c.wire.takeRequest(id); entry != nil {

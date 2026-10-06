@@ -46,14 +46,15 @@ func TestCheck(t *testing.T) {
 		other  bool
 		want   string
 	}{
-		"success: complete HTTP": {},
-		"error: live":            {change: func(f *flow.HTTPFlow) { f.Live = true }, want: "Can't replay live flow."},
-		"error: intercepted":     {change: func(f *flow.HTTPFlow) { f.Intercept() }, want: "Can't replay intercepted flow."},
-		"error: missing request": {change: func(f *flow.HTTPFlow) { f.Request = nil }, want: "Can't replay flow with missing request."},
-		"error: missing content": {change: func(f *flow.HTTPFlow) { f.Request.RawContent = nil }, want: "Can't replay flow with missing content."},
-		"error: websocket":       {change: func(f *flow.HTTPFlow) { f.WebSocket = testflow.TWebSocketFlow().WebSocket }, want: "Can't replay WebSocket flows."},
-		"error: HTTP2":           {change: func(f *flow.HTTPFlow) { f.Request.HTTPVersion = "HTTP/2.0" }, want: "Can't replay HTTP/2 flows: HTTP/2 is not supported yet."},
-		"error: other":           {other: true, want: "Can only replay HTTP flows."},
+		"success: complete HTTP":  {},
+		"error: live":             {change: func(f *flow.HTTPFlow) { f.Live = true }, want: "Can't replay live flow."},
+		"error: intercepted":      {change: func(f *flow.HTTPFlow) { f.Intercept() }, want: "Can't replay intercepted flow."},
+		"error: missing request":  {change: func(f *flow.HTTPFlow) { f.Request = nil }, want: "Can't replay flow with missing request."},
+		"error: missing content":  {change: func(f *flow.HTTPFlow) { f.Request.RawContent = nil }, want: "Can't replay flow with missing content."},
+		"error: websocket":        {change: func(f *flow.HTTPFlow) { f.WebSocket = testflow.TWebSocketFlow().WebSocket }, want: "Can't replay WebSocket flows."},
+		"success: complete HTTP2": {change: func(f *flow.HTTPFlow) { f.Request.HTTPVersion = "HTTP/2.0" }},
+		"error: HTTP3":            {change: func(f *flow.HTTPFlow) { f.Request.HTTPVersion = "HTTP/3" }, want: "Can't replay HTTP/3 flows: HTTP/3 is not supported yet."},
+		"error: other":            {other: true, want: "Can only replay HTTP flows."},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

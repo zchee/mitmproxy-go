@@ -106,9 +106,6 @@ func (c *ClientPlayback) check(f flow.Flow) string {
 	if h.WebSocket != nil {
 		return "Can't replay WebSocket flows."
 	}
-	if h.Request.IsHTTP2() {
-		return "Can't replay HTTP/2 flows: HTTP/2 is not supported yet."
-	}
 	if h.Request.IsHTTP3() {
 		return "Can't replay HTTP/3 flows: HTTP/3 is not supported yet."
 	}

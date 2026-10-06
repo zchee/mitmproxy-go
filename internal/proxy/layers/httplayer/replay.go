@@ -25,11 +25,13 @@ func Replay(ctx context.Context, c *layer.Context, f *flow.HTTPFlow, mode hookda
 		if f == nil || f.Request == nil || f.Request.RawContent == nil {
 			return errors.New("httplayer: replay requires a complete request")
 		}
-		if f.Request.IsHTTP2() || f.Request.IsHTTP3() {
-			return errors.New("httplayer: replay requires HTTP/1")
+		if f.Request.IsHTTP3() {
+			return errors.New("httplayer: replay does not support HTTP/3")
 		}
 		request := f.Request.Clone()
-		request.Authority = ""
+		if !request.IsHTTP2() {
+			request.Authority = ""
+		}
 		if mode == hookdata.HTTPModeUpstream && request.Scheme == "http" {
 			request.Authority = httpmsg.HostPort(request.Scheme, request.Host, request.Port)
 		}
@@ -76,10 +78,12 @@ func Replay(ctx context.Context, c *layer.Context, f *flow.HTTPFlow, mode hookda
 	}
 	wire := newWireStore()
 	stream := &httpStream{c: c, id: 1, route: l.exchangeRoute(c), wire: wire, clientClosed: func() bool { return false }}
-	endpoints := make(map[layer.Conn]*http1Client)
+	endpoints := newHTTPOrigins(ctx)
+	defer endpoints.stop()
 	server := &lazyServer{ready: make(chan struct{})}
+	defer server.release()
 	server.acquire = func(ctx context.Context, r *httpmsg.Request) (ServerEndpoint, error) {
-		return l.connect(ctx, c, stream, r, wire, endpoints, tlslayer.ServerSetup(c))
+		return l.connect(ctx, c, stream, r, wire, endpoints, tlslayer.ServerSetup(c), server)
 	}
 	client := &replayClient{events: events}
 	return (&streamDriver{stream: stream, client: client, server: server}).run(ctx)

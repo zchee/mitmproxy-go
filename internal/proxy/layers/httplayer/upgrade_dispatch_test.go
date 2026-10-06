@@ -50,10 +50,10 @@ func TestLayerUpgradeDispatch(t *testing.T) {
 		protocol string
 		rawTCP   bool
 	}{
-		"success: custom protocol relays through TCP hooks":  {protocol: "custom", rawTCP: true},
-		"success: disabled raw TCP closes after response":    {protocol: "custom"},
-		"success: WebSocket uses TCP until its layer exists": {protocol: "websocket", rawTCP: true},
-		"success: WebSocket without raw TCP closes":          {protocol: "websocket"},
+		"success: custom protocol relays through TCP hooks": {protocol: "custom", rawTCP: true},
+		"success: disabled raw TCP closes after response":   {protocol: "custom"},
+		"success: disabled WebSocket uses raw TCP":          {protocol: "websocket", rawTCP: true},
+		"success: disabled WebSocket and raw TCP close":     {protocol: "websocket"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -63,7 +63,7 @@ func TestLayerUpgradeDispatch(t *testing.T) {
 			if tt.rawTCP {
 				raw = "rawtcp=true"
 			}
-			s := newLayerSession(t, a, "connection_strategy=lazy", "websocket=true", raw)
+			s := newLayerSession(t, a, "connection_strategy=lazy", "websocket=false", raw)
 			observer := &upgradeObserver{started: make(chan *flow.TCPFlow, 1)}
 			if err := s.m.Do(t.Context(), func(ctx context.Context) error { return s.m.Addons.Add(ctx, observer) }); err != nil {
 				t.Fatal(err)

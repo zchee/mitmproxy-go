@@ -1,0 +1,25 @@
+{
+  "image": "crossbario/autobahn-testsuite@sha256:519915fb568b04c9383f70a1c405ae3ff44ab9e35835b085239c258b6fac3074",
+  "outdir": "/reports/clients",
+  "servers": [
+    {
+      "agent": "mitmproxy-go",
+      "url": "ws://HOST:PORT"
+    }
+  ],
+  "cases": [
+    "1.*",
+    "2.*",
+    "3.*",
+    "4.*",
+    "5.*",
+    "6.*",
+    "7.*",
+    "9.*",
+    "10.*",
+    "12.*",
+    "13.*"
+  ],
+  "exclude-cases": [],
+  "exclude-agent-cases": {}
+}

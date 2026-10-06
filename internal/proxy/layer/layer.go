@@ -51,6 +51,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
@@ -206,6 +207,27 @@ type Injected struct {
 	Message any
 }
 
+// Clock supplies time and cancellable callbacks for protocol deadlines.
+// AfterFunc schedules f without blocking and returns a function that reports
+// whether it prevented f from starting. Methods must be safe for concurrent use.
+type Clock interface {
+	// Now returns the current time.
+	Now() time.Time
+	// AfterFunc calls f after d and returns its cancellation function.
+	AfterFunc(d time.Duration, f func()) (stop func() bool)
+}
+
+// WallClock is the default clock backed by time.Now and time.AfterFunc.
+var WallClock Clock = wallClock{}
+
+type wallClock struct{}
+
+func (wallClock) Now() time.Time { return time.Now() }
+
+func (wallClock) AfterFunc(d time.Duration, f func()) func() bool {
+	return time.AfterFunc(d, f).Stop
+}
+
 // Context carries everything a layer needs: the hook-visible connection
 // context, the client conn, the hook runner, the server pool, the
 // injection channel, the next-layer loop and the connection's logger. The
@@ -257,6 +279,26 @@ type Context struct {
 	// A layer that wraps it must preserve buffered bytes through a Recorder.
 	// Its metadata stays in Data.Server and is read or written only in Do.
 	Server Recorder
+
+	// ClientPackets is the packet-preserving client transport for UDP and DTLS.
+	// Packet connections use this instead of Client, never a byte recorder.
+	ClientPackets PacketRecorder
+
+	// ServerPackets is the current packet-preserving server transport, when open.
+	// Metadata stays in Data.Server and is accessed only under dispatch.
+	ServerPackets PacketRecorder
+
+	// RecordPackets wraps a packet transport with bounded recording and replay.
+	// Call StopRecording at handover to replay complete datagrams exactly once.
+	RecordPackets func(PacketTransport) PacketRecorder
+
+	// OpenPackets opens a server packet transport outside dispatch, firing the
+	// server connection lifecycle hooks and returning its actual metadata.
+	// The handler owns the returned transport and closes it when the layer ends.
+	OpenPackets func(ctx context.Context, server *connection.Server) (PacketTransport, *connection.Server, error)
+
+	// Clock supplies protocol deadline timers. Nil means WallClock.
+	Clock Clock
 
 	// HTTPFidelity belongs to one proxy instance and counts head-byte
 	// normalisations emitted by the proxy itself. The HTTP layer passes it

@@ -88,6 +88,7 @@ func Replay(ctx context.Context, c *layer.Context, f *flow.HTTPFlow, mode hookda
 // replayClient owns a single request snapshot; it never reads a live flow.
 type replayClient struct{ events []RequestEvent }
 
+// Receive returns the next saved request event or waits for cancellation once exhausted.
 func (c *replayClient) Receive(ctx context.Context) (RequestEvent, error) {
 	if len(c.events) == 0 {
 		<-ctx.Done()
@@ -99,4 +100,5 @@ func (c *replayClient) Receive(ctx context.Context) (RequestEvent, error) {
 	return event, nil
 }
 
+// Send discards client-facing response events during replay.
 func (*replayClient) Send(context.Context, ResponseEvent) error { return nil }

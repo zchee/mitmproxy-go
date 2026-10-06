@@ -219,6 +219,7 @@ func text(s string) any {
 // enables invalid Unicode; ordinary map values keep JSON v2's validation.
 type surrogateText string
 
+// MarshalJSONTo encodes text with Python surrogate escapes for undecodable wire bytes.
 func (s surrogateText) MarshalJSONTo(enc *jsontext.Encoder) error {
 	raw := []byte{'"'}
 	for len(s) != 0 {

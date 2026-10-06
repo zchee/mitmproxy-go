@@ -181,6 +181,7 @@ func (s *ServerPlayback) readFiles(ctx context.Context, paths []string) ([]flow.
 
 type tuple [2]any
 
+// String returns the pair's Python tuple representation for replay hashing.
 func (t tuple) String() string { return "(" + pyrepr.Value(t[0]) + ", " + pyrepr.Value(t[1]) + ")" }
 
 func (s *ServerPlayback) hash(f *flow.HTTPFlow) string {

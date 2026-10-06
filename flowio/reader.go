@@ -27,9 +27,12 @@ import (
 
 type harReadError struct{ err error }
 
+// Error returns the upstream diagnostic for an invalid HAR document or entry.
 func (e *harReadError) Error() string {
 	return "Unable to read HAR file. Please provide a valid HAR file"
 }
+
+// Unwrap returns the underlying HAR decoding or conversion error.
 func (e *harReadError) Unwrap() error { return e.err }
 
 // utf8BOM is the byte order mark some tools, such as Fiddler, put before a

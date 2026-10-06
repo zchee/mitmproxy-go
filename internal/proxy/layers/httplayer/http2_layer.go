@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"sync"
 	"time"
 
@@ -153,14 +154,24 @@ func (o *httpOrigins) acquire(ctx context.Context, c *layer.Context, conn layer.
 	default:
 	}
 	identity, err := engine.OpenStream(ctx)
-	if errors.Is(err, h2.ErrDraining) {
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		// A terminal read may fail this open before the endpoint publishes Done.
+		if !errors.Is(err, h2.ErrDraining) && !errors.Is(err, net.ErrClosed) && !errors.Is(err, io.EOF) {
+			select {
+			case <-engine.Done():
+				// The pool may have lent this transport before its owner exited.
+				// No request was written, so acquire a fresh origin instead.
+			default:
+				return nil, nil, err
+			}
+		}
 		if c.Pool != nil {
 			c.Pool.Retire(server)
 		}
 		return nil, nil, errOriginInUse
-	}
-	if err != nil {
-		return nil, nil, err
 	}
 	endpoint := &http2Client{engine: engine, failureDone: engine.StreamFailed(identity), identity: identity, id: stream.id, normalize: settings.normalize, logger: c.Logger, clock: c.Clock}
 	release := func() {

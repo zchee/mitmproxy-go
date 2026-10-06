@@ -20,7 +20,52 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/h2"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
+	"github.com/zchee/mitmproxy-go/internal/proxy/layer/layertest"
 )
+
+func TestHTTP2ClosedBorrowedOrigin(t *testing.T) {
+	tests := map[string]struct {
+		cancel bool
+		want   error
+	}{
+		"success: closed transport rejects an unwritten lease": {want: errOriginInUse},
+		"error: cancelled acquisition is not retried":          {cancel: true, want: context.Canceled},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			stream, manager := newTestStream(t, &streamAddon{})
+			stream.c.Record = proxy.Record
+			if err := manager.Do(t.Context(), func(context.Context) error {
+				stream.c.Data.Server.ALPN = []byte("h2")
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			request, err := httpmsg.MakeRequest("GET", "https://example.com/", nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn, peer := layertest.Pipe(t)
+			if err := conn.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := peer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			origins := newHTTPOrigins(t.Context())
+			t.Cleanup(origins.stop)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if test.cancel {
+				cancel()
+			}
+			_, _, err = origins.acquire(ctx, stream.c, conn, stream.c.Data.Server, stream, request, nil)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("closed borrowed origin = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
 
 func TestHTTP2CompletedOriginEviction(t *testing.T) {
 	tests := map[string]struct{ rotations int }{

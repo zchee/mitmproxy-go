@@ -15,16 +15,24 @@ HTTP 101 WebSocket handoff; a standalone gows result is not proxy evidence.
 `cases.json` independently freezes the 517 IDs exposed by the pinned image's
 `autobahntestsuite.case.Cases` catalogue, before any proxy report is produced.
 Expected behavior comes from the case definitions and compression offers:
-471 `OK`, 7 `NON-STRICT`, 3 `INFORMATIONAL`, and 36 `UNIMPLEMENTED`. The latter require a
-server compression window below 15 bits; the stdlib compression backend declines
-those offers instead of advertising an unsupported window. The only class-derived
-proxy overrides are 3.2, 3.3, 4.1.3, 4.1.4, 4.2.3, 4.2.4, and 5.15: each sends a
-valid message immediately before a protocol fault. The proxy forwards already
-decoded valid messages and queued writes, then fails the offending hop immediately,
-as upstream mitmproxy does. An origin echo still in flight is not awaited, unlike
-an echo server's strict behavior. Each override records this reason in the manifest.
-Expected `FAILED`
-or `UNCLEAN` entries are forbidden. Fragment history is bounded to 131,072 entries
+468 `OK`, 10 `OK` or `NON-STRICT`, 3 `INFORMATIONAL`, and 36 `UNIMPLEMENTED`.
+The latter require a server compression window below 15 bits; the stdlib
+compression backend declines those offers instead of advertising an unsupported
+window. An `expected` string requires that exact status; an array permits any
+listed status. The only class-derived proxy alternatives are 3.2, 3.3, 3.4,
+4.1.3, 4.1.4, 4.1.5, 4.2.3, 4.2.4, 4.2.5, and 5.15. Their pinned
+`case3_*.py`, `case4_*.py`, and `case5_15.py` scripts send a complete valid data
+message before a protocol fault and explicitly define both the echoed `OK`
+outcome and the unechoed `NON-STRICT` outcome. The proxy forwards already decoded
+valid messages and queued writes, then fails the offending hop immediately, as
+upstream mitmproxy does. Whether the origin echo is already queued determines
+which accepted outcome occurs; the proxy does not await an echo still in flight.
+Each of these ten cases records this reason and `["OK","NON-STRICT"]` in the
+manifest. Case 7.1.6 instead sends an ordinary Close and overrides its result to
+`INFORMATIONAL`; cases 6.4.1 through 6.4.4 test incomplete UTF-8 fragments and
+validation timing, not a preceding complete message. Neither group receives the
+proxy alternatives. Expected `FAILED` or `UNCLEAN` entries are forbidden, in both
+string and array forms. Fragment history is bounded to 131,072 entries
 per message: this admits highly fragmented valid messages while rejecting
 unbounded empty-fragment streams with close 1009. The runner uses every explicit manifest ID,
 without exclusions, and requires exactly one agent with exactly those IDs and

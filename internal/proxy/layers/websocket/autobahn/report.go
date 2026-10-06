@@ -5,12 +5,14 @@
 package main
 
 import (
+	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 const (
@@ -25,9 +27,24 @@ type manifest struct {
 }
 
 type expectedCase struct {
-	ID       string `json:"id"`
-	Expected string `json:"expected"`
-	Reason   string `json:"reason,omitzero"`
+	ID       string          `json:"id"`
+	Expected allowedStatuses `json:"expected"`
+	Reason   string          `json:"reason,omitzero"`
+}
+
+type allowedStatuses []string
+
+// UnmarshalJSONFrom accepts one status or an array of allowed statuses.
+func (s *allowedStatuses) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	if dec.PeekKind() != '"' {
+		return json.UnmarshalDecode(dec, (*[]string)(s))
+	}
+	var status string
+	if err := json.UnmarshalDecode(dec, &status); err != nil {
+		return err
+	}
+	*s = allowedStatuses{status}
+	return nil
 }
 
 type caseResult struct {
@@ -72,8 +89,13 @@ func validateManifest(m manifest) error {
 	}
 	seen := make(map[string]bool, len(m.Cases))
 	for _, expected := range m.Cases {
-		if expected.ID == "" || seen[expected.ID] || !acceptable(expected.Expected) {
+		if expected.ID == "" || seen[expected.ID] || len(expected.Expected) == 0 {
 			return fmt.Errorf("invalid or duplicate expectation %+v", expected)
+		}
+		for i, status := range expected.Expected {
+			if !acceptable(status) || slices.Contains(expected.Expected[:i], status) {
+				return fmt.Errorf("invalid or duplicate status for case %s: %q", expected.ID, status)
+			}
 		}
 		seen[expected.ID] = true
 	}
@@ -91,7 +113,7 @@ func validateReport(m manifest, report map[string]map[string]caseResult) (summar
 	var mismatches []error
 	for _, expected := range m.Cases {
 		result, present := cases[expected.ID]
-		if !present || result.Behavior != expected.Expected || !acceptable(result.BehaviorClose) {
+		if !present || !slices.Contains(expected.Expected, result.Behavior) || !acceptable(result.BehaviorClose) {
 			mismatches = append(mismatches, fmt.Errorf("case %s: present=%v behavior=%q (want %q) close=%q", expected.ID, present, result.Behavior, expected.Expected, result.BehaviorClose))
 		}
 	}

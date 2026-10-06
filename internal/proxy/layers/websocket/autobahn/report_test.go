@@ -39,7 +39,27 @@ func TestValidateReport(t *testing.T) {
 		"accepted but wrong status": {func(m *manifest, r map[string]map[string]caseResult) {
 			r[suiteAgent][m.Cases[0].ID] = caseResult{"NON-STRICT", "OK"}
 		}, true},
-		"forbidden expectation": {func(m *manifest, _ map[string]map[string]caseResult) { m.Cases[0].Expected = "FAILED" }, true},
+		"forbidden expectation": {func(m *manifest, _ map[string]map[string]caseResult) { m.Cases[0].Expected = allowedStatuses{"FAILED"} }, true},
+		"array first outcome": {func(m *manifest, r map[string]map[string]caseResult) {
+			m.Cases[0].Expected = allowedStatuses{"OK", "NON-STRICT"}
+			r[suiteAgent][m.Cases[0].ID] = caseResult{"OK", "OK"}
+		}, false},
+		"array second outcome": {func(m *manifest, r map[string]map[string]caseResult) {
+			m.Cases[0].Expected = allowedStatuses{"OK", "NON-STRICT"}
+			r[suiteAgent][m.Cases[0].ID] = caseResult{"NON-STRICT", "OK"}
+		}, false},
+		"array absent outcome": {func(m *manifest, r map[string]map[string]caseResult) {
+			m.Cases[0].Expected = allowedStatuses{"OK", "NON-STRICT"}
+			r[suiteAgent][m.Cases[0].ID] = caseResult{"INFORMATIONAL", "OK"}
+		}, true},
+		"array failed outcome": {func(m *manifest, r map[string]map[string]caseResult) {
+			m.Cases[0].Expected = allowedStatuses{"OK", "NON-STRICT"}
+			r[suiteAgent][m.Cases[0].ID] = caseResult{"FAILED", "OK"}
+		}, true},
+		"array unclean close": {func(m *manifest, r map[string]map[string]caseResult) {
+			m.Cases[0].Expected = allowedStatuses{"OK", "NON-STRICT"}
+			r[suiteAgent][m.Cases[0].ID] = caseResult{"NON-STRICT", "UNCLEAN"}
+		}, true},
 		"duplicate expectation": {func(m *manifest, _ map[string]map[string]caseResult) { m.Cases[1] = m.Cases[0] }, true},
 		"wrong image":           {func(m *manifest, _ map[string]map[string]caseResult) { m.Image = "unpinned" }, true},
 	}
@@ -48,7 +68,7 @@ func TestValidateReport(t *testing.T) {
 			m := manifest{Image: catalogue.Image, Cases: slices.Clone(catalogue.Cases)}
 			report := map[string]map[string]caseResult{suiteAgent: {}}
 			for _, c := range m.Cases {
-				report[suiteAgent][c.ID] = caseResult{c.Expected, "OK"}
+				report[suiteAgent][c.ID] = caseResult{c.Expected[0], "OK"}
 			}
 			tt.mutate(&m, report)
 			got, err := validateReport(m, report)
@@ -74,26 +94,35 @@ func TestProxyProtocolFaultExpectations(t *testing.T) {
 	tests := map[string]struct{ Reason string }{
 		"3.2":   {reason},
 		"3.3":   {reason},
+		"3.4":   {reason},
 		"4.1.3": {reason},
 		"4.1.4": {reason},
+		"4.1.5": {reason},
 		"4.2.3": {reason},
 		"4.2.4": {reason},
+		"4.2.5": {reason},
 		"5.15":  {reason},
 	}
 	got := make(map[string]struct{ Reason string })
 	counts := make(map[string]int)
 	for _, expected := range catalogue.Cases {
-		counts[expected.Expected]++
-		if expected.Expected == "NON-STRICT" {
+		if len(expected.Expected) > 1 {
+			if diff := gocmp.Diff(allowedStatuses{"OK", "NON-STRICT"}, expected.Expected); diff != "" {
+				t.Fatalf("proxy expectation %s: %s", expected.ID, diff)
+			}
+			counts["OK or NON-STRICT"]++
 			got[expected.ID] = struct{ Reason string }{expected.Reason}
-		} else if expected.Reason != "" {
-			t.Fatalf("unexpected proxy override reason for %s", expected.ID)
+		} else {
+			counts[expected.Expected[0]]++
+			if expected.Reason != "" {
+				t.Fatalf("unexpected proxy override reason for %s", expected.ID)
+			}
 		}
 	}
 	if diff := gocmp.Diff(tests, got); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := gocmp.Diff(map[string]int{"OK": 471, "NON-STRICT": 7, "INFORMATIONAL": 3, "UNIMPLEMENTED": 36}, counts); diff != "" {
+	if diff := gocmp.Diff(map[string]int{"OK": 468, "OK or NON-STRICT": 10, "INFORMATIONAL": 3, "UNIMPLEMENTED": 36}, counts); diff != "" {
 		t.Fatal(diff)
 	}
 }

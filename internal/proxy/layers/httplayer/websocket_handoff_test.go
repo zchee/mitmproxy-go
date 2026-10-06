@@ -15,9 +15,19 @@ import (
 )
 
 type websocketUpgradeObserver struct {
-	calls    []string
-	messages map[bool]string
-	flow     *flow.HTTPFlow
+	calls           []string
+	messages        map[bool]string
+	flow            *flow.HTTPFlow
+	streamResponse  bool
+	responseHeaders int
+}
+
+func (a *websocketUpgradeObserver) ResponseHeaders(_ context.Context, f *flow.HTTPFlow) error {
+	a.responseHeaders++
+	if a.streamResponse {
+		f.Response.Stream = true
+	}
+	return nil
 }
 
 func (a *websocketUpgradeObserver) WebSocketStart(_ context.Context, f *flow.HTTPFlow) error {
@@ -40,7 +50,15 @@ func (a *websocketUpgradeObserver) WebSocketEnd(_ context.Context, _ *flow.HTTPF
 }
 
 func TestLayerWebSocketUpgradeBufferedFrames(t *testing.T) {
-	tests := map[string]struct{ raw bool }{"success: framed upgrade with raw fallback enabled": {raw: true}, "success: framed upgrade without raw fallback": {}}
+	tests := map[string]struct {
+		raw    bool
+		stream bool
+	}{
+		"success: framed upgrade with raw fallback enabled":    {raw: true},
+		"success: framed upgrade without raw fallback":         {},
+		"success: streamed response with raw fallback enabled": {raw: true, stream: true},
+		"success: streamed response without raw fallback":      {stream: true},
+	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			raw := "rawtcp=false"
@@ -48,7 +66,7 @@ func TestLayerWebSocketUpgradeBufferedFrames(t *testing.T) {
 				raw = "rawtcp=true"
 			}
 			s := newLayerSession(t, nil, "connection_strategy=lazy", "websocket=true", raw)
-			observer := &websocketUpgradeObserver{}
+			observer := &websocketUpgradeObserver{streamResponse: tt.stream}
 			if err := s.m.Do(t.Context(), func(ctx context.Context) error { return s.m.Addons.Add(ctx, observer) }); err != nil {
 				t.Fatal(err)
 			}
@@ -114,6 +132,12 @@ func TestLayerWebSocketUpgradeBufferedFrames(t *testing.T) {
 				}
 				if observer.flow == nil || observer.flow.Live || observer.flow.WebSocket == nil {
 					t.Error("WebSocket lifetime did not finish on the original HTTP flow")
+				}
+				if observer.responseHeaders != 1 {
+					t.Errorf("responseheaders calls = %d, want 1", observer.responseHeaders)
+				}
+				if observer.flow == nil || observer.flow.Response == nil || observer.flow.Response.Stream != tt.stream {
+					t.Errorf("upgraded response did not retain stream = %v", tt.stream)
 				}
 				return nil
 			}); err != nil {

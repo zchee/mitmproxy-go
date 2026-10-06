@@ -13,7 +13,9 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -81,8 +83,8 @@ func run(ctx context.Context, args []string) error {
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 		return waitReady(ctx, args[1])
-	case args[0] == "configure" && len(args) == 5:
-		image, err := configureSuite(args[1], args[2], args[3], args[4])
+	case args[0] == "configure" && len(args) >= 5:
+		image, err := configureSuite(args[1], args[2], args[3], args[4], args[5:]...)
 		if err != nil {
 			return err
 		}
@@ -122,8 +124,8 @@ func run(ctx context.Context, args []string) error {
 			}
 			return fmt.Errorf("autobahn suite exceeded its hang guard")
 		}
-	case args[0] == "verify" && len(args) == 4:
-		result, err := verifyFiles(args[1], args[2])
+	case args[0] == "verify" && len(args) >= 4:
+		result, err := verifyFiles(args[1], args[2], args[4:]...)
 		if err != nil {
 			return err
 		}
@@ -149,7 +151,7 @@ func configuredAddress(host, port string) (string, error) {
 	return net.JoinHostPort(host, port), nil
 }
 
-func configureSuite(manifestPath, configPath, target, output string) (string, error) {
+func configureSuite(manifestPath, configPath, target, output string, prefixes ...string) (string, error) {
 	m, err := loadJSON[manifest](manifestPath)
 	if err != nil {
 		return "", err
@@ -171,8 +173,25 @@ func configureSuite(manifestPath, configPath, target, output string) (string, er
 	config.Outdir = "/reports/clients"
 	config.Servers = []suiteServer{{Agent: suiteAgent, URL: target}}
 	config.Cases = make([]string, 0, len(m.Cases))
+	if slices.Contains(prefixes, "") {
+		return "", fmt.Errorf("case prefixes must be nonempty")
+	}
 	for _, c := range m.Cases {
-		config.Cases = append(config.Cases, c.ID)
+		selected := len(prefixes) == 0
+		for _, prefix := range prefixes {
+			if c.ID == prefix || strings.HasPrefix(c.ID, prefix+".") {
+				if selected {
+					return "", fmt.Errorf("overlapping case prefixes for %s", c.ID)
+				}
+				selected = true
+			}
+		}
+		if selected {
+			config.Cases = append(config.Cases, c.ID)
+		}
+	}
+	if len(config.Cases) == 0 {
+		return "", fmt.Errorf("case prefixes select no frozen cases")
 	}
 	config.ExcludeCases, config.ExcludeAgentCases = []string{}, map[string][]string{}
 	return m.Image, writeJSON(output, config)

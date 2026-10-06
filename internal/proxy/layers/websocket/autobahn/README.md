@@ -8,8 +8,8 @@ internal/proxy/layers/websocket/autobahn/run.sh /absolute/path/to/new-report-dir
 
 The directory must not exist. The runner builds the real `mitmdump` executable,
 starts a real compression-capable echo origin, starts the reverse proxy, runs the
-pinned Autobahn fuzzing client, validates its report, and stops all owned
-processes and the container on success or failure. It requires the executable's
+pinned Autobahn fuzzing client, validates its reports, and stops all owned
+processes and containers on success or failure. It requires the executable's
 HTTP 101 WebSocket handoff; a standalone gows result is not proxy evidence.
 
 `cases.json` independently freezes the 517 IDs exposed by the pinned image's
@@ -41,12 +41,35 @@ matching behavior. Close behavior must also be accepted, never `FAILED` or
 
 The immutable Docker image digest appears in both the manifest and
 `fuzzingclient.json`; mismatched or unpinned images fail before execution. The
-runtime config, manifest copy, raw `clients/index.json`, individual HTML/JSON
-reports, and origin/proxy/suite logs remain in the report directory. Only after
-validation and cleanup does the final action publish `summary.json`:
-`image`, `total`, `verified`, `failed`, and `report`. A successful complete run
-has `total=517`, `verified=517`, and `failed=0`; these are acceptance criteria,
-not a claim that a particular checkout passed. A failure publishes no summary.
+suite runs serially in 13 fresh containers: cases 1–11 together, then each family
+12.1–12.5 and 13.1–13.7 separately. This releases the pinned suite's retained
+results and allocator state between compression families. Each container has an
+8 GiB memory limit and no additional swap; the proxy and origin stay unchanged
+throughout the complete run. The 1800-second aggregate guard includes all
+container startup overhead, not 1800 seconds per family.
+
+Each directory under `shards/` retains its explicit runtime configuration, raw
+`clients/index.json`, individual HTML/JSON reports, unbuffered suite log, Docker
+State, exit status, cgroup high-watermark, duration, and periodic resource samples.
+The samples include the current case, container memory, largest host processes,
+host memory/swap, and workspace/report disk use. Host kernel and oomd diagnostics
+are also archived by the network workflow. The runner captures cgroup counters
+inside the container before exit and outside it before removal when accessible.
+
+Verification requires disjoint indices whose union is exactly the unchanged 517
+frozen IDs. Each family must report precisely its configured cases, the same
+image and agent, no exclusions, a bounded container that exited zero without
+OOM, and readable memory/duration evidence. Missing, repeated, or overlapping
+families fail. The merged `clients/index.json` records all outcomes; original
+wire evidence remains under each family's directory.
+
+Only after full validation and cleanup does the final action publish
+`summary.json`: the existing `image`, `total`, `verified`, `failed`, and `report`
+fields plus `duration_seconds` and a per-family `shards` table of case counts,
+verified counts, peak bytes, durations, memory limits and clean container state.
+A successful complete run has `total=517`, `verified=517`, and `failed=0`; these
+are acceptance criteria, not a claim that a particular checkout passed. A
+failure publishes no summary.
 
 Optional environment variables:
 

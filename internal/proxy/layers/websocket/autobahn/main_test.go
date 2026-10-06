@@ -48,6 +48,42 @@ func TestConfigureSuite(t *testing.T) {
 	}
 }
 
+func TestConfigureSuitePrefixes(t *testing.T) {
+	tests := map[string]struct {
+		prefixes  []string
+		wantCount int
+		wantError bool
+	}{
+		"complete":           {wantCount: suiteCases},
+		"base":               {prefixes: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"}, wantCount: 301},
+		"compression family": {prefixes: []string{"12.2"}, wantCount: 18},
+		"two families":       {prefixes: []string{"13.1", "13.7"}, wantCount: 36},
+		"unknown":            {prefixes: []string{"99"}, wantError: true},
+		"empty":              {prefixes: []string{""}, wantError: true},
+		"duplicate":          {prefixes: []string{"12.2", "12.2"}, wantError: true},
+		"overlapping":        {prefixes: []string{"12", "12.2"}, wantError: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			output := filepath.Join(t.TempDir(), "fuzzingclient.json")
+			_, err := configureSuite("cases.json", "fuzzingclient.json", "ws://127.0.0.1:12345", output, tt.prefixes...)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("configure error=%v, want error=%v", err, tt.wantError)
+			}
+			if err != nil {
+				return
+			}
+			got, err := loadJSON[suiteConfig](output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Cases) != tt.wantCount {
+				t.Fatalf("configured %d cases, want %d", len(got.Cases), tt.wantCount)
+			}
+		})
+	}
+}
+
 func TestReadinessAndOriginLifetime(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

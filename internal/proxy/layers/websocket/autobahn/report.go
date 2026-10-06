@@ -53,11 +53,37 @@ type caseResult struct {
 }
 
 type summary struct {
-	Image    string `json:"image"`
-	Total    int    `json:"total"`
-	Verified int    `json:"verified"`
-	Failed   int    `json:"failed"`
-	Report   string `json:"report"`
+	Image           string         `json:"image"`
+	Total           int            `json:"total"`
+	Verified        int            `json:"verified"`
+	Failed          int            `json:"failed"`
+	Report          string         `json:"report"`
+	DurationSeconds int64          `json:"duration_seconds,omitzero"`
+	Shards          []shardSummary `json:"shards,omitzero"`
+}
+
+type shardSummary struct {
+	Name             string `json:"name"`
+	Cases            int    `json:"cases"`
+	Verified         int    `json:"verified"`
+	PeakBytes        uint64 `json:"peak_bytes"`
+	DurationSeconds  int64  `json:"duration_seconds"`
+	MemoryLimitBytes uint64 `json:"memory_limit_bytes"`
+	Status           string `json:"status"`
+	OOMKilled        bool   `json:"oom_killed"`
+	ExitCode         int    `json:"exit_code"`
+	Report           string `json:"report"`
+}
+
+type containerEvidence struct {
+	State struct {
+		Status    string `json:"Status"`
+		OOMKilled *bool  `json:"OOMKilled"`
+		ExitCode  *int   `json:"ExitCode"`
+		Error     string `json:"Error"`
+	} `json:"state"`
+	MemoryLimitBytes     uint64 `json:"memory_limit_bytes"`
+	MemorySwapLimitBytes uint64 `json:"memory_swap_limit_bytes"`
 }
 
 type suiteConfig struct {
@@ -159,14 +185,96 @@ func writeJSON(path string, value any) (err error) {
 	return errors.Join(writeErr, f.Close())
 }
 
-func verifyFiles(manifestPath, reportDir string) (summary, error) {
+func verifyFiles(manifestPath, reportDir string, shardDirs ...string) (summary, error) {
 	m, err := loadJSON[manifest](manifestPath)
 	if err != nil {
 		return summary{}, fmt.Errorf("manifest: %w", err)
 	}
-	report, err := loadJSON[map[string]map[string]caseResult](filepath.Join(reportDir, "clients", "index.json"))
-	if err != nil {
-		return summary{}, fmt.Errorf("report: %w", err)
+	if len(shardDirs) == 0 {
+		report, err := loadJSON[map[string]map[string]caseResult](filepath.Join(reportDir, "clients", "index.json"))
+		if err != nil {
+			return summary{}, fmt.Errorf("report: %w", err)
+		}
+		return validateReport(m, report)
 	}
-	return validateReport(m, report)
+	if err := validateManifest(m); err != nil {
+		return summary{}, err
+	}
+	merged := map[string]map[string]caseResult{suiteAgent: {}}
+	shards := make([]shardSummary, 0, len(shardDirs))
+	for _, dir := range shardDirs {
+		indexPath := filepath.Join(dir, "clients", "index.json")
+		report, err := loadJSON[map[string]map[string]caseResult](indexPath)
+		if err != nil {
+			return summary{}, fmt.Errorf("shard %s report: %w", dir, err)
+		}
+		cases, ok := report[suiteAgent]
+		if !ok || len(report) != 1 {
+			return summary{}, fmt.Errorf("shard %s must contain exactly agent %q", dir, suiteAgent)
+		}
+		for id, result := range cases {
+			if _, present := merged[suiteAgent][id]; present {
+				return summary{}, fmt.Errorf("duplicate case %s in shard %s", id, dir)
+			}
+			merged[suiteAgent][id] = result
+		}
+		config, err := loadJSON[suiteConfig](filepath.Join(dir, "fuzzingclient.json"))
+		if err != nil {
+			return summary{}, fmt.Errorf("shard %s configuration: %w", dir, err)
+		}
+		if config.Image != m.Image || len(config.Servers) != 1 || config.Servers[0].Agent != suiteAgent || len(config.ExcludeCases) != 0 || len(config.ExcludeAgentCases) != 0 {
+			return summary{}, fmt.Errorf("shard %s configuration differs from the reviewed suite", dir)
+		}
+		if len(config.Cases) == 0 || len(config.Cases) != len(cases) {
+			return summary{}, fmt.Errorf("shard %s report differs from configured cases", dir)
+		}
+		seen := make(map[string]bool, len(config.Cases))
+		for _, id := range config.Cases {
+			if _, present := cases[id]; !present || seen[id] {
+				return summary{}, fmt.Errorf("shard %s report differs from configured cases at %s", dir, id)
+			}
+			seen[id] = true
+		}
+		evidence, err := loadJSON[containerEvidence](filepath.Join(dir, "container-state.json"))
+		if err != nil {
+			return summary{}, fmt.Errorf("shard %s container state: %w", dir, err)
+		}
+		state := evidence.State
+		if state.Status != "exited" || state.OOMKilled == nil || *state.OOMKilled || state.ExitCode == nil || *state.ExitCode != 0 || state.Error != "" {
+			return summary{}, fmt.Errorf("shard %s container state is not a clean zero exit", dir)
+		}
+		if evidence.MemoryLimitBytes == 0 || evidence.MemorySwapLimitBytes != evidence.MemoryLimitBytes {
+			return summary{}, fmt.Errorf("shard %s requires a memory limit with no additional swap", dir)
+		}
+		peak, err := loadJSON[uint64](filepath.Join(dir, "cgroup-memory.peak.txt"))
+		if err != nil || peak == 0 {
+			return summary{}, fmt.Errorf("shard %s memory peak=%d error=%v", dir, peak, err)
+		}
+		duration, err := loadJSON[int64](filepath.Join(dir, "duration-seconds.txt"))
+		if err != nil || duration < 0 {
+			return summary{}, fmt.Errorf("shard %s duration=%d error=%v", dir, duration, err)
+		}
+		relative, err := filepath.Rel(reportDir, indexPath)
+		if err != nil {
+			return summary{}, err
+		}
+		shards = append(shards, shardSummary{Name: filepath.Base(dir), Cases: len(config.Cases), Verified: len(cases), PeakBytes: peak, DurationSeconds: duration, MemoryLimitBytes: evidence.MemoryLimitBytes, Status: state.Status, Report: filepath.ToSlash(relative)})
+	}
+	result, err := validateReport(m, merged)
+	if err != nil {
+		return summary{}, err
+	}
+	duration, err := loadJSON[int64](filepath.Join(reportDir, "duration-seconds.txt"))
+	if err != nil || duration < 0 {
+		return summary{}, fmt.Errorf("suite duration=%d error=%v", duration, err)
+	}
+	if err := os.Mkdir(filepath.Join(reportDir, "clients"), 0o700); err != nil {
+		return summary{}, err
+	}
+	// Detailed wire evidence remains in each shard; this index records all outcomes.
+	if err := writeJSON(filepath.Join(reportDir, "clients", "index.json"), merged); err != nil {
+		return summary{}, err
+	}
+	result.Shards, result.DurationSeconds = shards, duration
+	return result, nil
 }

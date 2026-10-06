@@ -212,7 +212,16 @@ type connectedPackets struct {
 }
 
 func (c *connectedPackets) Context() context.Context { return c.ctx }
-func (c *connectedPackets) Close() error             { c.cancel(); c.stop(); return c.UDPConn.Close() }
+
+func (c *connectedPackets) Close() error {
+	c.stop()
+	err := c.UDPConn.Close()
+	c.cancel()
+	if errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+	return err
+}
 
 func (c *connectedPackets) ReadFrom(p []byte) (int, net.Addr, error) {
 	c.readMu.Lock()
@@ -264,8 +273,13 @@ func dialPacketServer(ctx, lifetime context.Context, srv *connection.Server, dia
 	if err != nil {
 		return nil, err
 	}
+	udpConn := raw.(*net.UDPConn)
+	if err := packettransport.ConfigureSocketBuffers(udpConn); err != nil {
+		_ = raw.Close()
+		return nil, err
+	}
 	lifetime, cancel := context.WithCancel(lifetime)
-	c := &connectedPackets{UDPConn: raw.(*net.UDPConn), ctx: lifetime, cancel: cancel}
+	c := &connectedPackets{UDPConn: udpConn, ctx: lifetime, cancel: cancel}
 	c.stop = context.AfterFunc(lifetime, func() { _ = raw.Close() })
 	return c, nil
 }

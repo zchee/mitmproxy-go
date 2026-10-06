@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -99,6 +100,65 @@ func TestHandlePacketsLifecycle(t *testing.T) {
 			}
 			if registry.Len() != 0 {
 				t.Fatal("packet connection remains registered")
+			}
+		})
+	}
+}
+
+func TestPacketOriginClose(t *testing.T) {
+	tests := map[string]struct {
+		cancelLifetime bool
+		concurrent     bool
+	}{
+		"repeated close":                    {},
+		"canceled lifetime":                 {cancelLifetime: true},
+		"concurrent close":                  {concurrent: true},
+		"cancellation and concurrent close": {cancelLifetime: true, concurrent: true},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			origin, err := net.ListenPacket("udp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = origin.Close() })
+			lifetime, cancel := context.WithCancel(t.Context())
+			t.Cleanup(cancel)
+			srv := connection.NewServer(addressOf(origin.LocalAddr()))
+			srv.TransportProtocol = connection.UDP
+			conn, err := dialPacketServer(t.Context(), lifetime, srv, net.Dialer{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = conn.Close() })
+			if test.cancelLifetime {
+				cancel()
+			}
+			count := 2
+			if test.concurrent {
+				count = 16
+			}
+			results := make(chan error, count)
+			var workers sync.WaitGroup
+			for range count {
+				if test.concurrent {
+					workers.Go(func() { results <- conn.Close() })
+				} else {
+					results <- conn.Close()
+				}
+			}
+			workers.Wait()
+			close(results)
+			for err := range results {
+				if err != nil {
+					t.Errorf("close origin: %v", err)
+				}
+			}
+			if conn.Context().Err() == nil {
+				t.Fatal("closed origin lifetime remains active")
+			}
+			if _, err := conn.WriteTo([]byte("closed"), nil); !errors.Is(err, net.ErrClosed) {
+				t.Fatalf("write after close = %v, want net.ErrClosed", err)
 			}
 		})
 	}

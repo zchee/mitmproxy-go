@@ -72,9 +72,23 @@ func NewListener(ctx context.Context, socket net.PacketConn) *Listener {
 	ctx, cancel := context.WithCancel(ctx)
 	l := &Listener{socket: socket, ctx: ctx, cancel: cancel, tuples: make(map[string]*TupleConn), accept: make(chan *TupleConn, layer.ListenerPacketQueueCapacity), overflow: make(chan struct{}, 1), writes: make(chan *packetWrite, layer.ListenerPacketQueueCapacity), readDone: make(chan struct{}), writeDone: make(chan struct{})}
 	l.stop = context.AfterFunc(ctx, func() { l.fail(errors.Join(net.ErrClosed, ctx.Err())) })
+	if udp, ok := socket.(*net.UDPConn); ok {
+		if err := ConfigureSocketBuffers(udp); err != nil {
+			l.fail(errors.Join(net.ErrClosed, err))
+		}
+	}
 	go l.readLoop()
 	go l.writeLoop()
 	return l
+}
+
+// ConfigureSocketBuffers sets receive and send buffers to twice the maximum payload.
+// macOS rejects otherwise legal datagrams larger than its default send buffer.
+func ConfigureSocketBuffers(socket *net.UDPConn) error {
+	if err := socket.SetReadBuffer(2 * layer.MaxUDPPacketBytes); err != nil {
+		return err
+	}
+	return socket.SetWriteBuffer(2 * layer.MaxUDPPacketBytes)
 }
 
 // Accept returns the next new tuple, including its first datagram in its queue.

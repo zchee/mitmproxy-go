@@ -344,6 +344,9 @@ func TestFromStoreRefusesWritableDirectory(t *testing.T) {
 }
 
 func TestStoreWritesStayInVerifiedDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows refuses to rename a directory while an open root handle pins it, so the swap probe cannot run")
+	}
 	tests := map[string]struct{ name string }{
 		"success: private CA":    {name: "mitmproxy-ca.pem"},
 		"success: DH parameters": {name: "mitmproxy-dhparam.pem"},

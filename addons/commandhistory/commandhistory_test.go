@@ -229,6 +229,11 @@ func TestFailures(t *testing.T) {
 					}
 				})
 			}
+			loggedPath := path
+			if runtime.GOOS == "windows" {
+				// TextHandler escapes backslashes inside its quoted message field.
+				loggedPath = strings.ReplaceAll(path, `\`, `\\`)
+			}
 			a, m, cmds, _ := setup(t, dir)
 			var logs bytes.Buffer
 			previous := slog.Default()
@@ -236,7 +241,7 @@ func TestFailures(t *testing.T) {
 			t.Cleanup(func() { slog.SetDefault(previous) })
 			call(t, cmds, "add", "cmd1")
 			history(t, cmds, []string{"cmd1"})
-			if !strings.Contains(logs.String(), "Failed writing to "+path+":") {
+			if !strings.Contains(logs.String(), "Failed writing to "+loggedPath+":") {
 				t.Fatalf("append logs=%s", logs.String())
 			}
 			logs.Reset()
@@ -246,13 +251,13 @@ func TestFailures(t *testing.T) {
 			if err := m.Trigger(t.Context(), addon.DoneHook{}); err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(logs.String(), "Failed writing to "+path+":") {
+			if !strings.Contains(logs.String(), "Failed writing to "+loggedPath+":") {
 				t.Fatalf("vacuum logs=%s", logs.String())
 			}
 			logs.Reset()
 			call(t, cmds, "clear")
 			history(t, cmds, []string{})
-			if strings.Contains(tt.failure, "directory") && !strings.Contains(logs.String(), "Failed deleting "+path+":") {
+			if strings.Contains(tt.failure, "directory") && !strings.Contains(logs.String(), "Failed deleting "+loggedPath+":") {
 				t.Fatalf("clear logs=%s", logs.String())
 			}
 		})

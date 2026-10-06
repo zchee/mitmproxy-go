@@ -120,7 +120,7 @@ func Build(ctx context.Context, c *Context, stack hookdata.LayerStack) (Layer, e
 		var child Layer
 		for i := len(stack) - 1; i >= 0; i-- {
 			spec := stack[i]
-			if spec.HTTPMode != "" && spec.Kind != hookdata.LayerHTTP || spec.Ignore && spec.Kind != hookdata.LayerTCP {
+			if spec.HTTPMode != "" && spec.Kind != hookdata.LayerHTTP || spec.Ignore && spec.Kind != hookdata.LayerTCP && spec.Kind != hookdata.LayerUDP {
 				return fmt.Errorf("layer: incompatible settings for %q", spec.Kind)
 			}
 			if spec.Kind == hookdata.LayerHTTP && spec.HTTPMode != hookdata.HTTPModeRegular && spec.HTTPMode != hookdata.HTTPModeUpstream && spec.HTTPMode != hookdata.HTTPModeTransparent {
@@ -195,7 +195,14 @@ type Conn interface {
 type Injected struct {
 	// Flow is the flow the message belongs to.
 	Flow flow.Flow
-	// Message is the protocol message to inject, such as *tcp.Message.
+	// FlowID is checked against Flow under dispatch. An empty ID is populated
+	// by Handler.Inject; owners route by this immutable identity, not live fields.
+	FlowID string
+	// Direction checks the intended peer against Message.FromClient. Unspecified
+	// direction is derived and populated before the owner receives the injection.
+	Direction InjectionDirection
+	// Message is a cloned *tcp.Message, *udp.Message or *websocket.Message.
+	// WebSocket messages retain their HTTPFlow identity, never a separate flow.
 	Message any
 }
 

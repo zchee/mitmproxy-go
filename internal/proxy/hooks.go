@@ -94,6 +94,20 @@ func capture(f flow.Flow) *layer.Snapshot {
 		if f.Response != nil {
 			s.Response = f.Response.Clone()
 		}
+		if f.WebSocket != nil {
+			s.NumMessages = len(f.WebSocket.Messages)
+			latest := *f.WebSocket
+			latest.Messages = nil
+			if n := len(f.WebSocket.Messages); n > 0 && f.WebSocket.Messages[n-1] != nil {
+				latest.Messages = f.WebSocket.Messages[n-1:]
+			}
+			s.WebSocket = latest.Clone()
+		}
+	case *flow.UDPFlow:
+		s.NumMessages = len(f.Messages)
+		if n := len(f.Messages); n > 0 && f.Messages[n-1] != nil {
+			s.LastUDPMessage = f.Messages[n-1].Clone()
+		}
 	case *flow.TCPFlow:
 		s.NumMessages = len(f.Messages)
 		if n := len(f.Messages); n > 0 && f.Messages[n-1] != nil {

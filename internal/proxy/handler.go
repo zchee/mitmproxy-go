@@ -21,6 +21,9 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/http1"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 	"github.com/zchee/mitmproxy-go/options"
+	"github.com/zchee/mitmproxy-go/tcp"
+	"github.com/zchee/mitmproxy-go/udp"
+	"github.com/zchee/mitmproxy-go/websocket"
 )
 
 // ErrHalfCloseUnsupported is returned by CloseWrite on a client transport
@@ -196,30 +199,60 @@ func (h *Handler) serve(ctx context.Context, c *layer.Context, runner *HookRunne
 	return topLayer.Run(ctx, c)
 }
 
-// Inject queues a cloned TCP message for its live flow's client connection.
-// Flow metadata and message bytes are read under dispatch; ctx may carry a
-// command's existing dispatch frame. Delivery never waits for the layer:
-// ErrInjectionFull, ErrInjectionSize and ErrInjectionType propagate to the
-// command caller, and ErrFlowNotLive reports a finished flow or connection.
+// Inject queues a cloned TCP, UDP or WebSocket message for a live flow.
+// WebSocket messages belong to the upgraded HTTP flow. Identity, protocol,
+// direction and payload limits are checked under dispatch; ctx may carry a
+// command's existing dispatch frame. Delivery never waits for the layer.
+// Rejections have a layer.InjectionError reason; closed flows additionally
+// match ErrFlowNotLive and net.ErrClosed.
 func (h *Handler) Inject(ctx context.Context, injected layer.Injected) error {
 	return h.manager.Do(ctx, func(context.Context) error {
 		if injected.Flow == nil {
-			return ErrFlowNotLive
+			return errors.Join(ErrFlowNotLive, ErrInjectionClosed)
 		}
-		f, ok := injected.Flow.(*flow.TCPFlow)
-		if !ok {
+		switch f := injected.Flow.(type) {
+		case *flow.TCPFlow:
+			if f == nil {
+				return errors.Join(ErrFlowNotLive, ErrInjectionClosed)
+			}
+			if _, ok := injected.Message.(*tcp.Message); !ok {
+				return ErrInjectionType
+			}
+		case *flow.UDPFlow:
+			if f == nil {
+				return errors.Join(ErrFlowNotLive, ErrInjectionClosed)
+			}
+			if _, ok := injected.Message.(*udp.Message); !ok {
+				return ErrInjectionType
+			}
+		case *flow.HTTPFlow:
+			if f == nil {
+				return errors.Join(ErrFlowNotLive, ErrInjectionClosed)
+			}
+			if f.WebSocket == nil {
+				return ErrInjectionType
+			}
+			if _, ok := injected.Message.(*websocket.Message); !ok {
+				return ErrInjectionType
+			}
+		default:
 			return ErrInjectionType
 		}
-		if f == nil || !f.Live || f.ClientConn == nil {
-			return ErrFlowNotLive
+		f := injected.Flow.Common()
+		if injected.FlowID != "" && injected.FlowID != f.ID {
+			return ErrInjectionIdentity
+		}
+		injected.FlowID = f.ID
+		if !f.Live || f.ClientConn == nil {
+			return errors.Join(ErrFlowNotLive, ErrInjectionClosed)
 		}
 		entry := h.connections.lookup(f.ClientConn.ID)
 		if entry == nil {
-			return ErrFlowNotLive
+			return errors.Join(ErrFlowNotLive, ErrInjectionClosed)
 		}
 		if err := entry.queue.send(injected); err != nil {
 			if errors.Is(err, net.ErrClosed) {
-				return ErrFlowNotLive
+				return errors.Join(ErrFlowNotLive, err)
 			}
 			return err
 		}

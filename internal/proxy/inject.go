@@ -4,26 +4,32 @@
 package proxy
 
 import (
-	"errors"
-	"net"
 	"sync"
 
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 	"github.com/zchee/mitmproxy-go/tcp"
+	"github.com/zchee/mitmproxy-go/udp"
+	"github.com/zchee/mitmproxy-go/websocket"
 )
 
 const (
-	injectionCapacity = 64
-	maxInjectionBytes = 128 << 10
+	injectionCapacity = layer.InjectionCapacity
+	maxInjectionBytes = layer.MaxInjectionBytes
 )
 
 var (
 	// ErrInjectionFull means the owning layer has not drained its bounded queue.
-	ErrInjectionFull = errors.New("proxy: injection queue is full")
-	// ErrInjectionSize means the injected TCP payload exceeds 128 KiB.
-	ErrInjectionSize = errors.New("proxy: injected message exceeds 128 KiB")
-	// ErrInjectionType means the injection does not carry a supported message.
-	ErrInjectionType = errors.New("proxy: injection requires a TCP message")
+	ErrInjectionFull = layer.ErrInjectionFull
+	// ErrInjectionSize means the injected payload exceeds its protocol's bound.
+	ErrInjectionSize = layer.ErrInjectionSize
+	// ErrInjectionType means the injection does not carry a compatible message.
+	ErrInjectionType = layer.ErrInjectionType
+	// ErrInjectionIdentity means the explicit identity differs from the flow's ID.
+	ErrInjectionIdentity = layer.ErrInjectionIdentity
+	// ErrInjectionDirection means the explicit peer direction is invalid or mismatched.
+	ErrInjectionDirection = layer.ErrInjectionDirection
+	// ErrInjectionClosed means the flow or its client connection has finished.
+	ErrInjectionClosed = layer.ErrInjectionClosed
 )
 
 type injectionQueue struct {
@@ -39,20 +45,52 @@ func newInjectionQueue() *injectionQueue {
 func (q *injectionQueue) send(injected layer.Injected) error {
 	select {
 	case <-q.done:
-		return net.ErrClosed
+		return ErrInjectionClosed
 	default:
 	}
-	message, ok := injected.Message.(*tcp.Message)
-	if !ok || message == nil {
+	var fromClient bool
+	switch message := injected.Message.(type) {
+	case *tcp.Message:
+		if message == nil {
+			return ErrInjectionType
+		}
+		if len(message.Content) > maxInjectionBytes {
+			return ErrInjectionSize
+		}
+		fromClient = message.FromClient
+		injected.Message = message.Clone()
+	case *udp.Message:
+		if message == nil {
+			return ErrInjectionType
+		}
+		if len(message.Content) > layer.MaxUDPPacketBytes {
+			return ErrInjectionSize
+		}
+		fromClient = message.FromClient
+		injected.Message = message.Clone()
+	case *websocket.Message:
+		if message == nil || message.Type != websocket.OpText && message.Type != websocket.OpBinary {
+			return ErrInjectionType
+		}
+		if len(message.Content) > maxInjectionBytes {
+			return ErrInjectionSize
+		}
+		fromClient = message.FromClient
+		injected.Message = message.Clone()
+	default:
 		return ErrInjectionType
 	}
-	if len(message.Content) > maxInjectionBytes {
-		return ErrInjectionSize
+	direction := layer.DirectionFromServer
+	if fromClient {
+		direction = layer.DirectionFromClient
 	}
-	injected.Message = message.Clone()
+	if injected.Direction != layer.DirectionUnspecified && injected.Direction != direction {
+		return ErrInjectionDirection
+	}
+	injected.Direction = direction
 	select {
 	case <-q.done:
-		return net.ErrClosed
+		return ErrInjectionClosed
 	case q.messages <- injected:
 		return nil
 	default:

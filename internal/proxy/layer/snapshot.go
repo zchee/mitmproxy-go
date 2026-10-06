@@ -8,6 +8,8 @@ import (
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/tcp"
+	"github.com/zchee/mitmproxy-go/udp"
+	"github.com/zchee/mitmproxy-go/websocket"
 )
 
 // Snapshot is the current hook's outbound state, copied under the dispatch
@@ -29,7 +31,12 @@ type Snapshot struct {
 	Response *httpmsg.Response
 	// LastMessage is the newest TCP message, not the accumulated history.
 	LastMessage *tcp.Message
-	// NumMessages is the TCP flow's total message count.
+	// LastUDPMessage is the newest datagram, including a zero-length datagram.
+	LastUDPMessage *udp.Message
+	// WebSocket is the HTTP flow's close metadata and newest WebSocket message.
+	// Its Messages has at most one entry; it never copies accumulated history.
+	WebSocket *websocket.Data
+	// NumMessages is the total TCP, UDP or WebSocket message count.
 	NumMessages int
 }
 

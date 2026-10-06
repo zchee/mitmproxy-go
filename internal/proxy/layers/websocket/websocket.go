@@ -78,16 +78,7 @@ func (r *relay) Run(ctx context.Context, c *layer.Context) error {
 	if clock == nil {
 		clock = layer.WallClock
 	}
-	snapshot, err := c.Hooks.FireFunc(ctx, func(context.Context) error {
-		if r.flow.WebSocket == nil {
-			r.flow.WebSocket = &wsmodel.Data{}
-		}
-		return nil
-	}, addon.WebSocketStartHook{Flow: r.flow})
-	var terminal received
-	if err == nil && !snapshot.Killed() {
-		terminal, err = r.run(ctx, c, clock)
-	}
+	terminal, err := r.run(ctx, c, clock)
 	_ = r.client.Abort()
 	_ = r.server.Abort()
 	endCtx := context.WithoutCancel(ctx)
@@ -143,6 +134,7 @@ type received struct {
 	content    []byte
 	lengths    []int
 	err        error
+	injected   bool
 	recorded   bool
 }
 
@@ -154,8 +146,19 @@ func (r *relay) run(ctx context.Context, c *layer.Context, clock layer.Clock) (r
 	incoming := make(chan received)
 	failures := make(chan received, 2)
 	var readers sync.WaitGroup
-	readers.Go(func() { readMessages(readCtx, r.client, true, incoming, failures, stopHooks) })
-	readers.Go(func() { readMessages(readCtx, r.server, false, incoming, failures, stopHooks) })
+	prepared := make(chan struct{})
+	for _, peer := range []struct {
+		conn       *gows.Conn
+		fromClient bool
+	}{{r.client, true}, {r.server, false}} {
+		readers.Go(func() {
+			select {
+			case <-prepared:
+				readMessages(readCtx, peer.conn, peer.fromClient, incoming, failures, stopHooks)
+			case <-readCtx.Done():
+			}
+		})
+	}
 	interrupted := make(chan struct{})
 	abort := func() { _ = r.client.Abort(); _ = r.server.Abort(); close(interrupted) }
 	stop := context.AfterFunc(ctx, abort)
@@ -167,6 +170,27 @@ func (r *relay) run(ctx context.Context, c *layer.Context, clock layer.Clock) (r
 		<-interrupted
 		readers.Wait()
 	}()
+	var flowID string
+	snapshot, err := c.Hooks.FireFunc(hookCtx, func(context.Context) error {
+		if r.flow.WebSocket == nil {
+			r.flow.WebSocket = &wsmodel.Data{}
+		}
+		flowID = r.flow.ID
+		close(prepared)
+		return nil
+	}, addon.WebSocketStartHook{Flow: r.flow})
+	if err != nil {
+		select {
+		case failure := <-failures:
+			return r.fail(ctx, c, clock, failure)
+		default:
+			return received{}, err
+		}
+	}
+	if snapshot.Killed() {
+		return received{}, nil
+	}
+	inject := c.Inject
 	for {
 		var event received
 		select {
@@ -175,11 +199,24 @@ func (r *relay) run(ctx context.Context, c *layer.Context, clock layer.Clock) (r
 		case event = <-failures:
 			return r.fail(ctx, c, clock, event)
 		case event = <-incoming:
-		}
-		if event.op == gows.OpcodeClose {
-			metadataErr := r.recordEnd(ctx, c, clock, event, nil)
-			event.recorded = metadataErr == nil
-			return event, errors.Join(metadataErr, r.closeBoth(event.content))
+		case injection, ok := <-inject:
+			if !ok {
+				inject = nil
+				continue
+			}
+			message, ok := injection.Message.(*wsmodel.Message)
+			if !ok || message == nil || injection.Flow != r.flow || injection.FlowID != flowID || injection.Direction != layer.DirectionFromClient && injection.Direction != layer.DirectionFromServer {
+				continue
+			}
+			if err := c.Do(ctx, func(context.Context) error {
+				event = received{fromClient: injection.Direction == layer.DirectionFromClient, op: gows.Opcode(message.Type), content: slices.Clone(message.Content), injected: true}
+				return nil
+			}); err != nil {
+				return received{}, err
+			}
+			if event.op == gows.OpcodeText && !utf8.Valid(event.content) {
+				event.content = bytes.ToValidUTF8(event.content, []byte("�"))
+			}
 		}
 		dst, compressed := r.server, r.serverCompressed
 		if !event.fromClient {
@@ -202,7 +239,7 @@ func (r *relay) run(ctx context.Context, c *layer.Context, clock layer.Clock) (r
 			continue
 		}
 		snapshot, err := c.Hooks.FireFunc(hookCtx, func(context.Context) error {
-			r.flow.WebSocket.Messages = append(r.flow.WebSocket.Messages, &wsmodel.Message{Type: wsmodel.Opcode(event.op), FromClient: event.fromClient, Content: event.content, Timestamp: float64(clock.Now().UnixNano()) / 1e9})
+			r.flow.WebSocket.Messages = append(r.flow.WebSocket.Messages, &wsmodel.Message{Type: wsmodel.Opcode(event.op), FromClient: event.fromClient, Content: event.content, Injected: event.injected, Timestamp: float64(clock.Now().UnixNano()) / 1e9})
 			return nil
 		}, addon.WebSocketMessageHook{Flow: r.flow})
 		if err != nil {
@@ -247,12 +284,20 @@ func readMessages(ctx context.Context, conn *gows.Conn, fromClient bool, incomin
 			return
 		}
 		if frame.Header.Opcode.IsControl() {
-			select {
-			case incoming <- received{fromClient: fromClient, op: frame.Header.Opcode, content: slices.Clone(frame.Payload)}:
-			case <-ctx.Done():
+			event := received{fromClient: fromClient, op: frame.Header.Opcode, content: slices.Clone(frame.Payload)}
+			if event.op == gows.OpcodeClose {
+				// Terminal events must release an intercepted hook without
+				// waiting for the owner to accept another ordinary frame.
+				select {
+				case failures <- event:
+					stopHooks()
+				case <-ctx.Done():
+				}
 				return
 			}
-			if frame.Header.Opcode == gows.OpcodeClose {
+			select {
+			case incoming <- event:
+			case <-ctx.Done():
 				return
 			}
 			continue
@@ -334,6 +379,8 @@ func (r *relay) fail(ctx context.Context, c *layer.Context, clock layer.Clock, e
 		}
 		event.op = gows.OpcodeClose
 		event.content = gows.AppendCloseBody(nil, protocol.Code, reason)
+	}
+	if event.op == gows.OpcodeClose {
 		metadataErr := r.recordEnd(ctx, c, clock, event, event.err)
 		event.recorded = metadataErr == nil
 		return event, errors.Join(event.err, metadataErr, r.closeBoth(event.content))

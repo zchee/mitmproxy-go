@@ -45,12 +45,22 @@ func await[T any](t *testing.T, ch <-chan T) T {
 type observer struct {
 	events  []string
 	message func(context.Context, *flow.HTTPFlow) error
+	start   func(context.Context, *flow.HTTPFlow) error
+	started chan *flow.HTTPFlow
 }
 
-func (o *observer) WebSocketStart(_ context.Context, f *flow.HTTPFlow) error {
+func (o *observer) WebSocketStart(ctx context.Context, f *flow.HTTPFlow) error {
 	o.events = append(o.events, "websocket_start")
 	if f.WebSocket == nil || !f.Live {
 		return errors.New("start requires a live HTTP flow with WebSocket data")
+	}
+	if o.start != nil {
+		if err := o.start(ctx, f); err != nil {
+			return err
+		}
+	}
+	if o.started != nil {
+		o.started <- f
 	}
 	return nil
 }

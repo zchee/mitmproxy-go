@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	gocmp "github.com/google/go-cmp/cmp"
+	yaml "go.yaml.in/yaml/v4"
 
 	"github.com/zchee/mitmproxy-go/internal/difftest"
 	"github.com/zchee/mitmproxy-go/internal/testutil"
@@ -103,6 +104,91 @@ func TestDifferentialReadDump(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestDifferentialAddonListings compares the binary registries with DumpMaster,
+// excluding only the default addons not yet implemented and Go-only options.
+func TestDifferentialAddonListings(t *testing.T) {
+	var reference struct {
+		Options  map[string]any `json:"options"`
+		Commands []string       `json:"commands"`
+	}
+	data := difftest.Python(t, `
+import asyncio
+import json
+from mitmproxy import options
+from mitmproxy.tools.dump import DumpMaster
+
+async def main():
+    opts = options.Options()
+    master = DumpMaster(opts, with_termlog=True, with_dumper=True)
+    unported = {"scripts", "dns_name_servers", "dns_use_hosts_file", "strip_ech"}
+    # UDP and WebSocket proxy layers are not yet linked into the binary.
+    unported_commands = {"inject.udp", "inject.websocket"}
+    result = {
+        "options": {name: option.default for name, option in opts._options.items() if name not in unported},
+        "commands": sorted(cmd.signature_help().strip() for name, cmd in master.commands.commands.items() if not name.startswith("script.") and name not in unported_commands),
+    }
+    print(json.dumps(result))
+
+asyncio.run(main())
+`, nil)
+	if err := json.Unmarshal(data, &reference); err != nil {
+		t.Fatal(err)
+	}
+	out, stderr, code := goRun(t, "--options")
+	if code != 0 {
+		t.Fatalf("option listing exited %d: %s", code, stderr)
+	}
+	var listed map[string]any
+	if err := yaml.Unmarshal([]byte(out), &listed); err != nil {
+		t.Fatal(err)
+	}
+	// JSON normalization makes YAML integer defaults and Python JSON numbers
+	// comparable while retaining every option name and default value.
+	for row := range strings.Lines(string(testutil.Fixture(t, "options-go-only.txt"))) {
+		name, _, ok := strings.Cut(row, "\t")
+		if ok {
+			delete(listed, name)
+		}
+	}
+	normalized, err := json.Marshal(listed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed = nil
+	if err := json.Unmarshal(normalized, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if diff := gocmp.Diff(reference.Options, listed); diff != "" {
+		t.Errorf("binary option listing (-upstream +go):\n%s", diff)
+	}
+	out, stderr, code = goRun(t, "--commands")
+	if code != 0 {
+		t.Fatalf("command listing exited %d: %s", code, stderr)
+	}
+	var commands []string
+	for line := range strings.Lines(out) {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			commands = append(commands, line)
+		}
+	}
+	// docs/compat.md records the default-argument representation for browser
+	// and the byte result type used by export's display conversion.
+	for i, signature := range reference.Commands {
+		switch signature {
+		case "browser.start browser":
+			reference.Commands[i] = "browser.start *arg0"
+		case "export format f -> str":
+			reference.Commands[i] = "export format f -> bytes"
+		}
+	}
+	slices.Sort(reference.Commands)
+	slices.Sort(commands)
+	if diff := gocmp.Diff(reference.Commands, commands); diff != "" {
+		t.Errorf("binary command signatures (-upstream +go):\n%s", diff)
 	}
 }
 

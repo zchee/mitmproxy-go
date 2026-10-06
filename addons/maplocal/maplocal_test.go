@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"mime"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -143,6 +144,7 @@ func writeFile(t *testing.T, root, name, contents string) string {
 
 // TestRequest ports test_simple and every map_local feature example.
 func TestRequest(t *testing.T) {
+	javascriptType, _, _ := strings.Cut(mime.TypeByExtension(".js"), ";")
 	tests := map[string]struct {
 		pattern, url, path, method, wantType string
 		file                                 bool
@@ -153,7 +155,7 @@ func TestRequest(t *testing.T) {
 		"success: fallback index":    {"|example.org/css|", "https://example.org/css/main", "main/index.html", "", "text/html", false},
 		"success: escaped fallback":  {"|example.org|", "https://example.org/foo%20bar.jpg", "foo_bar.jpg", "", "image/jpeg", false},
 		"success: unknown extension": {"|example.org|", "https://example.org/main.unknownextension", "main.unknownextension", "", "", false},
-		"docs: javascript file":      {"|example.com/main.js|", "https://example.com/main.js", "main-local.js", "", "text/javascript", true},
+		"docs: javascript file":      {"|example.com/main.js|", "https://example.com/main.js", "main-local.js", "", javascriptType, true},
 		"docs: static directory":     {"|example.com/static|", "https://example.com/static/foo/bar.css", "foo/bar.css", "", "text/css", false},
 		"docs: longer prefix":        {"|example.com/static/foo|", "https://example.com/static/foo/bar.css", "bar.css", "", "text/css", false},
 		"docs: method filter":        {"|~m GET|example.com/static|", "https://example.com/static/foo/bar.css", "foo/bar.css", "GET", "text/css", false},
@@ -202,6 +204,11 @@ func TestRequest(t *testing.T) {
 	t.Run("docs: home path", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Fatal(err)
+		}
 		writeFile(t, home, "main-local.js", "home file")
 		mgr, _, _ := setup(t, []string{"|example.com/main.js|~/main-local.js"})
 		f := testflow.TFlow()

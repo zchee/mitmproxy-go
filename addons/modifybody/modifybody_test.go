@@ -208,6 +208,11 @@ func TestReplacementFiles(t *testing.T) {
 	t.Run("docs: home-relative file", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(filepath.Join(home, "xss-exploit"), []byte("replacement"), 0o600); err != nil {
 			t.Fatal(err)
 		}

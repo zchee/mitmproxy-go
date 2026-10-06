@@ -36,11 +36,15 @@ type Endpoint struct {
 }
 
 // New copies cfg and constructs an endpoint without I/O. A nil connection,
-// empty endpoint identity or negative keepalive interval is rejected. The
-// borrowed connection is never closed by this package.
+// empty endpoint identity or negative keepalive interval is rejected. Upgrade
+// must be server-side with valid SETTINGS, request headers and a complete body
+// no larger than InitialStreamWindow. The borrowed connection is never closed.
 func New(conn net.Conn, cfg Config) (*Endpoint, error) {
 	if conn == nil || cfg.Descriptor.Identity == "" || cfg.PingKeepalive < 0 {
 		return nil, errors.New("h2: invalid endpoint configuration")
+	}
+	if err := validateUpgrade(&cfg); err != nil {
+		return nil, err
 	}
 	if cfg.Clock == nil {
 		cfg.Clock = layer.WallClock

@@ -28,6 +28,27 @@ type Config struct {
 	Logger                 *slog.Logger
 	PingKeepalive          time.Duration
 	Clock                  layer.Clock
+	// Upgrade seeds an HTTP/1 h2c request on stream 1 in server mode only.
+	// The client preface and its first SETTINGS frame are still required.
+	Upgrade *UpgradeRequest
+}
+
+// UpgradeRequest supplies the fully read HTTP/1 request that initiated h2c.
+// New validates and copies its fields before the endpoint performs any I/O.
+// Receive delivers its Headers first with EndStream true only for an empty Body.
+// ReceiveStream delivers Body in ChunkSize-capacity chunks, with EndStream only
+// on the final chunk and ordinary original-byte receipts. An empty Body yields
+// no DATA event.
+// Stream 1 is half-closed remotely and may receive a response through Send.
+// Body must not exceed InitialStreamWindow, preserving the receive budget.
+// Settings is the decoded HTTP2-Settings payload, without a frame header;
+// unknown parameters are ignored and the 101 response implicitly acknowledges it.
+// Subsequent client SETTINGS frames update these limits and are acknowledged.
+// Headers contains the caller-converted request pseudo-headers and fields.
+type UpgradeRequest struct {
+	Settings []byte
+	Headers  []hpack.HeaderField
+	Body     []byte
 }
 
 // EventKind identifies an ordered HTTP/2 protocol event.

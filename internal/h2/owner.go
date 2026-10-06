@@ -116,7 +116,11 @@ type owner struct {
 }
 
 func newOwner(e *Endpoint, ctx context.Context) *owner {
-	return &owner{e: e, ctx: ctx, streams: make(map[uint32]*streamState), assembly: newHeaderAssembly(e.cfg.ValidateInboundHeaders), credits: make(map[uint32]uint32), peerConcurrent: MaxConcurrentStreams, peerInitial: 65535, peerFrame: 16384, peerHeaders: ^uint32(0), outWindow: 65535, nextLocal: 1, controls: []*writeFrame{{kind: writeInitial}}, lastActivity: e.cfg.Clock.Now()}
+	o := &owner{e: e, ctx: ctx, streams: make(map[uint32]*streamState), assembly: newHeaderAssembly(e.cfg.ValidateInboundHeaders), credits: make(map[uint32]uint32), peerConcurrent: MaxConcurrentStreams, peerInitial: 65535, peerFrame: 16384, peerHeaders: ^uint32(0), outWindow: 65535, nextLocal: 1, controls: []*writeFrame{{kind: writeInitial}}, lastActivity: e.cfg.Clock.Now()}
+	if e.cfg.Upgrade != nil {
+		o.seedUpgrade()
+	}
+	return o
 }
 
 func (o *owner) publish() { o.e.budget.Store(new(o.budget.snapshot())) }
@@ -843,36 +847,7 @@ func (o *owner) settings(f *http2.SettingsFrame) error {
 		return nil
 	}
 	err := f.ForeachSetting(func(setting http2.Setting) error {
-		if len(o.controls) >= MaxConcurrentStreams*2 {
-			return protocolError(http2.ErrCodeEnhanceYourCalm, "HTTP/2 control queue limit exceeded")
-		}
-		if err := setting.Valid(); err != nil {
-			return err
-		}
-		switch setting.ID {
-		case http2.SettingMaxConcurrentStreams:
-			o.peerConcurrent = min(setting.Val, MaxConcurrentStreams)
-		case http2.SettingInitialWindowSize:
-			delta := int64(setting.Val) - o.peerInitial
-			for _, s := range o.streams {
-				if s.outWindow+delta > 0x7fffffff {
-					return protocolError(http2.ErrCodeFlowControl, "HTTP/2 stream window overflow after SETTINGS")
-				}
-				s.outWindow += delta
-			}
-			o.peerInitial = int64(setting.Val)
-		case http2.SettingMaxFrameSize:
-			o.peerFrame = setting.Val
-		case http2.SettingHeaderTableSize:
-			o.controls = append(o.controls, &writeFrame{kind: writeTableLimit, value: setting.Val})
-		case http2.SettingMaxHeaderListSize:
-			o.peerHeaders = setting.Val
-		case http2.SettingEnablePush:
-			if o.e.cfg.Client {
-				return protocolError(http2.ErrCodeProtocol, "HTTP/2 server sent ENABLE_PUSH")
-			}
-		}
-		return nil
+		return o.applySetting(setting)
 	})
 	if err != nil {
 		return err
@@ -886,6 +861,9 @@ func (o *owner) settings(f *http2.SettingsFrame) error {
 }
 
 func (o *owner) headers(id uint32, fields []hpack.HeaderField, end bool) error {
+	if id == 1 && o.e.cfg.Upgrade != nil {
+		return protocolError(http2.ErrCodeProtocol, "HTTP/2 upgrade stream 1 cannot be reused")
+	}
 	s := o.streams[id]
 	isNew := s == nil
 	if isNew {
@@ -934,14 +912,8 @@ func (o *owner) headers(id uint32, fields []hpack.HeaderField, end bool) error {
 				return err
 			}
 			s.inHeaders = true
-			for _, field := range fields {
-				if field.Name == "content-length" {
-					length, err := strconv.ParseInt(field.Value, 10, 64)
-					if err != nil || length < 0 || s.contentLength >= 0 && s.contentLength != length {
-						return protocolError(http2.ErrCodeProtocol, "Invalid HTTP/2 content-length")
-					}
-					s.contentLength = length
-				}
+			if err := s.setContentLength(fields); err != nil {
+				return err
 			}
 		}
 	}

@@ -117,7 +117,7 @@ func Flow(f flow.Flow) (*omap.Map[any], error) {
 			resp.Set("status_code", r.StatusCode)
 			// Reason is stored as wire bytes, whereas Python exposes Latin-1 text.
 			reason := make([]rune, len(r.Reason))
-			for i := range r.Reason {
+			for i := range len(r.Reason) {
 				reason[i] = rune(r.Reason[i])
 			}
 			resp.Set("reason", string(reason))

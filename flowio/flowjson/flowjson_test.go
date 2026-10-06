@@ -77,6 +77,41 @@ func TestFlow(t *testing.T) {
 	}
 }
 
+func TestResponseReasonBytes(t *testing.T) {
+	tests := map[string]struct {
+		reason string
+		want   string
+	}{
+		"success: multibyte wire sequence":    {reason: string([]byte{0xc3, 0xa9}), want: "Ã©"},
+		"success: mixed ASCII and wire bytes": {reason: "OK " + string([]byte{0xc3, 0xa9}) + "!", want: "OK Ã©!"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			f := testflow.TFlow(testflow.WithResponse)
+			f.Response.Reason = tt.reason
+			obj, err := flowjson.Flow(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := json.Marshal(obj)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got struct {
+				Response struct {
+					Reason string `json:"reason"`
+				} `json:"response"`
+			}
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tt.want, got.Response.Reason); diff != "" {
+				t.Errorf("Latin-1 reason (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestMissingContentAndTrailers(t *testing.T) {
 	f := testflow.TFlow(testflow.WithResponse)
 	f.Request.RawContent = nil

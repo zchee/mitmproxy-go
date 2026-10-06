@@ -24,6 +24,8 @@ func TestDifferentialFlow(t *testing.T) {
 		"success: HTTP response error and certificate": {testflow.TFlow(testflow.WithResponse, testflow.WithError)},
 		"success: missing content and WebSocket":       {testflow.TFlow(testflow.WithResponse, testflow.WithWebSocket)},
 		"success: binary header and path":              {testflow.TFlow()},
+		"success: multibyte reason bytes":              {testflow.TFlow(testflow.WithResponse)},
+		"success: mixed reason bytes":                  {testflow.TFlow(testflow.WithResponse)},
 		"success: TCP":                                 {testflow.TTCPFlow()},
 		"success: UDP":                                 {testflow.TUDPFlow()},
 		"success: empty TCP":                           {flow.NewTCPFlow(testflow.TClientConn(), testflow.TServerConn(), false)},
@@ -41,6 +43,12 @@ func TestDifferentialFlow(t *testing.T) {
 				h.Request.Headers.Add("X-Binary", string([]byte{255, 254}))
 				h.Request.Method = "g" + string([]byte{255, 254}) + "et"
 				h.Request.Path = "/" + string([]byte{255, 254})
+			}
+			if name == "success: multibyte reason bytes" {
+				f.(*flow.HTTPFlow).Response.Reason = string([]byte{0xc3, 0xa9})
+			}
+			if name == "success: mixed reason bytes" {
+				f.(*flow.HTTPFlow).Response.Reason = "OK " + string([]byte{0xc3, 0xa9}) + "!"
 			}
 			var state bytes.Buffer
 			if err := flowio.NewWriter(&state).Add(f); err != nil {

@@ -8,22 +8,34 @@ package browser
 import (
 	"errors"
 	"os"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 )
 
 func killProcess(process *os.Process) error {
-	// Hold the original process object across Kill and the nonblocking exit check.
-	handle, handleErr := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(process.Pid))
-	if handleErr == nil {
-		defer func() { _ = windows.CloseHandle(handle) }()
-	}
-	err := process.Kill()
-	if handleErr == nil && errors.Is(err, windows.ERROR_ACCESS_DENIED) {
-		// TerminateProcess reports access denied for an already-exited child.
-		// An unsignaled process still exposes its genuine termination failure.
-		status, waitErr := windows.WaitForSingleObject(handle, 0)
+	var err error
+	// Pin the original handle rather than reopening a possibly terminated PID.
+	handleErr := process.WithHandle(func(handle uintptr) {
+		status, waitErr := windows.WaitForSingleObject(windows.Handle(handle), 0)
 		if waitErr == nil && status == windows.WAIT_OBJECT_0 {
+			err = os.ErrProcessDone
+			return
+		}
+		err = process.Kill()
+		if err != nil {
+			// The reaper or native exit may race Kill; only an exit signal proves
+			// completion. An unsignaled process retains its termination error.
+			status, waitErr = windows.WaitForSingleObject(windows.Handle(handle), 0)
+			if waitErr == nil && status == windows.WAIT_OBJECT_0 {
+				err = os.ErrProcessDone
+			}
+		}
+	})
+	if handleErr != nil {
+		err = process.Kill()
+		// Only cmd.Wait releases handles for children owned by this addon.
+		if errors.Is(err, syscall.EINVAL) {
 			return os.ErrProcessDone
 		}
 	}

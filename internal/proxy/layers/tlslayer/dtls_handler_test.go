@@ -23,8 +23,11 @@ import (
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/certs"
 	"github.com/zchee/mitmproxy-go/connection"
-	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
+	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/internal/proxy/proxytest"
+	"github.com/zchee/mitmproxy-go/udp"
+
+	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/udplayer"
 )
 
 func TestDTLSReverseHandlerAcceptance(t *testing.T) {
@@ -93,7 +96,7 @@ func TestDTLSReverseHandlerAcceptance(t *testing.T) {
 				// Leave the session open until the client has consumed the final reply.
 				<-ctx.Done()
 			}()
-			observer := &dtlsAcceptanceObserver{serverFirst: tt.serverFirst}
+			observer := &dtlsAcceptanceObserver{serverFirst: tt.serverFirst, ended: make(chan struct{})}
 			mode := "reverse:dtls://" + listener.Addr().String()
 			if tt.noSNI {
 				mode += "@127.0.0.1:0"
@@ -168,11 +171,13 @@ func TestDTLSReverseHandlerAcceptance(t *testing.T) {
 			if state.NegotiatedProtocol != "custom" || state.CipherSuiteID != dtls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 {
 				t.Fatalf("negotiated ALPN/cipher = %q/%v", state.NegotiatedProtocol, state.CipherSuiteID)
 			}
+			payloads := make([][]byte, 100)
 			for i := range 100 {
 				payload := []byte{byte(i), byte(i >> 8), 0, 255}
 				if i == 0 {
 					payload = []byte{}
 				}
+				payloads[i] = payload
 				if _, err := session.Write(payload); err != nil {
 					t.Fatal(err)
 				}
@@ -195,6 +200,15 @@ func TestDTLSReverseHandlerAcceptance(t *testing.T) {
 				buf := make([]byte, 1<<20)
 				t.Fatalf("origin echo hung: %v\n%s", ctx.Err(), buf[:runtime.Stack(buf, true)])
 			}
+			if err := session.Close(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-observer.ended:
+			case <-ctx.Done():
+				buf := make([]byte, 1<<20)
+				t.Fatalf("UDP end hook hung: %v\n%s", ctx.Err(), buf[:runtime.Stack(buf, true)])
+			}
 			if err := p.Master.Do(ctx, func(context.Context) error {
 				if observer.sni != serverName {
 					return fmt.Errorf("tls_clienthello SNI = %q, want %q", observer.sni, serverName)
@@ -205,6 +219,20 @@ func TestDTLSReverseHandlerAcceptance(t *testing.T) {
 				}
 				if diff := cmp.Diff(want, observer.events); diff != "" {
 					return fmt.Errorf("hook order (-want +got): %s", diff)
+				}
+				if diff := cmp.Diff([]string{"udp_start", "udp_end"}, observer.lifecycle); diff != "" {
+					return fmt.Errorf("UDP lifecycle (-want +got): %s", diff)
+				}
+				if len(observer.messages) != 200 {
+					return fmt.Errorf("UDP child dispatched %d messages, want 200", len(observer.messages))
+				}
+				for i, payload := range payloads {
+					for j := range 2 {
+						message := observer.messages[2*i+j]
+						if message.FromClient != (j == 0) || !bytes.Equal(message.Content, payload) {
+							return fmt.Errorf("UDP hook datagram %d direction %d differs: %+v", i, j, message)
+						}
+					}
 				}
 				return nil
 			}); err != nil {
@@ -219,6 +247,9 @@ type dtlsAcceptanceObserver struct {
 	serverFirst bool
 	sni         string
 	events      []string
+	lifecycle   []string
+	messages    []*udp.Message
+	ended       chan struct{}
 	failure     string
 }
 
@@ -277,60 +308,28 @@ func (o *dtlsAcceptanceObserver) established(event string, d *hookdata.TLS) erro
 	return nil
 }
 
-func (o *dtlsAcceptanceObserver) NextLayer(_ context.Context, d *hookdata.NextLayer) error {
-	// Keep admission and DTLS selection real; replace only the decrypted child.
-	if d.Context.Client.TLSEstablished() && d.Context.Client.TLSVersion == connection.DTLSv1_2 {
-		d.Layer = hookdata.LayerStack{{Kind: "test-dtls-handler-relay"}}
-	} else if len(d.Layer) != 0 && d.Layer[len(d.Layer)-1].Kind == hookdata.LayerUDP {
-		want := hookdata.LayerStack{{Kind: hookdata.LayerServerDTLS}, {Kind: hookdata.LayerClientDTLS}, {Kind: hookdata.LayerUDP}}
-		if diff := cmp.Diff(want, d.Layer); diff != "" {
-			return fmt.Errorf("initial reverse DTLS selection (-want +got): %s", diff)
-		}
-		// Defer application construction until the DTLS handover asks for its child.
-		d.Layer = d.Layer[:len(d.Layer)-1]
+func (o *dtlsAcceptanceObserver) UDPStart(_ context.Context, f *flow.UDPFlow) error {
+	if f.ClientConn.TransportProtocol != connection.UDP || !f.ClientConn.TLSEstablished() {
+		return errors.New("UDP flow started before client DTLS establishment")
 	}
+	o.lifecycle = append(o.lifecycle, "udp_start")
 	return nil
 }
 
-func init() {
-	layer.Register("test-dtls-handler-relay", func(*layer.Context, hookdata.LayerSpec, layer.Layer) (layer.Layer, error) {
-		return dtlsAcceptanceRelay{}, nil
-	})
+func (o *dtlsAcceptanceObserver) UDPMessage(_ context.Context, f *flow.UDPFlow) error {
+	if len(f.Messages) == 0 {
+		return errors.New("UDP hook has no datagram")
+	}
+	o.messages = append(o.messages, f.Messages[len(f.Messages)-1].Clone())
+	return nil
 }
 
-type dtlsAcceptanceRelay struct{}
-
-func (dtlsAcceptanceRelay) Kind() hookdata.LayerKind { return "test-dtls-handler-relay" }
-
-func (dtlsAcceptanceRelay) Run(ctx context.Context, c *layer.Context) error {
-	if c.ServerPackets == nil {
-		var server *connection.Server
-		if err := c.Do(ctx, func(context.Context) error { server = c.Data.Server; return nil }); err != nil {
-			return err
-		}
-		packets, _, err := c.OpenPackets(ctx, server)
-		if err != nil {
-			return err
-		}
-		c.ServerPackets = c.RecordPackets(packets)
+func (o *dtlsAcceptanceObserver) UDPEnd(_ context.Context, _ *flow.UDPFlow) error {
+	o.lifecycle = append(o.lifecycle, "udp_end")
+	select {
+	case <-o.ended:
+	default:
+		close(o.ended)
 	}
-	c.ClientPackets.StopRecording()
-	c.ServerPackets.StopRecording()
-	buf := make([]byte, layer.MaxUDPPacketBytes)
-	for {
-		n, _, err := c.ClientPackets.ReadFrom(buf)
-		if err != nil {
-			return err
-		}
-		if _, err := c.ServerPackets.WriteTo(buf[:n], nil); err != nil {
-			return err
-		}
-		n, _, err = c.ServerPackets.ReadFrom(buf)
-		if err != nil {
-			return err
-		}
-		if _, err := c.ClientPackets.WriteTo(buf[:n], nil); err != nil {
-			return err
-		}
-	}
+	return nil
 }

@@ -23,6 +23,27 @@ const (
 	maxMatchBytes   = 1 << 20
 )
 
+// CapacityError reports a regex operation exceeding a bounded resource.
+// Limit is measured in bytes except for Resource "matches", where it is a count.
+// Resource names the pattern, subject, replacement, substituted output, capture
+// table or matches whose limit was exceeded.
+type CapacityError struct {
+	Resource string
+	Limit    int
+}
+
+// Error returns the capacity diagnostic.
+func (e *CapacityError) Error() string {
+	switch e.Resource {
+	case "matches":
+		return "regex: too many matches"
+	case "capture table":
+		return "regex: capture table exceeds working-memory budget"
+	default:
+		return fmt.Sprintf("regex: %s exceeds %d MiB", e.Resource, e.Limit>>20)
+	}
+}
+
 // Pattern is a concurrent-safe Python expression with captures and substitution.
 // Unlike Compile's boolean matcher, it preserves match spans at a final newline
 // and Python's group numbering. Without Unicode, pattern and subject bytes are
@@ -67,7 +88,7 @@ type Match struct {
 // match, which RE2's non-overlapping iterator cannot express.
 func CompilePattern(pattern string, flags Flags) (*Pattern, error) {
 	if len(pattern) > maxPatternBytes {
-		return nil, errors.New("regex: pattern exceeds 1 MiB")
+		return nil, &CapacityError{Resource: "pattern", Limit: maxPatternBytes}
 	}
 	str := flags&Unicode != 0
 	src := pattern
@@ -202,7 +223,7 @@ func (p *Pattern) Flags() Flags { return p.flags }
 // Match reports whether the pattern occurs in b, logging abandoned searches.
 func (p *Pattern) Match(b []byte) bool {
 	if len(b) > maxSubBytes {
-		logTimeout(p.pattern, errors.New("regex: subject exceeds 256 MiB"))
+		logTimeout(p.pattern, &CapacityError{Resource: "subject", Limit: maxSubBytes})
 		return false
 	}
 	return p.MatchString(string(b))
@@ -220,7 +241,7 @@ func (p *Pattern) MatchString(s string) bool {
 // Search searches b and returns captures, nil for no match, or a bounded error.
 func (p *Pattern) Search(b []byte) (*Match, error) {
 	if len(b) > maxSubBytes {
-		return nil, errors.New("regex: subject exceeds 256 MiB")
+		return nil, &CapacityError{Resource: "subject", Limit: maxSubBytes}
 	}
 	return p.SearchString(string(b))
 }
@@ -255,10 +276,10 @@ func (p *Pattern) SearchString(s string) (*Match, error) {
 // 256 MiB. Python escapes, numbered and named references are supported.
 func (p *Pattern) Sub(replacement, subject []byte, count int) ([]byte, error) {
 	if len(replacement) > maxSubBytes {
-		return nil, errors.New("regex: replacement exceeds 256 MiB")
+		return nil, &CapacityError{Resource: "replacement", Limit: maxSubBytes}
 	}
 	if len(subject) > maxSubBytes {
-		return nil, errors.New("regex: subject exceeds 256 MiB")
+		return nil, &CapacityError{Resource: "subject", Limit: maxSubBytes}
 	}
 	s, err := p.SubString(string(replacement), string(subject), count)
 	if err != nil {
@@ -299,11 +320,14 @@ func (p *Pattern) SubString(replacement, subject string, count int) (string, err
 		return nil
 	}
 	if p.re != nil {
-		// Account for slice headers, capture indices and growth headroom.
-		bytesPerMatch := 64 + 32*(p.re.NumSubexp()+1)
-		tableLimit := maxMatchBytes / bytesPerMatch
-		if tableLimit == 0 {
-			return "", errors.New("regex: capture table exceeds working-memory budget")
+		tableLimit := 0
+		if p.contextual {
+			// Account for slice headers, capture indices and growth headroom.
+			bytesPerMatch := 64 + 32*(p.re.NumSubexp()+1)
+			tableLimit = maxMatchBytes / bytesPerMatch
+			if tableLimit == 0 {
+				return "", &CapacityError{Resource: "capture table", Limit: maxMatchBytes}
+			}
 		}
 		limit := maxSubMatches
 		if count > 0 {
@@ -328,13 +352,13 @@ func (p *Pattern) SubString(replacement, subject string, count int) (string, err
 				if count > 0 && count <= min(tableLimit, maxSubMatches) {
 					indices = indices[:count]
 				} else {
-					return "", errors.New("regex: too many matches")
+					return "", &CapacityError{Resource: "matches", Limit: min(tableLimit, maxSubMatches)}
 				}
 			}
 			end := position
 			for _, idx := range indices {
 				if replaced == limit {
-					return "", errors.New("regex: too many matches")
+					return "", &CapacityError{Resource: "matches", Limit: maxSubMatches}
 				}
 				end = position + idx[1]
 				for i := range m.Groups {
@@ -382,7 +406,7 @@ func (p *Pattern) SubString(replacement, subject string, count int) (string, err
 				break
 			}
 			if replaced == maxSubMatches {
-				return "", errors.New("regex: too many matches")
+				return "", &CapacityError{Resource: "matches", Limit: maxSubMatches}
 			}
 			if err := apply(p.backtrackMatch(input, m)); err != nil {
 				return "", err
@@ -399,7 +423,7 @@ func (p *Pattern) SubString(replacement, subject string, count int) (string, err
 
 func appendBounded(b *strings.Builder, s string) error {
 	if len(s) > maxSubBytes-b.Len() {
-		return errors.New("regex: substituted output exceeds 256 MiB")
+		return &CapacityError{Resource: "substituted output", Limit: maxSubBytes}
 	}
 	b.WriteString(s)
 	return nil
@@ -413,7 +437,7 @@ type patternInput struct {
 
 func (p *Pattern) input(s string) (patternInput, error) {
 	if len(s) > maxSubBytes {
-		return patternInput{}, errors.New("regex: subject exceeds 256 MiB")
+		return patternInput{}, &CapacityError{Resource: "subject", Limit: maxSubBytes}
 	}
 	in := patternInput{raw: s, text: s}
 	if p.str {
@@ -487,7 +511,7 @@ type templatePart struct {
 
 func (p *Pattern) template(s string) ([]templatePart, error) {
 	if len(s) > maxSubBytes {
-		return nil, errors.New("regex: replacement exceeds 256 MiB")
+		return nil, &CapacityError{Resource: "replacement", Limit: maxSubBytes}
 	}
 	if p.str && !utf8.ValidString(s) {
 		return nil, errors.New("regex: string replacement is not valid UTF-8")

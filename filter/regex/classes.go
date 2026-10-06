@@ -852,7 +852,9 @@ func scanClassesCaptures(body string, flags Flags, str, verbose, captures bool) 
 			if captures {
 				name = strconv.Itoa(gid)
 			}
-			t.bt.WriteString(`\k<` + name + `>`)
+			t.bt.WriteString(`\k<`)
+			t.bt.WriteString(name)
+			t.bt.WriteByte('>')
 			t.re2OK = false
 			i = end
 		case c == '(' && strings.HasPrefix(src[i:], "(?P<"):
@@ -879,7 +881,9 @@ func scanClassesCaptures(body string, flags Flags, str, verbose, captures bool) 
 			if captures {
 				name = strconv.Itoa(next.gid)
 			}
-			t.bt.WriteString("(?<" + name + ">")
+			t.bt.WriteString("(?<")
+			t.bt.WriteString(name)
+			t.bt.WriteByte('>')
 			i = end
 		case c == '(' && strings.HasPrefix(src[i:], "(?("):
 			// A conditional on a group, by number or name. Python checks
@@ -913,7 +917,9 @@ func scanClassesCaptures(body string, flags Flags, str, verbose, captures bool) 
 			stack = append(stack, next)
 			atom, open, header = -1, false, false
 			t.re2.WriteString(src[i:end])
-			t.bt.WriteString("(?(" + cond + ")")
+			t.bt.WriteString("(?(")
+			t.bt.WriteString(cond)
+			t.bt.WriteByte(')')
 			i = end
 		case c == '(' && strings.HasPrefix(src[i:], "(?") && len(src) > i+2 && unknownExtension(src[i+2:]):
 			// Group syntax Python does not have, such as the (?<name>,
@@ -966,7 +972,9 @@ func scanClassesCaptures(body string, flags Flags, str, verbose, captures bool) 
 			header = strings.HasPrefix(src[i+1:], "?")
 			t.re2.WriteByte('(')
 			if captures && next.gid > 0 {
-				t.bt.WriteString("(?<" + strconv.Itoa(next.gid) + ">")
+				t.bt.WriteString("(?<")
+				t.bt.WriteString(strconv.Itoa(next.gid))
+				t.bt.WriteByte('>')
 			} else {
 				t.bt.WriteByte('(')
 			}
@@ -1341,7 +1349,9 @@ func (t *classTranslator) class(i int, cur scope) (int, error) {
 			if this.short != 0 || that.short != 0 {
 				return 0, fmt.Errorf("bad character range %s-%s", this.text, that.text)
 			}
-			rest.WriteString(this.literal() + "-" + that.literal())
+			rest.WriteString(this.literal())
+			rest.WriteByte('-')
+			rest.WriteString(that.literal())
 			j = k2
 			continue
 		}
@@ -1404,18 +1414,30 @@ func (t *classTranslator) class(i int, cur scope) (int, error) {
 	others := rest.String()
 	switch {
 	case neg:
-		t.bt.WriteString("(?:(?![" + others + "])" + sh.negate().backtrackExact() + ")")
+		t.bt.WriteString("(?:(?![")
+		t.bt.WriteString(others)
+		t.bt.WriteString("])")
+		t.bt.WriteString(sh.negate().backtrackExact())
+		t.bt.WriteByte(')')
 	case !cur.fold && strings.HasPrefix(sh.text, "[") && !strings.HasPrefix(sh.text, "[^"):
 		// Nothing folds, so one bracket expression holds both. The
 		// property body goes first: a member such as \x4 could otherwise
 		// run into the digits that start it.
-		t.bt.WriteString(sh.text[:len(sh.text)-1] + others + "]")
+		t.bt.WriteString(sh.text[:len(sh.text)-1])
+		t.bt.WriteString(others)
+		t.bt.WriteByte(']')
 	default:
 		// The members fold and the escape must not, so they are two
 		// branches. The second refuses what the first matches: branches
 		// that overlap, under a quantifier, make regexp2 try every way of
 		// splitting a run between them before it gives up.
-		t.bt.WriteString("(?:" + sh.backtrackExact() + "|(?!" + sh.exact() + ")[" + others + "])")
+		t.bt.WriteString("(?:")
+		t.bt.WriteString(sh.backtrackExact())
+		t.bt.WriteString("|(?!")
+		t.bt.WriteString(sh.exact())
+		t.bt.WriteString(")[")
+		t.bt.WriteString(others)
+		t.bt.WriteString("])")
 	}
 	if !t.re2OK {
 		return j, nil

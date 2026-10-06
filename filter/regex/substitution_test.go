@@ -4,6 +4,7 @@
 package regex
 
 import (
+	"errors"
 	"runtime"
 	"strings"
 	"testing"
@@ -98,6 +99,10 @@ func TestSubstitutionMatchBudget(t *testing.T) {
 			out, err := p.SubString("", test.subject, 0)
 			if out != "" || err == nil || err.Error() != "regex: too many matches" {
 				t.Fatalf("output length=%d, error=%v; want no output and match-budget error", len(out), err)
+			}
+			capacity, ok := errors.AsType[*CapacityError](err)
+			if !ok || capacity.Resource != "matches" {
+				t.Fatalf("error=%v (%T); want matches CapacityError", err, err)
 			}
 			out, err = p.SubString("x", test.subject, 1)
 			if err != nil || out == "" {

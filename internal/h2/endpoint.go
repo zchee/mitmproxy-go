@@ -57,6 +57,23 @@ func New(conn net.Conn, cfg Config) (*Endpoint, error) {
 // receive chunks, reservations and outstanding receipts.
 func (e *Endpoint) Done() <-chan struct{} { return e.done }
 
+// StreamDone observes termination without consuming stream events. Its channel
+// closes on reset, cancellation, received GOAWAY exclusion, normal completion,
+// or connection termination. Unknown, foreign and closed identities return an
+// already-closed channel. Run must be active when observing a live stream.
+func (e *Endpoint) StreamDone(id layer.StreamIdentity) <-chan struct{} {
+	r := newRequest(context.TODO(), streamDone)
+	r.id = id
+	if e.started.Load() {
+		if _, err := e.call(r); err == nil && r.done != nil {
+			return r.done
+		}
+	}
+	done := make(chan struct{})
+	close(done)
+	return done
+}
+
 // Budget returns a synchronized immutable observation of reservations and
 // their maximum. The owner asserts the budget on every grant/release.
 func (e *Endpoint) Budget() layer.BudgetSnapshot { return *e.budget.Load() }

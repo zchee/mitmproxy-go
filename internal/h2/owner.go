@@ -27,6 +27,7 @@ type queuedEvent struct {
 
 type streamState struct {
 	id            layer.StreamIdentity
+	done          chan struct{}
 	window        streamWindow
 	outWindow     int64
 	queue         []queuedEvent
@@ -42,6 +43,14 @@ type streamState struct {
 	receipt       *consumption
 	contentLength int64
 	received      int64
+}
+
+func (s *streamState) closeDone() {
+	select {
+	case <-s.done:
+	default:
+		close(s.done)
+	}
 }
 
 type consumption struct {
@@ -295,6 +304,7 @@ func (o *owner) settle() {
 			}
 		}
 		if s.failed == nil && s.localEnd && s.remoteEnd && s.receipt == nil && !s.hasData() {
+			s.closeDone()
 			o.budget.release(&s.window)
 			o.publish()
 		}
@@ -425,7 +435,7 @@ func (o *owner) newStream(id uint32) *streamState {
 			return nil
 		}
 	}
-	s := &streamState{id: layer.StreamIdentity{Endpoint: o.e.cfg.Descriptor.Identity, Stream: id}, outWindow: o.peerInitial, contentLength: -1}
+	s := &streamState{id: layer.StreamIdentity{Endpoint: o.e.cfg.Descriptor.Identity, Stream: id}, done: make(chan struct{}), outWindow: o.peerInitial, contentLength: -1}
 	if !o.budget.reserve(&s.window) {
 		return nil
 	}
@@ -458,6 +468,9 @@ func (o *owner) request(r *request) {
 			return
 		}
 		o.receiver = r
+	case streamDone:
+		r.done = s.done
+		r.complete(Event{}, nil)
 	case receiveStream:
 		if s.receiver != nil {
 			r.complete(Event{}, errors.New("h2: concurrent stream Receive"))
@@ -654,6 +667,7 @@ func (o *owner) cancel(s *streamState, code http2.ErrCode, err error, sendReset 
 		o.discardPrepared()
 	}
 	s.failed = err
+	s.closeDone()
 	if s.receipt != nil {
 		s.receipt.Invalidate()
 		s.receipt = nil
@@ -702,6 +716,7 @@ func (o *owner) closeAll(err error) {
 		err = io.EOF
 	}
 	for _, s := range o.streams {
+		s.closeDone()
 		if s.receipt != nil {
 			s.receipt.Invalidate()
 			s.receipt = nil

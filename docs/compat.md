@@ -641,3 +641,9 @@ Replay API: `proxy.Replay` takes a `ReplayRunner` supplied as `httplayer.Replay`
 | Cookie retention is unbounded (`mitmproxy/addons/stickycookie.py:37-39,78`). | The ordered jar holds at most 100,000 cookies and 16 MiB of retained string bytes. At overflow, growing writes are dropped without failing the flow; a warning is emitted once until a deletion or smaller overwrite frees capacity. | Bound traffic-driven state while continuing proxy traffic and allowing cookie deletion. |
 | A missing response raises AssertionError, and a bare Domain or Path attribute can cause a later type error (`mitmproxy/addons/stickycookie.py:60-68`). | Missing responses return a hook error. Valueless Domain and Path attributes use the request domain and root path. | Malformed hand-built flows and cookie attributes must not panic. |
 | Cookie-domain comparisons use the reference Python Unicode lowercase database (`http.cookiejar`, used by `mitmproxy/addons/stickycookie.py:27-32`). | Uses the pinned x/text lowercase tables, preserving lowercase expansions and contextual mappings. | Unicode assignments can differ between runtime versions. |
+
+## addons/stickyauth
+
+| Upstream | Go | Reason |
+|---|---|---|
+| Authorization retention by host is unbounded (`mitmproxy/addons/stickyauth.py:35`). | Holds at most 100,000 hosts and 16 MiB of retained string bytes. Overflow drops growing writes without failing the flow and warns once until a smaller overwrite releases bytes. Existing values remain usable; disabling the option retains the jar. | Bound traffic-driven state without turning a retention limit into a flow error. |

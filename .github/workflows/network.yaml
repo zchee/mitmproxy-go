@@ -2,6 +2,10 @@ name: Network gates
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
 
 permissions:
   contents: read
@@ -18,7 +22,8 @@ jobs:
   network-gates:
     name: isolated network gates
     runs-on: ubuntu-26.04
-    timeout-minutes: 60
+    # Scenario deadlines total 61 minutes; setup and evidence upload need margin.
+    timeout-minutes: 75
     env:
       NETWORK_GATE_OUTPUT: ${{ github.workspace }}/_test/network-gate
       HTTP_LOAD_TAG: h2load

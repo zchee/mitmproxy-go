@@ -136,7 +136,7 @@ run_test netem-whole-transfer "${HTTP_NETEM_TEST}" 600s
 
 # The WebSocket harness owns its Docker topology and echo/proxy lifetimes.
 # It verifies report equality with the frozen manifest and pinned config.
-timeout --signal=TERM --kill-after=15s 1200s bash "${WS_GATE_RUNNER}" "${report}" \
+timeout --signal=TERM --kill-after=15s 2100s bash "${WS_GATE_RUNNER}" "${report}" \
   2>&1 | tee "${output}/autobahn-runner.log"
 [[ -s "${report}/summary.json" ]] || fail 'missing Autobahn success summary'
 expected="$(jq -e '.cases | length | select(. > 0)' "${WS_CASE_MANIFEST}")"

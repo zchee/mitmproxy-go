@@ -875,7 +875,8 @@ func (o *owner) frame(frame http2.Frame) error {
 		o.e.draining.Store(true)
 		o.connectionEvents = append(o.connectionEvents, Event{Kind: GoAway, Code: f.ErrCode, LastStreamID: f.LastStreamID, Err: errors.New("HTTP/2 connection closed: " + string(f.DebugData()))})
 		for _, s := range o.streams {
-			if s.id.Stream > f.LastStreamID || f.ErrCode != http2.ErrCodeNo {
+			locallyInitiated := (s.id.Stream%2 == 1) == o.e.cfg.Client
+			if locallyInitiated && s.id.Stream > f.LastStreamID || f.ErrCode != http2.ErrCodeNo {
 				o.cancel(s, f.ErrCode, streamError(s.id, f.ErrCode, "h2: stream rejected by GOAWAY"), false)
 			}
 		}

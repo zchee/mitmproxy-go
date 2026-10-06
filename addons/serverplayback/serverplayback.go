@@ -20,6 +20,7 @@ import (
 	"github.com/zchee/mitmproxy-go/command"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/flowio"
+	"github.com/zchee/mitmproxy-go/flowio/har"
 	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/internal/pyrepr"
 	"github.com/zchee/mitmproxy-go/master"
@@ -131,7 +132,7 @@ func (s *ServerPlayback) loadFile(ctx context.Context, path command.Path) error 
 
 const (
 	maxReplayBytes = 512 << 20
-	maxReplayFlows = 100_000
+	maxReplayFlows = har.MaxEntries
 )
 
 func (s *ServerPlayback) readFiles(ctx context.Context, paths []string) ([]flow.Flow, error) {

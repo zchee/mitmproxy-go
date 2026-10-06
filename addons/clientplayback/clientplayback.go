@@ -18,6 +18,7 @@ import (
 	"github.com/zchee/mitmproxy-go/command"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/flowio"
+	"github.com/zchee/mitmproxy-go/flowio/har"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layers/httplayer"
@@ -28,7 +29,7 @@ import (
 
 const (
 	maxReplayBytes       = 512 << 20
-	maxReplayFlows       = 100_000
+	maxReplayFlows       = har.MaxEntries
 	maxConcurrentReplays = 256
 )
 

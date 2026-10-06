@@ -13,7 +13,7 @@ require (
 	github.com/pion/dtls/v3 v3.1.10
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	github.com/zchee/gows v0.0.0-20261006062814-16c3f85b709c
+	github.com/zchee/gows v0.0.0-20261006110802-d2e6bd7053f3
 	go.uber.org/goleak v1.3.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.design/x/clipboard v0.11.0

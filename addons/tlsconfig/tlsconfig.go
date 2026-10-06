@@ -197,6 +197,9 @@ func (t *TLSConfig) TLSClientHello(ctx context.Context, d *hookdata.ClientHello)
 // as the client connection's MitmCert; the TLS layer replaces it only when a
 // handshake certificate is present.
 func (t *TLSConfig) TLSStartClient(ctx context.Context, d *hookdata.TLS) error {
+	if d.IsDTLS {
+		return t.dtlsStartClient(ctx, d)
+	}
 	if d.Config != nil {
 		return nil
 	}
@@ -283,6 +286,9 @@ func (t *TLSConfig) TLSStartClient(ctx context.Context, d *hookdata.TLS) error {
 // server (py:mitmproxy/addons/tlsconfig.py:273-377). It returns early when a
 // user addon already provided one.
 func (t *TLSConfig) TLSStartServer(ctx context.Context, d *hookdata.TLS) error {
+	if d.IsDTLS {
+		return t.dtlsStartServer(ctx, d)
+	}
 	if d.Config != nil {
 		return nil
 	}

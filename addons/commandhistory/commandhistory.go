@@ -39,6 +39,9 @@ func New(opts *options.Manager) *Addon {
 	return &Addon{options: opts, history: []string{}, filteredHistory: []string{""}, vacuumSize: 1024}
 }
 
+// Name identifies the addon with upstream's spelling.
+func (*Addon) Name() string { return "commandhistory" }
+
 // Load registers the persistence option and history commands.
 func (a *Addon) Load(ctx context.Context, loader *addon.Loader) error {
 	if err := loader.AddOption(ctx, "command_history", options.TypeBool, true, "Persist command history between mitmproxy invocations."); err != nil {

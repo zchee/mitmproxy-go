@@ -28,6 +28,9 @@ type Addon struct{}
 // New returns a cut addon.
 func New() *Addon { return &Addon{} }
 
+// Name identifies the addon with upstream's spelling.
+func (*Addon) Name() string { return "cut" }
+
 // Load registers the cut commands. The addon has no options.
 func (a *Addon) Load(_ context.Context, loader *addon.Loader) error {
 	if err := loader.AddCommand("cut", a.cut, command.WithParams("flows", "cuts"), command.WithHelp(`Cut data from a set of flows. Cut specifications are attribute paths

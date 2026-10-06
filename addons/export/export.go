@@ -27,6 +27,9 @@ type Addon struct{ options *options.Manager }
 // New returns an export addon using opts.
 func New(opts *options.Manager) *Addon { return &Addon{options: opts} }
 
+// Name identifies the addon with upstream's spelling.
+func (*Addon) Name() string { return "export" }
+
 // Load registers the export option and commands.
 func (a *Addon) Load(ctx context.Context, loader *addon.Loader) error {
 	if err := loader.AddOption(ctx, "export_preserve_original_ip", options.TypeBool, false, `

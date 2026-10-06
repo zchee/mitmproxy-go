@@ -19,6 +19,8 @@ import (
 const (
 	maxPatternBytes = 1 << 20
 	maxSubBytes     = 256 << 20
+	maxSubMatches   = 1 << 20
+	maxMatchBytes   = 1 << 20
 )
 
 // Pattern is a concurrent-safe Python expression with captures and substitution.
@@ -27,11 +29,16 @@ const (
 // interpreted as Latin-1 rather than UTF-8.
 //
 // Patterns are limited to 1 MiB; subjects, templates and substituted outputs are
-// limited to 256 MiB. Every fallback search is bounded by MatchTimeout.
+// limited to 256 MiB. Substitution permits at most 1,048,576 matches. RE2
+// substitutions retain only the current match when the pattern has no
+// anchors or boundaries; context-sensitive patterns retain a whole-subject
+// table bounded to 1 MiB of estimated index storage and reject excess matches.
+// Every fallback search is bounded by MatchTimeout.
 // Search and Sub report abandoned searches as errors without calling Logger.
 // Match and MatchString instead log abandoned searches and return false.
 type Pattern struct {
 	re           *regexp.Regexp
+	contextual   bool
 	bt, nonempty *regexp2.Regexp
 	pattern      string
 	flags        Flags
@@ -83,6 +90,7 @@ func CompilePattern(pattern string, flags Flags) (*Pattern, error) {
 		if tree, err := syntax.Parse(src, syntax.Perl); err == nil && !foreignBoundary(tree, tr.unicodeBoundary) && !emptyPattern(tree) {
 			if dollar, _ := pythonDollars(tree, true); !dollar {
 				if p.re, err = regexp.Compile(src); err == nil {
+					p.contextual = contextualPattern(tree)
 					return p, nil
 				}
 			}
@@ -134,6 +142,15 @@ func byteFoldLiteral(t *classTranslator, text string) bool {
 	t.re2.WriteString(expr.exact())
 	t.bt.WriteString(expr.backtrackExact())
 	return true
+}
+
+func contextualPattern(re *syntax.Regexp) bool {
+	switch re.Op {
+	case syntax.OpBeginLine, syntax.OpEndLine, syntax.OpBeginText, syntax.OpEndText, syntax.OpWordBoundary, syntax.OpNoWordBoundary:
+		return true
+	default:
+		return slices.ContainsFunc(re.Sub, contextualPattern)
+	}
 }
 
 func emptyPattern(re *syntax.Regexp) bool {
@@ -282,14 +299,68 @@ func (p *Pattern) SubString(replacement, subject string, count int) (string, err
 		return nil
 	}
 	if p.re != nil {
-		n := count
-		if n == 0 {
-			n = -1
+		// Account for slice headers, capture indices and growth headroom.
+		bytesPerMatch := 64 + 32*(p.re.NumSubexp()+1)
+		tableLimit := maxMatchBytes / bytesPerMatch
+		if tableLimit == 0 {
+			return "", errors.New("regex: capture table exceeds working-memory budget")
 		}
-		for _, idx := range p.re.FindAllStringSubmatchIndex(input.text, n) {
-			if err := apply(input.re2Match(idx)); err != nil {
-				return "", err
+		limit := maxSubMatches
+		if count > 0 {
+			limit = min(count, limit)
+		}
+		m := &Match{Groups: make([]string, p.groups+1), Spans: make([][2]int, p.groups+1)}
+		position, replaced := 0, 0
+		for position <= len(input.text) {
+			n := 1
+			if p.contextual {
+				// One extra match detects overflow without an unbounded table.
+				n = min(tableLimit, limit) + 1
 			}
+			var indices [][]int
+			if p.contextual {
+				indices = p.re.FindAllStringSubmatchIndex(input.text, n)
+			} else if idx := p.re.FindStringSubmatchIndex(input.text[position:]); idx != nil {
+				indices = [][]int{idx}
+			}
+			if p.contextual && len(indices) > min(tableLimit, limit) {
+				// A caller's smaller count is not a budget violation.
+				if count > 0 && count <= min(tableLimit, maxSubMatches) {
+					indices = indices[:count]
+				} else {
+					return "", errors.New("regex: too many matches")
+				}
+			}
+			end := position
+			for _, idx := range indices {
+				if replaced == limit {
+					return "", errors.New("regex: too many matches")
+				}
+				end = position + idx[1]
+				for i := range m.Groups {
+					start, finish := idx[2*i], idx[2*i+1]
+					m.Groups[i] = ""
+					if start >= 0 {
+						start, finish = start+position, finish+position
+						if input.encodedOffsets != nil {
+							start, finish = input.encodedOffsets[start], input.encodedOffsets[finish]
+						}
+						m.Groups[i] = subject[start:finish]
+					}
+					m.Spans[i] = [2]int{start, finish}
+				}
+				if err := apply(m); err != nil {
+					return "", err
+				}
+				replaced++
+				if count > 0 && replaced == count {
+					break
+				}
+			}
+			if p.contextual || len(indices) < n || count > 0 && replaced == count {
+				break
+			}
+			position = end
 		}
 	} else {
 		position, replaced, retry := 0, 0, false
@@ -309,6 +380,9 @@ func (p *Pattern) SubString(replacement, subject string, count int) (string, err
 			}
 			if m == nil {
 				break
+			}
+			if replaced == maxSubMatches {
+				return "", errors.New("regex: too many matches")
 			}
 			if err := apply(p.backtrackMatch(input, m)); err != nil {
 				return "", err

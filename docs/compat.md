@@ -173,6 +173,8 @@ No behavioural differences.
 | `re.Match.span` counts Unicode code points for string patterns (`re`, used by `mitmproxy/addons/maplocal.py`). | Capture spans are half-open byte offsets into the original input in both string and bytes modes; unmatched groups use `[-1, -1]`. | Go slices strings by byte offset. Captured text is unchanged. |
 | Case-insensitive bytes backreferences fold ASCII only: `re.search(rb'(?i)(.)\1', b'\xc0\xe0')` returns no match (`re`, used by `mitmproxy/addons/modifybody.py`). | `CompilePattern` matches both bytes in this example. Byte literals and classes have ASCII-only folding, but fallback backreferences retain the engine's Unicode folding. | `regexp2` has no ASCII-only case-insensitive backreference mode. Bytes are otherwise interpreted as Latin-1 in the capture/substitution API, unlike the existing filter matcher. |
 
+| Python substitutes without a match-count or capture-table budget (`re.sub`, `mitmproxy/addons/modifybody.py`). | Substitution permits at most 1,048,576 matches on either engine and returns `regex: too many matches` without partial output on overflow. Context-free RE2 expressions retain only the current match; expressions with anchors or boundaries search the whole subject with a 1 MiB estimated index-table budget, including capture-count and growth headroom, and reject excessive tables. | Avoid eager all-match allocation while preserving whole-subject anchors, word boundaries, empty-match retry and count semantics. Fallback timeouts remain per search, not a whole-substitution deadline. |
+
 Reproduced on purpose (compatibility, not differences):
 
 - Python's `$` (end of input or before a final newline) in filter patterns, by rewriting a `$` at the end of a pattern

@@ -8,11 +8,14 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"testing"
+
+	gocmp "github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/internal/testutil"
 )
@@ -117,7 +120,7 @@ func TestFromStoreCreate(t *testing.T) {
 				t.Fatal(err)
 			}
 			wantMode := publicInfo.Mode().Perm()
-			if name == "mitmproxy-ca.pem" || name == "mitmproxy-ca.p12" {
+			if name == "mitmproxy-ca.pem" || name == "mitmproxy-ca.p12" || name == "mitmproxy-dhparam.pem" {
 				wantMode &= 0o600
 			}
 			if info.Mode().Perm() != wantMode {
@@ -268,6 +271,64 @@ func TestFromFilesPathErrors(t *testing.T) {
 			store, err := FromFiles(tt.ca, tt.dh, nil)
 			if _, ok := errors.AsType[*os.PathError](err); !ok || store != nil {
 				t.Fatalf("FromFiles returned store=%t, error=%v; want nil store and filesystem error", store != nil, err)
+			}
+		})
+	}
+}
+
+func TestCreateStorePreservesExistingFiles(t *testing.T) {
+	tests := map[string]struct{ name string }{
+		"success: existing CA PEM":        {name: "mitmproxy-ca.pem"},
+		"success: existing key bundle":    {name: "mitmproxy-ca.p12"},
+		"success: existing DH parameters": {name: "mitmproxy-dhparam.pem"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, tt.name)
+			want := []byte("existing store file must not be overwritten")
+			if err := os.WriteFile(path, want, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := createStore(dir, "mitmproxy", 2048); err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := gocmp.Diff(want, got); diff != "" {
+				t.Errorf("existing store file changed (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestFromStoreRefusesWritableDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows file modes do not describe directory ACL write access")
+	}
+	tests := map[string]struct{ mode os.FileMode }{
+		"error: group writable": {mode: 0o770},
+		"error: world writable": {mode: 0o707},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.Chmod(dir, tt.mode); err != nil {
+				t.Fatal(err)
+			}
+			store, err := FromStore(dir, "mitmproxy", 2048, nil)
+			want := fmt.Sprintf("certs: configuration directory %s is writable by other users (mode %s); refusing to write the CA", dir, tt.mode)
+			if err == nil || err.Error() != want || store != nil {
+				t.Fatalf("FromStore() returned store=%t, error=%v, want (nil, %q)", store != nil, err, want)
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("refused directory received %d store files", len(entries))
 			}
 		})
 	}

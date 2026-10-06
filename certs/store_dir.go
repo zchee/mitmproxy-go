@@ -56,7 +56,10 @@ func FromFiles(caFile, dhparamFile string, passphrase []byte) (*Store, error) {
 		if !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
-		if err := os.WriteFile(dhparamFile, []byte(DefaultDHParam), 0o666); err != nil { //nolint:gosec // The DH parameters are public, like the certificate files.
+		if err := checkStoreDirectory(filepath.Dir(dhparamFile)); err != nil {
+			return nil, err
+		}
+		if err := writeStoreFile(dhparamFile, []byte(DefaultDHParam), 0o600); err != nil && !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
 	}
@@ -83,12 +86,13 @@ func FromFiles(caFile, dhparamFile string, passphrase []byte) (*Store, error) {
 	}, nil
 }
 
-// createStore writes mitmproxy's configuration-directory file set for a
-// new CA. The two key-bearing files are created readable by the owner
-// only; the public files use the regular default mode under the
-// process's umask, which is never modified.
+// createStore writes a new CA without replacing existing store files. Key
+// files and DH parameters are owner-only; certificates use the process umask.
 func createStore(path, basename string, keySize int) error {
-	if err := os.MkdirAll(path, 0o777); err != nil { //nolint:gosec // The configuration directory is public; the process umask applies.
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return err
+	}
+	if err := checkStoreDirectory(path); err != nil {
 		return err
 	}
 	key, ca, err := CreateCA(basename, basename, keySize)
@@ -111,12 +115,28 @@ func createStore(path, basename string, keySize int) error {
 		{basename + "-ca-cert.pem", certPEM, 0o666},
 		{basename + "-ca-cert.cer", certPEM, 0o666},
 		{basename + "-ca-cert.p12", certBundle, 0o666},
-		{basename + "-dhparam.pem", []byte(DefaultDHParam), 0o666},
+		{basename + "-dhparam.pem", []byte(DefaultDHParam), 0o600},
 	}
 	for _, file := range files {
-		if err := os.WriteFile(filepath.Join(path, file.name), file.content, file.mode); err != nil { //nolint:gosec // The non-secret files are public by design; key-bearing files pass 0600.
+		if err := writeStoreFile(filepath.Join(path, file.name), file.content, file.mode); err != nil {
+			if errors.Is(err, os.ErrExist) {
+				if file.name == basename+"-ca.pem" {
+					// Another creator owns this CA identity and its companion files.
+					return nil
+				}
+				continue
+			}
 			return fmt.Errorf("certs: write %s: %w", file.name, err)
 		}
 	}
 	return nil
+}
+
+func writeStoreFile(path string, content []byte, mode os.FileMode) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode) //nolint:gosec // Public certificates use the process umask; secret files pass 0600.
+	if err != nil {
+		return err
+	}
+	_, err = file.Write(content)
+	return errors.Join(err, file.Close())
 }

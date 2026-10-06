@@ -5,11 +5,11 @@ package main
 
 import (
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/zchee/gows"
@@ -17,13 +17,19 @@ import (
 
 func preferredListener(address string) (net.Listener, error) {
 	listener, err := net.Listen("tcp", address)
-	if !errors.Is(err, syscall.EADDRINUSE) {
-		return listener, err
+	if err == nil {
+		return listener, nil
 	}
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
+	// Operating systems encode bind errors differently; keep malformed or
+	// unresolved addresses fatal, but a preferred socket is optional.
+	if listenErr, ok := errors.AsType[*net.OpError](err); !ok || listenErr.Op != "listen" || listenErr.Addr == nil {
 		return nil, err
 	}
+	host, _, splitErr := net.SplitHostPort(address)
+	if splitErr != nil {
+		return nil, splitErr
+	}
+	slog.Warn("Preferred listener unavailable; using an ephemeral port", "address", address, "error", err)
 	return net.Listen("tcp", net.JoinHostPort(host, "0"))
 }
 

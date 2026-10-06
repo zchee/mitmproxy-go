@@ -406,7 +406,7 @@ func (s *lazyServer) needsReadCredit() bool {
 	return false
 }
 
-func (s *lazyServer) waitStreamDone(ctx context.Context) <-chan struct{} {
+func (s *lazyServer) waitStreamFailed(ctx context.Context) <-chan struct{} {
 	select {
 	case <-s.ready:
 	case <-ctx.Done():
@@ -416,9 +416,9 @@ func (s *lazyServer) waitStreamDone(ctx context.Context) <-chan struct{} {
 	endpoint := s.endpoint
 	s.mu.Unlock()
 	if endpoint, ok := endpoint.(interface {
-		waitStreamDone(context.Context) <-chan struct{}
+		waitStreamFailed(context.Context) <-chan struct{}
 	}); ok {
-		return endpoint.waitStreamDone(ctx)
+		return endpoint.waitStreamFailed(ctx)
 	}
 	return ctx.Done()
 }

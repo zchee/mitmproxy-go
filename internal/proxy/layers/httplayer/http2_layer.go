@@ -139,7 +139,7 @@ func (o *httpOrigins) acquire(ctx context.Context, c *layer.Context, conn layer.
 	if err != nil {
 		return nil, nil, err
 	}
-	endpoint := &http2Client{engine: engine, identity: identity, id: stream.id, normalize: settings.normalize, logger: c.Logger, clock: c.Clock}
+	endpoint := &http2Client{engine: engine, failureDone: engine.StreamFailed(identity), identity: identity, id: stream.id, normalize: settings.normalize, logger: c.Logger, clock: c.Clock}
 	release := func() {
 		select {
 		case <-engine.StreamDone(identity):
@@ -207,7 +207,7 @@ func (l *httpLayer) runHTTP2(ctx context.Context, c *layer.Context, settings htt
 		if settings.upgrade != nil && head.Identity.Stream == 1 {
 			stream.flow, stream.seededUpgrade = settings.upgradeFlow, true
 		}
-		client := &http2Server{engine: engine, identity: head.Identity, id: stream.id, normalize: settings.normalize, logger: c.Logger, clock: c.Clock, head: &head}
+		client := &http2Server{engine: engine, failureDone: engine.StreamFailed(head.Identity), identity: head.Identity, id: stream.id, normalize: settings.normalize, logger: c.Logger, clock: c.Clock, head: &head}
 		server := &lazyServer{ready: make(chan struct{})}
 		server.acquire = func(ctx context.Context, request *httpmsg.Request) (ServerEndpoint, error) {
 			return l.connect(ctx, exchange, stream, request, wire, origins, setup, server)

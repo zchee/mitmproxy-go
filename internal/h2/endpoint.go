@@ -78,6 +78,23 @@ func (e *Endpoint) StreamDone(id layer.StreamIdentity) <-chan struct{} {
 	return done
 }
 
+// StreamFailed observes unsuccessful stream termination without consuming events.
+// Its channel closes on reset, cancellation, GOAWAY exclusion or connection
+// failure, but stays open on successful completion. Register it while the stream
+// is live; unknown and foreign identities return an already-closed channel.
+func (e *Endpoint) StreamFailed(id layer.StreamIdentity) <-chan struct{} {
+	r := newRequest(context.TODO(), streamFailed)
+	r.id = id
+	if e.started.Load() {
+		if _, err := e.call(r); err == nil && r.done != nil {
+			return r.done
+		}
+	}
+	done := make(chan struct{})
+	close(done)
+	return done
+}
+
 // Budget returns a synchronized immutable observation of reservations and
 // their maximum. The owner asserts the budget on every grant/release.
 func (e *Endpoint) Budget() layer.BudgetSnapshot { return *e.budget.Load() }

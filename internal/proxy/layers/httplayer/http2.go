@@ -24,6 +24,7 @@ import (
 // own stream identity even when the other endpoint uses HTTP/1.
 type http2Stream struct {
 	engine      *h2.Endpoint
+	failureDone <-chan struct{}
 	identity    layer.StreamIdentity
 	id          StreamID
 	normalize   bool
@@ -50,8 +51,19 @@ func (s *http2Stream) needsReadCredit() bool {
 	return len(s.queue) == 0 && !s.receivedEnd
 }
 
-func (s *http2Stream) waitStreamDone(context.Context) <-chan struct{} {
-	return s.engine.StreamDone(s.identity)
+func (s *http2Stream) waitStreamFailed(context.Context) <-chan struct{} {
+	if s.failureDone != nil {
+		return s.failureDone
+	}
+	return s.engine.StreamFailed(s.identity)
+}
+
+func (s *http2Stream) receiveFailure(ctx context.Context) error {
+	event, err := s.engine.ReceiveStream(ctx, s.identity)
+	if err != nil {
+		return err
+	}
+	return event.Err
 }
 
 func (s *http2Stream) receive(ctx context.Context, request bool, head *h2.Event) (Event, error) {

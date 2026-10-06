@@ -128,6 +128,7 @@ const (
 	shutdown
 	waitSendCredit
 	streamDone
+	streamFailed
 )
 
 func newRequest(ctx context.Context, kind requestKind) *request {

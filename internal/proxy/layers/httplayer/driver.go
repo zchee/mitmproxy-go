@@ -65,9 +65,13 @@ type streamDriver struct {
 	beforeRequest func()
 }
 
+var errEndpointFailed = errors.New("HTTP stream endpoint failed")
+
 func (d *streamDriver) run(ctx context.Context) (err error) {
 	ctx, cancel := context.WithCancelCause(ctx)
-	clientTerminal, terminateClient := context.WithCancel(ctx)
+	clientTerminal, terminate := context.WithCancelCause(ctx)
+	terminateClient := func() { terminate(nil) }
+	terminateStream := func() { terminate(errEndpointFailed) }
 	defer terminateClient()
 	d.stream.clientTerminal, d.stream.cancel = clientTerminal, cancel
 	var workers sync.WaitGroup
@@ -109,16 +113,21 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 			permits[i] = make(chan driverPermit)
 		}
 		if endpoint, ok := endpoint.(interface {
-			waitStreamDone(context.Context) <-chan struct{}
+			waitStreamFailed(context.Context) <-chan struct{}
 		}); ok {
 			workers.Go(func() {
 				select {
-				case <-endpoint.waitStreamDone(ctx):
-					terminateClient()
+				case <-endpoint.waitStreamFailed(ctx):
+					terminateStream()
 				case <-ctx.Done():
 				}
 			})
 		}
+	}
+	if _, ok := d.client.(interface {
+		waitStreamFailed(context.Context) <-chan struct{}
+	}); ok {
+		terminateClient = terminateStream
 	}
 	workers.Go(func() { readRequests(ctx, terminateClient, d.client, requestReads, failures, permits[0]) })
 	workers.Go(func() { readResponses(ctx, d.server, responseReads, failures, permits[1]) })
@@ -369,8 +378,8 @@ func writeEvents(ctx context.Context, input <-chan driverWrite, output chan<- dr
 	}
 }
 
-// runHook cancels an intercepted wait when any client reader terminates,
-// without suppressing ordinary protocol-error hooks on unpaused flows.
+// runHook resumes an intercepted wait when an endpoint fails, preserving the
+// protocol failure for the exchange owner to record after the hook returns.
 func (s *httpStream) runHook(ctx context.Context, prepare func(context.Context) error, hook addon.Hook) (*layer.Snapshot, error) {
 	if s.clientTerminal == nil {
 		return s.c.Hooks.FireFunc(ctx, prepare, hook)
@@ -395,7 +404,11 @@ func (s *httpStream) runHook(ctx context.Context, prepare func(context.Context) 
 			defer close(done)
 			_ = s.c.Do(ctx, func(context.Context) error {
 				if s.flow.Intercepted() {
-					s.cancel(io.EOF)
+					if errors.Is(context.Cause(s.clientTerminal), errEndpointFailed) {
+						s.flow.Resume()
+					} else {
+						s.cancel(io.EOF)
+					}
 				}
 				return nil
 			})
@@ -436,7 +449,16 @@ func readRequests(ctx context.Context, terminate context.CancelFunc, endpoint Cl
 			case <-ctx.Done():
 				return
 			}
-			if client, ok := endpoint.(*http1Server); ok {
+			if observer, ok := endpoint.(interface {
+				waitStreamFailed(context.Context) <-chan struct{}
+				receiveFailure(context.Context) error
+			}); ok {
+				select {
+				case <-observer.waitStreamFailed(ctx):
+					failure.err = observer.receiveFailure(ctx)
+				case <-ctx.Done():
+				}
+			} else if client, ok := endpoint.(*http1Server); ok {
 				failure.err = client.readWait(ctx)
 				if len(client.queue) != 0 {
 					failure.event = client.queue[0]
@@ -507,7 +529,7 @@ func takeEndpointReceipt(endpoint any) layer.ConsumptionReceipt {
 // consuming more source DATA or cancelling an unrelated multiplexed stream.
 func driverReaderContext(ctx context.Context, endpoint any) (context.Context, context.CancelFunc) {
 	observer, ok := endpoint.(interface {
-		waitStreamDone(context.Context) <-chan struct{}
+		waitStreamFailed(context.Context) <-chan struct{}
 	})
 	if !ok {
 		return ctx, func() {}
@@ -517,7 +539,7 @@ func driverReaderContext(ctx context.Context, endpoint any) (context.Context, co
 	go func() {
 		defer close(done)
 		select {
-		case <-observer.waitStreamDone(readCtx):
+		case <-observer.waitStreamFailed(readCtx):
 			cancel()
 		case <-readCtx.Done():
 		}

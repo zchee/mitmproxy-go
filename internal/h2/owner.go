@@ -28,6 +28,7 @@ type queuedEvent struct {
 type streamState struct {
 	id             layer.StreamIdentity
 	done           chan struct{}
+	failureDone    chan struct{}
 	window         streamWindow
 	outWindow      int64
 	queue          []queuedEvent
@@ -45,6 +46,14 @@ type streamState struct {
 	received       int64
 	requestMethod  string
 	responseStatus string
+}
+
+func (s *streamState) closeFailure() {
+	select {
+	case <-s.failureDone:
+	default:
+		close(s.failureDone)
+	}
 }
 
 func (s *streamState) closeDone() {
@@ -445,7 +454,7 @@ func (o *owner) newStream(id uint32) *streamState {
 			return nil
 		}
 	}
-	s := &streamState{id: layer.StreamIdentity{Endpoint: o.e.cfg.Descriptor.Identity, Stream: id}, done: make(chan struct{}), outWindow: o.peerInitial, contentLength: -1}
+	s := &streamState{id: layer.StreamIdentity{Endpoint: o.e.cfg.Descriptor.Identity, Stream: id}, done: make(chan struct{}), failureDone: make(chan struct{}), outWindow: o.peerInitial, contentLength: -1}
 	if !o.budget.reserve(&s.window) {
 		return nil
 	}
@@ -481,6 +490,9 @@ func (o *owner) request(r *request) {
 	case streamDone:
 		r.done = s.done
 		r.complete(Event{}, nil)
+	case streamFailed:
+		r.done = s.failureDone
+		r.complete(Event{}, nil)
 	case receiveStream:
 		if s.receiver != nil {
 			r.complete(Event{}, errors.New("h2: concurrent stream Receive"))
@@ -504,6 +516,10 @@ func (o *owner) request(r *request) {
 		}
 		s.creditWaiter = r
 	case send:
+		if failure, ok := errors.AsType[*StreamError](s.failed); ok {
+			r.complete(Event{}, failure)
+			return
+		}
 		if s.failed != nil || s.localEnd {
 			r.complete(Event{}, streamError(r.id, http2.ErrCodeStreamClosed, "h2: stream closed"))
 			return
@@ -684,6 +700,7 @@ func (o *owner) cancel(s *streamState, code http2.ErrCode, err error, sendReset 
 		o.discardPrepared()
 	}
 	s.failed = err
+	s.closeFailure()
 	s.closeDone()
 	if s.receipt != nil {
 		s.receipt.Invalidate()
@@ -733,6 +750,9 @@ func (o *owner) closeAll(err error) {
 		err = io.EOF
 	}
 	for _, s := range o.streams {
+		if !s.localEnd || !s.remoteEnd {
+			s.closeFailure()
+		}
 		s.closeDone()
 		if s.receipt != nil {
 			s.receipt.Invalidate()

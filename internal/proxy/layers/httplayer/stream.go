@@ -62,7 +62,7 @@ type httpStream struct {
 	connectRequest bool
 	priorKnowledge bool
 	clientClosed   func() bool
-	// clientTerminal is notified by readers; cancel wakes an intercepted hook.
+	// clientTerminal is notified by failed endpoints to resume intercepted hooks.
 	clientTerminal context.Context
 	cancel         context.CancelCauseFunc
 	// connectEstablished reports the stream answered a CONNECT with a 2xx:

@@ -72,13 +72,13 @@ Anything not listed here is meant to behave as upstream does; a difference that 
 |---|---|---|
 | HAR objects retain Python dictionary insertion order (`mitmproxy/addons/savehar.py`). | Exported HAR objects sort keys; arrays, duplicate fields and all JSON values retain upstream semantics. | Deterministic standard-library JSON output; HAR consumers do not depend on object key order. Float spelling and ASCII/surrogateescape string spelling follow Python. |
 | `.zhar` uses Python's zlib encoder at level 9 (`mitmproxy/addons/savehar.py`). | Uses Go's standard zlib encoder at level 9. The decompressed HAR is equivalent; compressed bytes may differ. | Compression streams depend on the encoder implementation; both encodings are readable by zlib. |
-| `save.har` and `hardump` create files with mode 0666 under the process umask (`mitmproxy/addons/savehar.py`). | New HAR and compressed HAR files are created with mode 0600; existing files retain their permissions. | Recordings contain bodies, cookies and headers that may contain credentials, matching the port's save, export and cut file policy. |
+| `save.har` and `hardump` create files with mode 0666 under the process umask (`mitmproxy/addons/savehar.py`). | On Unix, new HAR and compressed HAR files use mode 0600 and existing files are narrowed to 0600; symlinks and foreign-owned targets are refused. See [internal/privfile](#internalprivfile) for the Windows caveat. | Recordings contain bodies, cookies and headers that may contain credentials, matching the port's save, export and cut file policy. |
 
 ## addons/save
 
 | Upstream behaviour | Go behaviour | Reason |
 |---|---|---|
-| Stream and `save.file` outputs use mode 0666 under the process umask (`mitmproxy/addons/save.py`). | New recording files use mode 0600 in both overwrite and append modes; existing files retain their permissions. Authentication metadata is preserved as upstream records it. | Flow recordings can contain passwords, cookies and bodies; restrict new files to their owner rather than remove compatible metadata. |
+| Stream and `save.file` outputs use mode 0666 under the process umask (`mitmproxy/addons/save.py`). | On Unix, new recording files use mode 0600 in both overwrite and append modes and existing files are narrowed to 0600; symlinks and foreign-owned targets are refused. Authentication metadata is preserved as upstream records it. See [internal/privfile](#internalprivfile) for the Windows caveat. | Flow recordings can contain passwords, cookies and bodies; restrict output files to their owner rather than remove compatible metadata. |
 | Stream paths use local, naive `datetime.today().strftime`, including the host C library's locale and directive extensions (`mitmproxy/addons/save.py`). | Uses timefmt-go v0.1.9 with local wall-clock fields; bare `%z` and `%Z` render empty and `%%` remains escaped. `E`/`O` modifiers are not interpreted: `%EC`, `%Ey`, `%EY`, `%Od` and `%Om` remain literal. Unsupported directives such as `%q` also remain literal, including `%`; Python's result is platform-dependent. Month/day names and composite formats use timefmt-go's English/C-style output rather than the process locale. Other modifiers and extensions follow timefmt-go. | Use the pure-Go formatter without recreating platform-specific libc strftime. `TestStrftimePath` checks the naive timezone rules, escaped percents and literal unsupported directives. |
 
 ## connection
@@ -548,7 +548,7 @@ TLS and protocol layers:
 
 | Upstream behaviour | Go behaviour | Reason |
 |---|---|---|
-| `export.file` creates files with mode 0666 under the process umask (`mitmproxy/addons/export.py:199`). | New files are created with mode 0600; existing files retain their permissions. | Exported bodies and headers may contain credentials. |
+| `export.file` creates files with mode 0666 under the process umask (`mitmproxy/addons/export.py:199`). | On Unix, new files use mode 0600 and existing files are narrowed to 0600; symlinks and foreign-owned targets are refused. See [internal/privfile](#internalprivfile) for the Windows caveat. | Exported bodies and headers may contain credentials. |
 | `export` returns a Unicode string after surrogateescape encoding and backslashreplace decoding (`mitmproxy/addons/export.py:226-232`). | Returns UTF-8 bytes, replacing each invalid UTF-8 byte with the literal `\xNN`; file exports retain raw bytes. | Go bytes have no surrogate code points; this preserves the upstream display conversion with the command's byte result type. |
 | Clipboard support is always imported and runtime failures are logged (`mitmproxy/addons/export.py:207-216`). | `export.clip` is always registered, but without the `clipboard` build tag returns `export.clip: clipboard support is not compiled in (build with -tags clipboard)`. Tagged builds use golang.design/x/clipboard and log runtime errors. | Keep default builds independent of desktop clipboard support. |
 | File and clipboard errors contain Python's OS/library diagnostics (`mitmproxy/addons/export.py:205,216`). | Log Go OS/library diagnostics. | Error details come from the runtime and clipboard library in use. |
@@ -582,7 +582,7 @@ TLS and protocol layers:
 
 | Upstream behaviour | Go behaviour | Reason |
 |---|---|---|
-| `cut.save` creates files with mode 0666 under the process umask (`mitmproxy/addons/cut.py:125,136`). | New files are created with mode 0600; existing permissions are unchanged. | Extracted headers and bodies may contain credentials. |
+| `cut.save` creates files with mode 0666 under the process umask (`mitmproxy/addons/cut.py:125,136`). | On Unix, new files use mode 0600 and existing files are narrowed to 0600; symlinks and foreign-owned targets are refused. See [internal/privfile](#internalprivfile) for the Windows caveat. | Extracted headers and bodies may contain credentials. |
 | `extract` traverses arbitrary Python attributes and formats arbitrary objects with `str` (`mitmproxy/addons/cut.py:48-72`). | Traverses the Go model's exported fields using Python-style names and its explicitly supported computed properties. Unknown attributes return empty text. Nonprimitive model objects use their Go text representation. | Go models do not carry dynamic Python instance attributes or bound Python methods. |
 | Clipboard support is always available to import; backend errors use pyperclip text (`mitmproxy/addons/cut.py:150-176`). | `cut.clip` is registered in every build. Without the `clipboard` tag it returns `cut.clip: clipboard support is not compiled in (build with -tags clipboard)`; tagged builds log clipboard-library failures. | Desktop clipboard support remains opt-in. |
 | File errors use Python's OS diagnostic text (`mitmproxy/addons/cut.py:147-148`). | Logs Go OS diagnostic text. | The runtime supplies filesystem diagnostics. |
@@ -598,7 +598,7 @@ TLS and protocol layers:
 |---|---|---|
 | History files are read without a size limit (`mitmproxy/addons/command_history.py:38`). | Refuses files larger than 16 MiB before splitting lines; an unsuccessful reload retains current history. | Bound memory used by configuration-file loading under the addon dispatch lock. |
 | History text uses Python's default text-file encoding (`mitmproxy/addons/command_history.py:38,46,58`). | Uses strict UTF-8 on every platform. Windows writes retain Python's CRLF newline translation. | A portable, deterministic history-file encoding instead of a process-locale-dependent codec. |
-| Append and vacuum create files with mode 0666 under the process umask (`mitmproxy/addons/command_history.py:46,58`). | Creates new files with mode 0600; existing files keep their permissions. | History can contain sensitive command arguments. |
+| Append and vacuum create files with mode 0666 under the process umask (`mitmproxy/addons/command_history.py:46,58`). | On Unix, new files use mode 0600 and existing files are narrowed to 0600; symlinks and foreign-owned targets are refused. See [internal/privfile](#internalprivfile) for the Windows caveat. | History can contain sensitive command arguments. |
 | Failed writes and deletion log Python exception details (`mitmproxy/addons/command_history.py:48,61,76`). | Preserves `Failed writing to <path>:` and `Failed deleting <path>:` prefixes with Go filesystem details. | Diagnostics belong to the runtime in use. |
 
 ## addons/clientplayback
@@ -665,3 +665,10 @@ Replay API: `proxy.Replay` takes a `ReplayRunner` supplied as `httplayer.Replay`
 |---|---|---|
 | Alt-Svc substitutions have no explicit size bound and operate on Python header text with surrogate escapes (`mitmproxy/addons/update_alt_svc.py:11-12,33`). | Uses filter/regex's 256 MiB transformation limits and Unicode digit tables. Invalid UTF-8 or an exceeded limit returns a hook error without changing the header. | Bound work under dispatch and retain the shared regex compiler's text contract. |
 | A missing response, client connection or listener address raises a Python exception (`mitmproxy/addons/update_alt_svc.py:25,28,31`). | Missing data needed for a rewrite returns a hook error; an invalid stored proxy-mode string is treated as non-reverse. | Malformed hand-built Go flows must not panic; valid flows preserve upstream guards. |
+
+## internal/privfile
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| Recording, export, cut and command-history output opens follow symlinks and preserve existing permissions (`mitmproxy/addons/save.py`, `savehar.py`, `export.py`, `cut.py`, `command_history.py`). | On Unix, `Create` and `Append` refuse final-component symlinks, nonregular files and files not owned by the effective user. The opened descriptor is narrowed to mode 0600 before truncation or the first append write. Overwrite and append content semantics are unchanged. | Output may contain credentials; descriptor checks avoid modifying a substituted symlink target or leaving an existing file readable by other users. Parent directories must be trusted; hard links and already-open descriptors are not revoked. |
+| These output paths use ordinary Python file opens on Windows. | Pre-existing symlinks and reparse points are refused with `Lstat` before opening. The check/use window remains, and ACL narrowing is out of scope. Other non-Unix, non-Windows platforms refuse private output as unsupported. | Windows permissions use ACLs rather than Unix modes; the path check is not a race-free descriptor validation. |

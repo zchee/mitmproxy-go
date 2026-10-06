@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -19,6 +18,7 @@ import (
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/httpmsg"
+	"github.com/zchee/mitmproxy-go/internal/privfile"
 	"github.com/zchee/mitmproxy-go/internal/pyrepr"
 )
 
@@ -363,11 +363,11 @@ func (*Addon) save(ctx context.Context, flows []flow.Flow, cuts command.CutSpec,
 		}
 		name = string(expanded.(command.Path))
 	}
-	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	open := privfile.Create
 	if appendMode {
-		flags = os.O_CREATE | os.O_WRONLY | os.O_APPEND
+		open = privfile.Append
 	}
-	fp, err := os.OpenFile(name, flags, 0o600) //nolint:gosec // The command explicitly writes to the user's chosen export path.
+	fp, err := open(name)
 	if err != nil {
 		slog.ErrorContext(ctx, err.Error())
 		return nil

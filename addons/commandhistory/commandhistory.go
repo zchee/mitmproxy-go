@@ -20,6 +20,7 @@ import (
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/command"
+	"github.com/zchee/mitmproxy-go/internal/privfile"
 	"github.com/zchee/mitmproxy-go/options"
 )
 
@@ -161,7 +162,11 @@ func writeHistory(path, text string, flags int) (err error) {
 	if !utf8.ValidString(text) {
 		return errors.New("command history is not valid UTF-8")
 	}
-	file, err := os.OpenFile(filepath.Clean(path), os.O_WRONLY|os.O_CREATE|flags, 0o600)
+	open := privfile.Create
+	if flags&os.O_APPEND != 0 {
+		open = privfile.Append
+	}
+	file, err := open(filepath.Clean(path))
 	if err != nil {
 		return err
 	}

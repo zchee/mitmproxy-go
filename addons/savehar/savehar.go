@@ -28,6 +28,7 @@ import (
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/internal/human"
+	"github.com/zchee/mitmproxy-go/internal/privfile"
 	"github.com/zchee/mitmproxy-go/internal/pyrepr"
 	"github.com/zchee/mitmproxy-go/internal/strutil"
 	"github.com/zchee/mitmproxy-go/internal/version"
@@ -140,7 +141,12 @@ func (a *Addon) exportHAR(ctx context.Context, flows []flow.Flow, path command.P
 		}
 		data = b.Bytes()
 	}
-	if err := os.WriteFile(string(path), data, 0o600); err != nil {
+	file, err := privfile.Create(string(path))
+	if err != nil {
+		return err
+	}
+	_, err = file.Write(data)
+	if err = errors.Join(err, file.Close()); err != nil {
 		return err
 	}
 	slog.Log(ctx, addon.LevelAlert, fmt.Sprintf("HAR file saved (%s bytes).", human.PrettySize(int64(len(data)))))

@@ -7,9 +7,9 @@ package export
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"unicode/utf8"
 
@@ -18,6 +18,7 @@ import (
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/internal/http1"
+	"github.com/zchee/mitmproxy-go/internal/privfile"
 	"github.com/zchee/mitmproxy-go/options"
 )
 
@@ -275,7 +276,12 @@ func (a *Addon) file(ctx context.Context, format string, f flow.Flow, path comma
 	if err != nil {
 		return err
 	}
-	if err = os.WriteFile(string(path), data, 0o600); err != nil {
+	file, err := privfile.Create(string(path))
+	if err == nil {
+		_, err = file.Write(data)
+		err = errors.Join(err, file.Close())
+	}
+	if err != nil {
 		slog.ErrorContext(ctx, err.Error())
 	}
 	return nil

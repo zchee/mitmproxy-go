@@ -44,8 +44,8 @@ func TestFilePermissions(t *testing.T) {
 	}{
 		"success: new HAR":                 {suffix: ".har", want: 0o600},
 		"success: new compressed HAR":      {suffix: ".zhar", want: 0o600},
-		"success: existing HAR":            {suffix: ".har", existing: true, want: 0o640},
-		"success: existing compressed HAR": {suffix: ".zhar", existing: true, want: 0o640},
+		"success: existing HAR":            {suffix: ".har", existing: true, want: 0o600},
+		"success: existing compressed HAR": {suffix: ".zhar", existing: true, want: 0o600},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -54,7 +54,7 @@ func TestFilePermissions(t *testing.T) {
 				if err := os.WriteFile(path, nil, 0o600); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Chmod(path, tt.want); err != nil {
+				if err := os.Chmod(path, 0o640); err != nil {
 					t.Fatal(err)
 				}
 			}

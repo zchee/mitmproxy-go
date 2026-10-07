@@ -4,14 +4,22 @@
 package httplayer
 
 import (
+	"bufio"
 	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	gocmp "github.com/google/go-cmp/cmp"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
 
+	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/internal/h2"
+	"github.com/zchee/mitmproxy-go/internal/proxy/layer/layertest"
 )
 
 func TestHTTP2ResetSourceErrorBody(t *testing.T) {
@@ -19,12 +27,15 @@ func TestHTTP2ResetSourceErrorBody(t *testing.T) {
 		source  string
 		code    http2.ErrCode
 		message string
+		debug   string
 	}{
-		"success: client reset label":          {source: "client", code: http2.ErrCodeProtocol, message: "stream reset by client (PROTOCOL_ERROR)"},
-		"error: server reset label":            {source: "server", code: http2.ErrCodeProtocol, message: "stream reset by server (PROTOCOL_ERROR)"},
-		"error: server connection close label": {source: "connection", code: http2.ErrCodeProtocol, message: "connection closed by server: origin failure"},
-		"success: numeric unknown reset code":  {source: "server", code: 50, message: "stream reset by server (50)"},
-		"success: local cancellation mapping":  {source: "local", code: http2.ErrCodeCancel, message: "stream reset by client (CANCEL)"},
+		"success: client reset label":                          {source: "client", code: http2.ErrCodeProtocol, message: "stream reset by client (PROTOCOL_ERROR)"},
+		"error: server reset label":                            {source: "server", code: http2.ErrCodeProtocol, message: "stream reset by server (PROTOCOL_ERROR)"},
+		"error: server connection close label":                 {source: "connection", code: http2.ErrCodeProtocol, message: "connection closed by server: origin failure", debug: "origin failure"},
+		"error: opaque connection diagnostic remains internal": {source: "connection", code: http2.ErrCodeProtocol, message: "connection closed by server: <origin>&'\"\x00", debug: "<origin>&'\"\x00"},
+		"error: large connection diagnostic remains internal":  {source: "connection", code: http2.ErrCodeProtocol, message: "connection closed by server: " + strings.Repeat("<", 64*1024), debug: strings.Repeat("<", 64*1024)},
+		"success: numeric unknown reset code":                  {source: "server", code: 50, message: "stream reset by server (50)"},
+		"success: local cancellation mapping":                  {source: "local", code: http2.ErrCodeCancel, message: "stream reset by client (CANCEL)"},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -50,7 +61,7 @@ func TestHTTP2ResetSourceErrorBody(t *testing.T) {
 			case "server":
 				err = server.CancelStream(head.Identity, test.code)
 			case "connection":
-				err = server.Shutdown(t.Context(), test.code, []byte("origin failure"))
+				err = server.Shutdown(t.Context(), test.code, []byte(test.debug))
 			case "local":
 				err = client.CancelStream(id, test.code)
 			}
@@ -65,6 +76,7 @@ func TestHTTP2ResetSourceErrorBody(t *testing.T) {
 			}
 			var message string
 			var code ErrorCode
+			var protocolError ResponseProtocolError
 			switch event := event.(type) {
 			case RequestProtocolError:
 				if !request {
@@ -76,6 +88,13 @@ func TestHTTP2ResetSourceErrorBody(t *testing.T) {
 					t.Fatalf("client reset became a response error: %+v", event)
 				}
 				message, code = event.Message, event.Code
+				protocolError = event
+				if test.source == "connection" {
+					protocolError.Cause = fmt.Errorf("wrapped origin failure: %w", event.Cause)
+				}
+				if got, want := h2.IsConnectionClosed(protocolError.Cause), test.source == "connection"; got != want {
+					t.Fatalf("typed connection classification = %v, want %v", got, want)
+				}
 			default:
 				t.Fatalf("reset event = %#v", event)
 			}
@@ -91,13 +110,57 @@ func TestHTTP2ResetSourceErrorBody(t *testing.T) {
 			if diff := gocmp.Diff(test.message, message); diff != "" {
 				t.Fatalf("reset diagnostic (-want +got):\n%s", diff)
 			}
-			wantBody := formatError(502, test.message)
-			if diff := gocmp.Diff(wantBody, formatError(502, message)); diff != "" {
-				t.Fatalf("502 diagnostic body (-want +got):\n%s", diff)
+			bodyMessage := test.message
+			if test.source == "connection" {
+				bodyMessage = "upstream closed the HTTP/2 connection"
 			}
+			wantBody := []byte("<html>\n<head>\n    <title>502 Bad Gateway</title>\n</head>\n<body>\n" +
+				"    <h1>502 Bad Gateway</h1>\n    <p>" + bodyMessage + "</p>\n</body>\n</html>")
 			// A genuine client reset or local cancellation keeps its existing status policy.
 			if request || test.source == "local" {
 				return
+			}
+			owner, manager := newTestStream(t, &streamAddon{})
+			if err := manager.Do(t.Context(), func(context.Context) error {
+				owner.flow = flow.NewHTTPFlow(owner.c.Data.Client, owner.c.Data.Server, true)
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			out, err := owner.handle(t.Context(), protocolError)
+			if err != nil || len(out.events) != 1 {
+				t.Fatalf("stream error output = %+v, %v", out, err)
+			}
+			protocolError, ok := out.events[0].(ResponseProtocolError)
+			if !ok {
+				t.Fatalf("stream error output = %T", out.events[0])
+			}
+			if err := manager.Do(t.Context(), func(context.Context) error {
+				if owner.flow.Error == nil || owner.flow.Error.Msg != test.message {
+					t.Errorf("flow diagnostic = %+v, want %q", owner.flow.Error, test.message)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			h1Conn, h1Peer := layertest.Pipe(t)
+			h1 := newHTTP1Server(h1Conn, newWireStore(), nil)
+			if err := h1.Send(t.Context(), protocolError); err != nil {
+				t.Fatal(err)
+			}
+			h1Response, err := http.ReadResponse(bufio.NewReader(h1Peer), &http.Request{Method: "GET"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			h1Body, err := io.ReadAll(h1Response.Body)
+			if closeErr := h1Response.Body.Close(); err != nil || closeErr != nil {
+				t.Fatalf("HTTP/1 response body = %v, close = %v", err, closeErr)
+			}
+			if h1Response.StatusCode != 502 {
+				t.Fatalf("HTTP/1 error status = %d, want 502", h1Response.StatusCode)
+			}
+			if diff := gocmp.Diff(wantBody, h1Body); diff != "" {
+				t.Errorf("HTTP/1 wire 502 body (-want +got):\n%s", diff)
 			}
 			downstream, endpoint := h2EndpointPair(t)
 			downID, err := downstream.OpenStream(t.Context())
@@ -112,7 +175,7 @@ func TestHTTP2ResetSourceErrorBody(t *testing.T) {
 				t.Fatal(err)
 			}
 			adapter := &http2Server{engine: endpoint, identity: head.Identity, id: 1}
-			if err := adapter.Send(t.Context(), ResponseProtocolError{ID: 1, Message: message, Code: code}); err != nil {
+			if err := adapter.Send(t.Context(), protocolError); err != nil {
 				t.Fatal(err)
 			}
 			response, err := downstream.ReceiveStream(t.Context(), downID)

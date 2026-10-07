@@ -103,6 +103,9 @@ type RequestProtocolError struct {
 	ID      StreamID
 	Message string
 	Code    ErrorCode
+	// Cause retains the typed failure without replacing the diagnostic message.
+	// A nil cause preserves the existing response policy.
+	Cause error
 }
 
 // ResponseProtocolError terminates a response. Code must be set explicitly.
@@ -111,6 +114,9 @@ type ResponseProtocolError struct {
 	ID      StreamID
 	Message string
 	Code    ErrorCode
+	// Cause retains the typed failure without replacing the diagnostic message.
+	// A nil cause preserves the existing response policy.
+	Cause error
 }
 
 // StreamID returns the exchange identity.

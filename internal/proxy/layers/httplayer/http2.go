@@ -182,9 +182,9 @@ func (s *http2Stream) receive(ctx context.Context, request bool, head *h2.Event)
 				message = fmt.Sprintf("stream reset by client (%s)", name)
 			}
 			if request {
-				return RequestProtocolError{ID: s.id, Message: message, Code: code}, nil
+				return RequestProtocolError{ID: s.id, Message: message, Code: code, Cause: wire.Err}, nil
 			}
-			return ResponseProtocolError{ID: s.id, Message: message, Code: code}, nil
+			return ResponseProtocolError{ID: s.id, Message: message, Code: code, Cause: wire.Err}, nil
 		default:
 			return nil, fmt.Errorf("unexpected HTTP/2 stream event: %d", wire.Kind)
 		}
@@ -224,7 +224,7 @@ func (s *http2Stream) send(ctx context.Context, event Event) error {
 	case ResponseProtocolError:
 		status, respond := event.Code.HTTPStatusCode()
 		if !s.sentHeaders && respond {
-			body := formatError(status, event.Message)
+			body := formatError(status, event.Message, event.Cause)
 			if err := s.engine.Send(ctx, h2.Event{Kind: h2.Headers, Identity: s.identity, Headers: []hpack.HeaderField{{Name: ":status", Value: fmt.Sprint(status)}, {Name: "server", Value: version.String()}, {Name: "content-type", Value: "text/html"}}}); err != nil {
 				return err
 			}

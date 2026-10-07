@@ -127,6 +127,13 @@ func (e *resetError) Error() string {
 
 func (e *resetError) Unwrap() error { return e.cause }
 
+// IsConnectionClosed reports whether err carries a connection-level peer failure.
+// It follows wrapped causes without matching diagnostic text.
+func IsConnectionClosed(err error) bool {
+	var reset *resetError
+	return errors.As(err, &reset) && reset != nil && reset.connection
+}
+
 type result struct {
 	event Event
 	err   error

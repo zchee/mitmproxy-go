@@ -104,9 +104,9 @@ func (s *httpStream) handle(ctx context.Context, event Event) (streamOutput, err
 	case ResponseEndOfMessage:
 		return s.end(ctx, false)
 	case RequestProtocolError:
-		return s.fail(ctx, event.Message, event.Code)
+		return s.fail(ctx, event.Message, event.Code, event.Cause)
 	case ResponseProtocolError:
-		return s.fail(ctx, event.Message, event.Code)
+		return s.fail(ctx, event.Message, event.Code, event.Cause)
 	default:
 		return streamOutput{}, fmt.Errorf("unsupported HTTP event %T", event)
 	}
@@ -564,7 +564,11 @@ func (s *httpStream) bodyTooLarge(ctx context.Context, request bool) (streamOutp
 	return s.fail(ctx, "Response body exceeds mitmproxy's body_size_limit.", ResponseTooLarge)
 }
 
-func (s *httpStream) fail(ctx context.Context, message string, code ErrorCode) (streamOutput, error) {
+func (s *httpStream) fail(ctx context.Context, message string, code ErrorCode, causes ...error) (streamOutput, error) {
+	var cause error
+	if len(causes) != 0 {
+		cause = causes[0]
+	}
 	s.failed = true
 	s.request.body, s.response.body = nil, nil
 	s.request.trailers, s.response.trailers = nil, nil
@@ -587,9 +591,9 @@ func (s *httpStream) fail(ctx context.Context, message string, code ErrorCode) (
 			return streamOutput{}, err
 		}
 	}
-	out := streamOutput{events: []Event{ResponseProtocolError{ID: s.id, Message: message, Code: code}}}
+	out := streamOutput{events: []Event{ResponseProtocolError{ID: s.id, Message: message, Code: code, Cause: cause}}}
 	if s.requestSent {
-		out.events = append(out.events, RequestProtocolError{ID: s.id, Message: message, Code: code})
+		out.events = append(out.events, RequestProtocolError{ID: s.id, Message: message, Code: code, Cause: cause})
 	}
 	return out, nil
 }

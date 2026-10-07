@@ -437,7 +437,7 @@ func (s *http1Server) sendError(ctx context.Context, event ResponseProtocolError
 		return nil
 	}
 	if status, ok := event.Code.HTTPStatusCode(); ok && !s.sentHead && !responseDone {
-		response, err := makeErrorResponse(status, event.Message)
+		response, err := makeErrorResponse(status, event.Message, event.Cause)
 		if err != nil {
 			return err
 		}

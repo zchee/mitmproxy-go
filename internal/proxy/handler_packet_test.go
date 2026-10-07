@@ -20,14 +20,80 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/proxy/packettransport"
 )
 
+type observedPacketRead struct {
+	net.PacketConn
+	ready    chan struct{}
+	received chan error
+	once     sync.Once
+}
+
+func observePacketReads(t *testing.T, socket net.PacketConn) *observedPacketRead {
+	t.Helper()
+	if err := packettransport.ConfigureSocketBuffers(socket.(*net.UDPConn)); err != nil {
+		_ = socket.Close()
+		t.Fatal(err)
+	}
+	return &observedPacketRead{PacketConn: socket, ready: make(chan struct{}), received: make(chan error, layer.PacketQueueCapacity+1)}
+}
+
+func (c *observedPacketRead) ReadFrom(p []byte) (int, net.Addr, error) {
+	c.once.Do(func() { close(c.ready) })
+	n, addr, err := c.PacketConn.ReadFrom(p)
+	c.received <- err
+	return n, addr, err
+}
+
+func awaitPacketRead(t *testing.T, input net.PacketConn, buf []byte) (int, net.Addr, error) {
+	t.Helper()
+	read := make(chan struct {
+		n    int
+		addr net.Addr
+		err  error
+	}, 1)
+	go func() {
+		n, addr, err := input.ReadFrom(buf)
+		read <- struct {
+			n    int
+			addr net.Addr
+			err  error
+		}{n, addr, err}
+	}()
+	result := await(t, read)
+	return result.n, result.addr, result.err
+}
+
+func awaitTupleAdmission(t *testing.T, listener *packettransport.Listener) *packettransport.TupleConn {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	accepted := make(chan struct {
+		conn *packettransport.TupleConn
+		err  error
+	}, 1)
+	go func() {
+		conn, err := listener.Accept(ctx)
+		accepted <- struct {
+			conn *packettransport.TupleConn
+			err  error
+		}{conn, err}
+	}()
+	result := await(t, accepted)
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	return result.conn
+}
+
 func acceptedPackets(t *testing.T, first []byte) (*packettransport.TupleConn, *net.UDPConn) {
 	t.Helper()
 	socket, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener := packettransport.NewListener(t.Context(), socket)
+	observed := observePacketReads(t, socket)
+	listener := packettransport.NewListener(t.Context(), observed)
 	t.Cleanup(func() { _ = listener.Close() })
+	await(t, observed.ready)
 	peer, err := net.DialUDP("udp", nil, listener.LocalAddr().(*net.UDPAddr))
 	if err != nil {
 		t.Fatal(err)
@@ -36,11 +102,10 @@ func acceptedPackets(t *testing.T, first []byte) (*packettransport.TupleConn, *n
 	if _, err := peer.Write(first); err != nil {
 		t.Fatal(err)
 	}
-	conn, err := listener.Accept(t.Context())
-	if err != nil {
+	if err := await(t, observed.received); err != nil {
 		t.Fatal(err)
 	}
-	return conn, peer
+	return awaitTupleAdmission(t, listener), peer
 }
 
 func TestHandlePacketsLifecycle(t *testing.T) {

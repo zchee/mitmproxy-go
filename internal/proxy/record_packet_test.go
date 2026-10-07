@@ -15,14 +15,16 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/proxy/packettransport"
 )
 
-func packetRecorderPeer(t *testing.T, first []byte) (layer.PacketRecorder, *net.UDPConn) {
+func packetRecorderPeer(t *testing.T, first []byte) (layer.PacketRecorder, *net.UDPConn, *observedPacketRead) {
 	t.Helper()
 	socket, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener := packettransport.NewListener(t.Context(), socket)
+	observed := observePacketReads(t, socket)
+	listener := packettransport.NewListener(t.Context(), observed)
 	t.Cleanup(func() { _ = listener.Close() })
+	await(t, observed.ready)
 	peer, err := net.DialUDP("udp", nil, listener.LocalAddr().(*net.UDPAddr))
 	if err != nil {
 		t.Fatal(err)
@@ -34,14 +36,14 @@ func packetRecorderPeer(t *testing.T, first []byte) (layer.PacketRecorder, *net.
 	if _, err := peer.Write(first); err != nil {
 		t.Fatal(err)
 	}
-	conn, err := listener.Accept(t.Context())
-	if err != nil {
+	if err := await(t, observed.received); err != nil {
 		t.Fatal(err)
 	}
+	conn := awaitTupleAdmission(t, listener)
 	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	return RecordPackets(conn), peer
+	return RecordPackets(conn), peer, observed
 }
 
 func TestPacketRecorderReplay(t *testing.T) {
@@ -55,7 +57,7 @@ func TestPacketRecorderReplay(t *testing.T) {
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			r, peer := packetRecorderPeer(t, test.first)
+			r, peer, _ := packetRecorderPeer(t, test.first)
 			peek, _, err := r.PeekPacket()
 			if err != nil {
 				t.Fatal(err)
@@ -118,21 +120,30 @@ func TestPacketRecorderBounds(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			payload := make([]byte, test.size)
-			r, peer := packetRecorderPeer(t, payload)
+			r, peer, observed := packetRecorderPeer(t, payload)
+			if err := r.SetReadDeadline(time.Time{}); err != nil {
+				t.Fatal(err)
+			}
 			for i := range test.count {
 				if i > 0 {
 					if _, err := peer.Write(payload); err != nil {
 						t.Fatal(err)
 					}
+					if err := await(t, observed.received); err != nil {
+						t.Fatalf("packet %d socket delivery: %v", i, err)
+					}
 				}
-				if _, _, err := r.ReadFrom(nil); err != nil {
+				if _, _, err := awaitPacketRead(t, r, nil); err != nil {
 					t.Fatalf("packet %d: %v", i, err)
 				}
 			}
 			if _, err := peer.Write(payload); err != nil {
 				t.Fatal(err)
 			}
-			if _, _, err := r.ReadFrom(nil); !errors.Is(err, layer.ErrPacketOverflow) {
+			if err := await(t, observed.received); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := awaitPacketRead(t, r, nil); !errors.Is(err, layer.ErrPacketOverflow) {
 				t.Fatalf("recording overflow = %v", err)
 			}
 		})
@@ -140,7 +151,7 @@ func TestPacketRecorderBounds(t *testing.T) {
 }
 
 func TestPacketRecorderRetainsOverflowCause(t *testing.T) {
-	r, _ := packetRecorderPeer(t, []byte("saved"))
+	r, _, _ := packetRecorderPeer(t, []byte("saved"))
 	if _, _, err := r.PeekPacket(); err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +167,7 @@ func TestPacketRecorderRetainsOverflowCause(t *testing.T) {
 }
 
 func TestPacketRecorderClose(t *testing.T) {
-	r, _ := packetRecorderPeer(t, []byte("saved"))
+	r, _, _ := packetRecorderPeer(t, []byte("saved"))
 	if _, _, err := r.PeekPacket(); err != nil {
 		t.Fatal(err)
 	}

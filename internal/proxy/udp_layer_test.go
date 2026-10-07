@@ -10,6 +10,7 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -97,6 +98,7 @@ type udpRelayFixture struct {
 	done        chan error
 	flow        chan *flow.UDPFlow
 	written     chan struct{}
+	serverReady chan struct{}
 	ctx         chan context.Context
 	server      chan layer.PacketTransport
 	addon       *udpRelayAddon
@@ -104,7 +106,16 @@ type udpRelayFixture struct {
 
 type observedUDPWrite struct {
 	layer.PacketTransport
-	written chan struct{}
+	written  chan struct{}
+	reading  chan struct{}
+	readOnce *sync.Once
+}
+
+func (c observedUDPWrite) ReadFrom(p []byte) (int, net.Addr, error) {
+	if c.reading != nil {
+		c.readOnce.Do(func() { close(c.reading) })
+	}
+	return c.PacketTransport.ReadFrom(p)
 }
 
 func (c observedUDPWrite) WriteTo(p []byte, addr net.Addr) (int, error) {
@@ -122,9 +133,6 @@ func startUDPRelay(t *testing.T, config udpRelayConfig) *udpRelayFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = origin.Close() })
-	if err := origin.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
-		t.Fatal(err)
-	}
 	tuple, peer := config.tuple, config.peer
 	if tuple == nil {
 		tuple, peer = acceptedPackets(t, config.first)
@@ -134,13 +142,10 @@ func startUDPRelay(t *testing.T, config udpRelayConfig) *udpRelayFixture {
 			t.Fatal(err)
 		}
 	}
-	if err := peer.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
-		t.Fatal(err)
-	}
 	f := &udpRelayFixture{
 		connections: new(Connections), recorder: new(addontest.Recorder), origin: origin,
 		peer: peer, tuple: tuple, done: make(chan error, 1), flow: make(chan *flow.UDPFlow, 1),
-		written: make(chan struct{}, 8), ctx: make(chan context.Context, 1), server: make(chan layer.PacketTransport, 1), addon: config.addon,
+		written: make(chan struct{}, 8), serverReady: make(chan struct{}), ctx: make(chan context.Context, 1), server: make(chan layer.PacketTransport, 1), addon: config.addon,
 	}
 	if f.addon == nil {
 		f.addon = new(udpRelayAddon)
@@ -167,7 +172,7 @@ func startUDPRelay(t *testing.T, config udpRelayConfig) *udpRelayFixture {
 				return nil, actual, err
 			}
 			f.server <- transport
-			return observedUDPWrite{PacketTransport: transport, written: f.written}, actual, nil
+			return observedUDPWrite{PacketTransport: transport, written: f.written, reading: f.serverReady, readOnce: new(sync.Once)}, actual, nil
 		}
 		if config.preopened {
 			transport, actual, err := c.OpenPackets(ctx, c.Data.Server)
@@ -224,7 +229,7 @@ func udpHooks(recorder *addontest.Recorder) []string {
 func requireDatagram(t *testing.T, input net.PacketConn, want []byte) net.Addr {
 	t.Helper()
 	window := make([]byte, layer.MaxUDPPacketBytes+1)
-	n, addr, err := input.ReadFrom(window)
+	n, addr, err := awaitPacketRead(t, input, window)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,6 +338,7 @@ func TestUDPRelayOpenConnectionUpstream(t *testing.T) {
 func TestUDPRelayServerFirst(t *testing.T) {
 	f := startUDPRelay(t, udpRelayConfig{noFirst: true})
 	local := await(t, f.addon.connected)
+	await(t, f.serverReady)
 	if _, err := f.origin.WriteTo([]byte("greeting"), &net.UDPAddr{IP: net.ParseIP(local.Host), Port: local.Port}); err != nil {
 		t.Fatal(err)
 	}
@@ -537,17 +543,18 @@ func TestUDPRelaySharedListenerExpiryAndReuse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener := packettransport.NewListener(t.Context(), socket)
+	observed := observePacketReads(t, socket)
+	listener := packettransport.NewListener(t.Context(), observed)
 	t.Cleanup(func() { _ = listener.Close() })
+	await(t, observed.ready)
 	accept := func(peer *net.UDPConn, content string) *packettransport.TupleConn {
 		if _, err := peer.Write([]byte(content)); err != nil {
 			t.Fatal(err)
 		}
-		tuple, err := listener.Accept(t.Context())
-		if err != nil {
-			t.Fatal(err)
+		if err := await(t, observed.received); err != nil {
+			t.Fatalf("shared listener datagram socket delivery: %v", err)
 		}
-		return tuple
+		return awaitTupleAdmission(t, listener)
 	}
 	peer := func() *net.UDPConn {
 		p, err := net.DialUDP("udp", nil, listener.LocalAddr().(*net.UDPAddr))
@@ -570,6 +577,9 @@ func TestUDPRelaySharedListenerExpiryAndReuse(t *testing.T) {
 	if _, err := peer2.Write([]byte("renewed")); err != nil {
 		t.Fatal(err)
 	}
+	if err := await(t, observed.received); err != nil {
+		t.Fatalf("renewed datagram socket delivery: %v", err)
+	}
 	requireDatagram(t, second.origin, []byte("renewed"))
 	await(t, second.written)
 	clock.advance(time.Second)
@@ -581,6 +591,9 @@ func TestUDPRelaySharedListenerExpiryAndReuse(t *testing.T) {
 	}
 	if _, err := peer2.Write([]byte("still live")); err != nil {
 		t.Fatal(err)
+	}
+	if err := await(t, observed.received); err != nil {
+		t.Fatalf("live neighbour datagram socket delivery: %v", err)
 	}
 	requireDatagram(t, second.origin, []byte("still live"))
 	reused := startUDPRelay(t, udpRelayConfig{tuple: accept(peer1, "reused"), peer: peer1, clock: clock})

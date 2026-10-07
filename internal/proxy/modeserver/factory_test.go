@@ -14,6 +14,7 @@ import (
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 	"github.com/zchee/mitmproxy-go/internal/proxy/modespec"
+	"github.com/zchee/mitmproxy-go/internal/proxy/packettransport"
 )
 
 func TestListenerFactoryValidation(t *testing.T) {
@@ -114,8 +115,27 @@ func TestListenerFactoryFailureLeavesCallerOwnership(t *testing.T) {
 
 type observedPacketSocket struct {
 	net.PacketConn
-	closed chan struct{}
-	once   sync.Once
+	closed   chan struct{}
+	ready    chan struct{}
+	received chan error
+	once     sync.Once
+	readOnce sync.Once
+}
+
+func observeFactoryPacketSocket(t *testing.T, socket net.PacketConn) *observedPacketSocket {
+	t.Helper()
+	if err := packettransport.ConfigureSocketBuffers(socket.(*net.UDPConn)); err != nil {
+		_ = socket.Close()
+		t.Fatal(err)
+	}
+	return &observedPacketSocket{PacketConn: socket, closed: make(chan struct{}), ready: make(chan struct{}), received: make(chan error, 2)}
+}
+
+func (s *observedPacketSocket) ReadFrom(p []byte) (int, net.Addr, error) {
+	s.readOnce.Do(func() { close(s.ready) })
+	n, addr, err := s.PacketConn.ReadFrom(p)
+	s.received <- err
+	return n, addr, err
 }
 
 func (s *observedPacketSocket) Close() error {
@@ -142,7 +162,7 @@ func TestPacketFactoryCloseEvictsWithoutJoining(t *testing.T) {
 			accepted := make(chan layer.PacketTransport, 1)
 			release := make(chan struct{})
 			done := make(chan struct{})
-			observed := &observedPacketSocket{PacketConn: socket, closed: make(chan struct{})}
+			observed := observeFactoryPacketSocket(t, socket)
 			listener, err := instance.servePackets(ctx, observed, func(_ context.Context, conn layer.PacketTransport) error {
 				defer close(done)
 				accepted <- conn
@@ -154,6 +174,7 @@ func TestPacketFactoryCloseEvictsWithoutJoining(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { close(release); _ = listener.Close(); await(t, done) })
+			await(t, observed.ready)
 			peer, err := net.Dial("udp4", socket.LocalAddr().String())
 			if err != nil {
 				t.Fatal(err)
@@ -161,6 +182,9 @@ func TestPacketFactoryCloseEvictsWithoutJoining(t *testing.T) {
 			defer func() { _ = peer.Close() }()
 			if _, err := peer.Write([]byte("datagram")); err != nil {
 				t.Fatal(err)
+			}
+			if err := await(t, observed.received); err != nil {
+				t.Fatalf("factory datagram socket delivery: %v", err)
 			}
 			conn := await(t, accepted)
 			if tt.cancelContext {
@@ -190,7 +214,8 @@ func TestPacketFactoryHandlerOutsideDispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := make(chan error, 1)
-	listener, err := instance.servePackets(t.Context(), socket, func(ctx context.Context, conn layer.PacketTransport) error {
+	observed := observeFactoryPacketSocket(t, socket)
+	listener, err := instance.servePackets(t.Context(), observed, func(ctx context.Context, conn layer.PacketTransport) error {
 		defer func() { _ = conn.Close() }()
 		err := m.Do(ctx, func(context.Context) error { return nil })
 		result <- err
@@ -201,6 +226,7 @@ func TestPacketFactoryHandlerOutsideDispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = listener.Close() })
+	await(t, observed.ready)
 	peer, err := net.Dial("udp4", socket.LocalAddr().String())
 	if err != nil {
 		t.Fatal(err)
@@ -208,6 +234,9 @@ func TestPacketFactoryHandlerOutsideDispatch(t *testing.T) {
 	defer func() { _ = peer.Close() }()
 	if _, err := peer.Write([]byte("datagram")); err != nil {
 		t.Fatal(err)
+	}
+	if err := await(t, observed.received); err != nil {
+		t.Fatalf("factory datagram socket delivery: %v", err)
 	}
 	if err := await(t, result); err != nil {
 		t.Fatal(err)

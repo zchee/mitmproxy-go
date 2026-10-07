@@ -5,15 +5,17 @@ package modeserver
 
 import (
 	"context"
+	"io"
 	"net"
 	"testing"
-	"time"
 
 	"go.uber.org/goleak"
 
 	"github.com/zchee/mitmproxy-go/addons/nextlayer"
+	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/dns"
 	"github.com/zchee/mitmproxy-go/flow"
+	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 	"github.com/zchee/mitmproxy-go/options"
 )
 
@@ -34,25 +36,43 @@ func TestMalformedDNSTupleIsolation(t *testing.T) {
 	if err := m.Addons.Add(t.Context(), nextlayer.New(m.Options), hooks); err != nil {
 		t.Fatal(err)
 	}
+	key := ListenerKey{Scheme: "dns", Transport: connection.UDP}
+	factory := registeredFactories(nil)[key]
+	sockets := make(chan *observedPacketSocket, 1)
+	admitted := make(chan struct{}, 3)
+	cfg.ListenerFactories = map[ListenerKey]ListenerFactory{
+		key: func(ctx context.Context, socket net.PacketConn, handle PacketHandler) (io.Closer, error) {
+			observed := observeFactoryPacketSocket(t, socket)
+			listener, err := factory(ctx, observed, func(ctx context.Context, conn layer.PacketTransport) error {
+				admitted <- struct{}{}
+				return handle(ctx, conn)
+			})
+			sockets <- observed
+			return listener, err
+		},
+	}
 	instance := makeInstance(t, "reverse:dns://127.0.0.1:53@127.0.0.1:0", cfg)
 	if err := instance.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
+	observed := await(t, sockets)
+	await(t, observed.ready)
 	dial := func() net.Conn {
 		conn, err := net.Dial("udp4", instance.ListenAddrs()[0].String())
 		if err != nil {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = conn.Close() })
-		if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
-			t.Fatal(err)
-		}
 		return conn
 	}
 	bad, healthy := dial(), dial()
 	if _, err := bad.Write([]byte{0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0}); err != nil {
 		t.Fatal(err)
 	}
+	if err := await(t, observed.received); err != nil {
+		t.Fatalf("malformed query socket delivery: %v", err)
+	}
+	await(t, admitted)
 	await(t, lifecycle.disconnected)
 	select {
 	case <-hooks.requests:
@@ -71,12 +91,27 @@ func TestMalformedDNSTupleIsolation(t *testing.T) {
 		if _, err := conn.Write(wire); err != nil {
 			t.Fatal(err)
 		}
-		var buf [65535]byte
-		n, err := conn.Read(buf[:])
-		if err != nil {
-			t.Fatal(err)
+		if err := await(t, observed.received); err != nil {
+			t.Fatalf("valid query socket delivery: %v", err)
 		}
-		response, err := dns.Unpack(buf[:n], nil)
+		await(t, admitted)
+		var buf [65535]byte
+		read := make(chan struct {
+			n   int
+			err error
+		}, 1)
+		go func() {
+			n, err := conn.Read(buf[:])
+			read <- struct {
+				n   int
+				err error
+			}{n, err}
+		}()
+		result := await(t, read)
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		response, err := dns.Unpack(buf[:result.n], nil)
 		if err != nil {
 			t.Fatal(err)
 		}

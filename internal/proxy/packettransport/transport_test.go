@@ -19,13 +19,45 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 )
 
+type observedTestPacketRead struct {
+	net.PacketConn
+	ready    chan struct{}
+	received chan error
+	once     sync.Once
+}
+
+func (c *observedTestPacketRead) ReadFrom(p []byte) (int, net.Addr, error) {
+	c.once.Do(func() { close(c.ready) })
+	n, addr, err := c.PacketConn.ReadFrom(p)
+	c.received <- err
+	return n, addr, err
+}
+
+func awaitPacketSignal[T any](t *testing.T, signal <-chan T, operation string) T {
+	t.Helper()
+	select {
+	case result := <-signal:
+		return result
+	case <-time.After(30 * time.Second):
+		stack := make([]byte, 1<<20)
+		t.Fatalf("%s did not complete:\n%s", operation, stack[:runtime.Stack(stack, true)])
+		var zero T
+		return zero
+	}
+}
+
 func newTestListener(t *testing.T) (*Listener, *net.UDPConn) {
 	t.Helper()
 	socket, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener := NewListener(t.Context(), socket)
+	if err := ConfigureSocketBuffers(socket.(*net.UDPConn)); err != nil {
+		_ = socket.Close()
+		t.Fatal(err)
+	}
+	observed := &observedTestPacketRead{PacketConn: socket, ready: make(chan struct{}), received: make(chan error, layer.PacketQueueCapacity+1)}
+	listener := NewListener(t.Context(), observed)
 	t.Cleanup(func() { _ = listener.Close() })
 	peer, err := net.DialUDP("udp", nil, socket.LocalAddr().(*net.UDPAddr))
 	if err != nil {
@@ -37,16 +69,55 @@ func newTestListener(t *testing.T) (*Listener, *net.UDPConn) {
 
 func acceptTestTuple(t *testing.T, listener *Listener, peer *net.UDPConn, payload []byte) *TupleConn {
 	t.Helper()
+	observed, observedRead := listener.socket.(*observedTestPacketRead)
+	if observedRead {
+		awaitPacketSignal(t, observed.ready, "listener socket read readiness")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	accepted := make(chan struct {
+		conn *TupleConn
+		err  error
+	}, 1)
+	go func() {
+		conn, err := listener.Accept(ctx)
+		accepted <- struct {
+			conn *TupleConn
+			err  error
+		}{conn, err}
+	}()
 	if _, err := peer.Write(payload); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	conn, err := listener.Accept(ctx)
-	if err != nil {
-		t.Fatal(err)
+	if observedRead {
+		if err := awaitPacketSignal(t, observed.received, "first datagram socket delivery"); err != nil {
+			t.Fatal(err)
+		}
 	}
-	return conn
+	result := awaitPacketSignal(t, accepted, "tuple admission after first datagram")
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	return result.conn
+}
+
+func readTestPacket(t *testing.T, input net.PacketConn, buf []byte) (int, net.Addr, error) {
+	t.Helper()
+	read := make(chan struct {
+		n    int
+		addr net.Addr
+		err  error
+	}, 1)
+	go func() {
+		n, addr, err := input.ReadFrom(buf)
+		read <- struct {
+			n    int
+			addr net.Addr
+			err  error
+		}{n, addr, err}
+	}()
+	result := awaitPacketSignal(t, read, "datagram consumption")
+	return result.n, result.addr, result.err
 }
 
 func TestTuplePackets(t *testing.T) {
@@ -66,13 +137,13 @@ func TestTuplePackets(t *testing.T) {
 				if _, err := peer.Write(payload); err != nil {
 					t.Fatal(err)
 				}
-			}
-			if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
-				t.Fatal(err)
+				if err := awaitPacketSignal(t, listener.socket.(*observedTestPacketRead).received, "following datagram socket delivery"); err != nil {
+					t.Fatal(err)
+				}
 			}
 			for _, payload := range test.packets {
 				buf := make([]byte, test.size)
-				n, addr, err := conn.ReadFrom(buf)
+				n, addr, err := readTestPacket(t, conn, buf)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -87,11 +158,8 @@ func TestTuplePackets(t *testing.T) {
 			if _, err := conn.WriteTo(nil, conn.RemoteAddr()); err != nil {
 				t.Fatal(err)
 			}
-			if err := peer.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
-				t.Fatal(err)
-			}
 			buf := make([]byte, 8)
-			if n, err := peer.Read(buf); n != 0 || err != nil {
+			if n, _, err := readTestPacket(t, peer, buf); n != 0 || err != nil {
 				t.Fatalf("empty reply = (%d, %v)", n, err)
 			}
 		})

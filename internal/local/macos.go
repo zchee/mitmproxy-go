@@ -34,6 +34,11 @@ func NewMacOSRedirector(confdir, overridePath string) Redirector {
 		closedCh:       make(chan struct{}),
 		launchDone:     make(chan struct{}),
 		writeGate:      make(chan struct{}, 1),
+		tcp:            make(chan macOSTCPFlow, 10),
+		udp:            make(chan macOSUDPFlow, 10),
+		flowErrors:     make(chan error, 10),
+		handshakes:     make(chan struct{}, 10),
+		streams:        make(map[*macOSStream]struct{}),
 	}
 }
 
@@ -50,6 +55,11 @@ type macOSRedirector struct {
 	listener                          *net.UnixListener
 	control                           *net.UnixConn
 	launchErr, closeErr               error
+	tcp                               chan macOSTCPFlow
+	udp                               chan macOSUDPFlow
+	flowErrors                        chan error
+	handshakes                        chan struct{}
+	streams                           map[*macOSStream]struct{}
 }
 
 func (r *macOSRedirector) Launch(ctx context.Context) error {
@@ -163,6 +173,7 @@ func (r *macOSRedirector) launch(ctx context.Context) error {
 		_, _ = control.Read(data[:])
 		r.shutdown()
 	})
+	r.workers.Go(func() { r.acceptStreams(life, listener) })
 	return nil
 }
 
@@ -249,6 +260,8 @@ func (r *macOSRedirector) shutdown() {
 		r.mu.Lock()
 		r.closed = true
 		listener, control, cancel := r.listener, r.control, r.cancel
+		streams := r.streams
+		r.streams = nil
 		close(r.closedCh)
 		r.mu.Unlock()
 		if cancel != nil {
@@ -259,6 +272,9 @@ func (r *macOSRedirector) shutdown() {
 		}
 		if listener != nil {
 			r.closeErr = errors.Join(r.closeErr, listener.Close())
+		}
+		for stream := range streams {
+			r.closeErr = errors.Join(r.closeErr, stream.Close())
 		}
 	})
 }
@@ -271,5 +287,20 @@ func (r *macOSRedirector) Close() error {
 	})
 	<-r.launchDone
 	r.workers.Wait()
-	return r.closeErr
+drainTCP:
+	for {
+		select {
+		case <-r.tcp:
+		default:
+			break drainTCP
+		}
+	}
+	for {
+		select {
+		case <-r.udp:
+		case <-r.flowErrors:
+		default:
+			return r.closeErr
+		}
+	}
 }

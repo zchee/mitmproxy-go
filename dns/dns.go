@@ -4,10 +4,9 @@
 // Package dns holds mitmproxy's DNS data model: messages, questions and
 // resource records, and the protocol constants with their display names.
 //
-// Record data is kept as raw bytes. The wire codec and the typed views over
-// record data that need it (domain names, HTTPS records) belong with the
-// DNS protocol layer; this package only offers the views that need no
-// codec. The serialised state matches mitmproxy's flow format 21.
+// Record data is kept as raw bytes. Pack and Unpack provide the wire codec,
+// with domain-name and HTTPS/SVCB views over the record data. The serialised
+// state matches mitmproxy's flow format 21.
 package dns
 
 import (

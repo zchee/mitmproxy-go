@@ -56,3 +56,20 @@ func packHeader(message *Message) ([]byte, error) {
 	}
 	return wire.Data, nil
 }
+
+func unpackHeader(data []byte) (Message, error) {
+	if len(data) < 12 {
+		return Message{}, errors.New("unpack requires a buffer of 12 bytes")
+	}
+	wire := miekg.Msg{Data: data, Options: miekg.MsgOptionUnpackHeader}
+	if err := wire.Unpack(); err != nil {
+		return Message{}, fmt.Errorf("unpack DNS header: %w", err)
+	}
+	return Message{
+		ID: int(wire.ID), Query: !wire.Response, OpCode: int(wire.Opcode),
+		AuthoritativeAnswer: wire.Authoritative, Truncation: wire.Truncated,
+		RecursionDesired: wire.RecursionDesired, RecursionAvailable: wire.RecursionAvailable,
+		Reserved:     int(binary.BigEndian.Uint16(data[2:])>>4) & 7,
+		ResponseCode: int(wire.Rcode),
+	}, nil
+}

@@ -84,7 +84,7 @@ func TestHTTP2InterceptTermination(t *testing.T) {
 						t.Fatal(err)
 					}
 					client := &observedHTTP2Server{http2Server: &http2Server{engine: source, failureDone: source.StreamFailed(head.Identity), identity: head.Identity, id: 1, head: &head}}
-					server := &http2Client{engine: destination, identity: sid, id: 1}
+					server := &http2Client{engine: destination, failureDone: destination.StreamFailed(sid), identity: sid, id: 1}
 					done := make(chan error, 1)
 					go func() { done <- (&streamDriver{stream: s, client: client, server: server}).run(ctx) }()
 					if strings.HasPrefix(hook, "response") {

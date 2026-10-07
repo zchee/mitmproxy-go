@@ -876,7 +876,8 @@ func (o *owner) frame(frame http2.Frame) error {
 	case *http2.DataFrame:
 		return o.data(f)
 	case *http2.WindowUpdateFrame:
-		if o.e.cfg.Client && f.StreamID%2 == 1 && f.StreamID > o.lastLocal {
+		s := o.streams[f.StreamID]
+		if o.e.cfg.Client && f.StreamID%2 == 1 && (f.StreamID > o.lastLocal || s != nil && !s.wireStarted) {
 			return protocolError(http2.ErrCodeProtocol, "HTTP/2 WINDOW_UPDATE on idle stream")
 		}
 		if f.StreamID == 0 {
@@ -884,7 +885,7 @@ func (o *owner) frame(frame http2.Frame) error {
 				return protocolError(http2.ErrCodeFlowControl, "HTTP/2 connection window overflow")
 			}
 			o.outWindow += int64(f.Increment)
-		} else if s := o.streams[f.StreamID]; s != nil && s.failed == nil {
+		} else if s != nil && s.failed == nil {
 			if s.outWindow+int64(f.Increment) > 0x7fffffff {
 				o.cancel(s, http2.ErrCodeFlowControl, streamError(s.id, http2.ErrCodeFlowControl, "h2: stream window overflow"), true)
 			} else {
@@ -894,10 +895,11 @@ func (o *owner) frame(frame http2.Frame) error {
 			return protocolError(http2.ErrCodeProtocol, "HTTP/2 WINDOW_UPDATE on idle stream")
 		}
 	case *http2.RSTStreamFrame:
-		if o.e.cfg.Client && f.StreamID%2 == 1 && f.StreamID > o.lastLocal {
+		s := o.streams[f.StreamID]
+		if o.e.cfg.Client && f.StreamID%2 == 1 && (f.StreamID > o.lastLocal || s != nil && !s.wireStarted) {
 			return protocolError(http2.ErrCodeProtocol, "HTTP/2 RST_STREAM on idle stream")
 		}
-		if s := o.streams[f.StreamID]; s != nil {
+		if s != nil {
 			o.cancel(s, f.ErrCode, streamError(s.id, f.ErrCode, "stream reset by client ("+f.ErrCode.String()+")"), false)
 		}
 	case *http2.GoAwayFrame:
@@ -958,7 +960,7 @@ func (o *owner) headers(id uint32, fields []hpack.HeaderField, end bool) error {
 	}
 	s := o.streams[id]
 	if o.e.cfg.Client && id%2 == 1 {
-		if id > o.lastLocal {
+		if id > o.lastLocal || s != nil && !s.wireStarted {
 			return protocolError(http2.ErrCodeProtocol, "Unexpected HTTP/2 stream headers")
 		}
 		// Decode before discarding in-flight headers to preserve the HPACK table.
@@ -1090,7 +1092,7 @@ func (s *streamState) checkLength(end bool) error {
 func (o *owner) data(f *http2.DataFrame) error {
 	s := o.streams[f.StreamID]
 	if o.e.cfg.Client && f.StreamID%2 == 1 {
-		if f.StreamID > o.lastLocal {
+		if f.StreamID > o.lastLocal || s != nil && !s.wireStarted {
 			return protocolError(http2.ErrCodeProtocol, "HTTP/2 DATA on idle stream")
 		}
 		if s == nil {

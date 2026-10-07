@@ -334,6 +334,76 @@ func TestIdleLocalStreamFrames(t *testing.T) {
 	}
 }
 
+func TestPresentIdleLocalStreamFrames(t *testing.T) {
+	tests := map[string]struct {
+		write func(*http2.Framer) error
+	}{
+		"error: HEADERS on unsent lower stream": {write: func(f *http2.Framer) error {
+			return f.WriteHeaders(http2.HeadersFrameParam{StreamID: 1, EndHeaders: true, BlockFragment: []byte{0x88}})
+		}},
+		"error: DATA on unsent lower stream": {write: func(f *http2.Framer) error {
+			return f.WriteData(1, true, []byte("idle"))
+		}},
+		"error: WINDOW_UPDATE on unsent lower stream": {write: func(f *http2.Framer) error {
+			return f.WriteWindowUpdate(1, 1)
+		}},
+		"error: RST_STREAM on unsent lower stream": {write: func(f *http2.Framer) error {
+			return f.WriteRSTStream(1, http2.ErrCodeCancel)
+		}},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			conn, peer := net.Pipe()
+			t.Cleanup(func() { _ = conn.Close(); _ = peer.Close() })
+			e, err := New(conn, Config{Client: true, Descriptor: layer.EndpointDescriptor{Identity: "endpoint"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			o := newOwner(e, t.Context())
+			defer o.finishHead()
+			o.peerSettings, o.controls = true, nil
+			idle, started := o.newStream(1), o.newStream(3)
+			// Exercise retained idle state below the dispatched high-water mark,
+			// independently of the initial-HEADERS ordering scheduler.
+			started.wireStarted, o.lastLocal, o.nextLocal = true, 3, 5
+			before := e.Budget()
+			var wire bytes.Buffer
+			if err := test.write(http2.NewFramer(&wire, nil)); err != nil {
+				t.Fatal(err)
+			}
+			frame, err := http2.NewFramer(nil, &wire).ReadFrame()
+			if err != nil {
+				t.Fatal(err)
+			}
+			failure, ok := errors.AsType[*ProtocolError](o.frame(frame))
+			if !ok || failure.Code != http2.ErrCodeProtocol {
+				t.Fatalf("frame on present wire-idle stream = %v, want connection PROTOCOL_ERROR", failure)
+			}
+			if diff := gocmp.Diff(before, e.Budget()); diff != "" {
+				t.Fatalf("idle frame changed reservation (-want +got):\n%s", diff)
+			}
+			if idle.inHeaders || idle.remoteEnd || idle.received != 0 || len(o.credits) != 0 || len(o.controls) != 0 {
+				t.Fatalf("idle frame mutated stream or flow control: stream=%+v credits=%v controls=%v", idle, o.credits, o.controls)
+			}
+			o.fail(failure)
+			goaway := o.nextWrite()
+			if goaway == nil || goaway.kind != writeGoAway || goaway.code != http2.ErrCodeProtocol {
+				t.Fatalf("connection failure write = %+v, want GOAWAY(PROTOCOL_ERROR)", goaway)
+			}
+			if budget := e.Budget(); budget.Granted != 0 {
+				t.Fatalf("connection failure retained reservations: %+v", budget)
+			}
+			for _, s := range []*streamState{idle, started} {
+				select {
+				case <-s.done:
+				default:
+					t.Fatalf("stream %d remained open after connection failure", s.id.Stream)
+				}
+			}
+		})
+	}
+}
+
 func awaitCancelWrite(t *testing.T, ctx context.Context, writes <-chan *writeFrame) *writeFrame {
 	t.Helper()
 	select {

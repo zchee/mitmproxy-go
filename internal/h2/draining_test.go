@@ -59,8 +59,8 @@ func TestOpenStreamDraining(t *testing.T) {
 					if test.code == http2.ErrCodeNo {
 						fields := []hpack.HeaderField{{Name: ":status", Value: "200"}}
 						if config.client {
-							p.headers(t, id.Stream, false, fields)
-							if err := p.framer.WriteData(id.Stream, true, []byte("accepted")); err != nil {
+							p.headers(t, uint32(id.Stream), false, fields)
+							if err := p.framer.WriteData(uint32(id.Stream), true, []byte("accepted")); err != nil {
 								t.Fatal(err)
 							}
 							head, err := p.endpoint.ReceiveStream(p.ctx, id)

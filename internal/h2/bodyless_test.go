@@ -48,7 +48,7 @@ func TestResponseBodyLength(t *testing.T) {
 				t.Fatal(err)
 			}
 			if test.interim {
-				p.headers(t, id.Stream, false, []hpack.HeaderField{{Name: ":status", Value: "103"}, {Name: "content-length", Value: "100"}})
+				p.headers(t, uint32(id.Stream), false, []hpack.HeaderField{{Name: ":status", Value: "103"}, {Name: "content-length", Value: "100"}})
 				event, err := p.endpoint.ReceiveStream(p.ctx, id)
 				if err != nil || event.Kind != Informational {
 					t.Fatalf("interim = %+v, %v", event, err)
@@ -59,13 +59,13 @@ func TestResponseBodyLength(t *testing.T) {
 				length = "4"
 			}
 			response := []hpack.HeaderField{{Name: ":status", Value: test.status}, {Name: "content-length", Value: length}}
-			p.headers(t, id.Stream, test.body == "", response)
+			p.headers(t, uint32(id.Stream), test.body == "", response)
 			event, err := p.endpoint.ReceiveStream(p.ctx, id)
 			if test.body != "" {
 				if err != nil || event.Kind != Headers {
 					t.Fatalf("head = %+v, %v", event, err)
 				}
-				if err := p.framer.WriteData(id.Stream, true, []byte(test.body)); err != nil {
+				if err := p.framer.WriteData(uint32(id.Stream), true, []byte(test.body)); err != nil {
 					t.Fatal(err)
 				}
 				event, err = p.endpoint.ReceiveStream(p.ctx, id)
@@ -81,7 +81,7 @@ func TestResponseBodyLength(t *testing.T) {
 					if f.kind == http2.FrameGoAway {
 						t.Fatal("body mismatch closed connection")
 					}
-					return f.kind == http2.FrameRSTStream && f.stream == id.Stream && f.code == http2.ErrCodeProtocol
+					return f.kind == http2.FrameRSTStream && uint64(f.stream) == id.Stream && f.code == http2.ErrCodeProtocol
 				})
 			} else if test.body == "" {
 				if event.Kind != Headers || !event.EndStream {
@@ -99,7 +99,7 @@ func TestResponseBodyLength(t *testing.T) {
 				}
 				event.Receipt.Complete()
 			}
-			p.headers(t, sibling.Stream, true, []hpack.HeaderField{{Name: ":status", Value: "204"}})
+			p.headers(t, uint32(sibling.Stream), true, []hpack.HeaderField{{Name: ":status", Value: "204"}})
 			other, err := p.endpoint.ReceiveStream(p.ctx, sibling)
 			if err != nil || other.Kind != Headers || !other.EndStream {
 				t.Fatalf("sibling = %+v, %v", other, err)

@@ -35,7 +35,7 @@ func TestInitialHeadersWriteOrder(t *testing.T) {
 	firstSend.id, firstSend.event = first.id, Event{Kind: Headers, Identity: first.id, Headers: requestFields(), EndStream: true}
 	o.request(firstSend)
 	o.prepared = o.nextWrite()
-	if o.prepared == nil || o.prepared.stream != first.id.Stream || first.wireStarted || o.lastLocal != 0 {
+	if o.prepared == nil || uint64(o.prepared.stream) != first.id.Stream || first.wireStarted || o.lastLocal != 0 {
 		t.Fatalf("prepared initial HEADERS = %+v, wireStarted = %v, lastLocal = %d", o.prepared, first.wireStarted, o.lastLocal)
 	}
 
@@ -81,7 +81,7 @@ func TestInitialHeadersWriteOrder(t *testing.T) {
 	}
 	for _, r := range []*request{firstSend, secondSend} {
 		frame := awaitCancelWrite(t, ctx, writes)
-		if frame.kind != writeHeaders || frame.stream != r.id.Stream {
+		if frame.kind != writeHeaders || uint64(frame.stream) != r.id.Stream {
 			t.Fatalf("initial wire HEADERS = kind %d stream %d, want HEADERS stream %d", frame.kind, frame.stream, r.id.Stream)
 		}
 		written <- writeResult{frame: frame}
@@ -96,7 +96,7 @@ func TestInitialHeadersWriteOrder(t *testing.T) {
 	}
 	cancel()
 	<-stopped
-	if !first.wireStarted || !second.wireStarted || o.lastLocal != second.id.Stream {
+	if !first.wireStarted || !second.wireStarted || uint64(o.lastLocal) != second.id.Stream {
 		t.Fatalf("dispatch state = first %v, second %v, lastLocal %d", first.wireStarted, second.wireStarted, o.lastLocal)
 	}
 }
@@ -131,7 +131,7 @@ func TestInitialHeadersGatePreservesWrites(t *testing.T) {
 				event.Headers = []hpack.HeaderField{{Name: ":status", Value: "200"}}
 			}
 			if test.kind == Data || test.kind == Trailers {
-				first.wireStarted, first.outHeaders, o.lastLocal = true, true, first.id.Stream
+				first.wireStarted, first.outHeaders, o.lastLocal = true, true, uint32(first.id.Stream)
 				event.Identity = first.id
 				if test.kind == Data {
 					event.Headers, event.Data = nil, []byte("body")
@@ -165,7 +165,7 @@ func TestInitialHeadersGatePreservesWrites(t *testing.T) {
 			if test.kind == Data {
 				wantKind = writeData
 			}
-			if frame.kind != wantKind || frame.stream != event.Identity.Stream {
+			if frame.kind != wantKind || uint64(frame.stream) != event.Identity.Stream {
 				t.Fatalf("next write = %+v, want kind %d stream %d", frame, wantKind, event.Identity.Stream)
 			}
 			if test.kind == Data {

@@ -240,7 +240,7 @@ func (o *owner) run(reads <-chan readFrame, writes chan<- *writeFrame, written <
 				o.lastActivity = o.e.cfg.Clock.Now()
 				if err := o.frame(incoming.frame); err != nil {
 					if stream, ok := errors.AsType[*StreamError](err); ok {
-						o.cancel(o.streams[stream.Identity.Stream], stream.Code, err, true)
+						o.cancel(o.streams[uint32(stream.Identity.Stream)], stream.Code, err, true)
 					} else {
 						o.fail(err)
 					}
@@ -355,7 +355,7 @@ func (o *owner) settle() {
 				s.receipt = nil
 				if r.Consumed() && s.failed == nil && (!s.localEnd || !s.remoteEnd) {
 					credit := o.budget.consume(&s.window, r.OriginalBytes())
-					o.credits[s.id.Stream] += uint32(credit)
+					o.credits[uint32(s.id.Stream)] += uint32(credit)
 					o.publish()
 				}
 			default:
@@ -393,8 +393,8 @@ func (o *owner) settle() {
 				s.receiver.complete(Event{}, io.EOF)
 				s.receiver = nil
 			}
-			delete(o.streams, s.id.Stream)
-			o.order = slices.DeleteFunc(o.order, func(id uint32) bool { return id == s.id.Stream })
+			delete(o.streams, uint32(s.id.Stream))
+			o.order = slices.DeleteFunc(o.order, func(id uint32) bool { return uint64(id) == s.id.Stream })
 		}
 	}
 	if o.receiver != nil && o.receiver.ctx.Err() != nil {
@@ -493,7 +493,7 @@ func (o *owner) newStream(id uint32) *streamState {
 			return nil
 		}
 	}
-	s := &streamState{id: layer.StreamIdentity{Endpoint: o.e.cfg.Descriptor.Identity, Stream: id}, done: make(chan struct{}), failureDone: make(chan struct{}), outWindow: o.peerInitial, contentLength: -1}
+	s := &streamState{id: layer.StreamIdentity{Endpoint: o.e.cfg.Descriptor.Identity, Stream: uint64(id)}, done: make(chan struct{}), failureDone: make(chan struct{}), outWindow: o.peerInitial, contentLength: -1}
 	if !o.budget.reserve(&s.window) {
 		return nil
 	}
@@ -512,7 +512,10 @@ func (o *owner) request(r *request) {
 		r.complete(Event{}, o.fatal)
 		return
 	}
-	s := o.streams[r.id.Stream]
+	var s *streamState
+	if r.id.Stream <= 0x7fffffff {
+		s = o.streams[uint32(r.id.Stream)]
+	}
 	if r.kind != receive && r.kind != openStream && r.kind != shutdown {
 		if r.id.Endpoint != o.e.cfg.Descriptor.Identity || s == nil {
 			r.complete(Event{}, streamError(r.id, http2.ErrCodeStreamClosed, "h2: unknown or foreign stream"))
@@ -763,7 +766,7 @@ func (o *owner) cancel(s *streamState, code http2.ErrCode, err error, sendReset 
 	if s.failed != nil {
 		return
 	}
-	if o.prepared != nil && o.prepared.stream == s.id.Stream && (o.prepared.kind == writeCredit || o.prepared.request == s.sender && s.sender != nil) {
+	if o.prepared != nil && uint64(o.prepared.stream) == s.id.Stream && (o.prepared.kind == writeCredit || o.prepared.request == s.sender && s.sender != nil) {
 		o.discardPrepared()
 	}
 	s.failed = err
@@ -781,14 +784,14 @@ func (o *owner) cancel(s *streamState, code http2.ErrCode, err error, sendReset 
 	s.queue = []queuedEvent{{event: Event{Kind: Reset, Identity: s.id, Code: code, Err: eventErr}}}
 	o.budget.release(&s.window)
 	o.publish()
-	delete(o.credits, s.id.Stream)
+	delete(o.credits, uint32(s.id.Stream))
 	if s.sender != nil && (o.active == nil || o.active.request != s.sender) {
 		s.sender.complete(Event{}, err)
 		s.sender = nil
 	}
 	locallyInitiated := (s.id.Stream%2 == 1) == o.e.cfg.Client
 	if sendReset && (!locallyInitiated || s.wireStarted) {
-		if err := o.queueControl(&writeFrame{kind: writeReset, stream: s.id.Stream, code: code}); err != nil {
+		if err := o.queueControl(&writeFrame{kind: writeReset, stream: uint32(s.id.Stream), code: code}); err != nil {
 			o.fail(err)
 		} else {
 			s.resetQueued = true
@@ -945,7 +948,7 @@ func (o *owner) frame(frame http2.Frame) error {
 		o.connectionEvents = append(o.connectionEvents, Event{Kind: GoAway, Code: f.ErrCode, LastStreamID: f.LastStreamID, Err: errors.New("HTTP/2 connection closed: " + debug)})
 		for _, s := range o.streams {
 			locallyInitiated := (s.id.Stream%2 == 1) == o.e.cfg.Client
-			if locallyInitiated && (s.id.Stream > f.LastStreamID || !s.wireStarted) || f.ErrCode != http2.ErrCodeNo {
+			if locallyInitiated && (s.id.Stream > uint64(f.LastStreamID) || !s.wireStarted) || f.ErrCode != http2.ErrCodeNo {
 				err := streamError(s.id, f.ErrCode, "h2: stream rejected by GOAWAY")
 				if locallyInitiated && !s.wireStarted && f.ErrCode == http2.ErrCodeNo {
 					err = errors.Join(err, ErrDraining)

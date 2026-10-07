@@ -63,7 +63,7 @@ func TestCancelStreamWireState(t *testing.T) {
 			if test.headers != "idle" {
 				go func() { sent <- endpoint.Send(sendCtx, Event{Kind: Headers, Identity: id, Headers: requestFields()}) }()
 				frame := awaitCancelWrite(t, ctx, writes)
-				if frame.kind != writeHeaders || frame.stream != id.Stream {
+				if frame.kind != writeHeaders || uint64(frame.stream) != id.Stream {
 					t.Fatalf("initial write = %+v", frame)
 				}
 				switch test.headers {
@@ -127,7 +127,7 @@ func TestCancelStreamWireState(t *testing.T) {
 			go func() { sent <- endpoint.Send(ctx, Event{Kind: Headers, Identity: next, Headers: requestFields()}) }()
 			if test.headers != "idle" {
 				frame := awaitCancelWrite(t, ctx, writes)
-				if frame.kind != writeReset || frame.stream != id.Stream || frame.code != http2.ErrCodeCancel {
+				if frame.kind != writeReset || uint64(frame.stream) != id.Stream || frame.code != http2.ErrCodeCancel {
 					t.Fatalf("cancellation write = %+v", frame)
 				}
 				written <- writeResult{frame: frame}
@@ -135,7 +135,7 @@ func TestCancelStreamWireState(t *testing.T) {
 			// The next HEADERS is a positive barrier: no reset may precede an idle
 			// cancellation, and no duplicate reset may follow an active cancellation.
 			frame := awaitCancelWrite(t, ctx, writes)
-			if frame.kind != writeHeaders || frame.stream != next.Stream {
+			if frame.kind != writeHeaders || uint64(frame.stream) != next.Stream {
 				t.Fatalf("next stream write = %+v, want HEADERS stream %d", frame, next.Stream)
 			}
 			written <- writeResult{frame: frame}
@@ -144,7 +144,7 @@ func TestCancelStreamWireState(t *testing.T) {
 			}
 			cancel()
 			<-stopped
-			if _, retained := o.streams[id.Stream]; retained {
+			if _, retained := o.streams[uint32(id.Stream)]; retained {
 				t.Fatal("cancelled stream state retained after consumption")
 			}
 		})
@@ -174,7 +174,7 @@ func TestCancelledStreamLateResponse(t *testing.T) {
 				p.frame(t, func(f wireFrame) bool { return f.kind == http2.FrameHeaders })
 			}
 			if test.peerReset {
-				if err := p.framer.WriteRSTStream(id.Stream, http2.ErrCodeCancel); err != nil {
+				if err := p.framer.WriteRSTStream(uint32(id.Stream), http2.ErrCodeCancel); err != nil {
 					t.Fatal(err)
 				}
 			} else {
@@ -198,7 +198,7 @@ func TestCancelledStreamLateResponse(t *testing.T) {
 				t.Fatal(err)
 			}
 			head := p.frame(t, func(f wireFrame) bool { return f.kind == http2.FrameHeaders || f.kind == http2.FrameRSTStream })
-			if head.kind != http2.FrameHeaders || head.stream != sibling.Stream {
+			if head.kind != http2.FrameHeaders || uint64(head.stream) != sibling.Stream {
 				t.Fatalf("sibling request = %+v, want HEADERS stream %d without idle reset", head, sibling.Stream)
 			}
 			fields := []hpack.HeaderField{{Name: ":status", Value: "200"}, {Name: "x-in-flight", Value: "shared dynamic table entry"}}
@@ -222,31 +222,31 @@ func TestCancelledStreamLateResponse(t *testing.T) {
 			}
 			written := make(chan error, 1)
 			go func() {
-				if err := p.framer.WriteHeaders(http2.HeadersFrameParam{StreamID: id.Stream, BlockFragment: late[:1]}); err != nil {
+				if err := p.framer.WriteHeaders(http2.HeadersFrameParam{StreamID: uint32(id.Stream), BlockFragment: late[:1]}); err != nil {
 					written <- err
 					return
 				}
-				if err := p.framer.WriteContinuation(id.Stream, true, late[1:]); err != nil {
+				if err := p.framer.WriteContinuation(uint32(id.Stream), true, late[1:]); err != nil {
 					written <- err
 					return
 				}
-				if err := p.framer.WriteData(id.Stream, true, []byte("late")); err != nil {
+				if err := p.framer.WriteData(uint32(id.Stream), true, []byte("late")); err != nil {
 					written <- err
 					return
 				}
-				if err := p.framer.WritePriority(id.Stream, http2.PriorityParam{}); err != nil {
+				if err := p.framer.WritePriority(uint32(id.Stream), http2.PriorityParam{}); err != nil {
 					written <- err
 					return
 				}
-				if err := p.framer.WriteWindowUpdate(id.Stream, 1); err != nil {
+				if err := p.framer.WriteWindowUpdate(uint32(id.Stream), 1); err != nil {
 					written <- err
 					return
 				}
-				if err := p.framer.WriteRSTStream(id.Stream, http2.ErrCodeCancel); err != nil {
+				if err := p.framer.WriteRSTStream(uint32(id.Stream), http2.ErrCodeCancel); err != nil {
 					written <- err
 					return
 				}
-				written <- p.framer.WriteHeaders(http2.HeadersFrameParam{StreamID: sibling.Stream, EndStream: true, EndHeaders: true, BlockFragment: dependent})
+				written <- p.framer.WriteHeaders(http2.HeadersFrameParam{StreamID: uint32(sibling.Stream), EndStream: true, EndHeaders: true, BlockFragment: dependent})
 			}()
 			credit := p.frame(t, func(f wireFrame) bool {
 				return f.kind == http2.FrameGoAway || f.kind == http2.FrameRSTStream || f.kind == http2.FrameWindowUpdate && f.stream == 0
@@ -427,16 +427,16 @@ func TestCancelledPresentStreamLateFrames(t *testing.T) {
 				t.Fatal(err)
 			}
 			reset := p.frame(t, func(f wireFrame) bool { return f.kind == http2.FrameRSTStream })
-			if reset.stream != id.Stream || reset.code != http2.ErrCodeCancel {
+			if uint64(reset.stream) != id.Stream || reset.code != http2.ErrCodeCancel {
 				t.Fatalf("cancellation reset = %+v", reset)
 			}
 			// Leave the terminal event unconsumed to retain the failed stream state.
 			written := make(chan error, 1)
 			go func() {
 				head := func() error {
-					return p.framer.WriteHeaders(http2.HeadersFrameParam{StreamID: id.Stream, EndHeaders: true, BlockFragment: []byte{0x88}})
+					return p.framer.WriteHeaders(http2.HeadersFrameParam{StreamID: uint32(id.Stream), EndHeaders: true, BlockFragment: []byte{0x88}})
 				}
-				data := func() error { return p.framer.WriteData(id.Stream, true, []byte("late")) }
+				data := func() error { return p.framer.WriteData(uint32(id.Stream), true, []byte("late")) }
 				first, second := data, head
 				if test.headFirst {
 					first, second = head, data
@@ -474,7 +474,7 @@ func TestCancelledPresentStreamLateFrames(t *testing.T) {
 					}
 				}
 				// The sibling HEADERS follows both peer-frame processing and pending credit.
-				if frame.kind == http2.FrameHeaders && frame.stream == sibling.Stream {
+				if frame.kind == http2.FrameHeaders && uint64(frame.stream) == sibling.Stream {
 					break
 				}
 			}

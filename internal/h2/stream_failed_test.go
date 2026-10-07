@@ -59,12 +59,12 @@ func TestStreamFailed(t *testing.T) {
 					case "complete":
 						fields := []hpack.HeaderField{{Name: ":status", Value: "204"}}
 						if config.client {
-							p.headers(t, id.Stream, true, fields)
+							p.headers(t, uint32(id.Stream), true, fields)
 						} else if err := p.endpoint.Send(p.ctx, Event{Kind: Headers, Identity: id, Headers: fields, EndStream: true}); err != nil {
 							t.Fatal(err)
 						}
 					case "reset":
-						if err := p.framer.WriteRSTStream(id.Stream, http2.ErrCodeCancel); err != nil {
+						if err := p.framer.WriteRSTStream(uint32(id.Stream), http2.ErrCodeCancel); err != nil {
 							t.Fatal(err)
 						}
 					case "cancel":

@@ -146,7 +146,7 @@ func TestPeerLimitsAndDataReframing(t *testing.T) {
 	if !bytes.Equal(received, payload) {
 		t.Fatal("re-framing changed payload")
 	}
-	p.headers(t, id.Stream, true, []hpack.HeaderField{{Name: ":status", Value: "200"}})
+	p.headers(t, uint32(id.Stream), true, []hpack.HeaderField{{Name: ":status", Value: "200"}})
 	event, err := p.endpoint.ReceiveStream(p.ctx, id)
 	if err != nil || !event.EndStream {
 		t.Fatalf("terminal response = %+v %v", event, err)
@@ -209,7 +209,7 @@ func TestWaitSendCreditAndShutdownCancellation(t *testing.T) {
 		t.Fatalf("zero stream credit accepted: %+v", r)
 	default:
 	}
-	if err := p.framer.WriteWindowUpdate(id.Stream, 1); err != nil {
+	if err := p.framer.WriteWindowUpdate(uint32(id.Stream), 1); err != nil {
 		t.Fatal(err)
 	}
 	if r := <-credit.result; r.err != nil {
@@ -367,7 +367,7 @@ func TestTerminalTrailers(t *testing.T) {
 				if err := p.endpoint.Send(p.ctx, Event{Kind: Headers, Identity: id, Headers: requestFields(), EndStream: true}); err != nil {
 					t.Fatal(err)
 				}
-				p.headers(t, id.Stream, false, []hpack.HeaderField{{Name: ":status", Value: "200"}})
+				p.headers(t, uint32(id.Stream), false, []hpack.HeaderField{{Name: ":status", Value: "200"}})
 				if _, err := p.endpoint.ReceiveStream(p.ctx, id); err != nil {
 					t.Fatal(err)
 				}
@@ -379,7 +379,7 @@ func TestTerminalTrailers(t *testing.T) {
 				}
 				id = head.Identity
 			}
-			if err := p.framer.WriteData(id.Stream, false, []byte("body")); err != nil {
+			if err := p.framer.WriteData(uint32(id.Stream), false, []byte("body")); err != nil {
 				t.Fatal(err)
 			}
 			body, err := p.endpoint.ReceiveStream(p.ctx, id)
@@ -388,7 +388,7 @@ func TestTerminalTrailers(t *testing.T) {
 			}
 			body.Receipt.Complete()
 			fields := []hpack.HeaderField{{Name: "x-trailer", Value: "one"}, {Name: "x-trailer", Value: "two"}}
-			p.headers(t, id.Stream, true, fields)
+			p.headers(t, uint32(id.Stream), true, fields)
 			tail, err := p.endpoint.ReceiveStream(p.ctx, id)
 			if err != nil || tail.Kind != Trailers || !tail.EndStream {
 				t.Fatalf("tail = %+v, %v", tail, err)
@@ -420,7 +420,7 @@ func TestBodyLengthAndEarlyResponseRejections(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				stream = id.Stream
+				stream = uint32(id.Stream)
 				if err := p.endpoint.Send(p.ctx, Event{Kind: Headers, Identity: id, Headers: requestFields(), EndStream: true}); err != nil {
 					t.Fatal(err)
 				}

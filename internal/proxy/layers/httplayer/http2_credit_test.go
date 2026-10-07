@@ -119,7 +119,7 @@ func TestHTTP2DriverResetWhileWaitingForCredit(t *testing.T) {
 			server := &http2Client{engine: destination, identity: serverID, id: 1, normalize: true}
 			done := make(chan error, 1)
 			go func() { done <- (&streamDriver{stream: stream, client: client, server: server}).run(t.Context()) }()
-			if got := await(t, originHeads); got != serverID.Stream {
+			if got := await(t, originHeads); uint64(got) != serverID.Stream {
 				t.Fatalf("origin head stream = %d", got)
 			}
 			if tt.body != "" {
@@ -162,7 +162,7 @@ func TestHTTP2DriverResetWhileWaitingForCredit(t *testing.T) {
 			client = &http2Server{engine: source, identity: head.Identity, id: 3, normalize: true, head: &head}
 			server = &http2Client{engine: destination, identity: serverID, id: 3, normalize: true}
 			go func() { done <- (&streamDriver{stream: sibling, client: client, server: server}).run(t.Context()) }()
-			if got := await(t, originHeads); got != serverID.Stream {
+			if got := await(t, originHeads); uint64(got) != serverID.Stream {
 				t.Fatalf("sibling origin stream = %d", got)
 			}
 			response, err := peer.ReceiveStream(t.Context(), clientID)

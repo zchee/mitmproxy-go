@@ -142,7 +142,7 @@ func TestUnresponsivePeerShutdown(t *testing.T) {
 					}
 					go func() { _ = e.Shutdown(ctx, http2.ErrCodeNo, nil) }()
 				} else {
-					if err := fr.WriteHeaders(http2.HeadersFrameParam{StreamID: id.Stream, BlockFragment: []byte{0x88}}); err != nil {
+					if err := fr.WriteHeaders(http2.HeadersFrameParam{StreamID: uint32(id.Stream), BlockFragment: []byte{0x88}}); err != nil {
 						t.Fatal(err)
 					}
 					<-clock.scheduled
@@ -239,12 +239,12 @@ func TestHeadDeadlineAndKeepalive(t *testing.T) {
 				if err := p.endpoint.Send(p.ctx, Event{Kind: Headers, Identity: id, Headers: requestFields()}); err != nil {
 					t.Fatal(err)
 				}
-				if err := p.framer.WriteHeaders(http2.HeadersFrameParam{StreamID: id.Stream, BlockFragment: []byte{0x88}}); err != nil {
+				if err := p.framer.WriteHeaders(http2.HeadersFrameParam{StreamID: uint32(id.Stream), BlockFragment: []byte{0x88}}); err != nil {
 					t.Fatal(err)
 				}
 				<-clock.scheduled
 				clock.advance(layer.HeadReadTimeout / 2)
-				if err := p.framer.WriteContinuation(id.Stream, false, nil); err != nil {
+				if err := p.framer.WriteContinuation(uint32(id.Stream), false, nil); err != nil {
 					t.Fatal(err)
 				}
 				clock.advance(layer.HeadReadTimeout / 2)

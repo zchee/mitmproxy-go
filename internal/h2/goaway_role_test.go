@@ -56,7 +56,7 @@ func TestGoAwayStreamInitiator(t *testing.T) {
 					if err != nil || away.Kind != GoAway {
 						t.Fatalf("GOAWAY = %+v, %v", away, err)
 					}
-					wantFailure := test.code != http2.ErrCodeNo || config.client && id.Stream > test.last
+					wantFailure := test.code != http2.ErrCodeNo || config.client && id.Stream > uint64(test.last)
 					if wantFailure {
 						reset, err := p.endpoint.ReceiveStream(p.ctx, id)
 						if err == nil {
@@ -83,7 +83,7 @@ func TestGoAwayStreamInitiator(t *testing.T) {
 					}
 					fields := []hpack.HeaderField{{Name: ":status", Value: "204"}}
 					if config.client {
-						p.headers(t, id.Stream, true, fields)
+						p.headers(t, uint32(id.Stream), true, fields)
 						head, err := p.endpoint.ReceiveStream(p.ctx, id)
 						if err != nil || head.Kind != Headers || !head.EndStream {
 							t.Fatalf("accepted response = %+v, %v", head, err)

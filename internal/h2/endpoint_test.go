@@ -302,7 +302,7 @@ func TestSendFlowControlAndCancellation(t *testing.T) {
 		t.Fatalf("Send completed on queue acceptance: %v", err)
 	default:
 	}
-	if err := p.framer.WriteWindowUpdate(id.Stream, 1); err != nil {
+	if err := p.framer.WriteWindowUpdate(uint32(id.Stream), 1); err != nil {
 		t.Fatal(err)
 	}
 	second := p.frame(t, func(f wireFrame) bool { return f.kind == http2.FrameData })
@@ -337,24 +337,24 @@ func TestInformationalAndReset(t *testing.T) {
 	if err := p.endpoint.Send(p.ctx, Event{Kind: Headers, Identity: id, Headers: requestFields(), EndStream: true}); err != nil {
 		t.Fatal(err)
 	}
-	p.headers(t, id.Stream, false, []hpack.HeaderField{{Name: ":status", Value: "103"}})
+	p.headers(t, uint32(id.Stream), false, []hpack.HeaderField{{Name: ":status", Value: "103"}})
 	info, err := p.endpoint.ReceiveStream(p.ctx, id)
 	if err != nil || info.Kind != Informational {
 		t.Fatalf("informational = %+v %v", info, err)
 	}
-	p.headers(t, id.Stream, false, []hpack.HeaderField{{Name: ":status", Value: "200"}})
+	p.headers(t, uint32(id.Stream), false, []hpack.HeaderField{{Name: ":status", Value: "200"}})
 	head, err := p.endpoint.ReceiveStream(p.ctx, id)
 	if err != nil || head.Kind != Headers {
 		t.Fatalf("response = %+v %v", head, err)
 	}
-	if err := p.framer.WriteData(id.Stream, false, []byte("pending")); err != nil {
+	if err := p.framer.WriteData(uint32(id.Stream), false, []byte("pending")); err != nil {
 		t.Fatal(err)
 	}
 	data, err := p.endpoint.ReceiveStream(p.ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := p.framer.WriteRSTStream(id.Stream, http2.ErrCodeHTTP11Required); err != nil {
+	if err := p.framer.WriteRSTStream(uint32(id.Stream), http2.ErrCodeHTTP11Required); err != nil {
 		t.Fatal(err)
 	}
 	reset, err := p.endpoint.ReceiveStream(p.ctx, id)

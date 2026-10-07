@@ -12,12 +12,13 @@ import (
 type EndpointID string
 
 // StreamIdentity is a wire stream number scoped to its receiving endpoint.
+// Its stream number accommodates the full 62-bit QUIC stream ID range.
 // Flow owners retain this identity when routing events to an upstream connection.
 type StreamIdentity struct {
 	// Endpoint identifies the receiving protocol endpoint.
 	Endpoint EndpointID
 	// Stream is the endpoint-local wire stream number.
-	Stream uint32
+	Stream uint64
 }
 
 // EndpointDescriptor is immutable connection metadata published under dispatch.

@@ -41,7 +41,7 @@ func TestGoAwayUnsentLowerStream(t *testing.T) {
 				p.frame(t, func(f wireFrame) bool { return f.kind == http2.FrameHeaders })
 			}
 			failed, done := p.endpoint.StreamFailed(later), p.endpoint.StreamDone(later)
-			if err := p.framer.WriteGoAway(later.Stream, http2.ErrCodeNo, nil); err != nil {
+			if err := p.framer.WriteGoAway(uint32(later.Stream), http2.ErrCodeNo, nil); err != nil {
 				t.Fatal(err)
 			}
 			away, err := p.endpoint.Receive(p.ctx)
@@ -83,13 +83,13 @@ func TestGoAwayUnsentLowerStream(t *testing.T) {
 				t.Fatalf("draining connection wrote a reset or GOAWAY: %+v", frame)
 			}
 			fields := []hpack.HeaderField{{Name: ":status", Value: "204"}}
-			p.headers(t, first.Stream, true, fields)
+			p.headers(t, uint32(first.Stream), true, fields)
 			response, err := p.endpoint.ReceiveStream(p.ctx, first)
 			if err != nil || response.Kind != Headers || !response.EndStream {
 				t.Fatalf("accepted first response = %+v, %v", response, err)
 			}
 			if test.started {
-				p.headers(t, later.Stream, true, fields)
+				p.headers(t, uint32(later.Stream), true, fields)
 				response, err := p.endpoint.ReceiveStream(p.ctx, later)
 				if err != nil || response.Kind != Headers || !response.EndStream {
 					t.Fatalf("accepted later response = %+v, %v", response, err)

@@ -60,7 +60,7 @@ func TestStreamDone(t *testing.T) {
 			}
 			switch test.termination {
 			case "reset":
-				if err := p.framer.WriteRSTStream(id.Stream, http2.ErrCodeCancel); err != nil {
+				if err := p.framer.WriteRSTStream(uint32(id.Stream), http2.ErrCodeCancel); err != nil {
 					t.Fatal(err)
 				}
 			case "cancel":
@@ -70,7 +70,7 @@ func TestStreamDone(t *testing.T) {
 					}
 				}
 			case "goaway":
-				if err := p.framer.WriteGoAway(other.Stream, http2.ErrCodeNo, nil); err != nil {
+				if err := p.framer.WriteGoAway(uint32(other.Stream), http2.ErrCodeNo, nil); err != nil {
 					t.Fatal(err)
 				}
 			case "disconnect":
@@ -78,7 +78,7 @@ func TestStreamDone(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "complete":
-				p.headers(t, id.Stream, true, []hpack.HeaderField{{Name: ":status", Value: "200"}})
+				p.headers(t, uint32(id.Stream), true, []hpack.HeaderField{{Name: ":status", Value: "200"}})
 			}
 			select {
 			case <-done:

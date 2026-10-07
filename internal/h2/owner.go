@@ -559,8 +559,8 @@ func (o *owner) request(r *request) {
 		}
 		s.creditWaiter = r
 	case send:
-		if failure, ok := errors.AsType[*StreamError](s.failed); ok {
-			r.complete(Event{}, failure)
+		if _, ok := errors.AsType[*StreamError](s.failed); ok {
+			r.complete(Event{}, s.failed)
 			return
 		}
 		if s.failed != nil || s.localEnd {
@@ -929,8 +929,12 @@ func (o *owner) frame(frame http2.Frame) error {
 		o.connectionEvents = append(o.connectionEvents, Event{Kind: GoAway, Code: f.ErrCode, LastStreamID: f.LastStreamID, Err: errors.New("HTTP/2 connection closed: " + string(f.DebugData()))})
 		for _, s := range o.streams {
 			locallyInitiated := (s.id.Stream%2 == 1) == o.e.cfg.Client
-			if locallyInitiated && s.id.Stream > f.LastStreamID || f.ErrCode != http2.ErrCodeNo {
-				o.cancel(s, f.ErrCode, streamError(s.id, f.ErrCode, "h2: stream rejected by GOAWAY"), false)
+			if locallyInitiated && (s.id.Stream > f.LastStreamID || !s.wireStarted) || f.ErrCode != http2.ErrCodeNo {
+				err := streamError(s.id, f.ErrCode, "h2: stream rejected by GOAWAY")
+				if locallyInitiated && !s.wireStarted && f.ErrCode == http2.ErrCodeNo {
+					err = errors.Join(err, ErrDraining)
+				}
+				o.cancel(s, f.ErrCode, err, false)
 			}
 		}
 		for _, r := range o.opens {

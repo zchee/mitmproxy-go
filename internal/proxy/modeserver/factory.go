@@ -19,8 +19,9 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/proxy/packettransport"
 )
 
-// ListenerKey identifies a reverse protocol's listener factory. Scheme is the
-// lowercase server scheme; Transport must be UDP. TCP uses stream acceptance.
+// ListenerKey identifies a protocol's listener factory. Scheme is the lowercase
+// server scheme ("dns" also covers standalone DNS); Transport must be UDP.
+// TCP uses stream acceptance.
 type ListenerKey struct {
 	Scheme    string
 	Transport connection.TransportProtocol
@@ -67,6 +68,11 @@ func registeredFactories(overrides map[ListenerKey]ListenerFactory) map[Listener
 }
 
 func (i *Instance) packetFactory() (ListenerFactory, error) {
+	if _, ok := i.mode.(modespec.DNSMode); ok {
+		if factory := i.factories[ListenerKey{Scheme: "dns", Transport: connection.UDP}]; factory != nil {
+			return factory, nil
+		}
+	}
 	reverse, ok := i.mode.(modespec.ReverseMode)
 	if !ok {
 		return i.servePackets, nil
@@ -119,6 +125,10 @@ func (i *Instance) startPacketFactories(ctx context.Context, port int, factory L
 	if err != nil {
 		return nil, nil, err
 	}
+	return activatePacketFactories(ctx, sockets, factory, handle)
+}
+
+func activatePacketFactories(ctx context.Context, sockets []net.PacketConn, factory ListenerFactory, handle PacketHandler) ([]io.Closer, []connection.Address, error) {
 	listeners := make([]io.Closer, 0, len(sockets))
 	addrs := make([]connection.Address, 0, len(sockets))
 	for n, socket := range sockets {

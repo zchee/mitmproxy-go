@@ -22,8 +22,8 @@ func TestReverseProtocolAdmission(t *testing.T) {
 				if err := instance.Start(t.Context()); err != nil {
 					t.Fatal(err)
 				}
-				if !instance.IsRunning() || len(instance.ListenAddrs()) != 1 {
-					t.Fatal("DNS did not publish its packet listener")
+				if !instance.IsRunning() || len(instance.ListenAddrs()) != 2 {
+					t.Fatal("DNS did not publish its TCP and UDP listeners")
 				}
 				return
 			}

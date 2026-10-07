@@ -1,8 +1,8 @@
 // Copyright 2026 The mitmproxy-go Authors.
 // SPDX-License-Identifier: MIT
 
-// Package modeserver owns TCP and UDP listeners for regular, reverse and upstream
-// proxy modes. Stopping UDP evicts its tuples; accepted TCP connections may finish.
+// Package modeserver owns TCP and UDP listeners for regular, reverse, upstream
+// and DNS proxy modes. Stopping UDP evicts tuples; accepted TCP clients may finish.
 package modeserver
 
 import (
@@ -44,7 +44,8 @@ type Config struct {
 	// ClientLimiter shares admission capacity across instances. Nil is unlimited.
 	ClientLimiter *ClientLimiter
 	// ListenerFactories supplies protocol-specific UDP acceptance by reverse
-	// scheme and transport. New copies registered defaults, applies explicit
+	// scheme and transport; standalone DNS also uses the "dns" scheme. New copies
+	// registered defaults, applies explicit
 	// overrides and rejects nil factories or non-UDP keys. QUIC and HTTP/3
 	// remain unavailable at Start until their protocol handler integrations
 	// are installed.
@@ -78,8 +79,8 @@ type instanceState struct {
 }
 
 // New validates the mode and configuration without opening a listener.
-// Regular, upstream and reverse modes are admitted. Reverse DNS serves UDP;
-// QUIC and HTTP/3 fail at Start until their listener implementations are available.
+// Regular, upstream, reverse and DNS modes are admitted. DNS and reverse HTTPS
+// bind TCP and UDP on the same port. QUIC and HTTP/3 require listener integrations.
 // Unsupported modes return the same message used by proxyserver's configure.
 func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 	if mode == nil || cfg.Handler == nil {
@@ -96,6 +97,8 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 		kind = hookdata.LayerRegular
 	case modespec.UpstreamMode:
 		kind = hookdata.LayerUpstream
+	case modespec.DNSMode:
+		kind = "dns"
 	case modespec.ReverseMode:
 		switch m.Scheme {
 		case "http", "https", "tcp", "tls", "udp", "dtls", "dns", "quic", "http3":
@@ -136,7 +139,8 @@ func (i *Instance) LastError() error { return i.state.Load().err }
 // ListenAddrs returns a copy of the bound addresses, with port zero resolved.
 // An empty listen host binds separate IPv4 and IPv6 sockets on the same port
 // when IPv6 is available. If an ephemeral port collides on IPv6, the IPv6
-// listener gets a separate ephemeral port. A stopped instance has no addresses.
+// listener gets a separate ephemeral port for TCP-only modes. Modes serving both
+// transports select one shared port instead. A stopped instance has no addresses.
 func (i *Instance) ListenAddrs() []connection.Address { return slices.Clone(i.state.Load().addrs) }
 
 // Start binds the listeners and starts accepting clients. Calling Start on a
@@ -149,21 +153,31 @@ func (i *Instance) Start(ctx context.Context) error {
 	if i.IsRunning() {
 		return nil
 	}
-	packetMode := i.mode.TransportProtocol() == modespec.UDP
-	if reverse, ok := i.mode.(modespec.ReverseMode); ok && reverse.Scheme == "dns" {
-		packetMode = true
-	}
+	transport := i.mode.TransportProtocol()
 	var listeners []net.Listener
 	var packets []io.Closer
 	var addrs []connection.Address
 	var err error
-	if packetMode {
+	if transport == modespec.UDP || transport == modespec.Both {
 		factory, factoryErr := i.packetFactory()
 		if factoryErr != nil {
 			i.state.Store(&instanceState{err: factoryErr})
 			return factoryErr
 		}
-		packets, addrs, err = i.startPacketFactories(ctx, i.port, factory, i.handlePacket)
+		if transport == modespec.Both {
+			var sockets []net.PacketConn
+			listeners, sockets, err = i.listenBothSockets(ctx)
+			if err == nil {
+				packets, addrs, err = activatePacketFactories(ctx, sockets, factory, i.handlePacket)
+				if err != nil {
+					for _, listener := range listeners {
+						_ = listener.Close()
+					}
+				}
+			}
+		} else {
+			packets, addrs, err = i.startPacketFactories(ctx, i.port, factory, i.handlePacket)
+		}
 	} else {
 		listeners, err = i.listen(ctx)
 	}

@@ -31,12 +31,13 @@ import (
 // test_tcp_start_stop: TestTCPStartStop.
 // test_tcp_timeout: TestTCPTimeout.
 // test_tcp_start_error: TestTCPStartError.
-// test_dual_stack: TestDualStack (TCP regular instead of unsupported DNS).
+// test_dual_stack: TestDualStack (TCP), TestBothListenerDualStack (DNS).
 // test_invalid_protocol: not applicable; modespec.Mode has sealed implementations.
 // test_transparent: unsupported original-destination mode, rejected by New.
 // test_wireguard, test_wireguard_dual_stack, test_wireguard_generate_conf,
 // test_wireguard_invalid_conf: require the unimplemented WireGuard server.
-// test_udp_start_stop, test_udp_start_error, test_dns_start_stop: require UDP/DNS.
+// test_udp_start_stop, test_udp_start_error: TestPacketStartStop, TestPacketStartError.
+// test_dns_start_stop: TestBothProtocolStartStop, TestStandaloneDNSWireTransports.
 // test_tun_mode, test_tun_mode_mocked: require the unimplemented TUN backend.
 // test_local_redirector, test_local_redirector_startup_err,
 // test_multiple_local_redirectors, test_always_uses_current_instance: require
@@ -48,7 +49,7 @@ func TestMake(t *testing.T) {
 		"regular": {true}, "upstream:example.com": {true},
 		"reverse:http://example.com": {true}, "reverse:https://example.com": {true},
 		"reverse:tcp://example.com:1234": {true}, "reverse:tls://example.com:1234": {true},
-		"transparent": {}, "socks5": {}, "wireguard": {}, "local": {}, "tun": {}, "dns": {},
+		"transparent": {}, "socks5": {}, "wireguard": {}, "local": {}, "tun": {}, "dns": {true},
 		"reverse:udp://example.com:1234": {true}, "reverse:dtls://example.com:1234": {true},
 		"reverse:quic://example.com:1234": {true}, "reverse:http3://example.com": {true},
 		"reverse:dns://example.com": {true},

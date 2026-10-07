@@ -218,6 +218,10 @@ func (o *owner) run(reads <-chan readFrame, writes chan<- *writeFrame, written <
 				if stream, ok := errors.AsType[http2.StreamError](incoming.err); ok {
 					if s := o.streams[stream.StreamID]; s != nil {
 						o.cancel(s, stream.Code, streamError(s.id, stream.Code, stream.Error()), true)
+					} else if o.e.cfg.Client && stream.StreamID%2 == 1 {
+						if stream.StreamID > o.lastLocal {
+							o.fail(protocolError(http2.ErrCodeProtocol, "HTTP/2 framer error on idle stream"))
+						}
 					} else {
 						o.controls = append(o.controls, &writeFrame{kind: writeReset, stream: stream.StreamID, code: stream.Code})
 					}

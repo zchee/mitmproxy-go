@@ -110,3 +110,9 @@ section counts and rejected out-of-range fields, before codec tests run.
 | Module | Version | Licence | Importing adapter | Contract and upgrade check |
 |---|---|---|---|---|
 | `github.com/quic-go/qpack` | v0.6.0 | MIT | `internal/h3/qpack.go` | Static-table QPACK preserves ordered duplicate fields and opaque name/value bytes. Encoded and decoded field sections are capped at 128 KiB; decoded accounting includes 32 bytes per field. Dynamic references are rejected with advertised table capacity zero. After a bump, rerun `go test ./internal/h3` for static/literal wire vectors, empty sections, malformed prefixes, bounds and header-order preservation. |
+
+## internal/netstack
+
+| Module | Version | Licence | Adapter and upgrade evidence |
+|---|---|---|---|
+| `gvisor.dev/gvisor` | `v0.0.0-20261004063249-f57b8fc79db4` | Apache-2.0 | `gvisor.go` configures the IP stack and channel endpoint. The `go` branch supplies generated sources for ordinary Go builds. Upgrade only after the adapter contracts verify IPv4/IPv6, arbitrary-address binding, MTU 1420, 64 KiB TCP buffers and injected clock timers on each supported OS. |

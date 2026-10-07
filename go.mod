@@ -24,6 +24,7 @@ require (
 	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0
 	google.golang.org/protobuf v1.36.12
+	gvisor.dev/gvisor v0.0.0-20261004063249-f57b8fc79db4
 	software.sslmate.com/src/go-pkcs12 v0.7.3
 )
 
@@ -36,7 +37,9 @@ require (
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/transport/v5 v5.0.0 // indirect
 	golang.design/x/x11 v0.2.0 // indirect
+	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
 	golang.org/x/exp/shiny v0.0.0-20261005173118-76772065c9b0 // indirect
 	golang.org/x/image v0.46.0 // indirect
 	golang.org/x/mobile v0.0.0-20260908204917-8b95e45f8d3e // indirect
+	golang.org/x/time v0.15.0 // indirect
 )

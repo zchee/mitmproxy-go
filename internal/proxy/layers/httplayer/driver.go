@@ -319,12 +319,12 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 				if errors.Is(result.err, io.EOF) {
 					message = "peer closed connection"
 				}
-				result.event = RequestProtocolError{ID: d.stream.id, Code: h2StreamFailure(result.err, ClientDisconnected), Message: message}
+				result.event = RequestProtocolError{ID: d.stream.id, Code: httpStreamFailure(result.err, ClientDisconnected), Message: message}
 			} else {
 				if errors.Is(result.err, io.EOF) {
 					message = "server closed connection"
 				}
-				result.event = ResponseProtocolError{ID: d.stream.id, Code: h2StreamFailure(result.err, GenericServerError), Message: message}
+				result.event = ResponseProtocolError{ID: d.stream.id, Code: httpStreamFailure(result.err, GenericServerError), Message: message}
 			}
 		}
 		if _, end := result.event.(RequestEndOfMessage); end {

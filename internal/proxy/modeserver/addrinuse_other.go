@@ -13,3 +13,7 @@ import (
 func isAddrInUse(err error) bool {
 	return errors.Is(err, syscall.EADDRINUSE)
 }
+
+func isSharedUDPBindRetryable(err error) bool {
+	return isAddrInUse(err)
+}

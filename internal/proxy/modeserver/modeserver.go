@@ -68,6 +68,7 @@ type Instance struct {
 	state      atomic.Pointer[instanceState]
 	stopCancel func() bool
 	listenTCP  func(context.Context, string, string) (net.Listener, error)
+	listenUDP  func(context.Context, string, string) (net.PacketConn, error)
 	factories  map[ListenerKey]ListenerFactory
 }
 
@@ -123,6 +124,7 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 	i := &Instance{mode: mode, handler: cfg.Handler, limiter: cfg.ClientLimiter, host: host, port: port, top: hookdata.LayerSpec{Kind: kind}, logger: logger}
 	i.factories = registeredFactories(cfg.ListenerFactories)
 	i.listenTCP = new(net.ListenConfig).Listen
+	i.listenUDP = new(net.ListenConfig).ListenPacket
 	i.state.Store(&instanceState{})
 	return i, nil
 }

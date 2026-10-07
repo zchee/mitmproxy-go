@@ -35,7 +35,7 @@ func (i *Instance) listenBothSockets(ctx context.Context) ([]net.Listener, []net
 		for _, stream := range streams {
 			_ = stream.Close()
 		}
-		if i.port != 0 || shared && !isAddrInUse(err) {
+		if i.port != 0 || shared && !isSharedUDPBindRetryable(err) {
 			return nil, nil, err
 		}
 		lastErr = err

@@ -20,18 +20,18 @@ func (i *Instance) listenPacketSockets(ctx context.Context, port int) ([]net.Pac
 	}
 	config := new(net.ListenConfig)
 	if i.host != "" {
-		socket, err := config.ListenPacket(ctx, "udp", net.JoinHostPort(i.host, strconv.Itoa(port)))
+		socket, err := i.listenUDP(ctx, "udp", net.JoinHostPort(i.host, strconv.Itoa(port)))
 		if err != nil {
 			return nil, err
 		}
 		return []net.PacketConn{socket}, nil
 	}
-	ipv4, err := config.ListenPacket(ctx, "udp4", net.JoinHostPort("0.0.0.0", strconv.Itoa(port)))
+	ipv4, err := i.listenUDP(ctx, "udp4", net.JoinHostPort("0.0.0.0", strconv.Itoa(port)))
 	if err != nil {
 		return nil, err
 	}
 	boundPort := ipv4.LocalAddr().(*net.UDPAddr).Port
-	ipv6, err := config.ListenPacket(ctx, "udp6", net.JoinHostPort("::", strconv.Itoa(boundPort)))
+	ipv6, err := i.listenUDP(ctx, "udp6", net.JoinHostPort("::", strconv.Itoa(boundPort)))
 	if port == 0 && isAddrInUse(err) {
 		i.logger.Debug("Failed to listen on a single port, falling back to default behavior.", "error", err)
 		ipv6, err = config.ListenPacket(ctx, "udp6", "[::]:0")

@@ -67,7 +67,7 @@ func TestBothListenersRetryEphemeralCollision(t *testing.T) {
 				calls++
 				if tt.blockAll || calls == 1 {
 					blocker, err := net.ListenPacket("udp4", listener.Addr().String())
-					if err != nil && !isAddrInUse(err) {
+					if err != nil && !isSharedUDPBindRetryable(err) {
 						_ = listener.Close()
 						return nil, err
 					}
@@ -79,10 +79,10 @@ func TestBothListenersRetryEphemeralCollision(t *testing.T) {
 			}
 			streams, packets, err := instance.listenBothSockets(t.Context())
 			if calls < tt.wantCalls || calls > sharedPortAttempts {
-				t.Fatalf("listen calls=%d, expected within [%d,%d]", calls, tt.wantCalls, sharedPortAttempts)
+				t.Fatalf("listen calls=%d, expected within [%d,%d]; acquisition error=%v", calls, tt.wantCalls, sharedPortAttempts, err)
 			}
 			if tt.blockAll {
-				if !isAddrInUse(err) || len(streams) != 0 || len(packets) != 0 {
+				if !isSharedUDPBindRetryable(err) || len(streams) != 0 || len(packets) != 0 {
 					t.Fatalf("exhausted candidates=%v streams=%v packets=%v", err, streams, packets)
 				}
 			} else {

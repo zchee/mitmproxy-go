@@ -42,10 +42,11 @@ type ReadFile struct {
 	logger *slog.Logger
 
 	// The fields below are only accessed under the dispatch lock.
-	filter filter.Expr
-	cancel context.CancelFunc
-	closer io.Closer
-	done   chan struct{}
+	filter  filter.Expr
+	cancel  context.CancelFunc
+	closer  io.Closer
+	done    chan struct{}
+	cleanup *loaderCleanup
 }
 
 // New returns a flow file reader that replays flows through m.
@@ -92,11 +93,27 @@ func (r *ReadFile) Configure(_ context.Context, updated map[string]struct{}) err
 
 // Running starts loading the rfile flows on a new goroutine and returns
 // without waiting for them, so later running handlers observe flows still
-// arriving. The goroutine runs outside dispatch until the done hook joins it.
+// arriving. A preceding loader must finish cleanup before a new one starts.
+// The loader runs outside dispatch; the done hook bounds its cleanup wait.
 func (r *ReadFile) Running(ctx context.Context) error {
 	path := r.master.Options.OptStr("rfile")
 	if path == nil || *path == "" {
 		return nil
+	}
+	if r.cancel != nil {
+		var err error
+		ctx, err = r.stop(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	if r.cleanup != nil {
+		select {
+		case <-r.cleanup.finished:
+			r.cleanup = nil
+		default:
+			return errors.New("readfile: previous loader cleanup is still pending")
+		}
 	}
 	// The loader must not inherit the hook's dispatch frame, which goes stale
 	// when this hook chain releases the lock, nor its cancellation, which ends
@@ -112,9 +129,6 @@ func (r *ReadFile) Running(ctx context.Context) error {
 	}
 	_ = ctx
 	loadCtx, cancel := context.WithCancel(base)
-	if r.cancel != nil {
-		r.cancel()
-	}
 	r.cancel = cancel
 	r.closer = nil
 	if *path == "-" {
@@ -126,27 +140,39 @@ func (r *ReadFile) Running(ctx context.Context) error {
 	return nil
 }
 
-// Done stops a running loader: it cancels loading, closes a stdin stream a
-// blocked read holds, and joins the goroutine with the dispatch lock
-// released. A done fired synchronously by an addon removal cannot release
-// the lock and leaves the cancelled goroutine to finish on its own.
+// Done cancels loading and closes stdin and joins the loader outside dispatch.
+// The cleanup wait is limited to five seconds or until ctx is canceled. An error
+// does not imply that arbitrary reader or kernel I/O has terminated; pending cleanup
+// remains owned and prevents restarting the loader. Synchronous addon removal
+// schedules cleanup without waiting for it.
 func (r *ReadFile) Done(ctx context.Context) error {
+	_, err := r.stop(ctx)
+	return err
+}
+
+func (r *ReadFile) stop(ctx context.Context) (context.Context, error) {
 	cancel, closer, done := r.cancel, r.closer, r.done
 	r.cancel, r.closer = nil, nil
-	if cancel == nil {
-		return nil
+	if cancel != nil {
+		cancel()
+		r.cleanup = &loaderCleanup{closer: closer, loaded: done, finished: make(chan struct{})}
 	}
-	cancel()
-	if closer != nil {
-		_ = closer.Close()
+	cleanup := r.cleanup
+	if cleanup == nil {
+		return ctx, nil
 	}
-	if _, err := addon.Concurrent(ctx, func(context.Context) error {
-		<-done
-		return nil
-	}); err != nil && !errors.Is(err, addon.ErrSyncContext) {
-		return err
+	ctx, err := addon.Concurrent(ctx, func(clean context.Context) error {
+		cleanup.start()
+		return cleanup.wait(clean)
+	})
+	cleanup.start()
+	if errors.Is(err, addon.ErrSyncContext) {
+		return ctx, nil
 	}
-	return nil
+	if err != nil {
+		return ctx, fmt.Errorf("readfile: stop loader: %w", err)
+	}
+	return ctx, nil
 }
 
 // Reading reports whether flows are still being loaded, as the
@@ -200,6 +226,9 @@ func (r *ReadFile) LoadFlows(ctx context.Context, src io.Reader) (int, error) {
 	count := 0
 	reader := flowio.NewReader(src)
 	for {
+		if ctx.Err() != nil {
+			return count, context.Cause(ctx)
+		}
 		f, err := reader.Next()
 		if errors.Is(err, io.EOF) {
 			return count, nil

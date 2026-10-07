@@ -104,3 +104,9 @@ exact pin in the module table. It translates the message header without
 changing the flow-format-21 state or interpreting opaque record data.
 Upgrades must pass the adapter contract, including every reserved flag bit,
 section counts and rejected out-of-range fields, before codec tests run.
+
+## internal/h3
+
+| Module | Version | Licence | Importing adapter | Contract and upgrade check |
+|---|---|---|---|---|
+| `github.com/quic-go/qpack` | v0.6.0 | MIT | `internal/h3/qpack.go` | Static-table QPACK preserves ordered duplicate fields and opaque name/value bytes. Encoded and decoded field sections are capped at 128 KiB; decoded accounting includes 32 bytes per field. Dynamic references are rejected with advertised table capacity zero. After a bump, rerun `go test ./internal/h3` for static/literal wire vectors, empty sections, malformed prefixes, bounds and header-order preservation. |

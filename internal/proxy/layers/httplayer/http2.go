@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"strconv"
+	"sync/atomic"
 
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
@@ -35,6 +36,9 @@ type http2Stream struct {
 	receivedEnd bool
 	sentHeaders bool
 	sentEnd     bool
+
+	// The response reader can observe local cancellation before the Send ack.
+	initialSendFailure atomic.Pointer[error]
 }
 
 func (s *http2Stream) takeReceipt() layer.ConsumptionReceipt {
@@ -84,6 +88,9 @@ func (s *http2Stream) receive(ctx context.Context, request bool, head *h2.Event)
 			head = nil
 		} else {
 			wire, err = s.engine.ReceiveStream(ctx, s.identity)
+		}
+		if failure := s.initialSendFailure.Load(); failure != nil {
+			return nil, *failure
 		}
 		if err != nil {
 			return nil, err
@@ -241,6 +248,13 @@ func (s *http2Stream) send(ctx context.Context, event Event) error {
 		return nil
 	}
 	if err := s.engine.Send(ctx, wire); err != nil {
+		if _, request := event.(RequestHeaders); request && !s.sentHeaders {
+			s.initialSendFailure.Store(new(err))
+			// Retire the unsent identity before error hooks can pause its owner.
+			if cancelErr := s.engine.CancelStream(s.identity, http2.ErrCodeCancel); cancelErr != nil && !errors.Is(cancelErr, io.ErrClosedPipe) {
+				return errors.Join(err, cancelErr)
+			}
+		}
 		return err
 	}
 	if wire.Kind == h2.Headers {

@@ -18,6 +18,50 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 )
 
+func TestLocalControlQueueBound(t *testing.T) {
+	tests := map[string]struct {
+		count       int
+		wantFailure bool
+	}{
+		"success: cancellation resets at the queue limit":   {count: MaxConcurrentStreams * 2},
+		"error: cancellation resets exceed the queue limit": {count: MaxConcurrentStreams*2 + 1, wantFailure: true},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			conn, peer := net.Pipe()
+			t.Cleanup(func() { _ = conn.Close(); _ = peer.Close() })
+			e, err := New(conn, Config{Client: true, Descriptor: layer.EndpointDescriptor{Identity: "endpoint"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			o := newOwner(e, t.Context())
+			o.peerSettings, o.controls = true, nil
+			// A stalled active writer leaves all later reset controls queued.
+			o.active = &writeFrame{kind: writePing}
+			for i := range test.count {
+				s := o.newStream(uint32(i*2 + 1))
+				if s == nil {
+					t.Fatal("stream reservation failed")
+				}
+				s.wireStarted = true
+				o.cancel(s, http2.ErrCodeCancel, streamError(s.id, http2.ErrCodeCancel, "cancelled"), true)
+				s.queue = nil
+				o.settle()
+			}
+			failure, failed := errors.AsType[*ProtocolError](o.fatal)
+			if failed != test.wantFailure || failed && failure.Code != http2.ErrCodeEnhanceYourCalm {
+				t.Fatalf("cancellation control overflow = %v, want failure=%v", o.fatal, test.wantFailure)
+			}
+			if len(o.controls) != min(test.count, MaxConcurrentStreams*2) {
+				t.Fatalf("queued controls = %d, want %d", len(o.controls), min(test.count, MaxConcurrentStreams*2))
+			}
+			if budget := e.Budget(); budget.Granted != 0 {
+				t.Fatalf("cancelled streams retained reservation: %+v", budget)
+			}
+		})
+	}
+}
+
 func TestFramerControlQueueBound(t *testing.T) {
 	tests := map[string]struct {
 		count       int

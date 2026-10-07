@@ -223,7 +223,9 @@ func (o *owner) run(reads <-chan readFrame, writes chan<- *writeFrame, written <
 							o.fail(protocolError(http2.ErrCodeProtocol, "HTTP/2 framer error on idle stream"))
 						}
 					} else {
-						o.controls = append(o.controls, &writeFrame{kind: writeReset, stream: stream.StreamID, code: stream.Code})
+						if err := o.queueControl(&writeFrame{kind: writeReset, stream: stream.StreamID, code: stream.Code}); err != nil {
+							o.fail(err)
+						}
 					}
 				} else if protocol || connection || errors.Is(incoming.err, http2.ErrFrameTooLarge) {
 					o.fail(incoming.err)
@@ -296,7 +298,10 @@ func (o *owner) keepalive() {
 	}
 	elapsed := o.e.cfg.Clock.Now().Sub(o.lastActivity)
 	if elapsed >= o.e.cfg.PingKeepalive {
-		o.controls = append(o.controls, &writeFrame{kind: writePing, payload: []byte("00000000")})
+		if err := o.queueControl(&writeFrame{kind: writePing, payload: []byte("00000000")}); err != nil {
+			o.fail(err)
+			return
+		}
 		o.lastActivity = o.e.cfg.Clock.Now()
 		o.e.cfg.Logger.Debug("Send HTTP/2 keep-alive PING to " + o.e.conn.RemoteAddr().String())
 		elapsed = 0
@@ -585,7 +590,10 @@ func (o *owner) request(r *request) {
 		o.goaway, o.shutdown = true, true
 		o.shutdownDone = r.ctx.Done()
 		o.beginFlush(protocolError(r.code, "HTTP/2 GOAWAY flush deadline exceeded"))
-		o.controls = append(o.controls, &writeFrame{kind: writeGoAway, stream: o.lastPeer, code: r.code, payload: r.debug, request: r})
+		if err := o.queueControl(&writeFrame{kind: writeGoAway, stream: o.lastPeer, code: r.code, payload: r.debug, request: r}); err != nil {
+			o.fail(err)
+			r.complete(Event{}, err)
+		}
 		for _, open := range o.opens {
 			open.complete(Event{}, errors.New("h2: connection shutting down"))
 		}
@@ -630,6 +638,14 @@ func (o *owner) checkSend(s *streamState, event Event) error {
 			}
 		}
 	}
+	return nil
+}
+
+func (o *owner) queueControl(frame *writeFrame) error {
+	if len(o.controls) >= MaxConcurrentStreams*2 {
+		return protocolError(http2.ErrCodeEnhanceYourCalm, "HTTP/2 control queue limit exceeded")
+	}
+	o.controls = append(o.controls, frame)
 	return nil
 }
 
@@ -770,7 +786,9 @@ func (o *owner) cancel(s *streamState, code http2.ErrCode, err error, sendReset 
 	}
 	locallyInitiated := (s.id.Stream%2 == 1) == o.e.cfg.Client
 	if sendReset && (!locallyInitiated || s.wireStarted) {
-		o.controls = append(o.controls, &writeFrame{kind: writeReset, stream: s.id.Stream, code: code})
+		if err := o.queueControl(&writeFrame{kind: writeReset, stream: s.id.Stream, code: code}); err != nil {
+			o.fail(err)
+		}
 	}
 }
 
@@ -922,7 +940,7 @@ func (o *owner) frame(frame http2.Frame) error {
 		o.opens = nil
 	case *http2.PingFrame:
 		if !f.Flags.Has(http2.FlagPingAck) {
-			o.controls = append(o.controls, &writeFrame{kind: writePing, ack: true, payload: slices.Clone(f.Data[:])})
+			return o.queueControl(&writeFrame{kind: writePing, ack: true, payload: slices.Clone(f.Data[:])})
 		}
 	case *http2.PushPromiseFrame:
 		return protocolError(http2.ErrCodeProtocol, "Received HTTP/2 push promise, even though we signalled no support.")
@@ -954,8 +972,7 @@ func (o *owner) settings(f *http2.SettingsFrame) error {
 		o.finishHead()
 	}
 	o.peerSettings = true
-	o.controls = append(o.controls, &writeFrame{kind: writeSettingsAck})
-	return nil
+	return o.queueControl(&writeFrame{kind: writeSettingsAck})
 }
 
 func (o *owner) headers(id uint32, fields []hpack.HeaderField, end bool) error {
@@ -979,18 +996,15 @@ func (o *owner) headers(id uint32, fields []hpack.HeaderField, end bool) error {
 		}
 		o.lastPeer = id
 		if o.goaway {
-			o.controls = append(o.controls, &writeFrame{kind: writeReset, stream: id, code: http2.ErrCodeRefusedStream})
-			return nil
+			return o.queueControl(&writeFrame{kind: writeReset, stream: id, code: http2.ErrCodeRefusedStream})
 		}
 		s = o.newStream(id)
 		if s == nil {
-			o.controls = append(o.controls, &writeFrame{kind: writeReset, stream: id, code: http2.ErrCodeRefusedStream})
-			return nil
+			return o.queueControl(&writeFrame{kind: writeReset, stream: id, code: http2.ErrCodeRefusedStream})
 		}
 	}
 	if s.failed != nil || s.remoteEnd {
-		o.controls = append(o.controls, &writeFrame{kind: writeReset, stream: id, code: http2.ErrCodeStreamClosed})
-		return nil
+		return o.queueControl(&writeFrame{kind: writeReset, stream: id, code: http2.ErrCodeStreamClosed})
 	}
 	kind := Headers
 	if s.inHeaders {
@@ -1110,13 +1124,11 @@ func (o *owner) data(f *http2.DataFrame) error {
 			return protocolError(http2.ErrCodeProtocol, "HTTP/2 DATA on idle stream")
 		}
 		o.credits[0] += f.Length
-		o.controls = append(o.controls, &writeFrame{kind: writeReset, stream: f.StreamID, code: http2.ErrCodeStreamClosed})
-		return nil
+		return o.queueControl(&writeFrame{kind: writeReset, stream: f.StreamID, code: http2.ErrCodeStreamClosed})
 	}
 	o.credits[0] += f.Length
 	if s.failed != nil || s.remoteEnd {
-		o.controls = append(o.controls, &writeFrame{kind: writeReset, stream: f.StreamID, code: http2.ErrCodeStreamClosed})
-		return nil
+		return o.queueControl(&writeFrame{kind: writeReset, stream: f.StreamID, code: http2.ErrCodeStreamClosed})
 	}
 	if !s.inHeaders {
 		return protocolError(http2.ErrCodeProtocol, "Received HTTP/2 data frame, expected headers.")

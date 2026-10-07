@@ -117,7 +117,7 @@ func (o *owner) applySetting(setting http2.Setting) error {
 	case http2.SettingMaxFrameSize:
 		o.peerFrame = setting.Val
 	case http2.SettingHeaderTableSize:
-		o.controls = append(o.controls, &writeFrame{kind: writeTableLimit, value: setting.Val})
+		return o.queueControl(&writeFrame{kind: writeTableLimit, value: setting.Val})
 	case http2.SettingMaxHeaderListSize:
 		o.peerHeaders = setting.Val
 	case http2.SettingEnablePush:

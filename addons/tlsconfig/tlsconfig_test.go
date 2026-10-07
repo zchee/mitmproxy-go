@@ -11,13 +11,13 @@
 //	TestTlsConfig.test_get_cert                       -> TestGetCert
 //	TestTlsConfig.test_tls_clienthello                -> TestTLSClientHello
 //	TestTlsConfig.test_tls_start_client               -> TestTLSStartClient
-//	TestTlsConfig.test_quic_start_client              -> not applicable: QUIC is not implemented
+//	TestTlsConfig.test_quic_start_client              -> TestQUICStartClient and TestQUICSettingsOverride (settings; wire handshake acceptance belongs to the QUIC layer)
 //	TestTlsConfig.test_tls_start_server_cannot_verify -> TestTLSStartServer/"error: empty sni opts out of verification"
 //	TestTlsConfig.test_tls_start_server_verify_failed -> TestTLSStartServer/"error: handshake with an untrusted server fails"
 //	TestTlsConfig.test_tls_start_server_verify_ok     -> TestTLSStartServer/"success: verified handshake by dns name" and "success: verified handshake by ip address"
-//	TestTlsConfig.test_quic_start_server_verify_ok    -> not applicable: QUIC is not implemented
+//	TestTlsConfig.test_quic_start_server_verify_ok    -> TestQUICStartServer (trust settings; wire verification acceptance belongs to the QUIC layer)
 //	TestTlsConfig.test_tls_start_server_insecure      -> TestTLSStartServer/"success: insecure skips verification"
-//	TestTlsConfig.test_quic_start_server_insecure     -> not applicable: QUIC is not implemented
+//	TestTlsConfig.test_quic_start_server_insecure     -> TestQUICStartServer (verification setting; wire handshake acceptance belongs to the QUIC layer)
 //	TestTlsConfig.test_alpn_selection                 -> TestServerALPNOffers and TestTLSStartServer/"success: alpn offers mirror the client"
 //	TestTlsConfig.test_no_h2_proxy                    -> TestNoH2Proxy: the forced protocol is observed on the configuration's NextProtos instead of pyOpenSSL app data
 //	TestTlsConfig.test_client_cert_file               -> TestTLSStartServer/"success: client certificate from a file" and "success: client certificate from a directory"

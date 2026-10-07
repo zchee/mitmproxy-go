@@ -155,6 +155,9 @@ func (l *udpLayer) relay(ctx context.Context, c *layer.Context) error {
 			}
 			event = received{fromClient: injected.Direction == layer.DirectionFromClient, content: message.Content}
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if event.err != nil {
 			return event.err
 		}

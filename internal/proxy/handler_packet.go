@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"reflect"
 	"strconv"
 	"sync"
 	"time"
@@ -28,13 +29,21 @@ func (c layerClock) Now() time.Time { return c.now() }
 // AfterFunc schedules f on the handler's clock and returns a function that stops a pending callback.
 func (c layerClock) AfterFunc(d time.Duration, f func()) func() bool { return c.afterFunc(d, f).Stop }
 
-// HandlePackets owns an accepted UDP tuple until its top layer finishes.
-// It preserves packet boundaries, closes only this tuple and its origin sockets,
-// and fires the same connection lifecycle hooks as Handle. An idle tuple expires
+// HandlePackets owns a fixed-peer packet transport until its top layer finishes.
+// It preserves packet boundaries, closes only this transport and its origin sockets,
+// and fires the same connection lifecycle hooks as Handle. An idle transport expires
 // at UDPIdleTimeout; replay of recorded packets does not extend its lifetime.
-func (h *Handler) HandlePackets(ctx context.Context, conn *packettransport.TupleConn, modeSpec string, top hookdata.LayerSpec) error {
+// A nil interface or typed-nil transport is rejected before hooks run.
+func (h *Handler) HandlePackets(ctx context.Context, conn layer.PacketTransport, modeSpec string, top hookdata.LayerSpec) error {
 	if conn == nil {
 		return errors.New("proxy: HandlePackets with a nil connection")
+	}
+	value := reflect.ValueOf(conn)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		if value.IsNil() {
+			return errors.New("proxy: HandlePackets with a nil connection")
+		}
 	}
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()

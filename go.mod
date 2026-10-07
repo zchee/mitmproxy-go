@@ -1,8 +1,9 @@
 module github.com/zchee/mitmproxy-go
 
-go 1.27
+go 1.27.0
 
 require (
+	codeberg.org/miekg/dns v0.6.118
 	github.com/andybalholm/brotli v1.2.6
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/go-ldap/ldap/v3 v3.4.14

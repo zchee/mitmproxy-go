@@ -96,3 +96,11 @@ must retain the typed hook override contract or migrate all consumers together.
 | Module | Version | Licence | Why and upgrade verification |
 |---|---|---|---|
 | `google.golang.org/protobuf` | v1.36.12 | BSD-3 | Generates and decodes the vendored native-redirector IPC schema. `protoc-gen-go` is pinned to the same version by `go generate ./internal/local`; regeneration preserves optional presence, oneof variants, field numbers, and the schema's Go-package mapping. Before upgrading, regenerate the bindings and rerun the IPC decode and wire-semantics tests, including the explicitly synthetic vectors and subsequent manual-platform captures. |
+
+## dns
+
+The wire adapter now imports `codeberg.org/miekg/dns v0.6.118` (BSD-3), the
+exact pin in the module table. It translates the message header without
+changing the flow-format-21 state or interpreting opaque record data.
+Upgrades must pass the adapter contract, including every reserved flag bit,
+section counts and rejected out-of-range fields, before codec tests run.

@@ -132,7 +132,7 @@ func (s *Stack) run() {
 			close(s.done)
 			return
 		case packet := <-s.input:
-			if reply := s.engine.inject(packet.bytes); reply != nil {
+			if reply := s.engine.inject(packet); reply != nil {
 				select {
 				case s.output <- reply:
 				default:

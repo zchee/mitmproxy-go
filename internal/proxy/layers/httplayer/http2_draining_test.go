@@ -36,7 +36,9 @@ func TestHTTP2OriginDraining(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			origins := newHTTPOrigins(ctx)
 			var workers sync.WaitGroup
-			t.Cleanup(func() { cancel(); origins.stop(); workers.Wait() })
+			defer workers.Wait()
+			defer origins.stop()
+			defer cancel()
 			request, err := httpmsg.MakeRequest("GET", "https://example.com/", nil, nil)
 			if err != nil {
 				t.Fatal(err)

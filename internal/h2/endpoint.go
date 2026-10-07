@@ -197,8 +197,9 @@ func (e *Endpoint) WaitSendCredit(ctx context.Context, id layer.StreamIdentity) 
 }
 
 // CancelStream invalidates receipts, releases chunks/reservations and wakes
-// blocked senders once. It queues RST_STREAM without waiting for socket I/O;
-// no stream WINDOW_UPDATE is emitted after cancellation.
+// blocked senders once. It queues RST_STREAM without waiting for socket I/O
+// only if the stream has started on the wire; no stream WINDOW_UPDATE is
+// emitted after cancellation.
 func (e *Endpoint) CancelStream(id layer.StreamIdentity, code http2.ErrCode) error {
 	r := newRequest(context.TODO(), cancelStream)
 	r.id = id

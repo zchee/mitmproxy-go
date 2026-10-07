@@ -40,6 +40,7 @@ type streamState struct {
 	offset         int
 	inHeaders      bool
 	outHeaders     bool
+	wireStarted    bool
 	remoteEnd      bool
 	localEnd       bool
 	failed         error
@@ -112,6 +113,7 @@ type owner struct {
 	peerHeaders      uint32
 	outWindow        int64
 	lastPeer         uint32
+	lastLocal        uint32
 	nextLocal        uint32
 	goaway           bool
 	shutdown         bool
@@ -242,6 +244,13 @@ func (o *owner) run(reads <-chan readFrame, writes chan<- *writeFrame, written <
 				o.fail(protocolError(http2.ErrCodeEnhanceYourCalm, "HTTP/2 control queue limit exceeded"))
 			}
 		case destination <- next:
+			if next.kind == writeHeaders {
+				// HEADERS may reach the peer before write completion is processed.
+				o.streams[next.stream].wireStarted = true
+				if o.e.cfg.Client {
+					o.lastLocal = max(o.lastLocal, next.stream)
+				}
+			}
 			o.active = next
 			o.prepared = nil
 		case result := <-written:
@@ -742,7 +751,8 @@ func (o *owner) cancel(s *streamState, code http2.ErrCode, err error, sendReset 
 		s.sender.complete(Event{}, err)
 		s.sender = nil
 	}
-	if sendReset {
+	locallyInitiated := (s.id.Stream%2 == 1) == o.e.cfg.Client
+	if sendReset && (!locallyInitiated || s.wireStarted) {
 		o.controls = append(o.controls, &writeFrame{kind: writeReset, stream: s.id.Stream, code: code})
 	}
 }
@@ -853,6 +863,9 @@ func (o *owner) frame(frame http2.Frame) error {
 	case *http2.DataFrame:
 		return o.data(f)
 	case *http2.WindowUpdateFrame:
+		if o.e.cfg.Client && f.StreamID%2 == 1 && f.StreamID > o.lastLocal {
+			return protocolError(http2.ErrCodeProtocol, "HTTP/2 WINDOW_UPDATE on idle stream")
+		}
 		if f.StreamID == 0 {
 			if o.outWindow+int64(f.Increment) > 0x7fffffff {
 				return protocolError(http2.ErrCodeFlowControl, "HTTP/2 connection window overflow")
@@ -868,6 +881,9 @@ func (o *owner) frame(frame http2.Frame) error {
 			return protocolError(http2.ErrCodeProtocol, "HTTP/2 WINDOW_UPDATE on idle stream")
 		}
 	case *http2.RSTStreamFrame:
+		if o.e.cfg.Client && f.StreamID%2 == 1 && f.StreamID > o.lastLocal {
+			return protocolError(http2.ErrCodeProtocol, "HTTP/2 RST_STREAM on idle stream")
+		}
 		if s := o.streams[f.StreamID]; s != nil {
 			o.cancel(s, f.ErrCode, streamError(s.id, f.ErrCode, "stream reset by client ("+f.ErrCode.String()+")"), false)
 		}
@@ -928,6 +944,15 @@ func (o *owner) headers(id uint32, fields []hpack.HeaderField, end bool) error {
 		return protocolError(http2.ErrCodeProtocol, "HTTP/2 upgrade stream 1 cannot be reused")
 	}
 	s := o.streams[id]
+	if o.e.cfg.Client && id%2 == 1 {
+		if id > o.lastLocal {
+			return protocolError(http2.ErrCodeProtocol, "Unexpected HTTP/2 stream headers")
+		}
+		// Decode before discarding in-flight headers to preserve the HPACK table.
+		if s == nil {
+			return nil
+		}
+	}
 	isNew := s == nil
 	if isNew {
 		if o.e.cfg.Client || id%2 == 0 || id <= o.lastPeer {
@@ -1051,6 +1076,16 @@ func (s *streamState) checkLength(end bool) error {
 
 func (o *owner) data(f *http2.DataFrame) error {
 	s := o.streams[f.StreamID]
+	if o.e.cfg.Client && f.StreamID%2 == 1 {
+		if f.StreamID > o.lastLocal {
+			return protocolError(http2.ErrCodeProtocol, "HTTP/2 DATA on idle stream")
+		}
+		if s == nil {
+			// Discarded DATA still consumes the connection flow-control window.
+			o.credits[0] += f.Length
+			return nil
+		}
+	}
 	if s == nil {
 		if (!o.e.cfg.Client && f.StreamID > o.lastPeer) || (o.e.cfg.Client && f.StreamID >= o.nextLocal) {
 			return protocolError(http2.ErrCodeProtocol, "HTTP/2 DATA on idle stream")

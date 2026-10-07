@@ -326,10 +326,6 @@ func (o *owner) finishHead() {
 }
 
 func (o *owner) beginFlush(err error) {
-	if o.active != nil {
-		o.abortError = err
-		return
-	}
 	o.flushError = err
 	o.flushDeadline = o.e.cfg.Clock.Now().Add(GoAwayFlushGrace)
 	o.stopFlush = o.e.cfg.Clock.AfterFunc(GoAwayFlushGrace, o.e.signal)

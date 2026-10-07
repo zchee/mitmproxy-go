@@ -218,8 +218,8 @@ func (e *Endpoint) CancelStream(id layer.StreamIdentity, code http2.ErrCode) err
 // Shutdown writes GOAWAY with the last processed peer stream and disallows new
 // streams. Run finishes when existing streams drain or ctx ends. It borrows
 // debug until return; cancellation of a partial write ends the connection.
-// A blocked writer is interrupted immediately; an idle writer has at most
-// GoAwayFlushGrace on Clock to flush GOAWAY before a typed timeout ends Run.
+// Active writes and the following GOAWAY share GoAwayFlushGrace on Clock;
+// expiration interrupts a stalled writer with a typed timeout that ends Run.
 func (e *Endpoint) Shutdown(ctx context.Context, code http2.ErrCode, debug []byte) error {
 	r := newRequest(ctx, shutdown)
 	r.code = code

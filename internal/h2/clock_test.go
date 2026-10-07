@@ -154,6 +154,15 @@ func TestUnresponsivePeerShutdown(t *testing.T) {
 					clock.advance(GoAwayFlushGrace)
 				}
 			}
+			if test.blocked {
+				<-clock.scheduled
+				select {
+				case <-e.Done():
+					t.Fatal("blocked write stopped before the flush grace elapsed")
+				default:
+				}
+				clock.advance(GoAwayFlushGrace)
+			}
 			select {
 			case <-e.Done():
 			case <-ctx.Done():

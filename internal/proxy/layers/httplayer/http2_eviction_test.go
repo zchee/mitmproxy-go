@@ -25,11 +25,14 @@ import (
 
 func TestHTTP2ClosedBorrowedOrigin(t *testing.T) {
 	tests := map[string]struct {
-		cancel bool
-		want   error
+		cancel     bool
+		terminated bool
+		want       error
 	}{
-		"success: closed transport rejects an unwritten lease": {want: errOriginInUse},
-		"error: cancelled acquisition is not retried":          {cancel: true, want: context.Canceled},
+		"success: closed transport rejects an unwritten lease":        {want: errOriginInUse},
+		"error: cancelled acquisition is not retried":                 {cancel: true, want: context.Canceled},
+		"success: terminated engine rejects an unwritten lease":       {terminated: true, want: errOriginInUse},
+		"error: cancellation takes precedence over terminated engine": {cancel: true, terminated: true, want: context.Canceled},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -54,6 +57,22 @@ func TestHTTP2ClosedBorrowedOrigin(t *testing.T) {
 			}
 			origins := newHTTPOrigins(t.Context())
 			t.Cleanup(origins.stop)
+			if test.terminated {
+				recorded := proxy.Record(conn)
+				engine, err := h2.New(recorded, h2.Config{Client: true, Descriptor: layer.EndpointDescriptor{Identity: "closed-origin"}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := engine.Run(t.Context()); err == nil {
+					t.Fatal("closed transport completed without an endpoint error")
+				}
+				select {
+				case <-engine.Done():
+				default:
+					t.Fatal("Run returned before endpoint termination")
+				}
+				origins.entries[conn] = &httpOrigin{conn: recorded, h2: engine}
+			}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			if test.cancel {

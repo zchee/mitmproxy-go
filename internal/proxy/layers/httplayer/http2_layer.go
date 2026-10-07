@@ -145,6 +145,9 @@ func (o *httpOrigins) acquire(ctx context.Context, c *layer.Context, conn layer.
 	}
 	engine := entry.h2
 	o.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	select {
 	case <-engine.Done():
 		if c.Pool != nil {

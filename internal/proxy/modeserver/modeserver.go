@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"net"
 	"slices"
 	"strconv"
@@ -44,9 +43,10 @@ type Config struct {
 	// ClientLimiter shares admission capacity across instances. Nil is unlimited.
 	ClientLimiter *ClientLimiter
 	// ListenerFactories supplies protocol-specific UDP acceptance by reverse
-	// scheme and transport. New clones the map and rejects nil factories or
-	// non-UDP keys. DNS, QUIC and HTTP/3 remain unavailable at Start until their
-	// protocol handler integrations are installed.
+	// scheme and transport. New copies registered defaults, applies explicit
+	// overrides and rejects nil factories or non-UDP keys. DNS, QUIC and HTTP/3
+	// remain unavailable at Start until their protocol handler integrations
+	// are installed.
 	ListenerFactories map[ListenerKey]ListenerFactory
 }
 
@@ -117,7 +117,7 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 		logger = slog.Default()
 	}
 	i := &Instance{mode: mode, handler: cfg.Handler, limiter: cfg.ClientLimiter, host: host, port: port, top: hookdata.LayerSpec{Kind: kind}, logger: logger}
-	i.factories = maps.Clone(cfg.ListenerFactories)
+	i.factories = registeredFactories(cfg.ListenerFactories)
 	i.listenTCP = new(net.ListenConfig).Listen
 	i.state.Store(&instanceState{})
 	return i, nil

@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
+	"sync"
 
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
@@ -35,6 +37,33 @@ type PacketHandler func(context.Context, layer.PacketTransport) error
 // to the caller. The factory may start accepting before it returns. Each accepted
 // tuple is handed to handle once, on its own goroutine, with a cancellable context.
 type ListenerFactory func(ctx context.Context, socket net.PacketConn, handle PacketHandler) (io.Closer, error)
+
+var listenerRegistry sync.Map // ListenerKey -> ListenerFactory.
+
+// RegisterListenerFactory supplies a protocol's default UDP listener factory.
+// Protocol packages call it during init, before any instance is constructed;
+// mode metadata packages must not import those protocol implementations.
+// Duplicate keys, nil factories, empty schemes and non-UDP transports panic.
+// New copies registered factories; later registration cannot change an existing
+// instance, and explicit Config.ListenerFactories entries override defaults.
+func RegisterListenerFactory(key ListenerKey, factory ListenerFactory) {
+	if factory == nil || key.Scheme == "" || key.Transport != connection.UDP {
+		panic(fmt.Sprintf("modeserver: invalid listener factory for %q over %q", key.Scheme, key.Transport))
+	}
+	if _, loaded := listenerRegistry.LoadOrStore(key, factory); loaded {
+		panic(fmt.Sprintf("modeserver: listener factory for %q over %q registered twice", key.Scheme, key.Transport))
+	}
+}
+
+func registeredFactories(overrides map[ListenerKey]ListenerFactory) map[ListenerKey]ListenerFactory {
+	factories := make(map[ListenerKey]ListenerFactory)
+	listenerRegistry.Range(func(key, value any) bool {
+		factories[key.(ListenerKey)] = value.(ListenerFactory)
+		return true
+	})
+	maps.Copy(factories, overrides)
+	return factories
+}
 
 func (i *Instance) packetFactory() (ListenerFactory, error) {
 	reverse, ok := i.mode.(modespec.ReverseMode)

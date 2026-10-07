@@ -124,7 +124,10 @@ func (t *udpTransport) WriteTo(p []byte, addr net.Addr) (int, error) {
 	if t.ctx.Err() != nil {
 		return 0, t.closedError()
 	}
-	if addr == nil || addr.Network() != t.remote.Network() || addr.String() != t.remote.String() {
+	if addr == nil {
+		addr = t.remote
+	}
+	if addr.Network() != t.remote.Network() || addr.String() != t.remote.String() {
 		return 0, fmt.Errorf("UDP peer differs from fixed tuple: %v", addr)
 	}
 	if len(p) > 65507 {

@@ -48,6 +48,12 @@ func (v exampleView) Prettify(data []byte, _ Metadata) (string, error) {
 // from test__api.py. Go registers instances rather than Python classes.
 func TestRegistry(t *testing.T) {
 	tests := map[string]struct{ run func(*testing.T) }{
+		"built_in_views": {func(t *testing.T) {
+			want := []string{"auto", "dns", "hex dump", "hex stream", "image", "javascript", "json", "multipart form", "query", "raw", "url-encoded", "viewcss", "xml/html"}
+			if diff := cmp.Diff(want, NewRegistry().AvailableViews()); diff != "" {
+				t.Fatal(diff)
+			}
+		}},
 		"register_triggers_on_change": {func(t *testing.T) {
 			r := &Registry{}
 			var changed []string

@@ -28,16 +28,14 @@ import (
 // or certificate bytes. Object keys follow upstream's insertion order. Numbers
 // that represent Python floats are jsontext.Values to preserve Python's repr.
 // Callers must synchronise access to f with mutations, as for Flow.GetState.
-// Nil flows, unsupported types, missing HTTP requests and invalid certificates
-// return errors. DNS awaits the HTTPS record helpers used by its JSON view.
+// Nil flows, unsupported types, missing HTTP or DNS requests and invalid
+// certificates return errors.
 func Flow(f flow.Flow) (*omap.Map[any], error) {
 	if f == nil {
 		return nil, errors.New("flowjson: nil flow")
 	}
 	switch f.(type) {
-	case *flow.DNSFlow:
-		return nil, errors.New("flowjson: dns flows are not supported yet")
-	case *flow.HTTPFlow, *flow.TCPFlow, *flow.UDPFlow:
+	case *flow.DNSFlow, *flow.HTTPFlow, *flow.TCPFlow, *flow.UDPFlow:
 	default:
 		return nil, fmt.Errorf("flowjson: unsupported flow type %q", f.Type())
 	}
@@ -83,6 +81,22 @@ func Flow(f flow.Flow) (*omap.Map[any], error) {
 		m.Set("error", e)
 	}
 	switch f := f.(type) {
+	case *flow.DNSFlow:
+		if f.Request == nil {
+			return nil, errors.New("flowjson: DNS flow has no request")
+		}
+		request := f.Request.ToJSON()
+		if f.Request.Timestamp != nil && *f.Request.Timestamp != 0 {
+			request.Set("timestamp", number(*f.Request.Timestamp))
+		}
+		m.Set("request", request)
+		if f.Response != nil {
+			response := f.Response.ToJSON()
+			if f.Response.Timestamp != nil && *f.Response.Timestamp != 0 {
+				response.Set("timestamp", number(*f.Response.Timestamp))
+			}
+			m.Set("response", response)
+		}
 	case *flow.HTTPFlow:
 		if f.Request == nil {
 			return nil, errors.New("flowjson: HTTP flow has no request")

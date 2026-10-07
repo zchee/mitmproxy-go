@@ -49,6 +49,7 @@ func NewRegistry() *Registry {
 	r.Register(Image{})
 	r.Register(CSS{})
 	r.Register(JavaScript{})
+	r.Register(DNS{})
 	return r
 }
 

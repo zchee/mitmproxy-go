@@ -25,7 +25,7 @@ func TestFlow(t *testing.T) {
 		err   string
 	}{
 		"error: nil flow":                  {err: "flowjson: nil flow"},
-		"error: DNS awaits record helpers": {input: testflow.TDNSFlow(), err: "flowjson: dns flows are not supported yet"},
+		"success: DNS":                     {input: testflow.TDNSFlow(testflow.WithResponse)},
 		"success: HTTP response and error": {input: testflow.TFlow(testflow.WithResponse, testflow.WithError)},
 		"success: WebSocket":               {input: testflow.TFlow(testflow.WithResponse, testflow.WithWebSocket)},
 		"success: TCP":                     {input: testflow.TTCPFlow()},
@@ -59,6 +59,11 @@ func TestFlow(t *testing.T) {
 				hash, _ := request.(*omap.Map[any]).Get("contentHash")
 				if diff := cmp.Diff("ed7002b439e9ac845f22357d822bac1444730fbdb6016d3ec9432297b9ec9f73", hash); diff != "" {
 					t.Errorf("request SHA-256 (-want +got):\n%s", diff)
+				}
+			} else if f, ok := tt.input.(*flow.DNSFlow); ok {
+				wantKeys = append(wantKeys, "request")
+				if f.Response != nil {
+					wantKeys = append(wantKeys, "response")
 				}
 			} else {
 				wantKeys = append(wantKeys, "messages_meta")

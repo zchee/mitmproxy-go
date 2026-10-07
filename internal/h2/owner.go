@@ -41,6 +41,7 @@ type streamState struct {
 	inHeaders      bool
 	outHeaders     bool
 	wireStarted    bool
+	resetQueued    bool
 	remoteEnd      bool
 	localEnd       bool
 	failed         error
@@ -788,6 +789,8 @@ func (o *owner) cancel(s *streamState, code http2.ErrCode, err error, sendReset 
 	if sendReset && (!locallyInitiated || s.wireStarted) {
 		if err := o.queueControl(&writeFrame{kind: writeReset, stream: s.id.Stream, code: code}); err != nil {
 			o.fail(err)
+		} else {
+			s.resetQueued = true
 		}
 	}
 }
@@ -1003,6 +1006,9 @@ func (o *owner) headers(id uint32, fields []hpack.HeaderField, end bool) error {
 			return o.queueControl(&writeFrame{kind: writeReset, stream: id, code: http2.ErrCodeRefusedStream})
 		}
 	}
+	if s.failed != nil && s.resetQueued {
+		return nil
+	}
 	if s.failed != nil || s.remoteEnd {
 		return o.queueControl(&writeFrame{kind: writeReset, stream: id, code: http2.ErrCodeStreamClosed})
 	}
@@ -1127,6 +1133,9 @@ func (o *owner) data(f *http2.DataFrame) error {
 		return o.queueControl(&writeFrame{kind: writeReset, stream: f.StreamID, code: http2.ErrCodeStreamClosed})
 	}
 	o.credits[0] += f.Length
+	if s.failed != nil && s.resetQueued {
+		return nil
+	}
 	if s.failed != nil || s.remoteEnd {
 		return o.queueControl(&writeFrame{kind: writeReset, stream: f.StreamID, code: http2.ErrCodeStreamClosed})
 	}

@@ -404,6 +404,94 @@ func TestPresentIdleLocalStreamFrames(t *testing.T) {
 	}
 }
 
+func TestCancelledPresentStreamLateFrames(t *testing.T) {
+	tests := map[string]struct {
+		headFirst bool
+	}{
+		"success: late HEADERS then DATA": {headFirst: true},
+		"success: late DATA then HEADERS": {},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			p := newPipePeer(t, Config{Client: true})
+			p.settings(t)
+			id, err := p.endpoint.OpenStream(p.ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := p.endpoint.Send(p.ctx, Event{Kind: Headers, Identity: id, Headers: requestFields()}); err != nil {
+				t.Fatal(err)
+			}
+			p.frame(t, func(f wireFrame) bool { return f.kind == http2.FrameHeaders })
+			if err := p.endpoint.CancelStream(id, http2.ErrCodeCancel); err != nil {
+				t.Fatal(err)
+			}
+			reset := p.frame(t, func(f wireFrame) bool { return f.kind == http2.FrameRSTStream })
+			if reset.stream != id.Stream || reset.code != http2.ErrCodeCancel {
+				t.Fatalf("cancellation reset = %+v", reset)
+			}
+			// Leave the terminal event unconsumed to retain the failed stream state.
+			written := make(chan error, 1)
+			go func() {
+				head := func() error {
+					return p.framer.WriteHeaders(http2.HeadersFrameParam{StreamID: id.Stream, EndHeaders: true, BlockFragment: []byte{0x88}})
+				}
+				data := func() error { return p.framer.WriteData(id.Stream, true, []byte("late")) }
+				first, second := data, head
+				if test.headFirst {
+					first, second = head, data
+				}
+				if err := first(); err != nil {
+					written <- err
+					return
+				}
+				if err := second(); err != nil {
+					written <- err
+					return
+				}
+				written <- p.framer.WritePing(false, [8]byte{1})
+			}()
+			var credit uint32
+			var sibling layer.StreamIdentity
+			for {
+				frame := p.frame(t, func(f wireFrame) bool { return true })
+				if frame.kind == http2.FrameRSTStream || frame.kind == http2.FrameGoAway {
+					t.Fatalf("late frame generated a second reset or GOAWAY: %+v", frame)
+				}
+				if frame.kind == http2.FrameWindowUpdate {
+					if frame.stream != 0 {
+						t.Fatalf("closed stream received credit: %+v", frame)
+					}
+					credit += frame.increment
+				}
+				if frame.kind == http2.FramePing && frame.flags.Has(http2.FlagPingAck) {
+					sibling, err = p.endpoint.OpenStream(p.ctx)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := p.endpoint.Send(p.ctx, Event{Kind: Headers, Identity: sibling, Headers: requestFields(), EndStream: true}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				// The sibling HEADERS follows both peer-frame processing and pending credit.
+				if frame.kind == http2.FrameHeaders && frame.stream == sibling.Stream {
+					break
+				}
+			}
+			if err := <-written; err != nil {
+				t.Fatal(err)
+			}
+			if credit != 4 {
+				t.Fatalf("late DATA connection credit = %d, want exactly 4", credit)
+			}
+			terminal, err := p.endpoint.ReceiveStream(p.ctx, id)
+			if err != nil || terminal.Kind != Reset || terminal.Code != http2.ErrCodeCancel {
+				t.Fatalf("retained terminal event = %+v, %v", terminal, err)
+			}
+		})
+	}
+}
+
 func awaitCancelWrite(t *testing.T, ctx context.Context, writes <-chan *writeFrame) *writeFrame {
 	t.Helper()
 	select {

@@ -1,0 +1,4 @@
+tcp {
+  remote_address { host: "example.test" port: 443 }
+  tunnel_info { pid: 2242 process_name: "curl" }
+}

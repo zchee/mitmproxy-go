@@ -1,0 +1,4 @@
+udp {
+  local_address { host: "127.0.0.1" port: 53000 }
+  tunnel_info { pid: 0 process_name: "" }
+}

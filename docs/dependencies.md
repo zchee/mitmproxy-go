@@ -90,3 +90,9 @@ TLS hooks retain `*tls.Config` and expose `*dtls.Config` separately, selected
 by `IsDTLS`. The mutable pion config is retained for hook overrides despite
 its deprecation in favor of immutable options-based constructors. Upgrades
 must retain the typed hook override contract or migrate all consumers together.
+
+## internal/local
+
+| Module | Version | Licence | Why and upgrade verification |
+|---|---|---|---|
+| `google.golang.org/protobuf` | v1.36.12 | BSD-3 | Generates and decodes the vendored native-redirector IPC schema. `protoc-gen-go` is pinned to the same version by `go generate ./internal/local`; regeneration preserves optional presence, oneof variants, field numbers, and the schema's Go-package mapping. Before upgrading, regenerate the bindings and rerun the IPC decode and wire-semantics tests, including the explicitly synthetic vectors and subsequent manual-platform captures. |

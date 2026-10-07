@@ -1,0 +1,2 @@
+data: "\000\377DNS"
+remote_address { host: "::1" port: 53 }

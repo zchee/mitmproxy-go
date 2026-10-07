@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"maps"
 	"net"
+	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -132,7 +134,7 @@ func TestOptions(t *testing.T) {
 
 func TestUnsupportedModes(t *testing.T) {
 	tests := map[string]struct{}{
-		"transparent": {}, "socks5": {}, "wireguard": {}, "local": {}, "tun": {},
+		"transparent": {}, "socks5": {}, "local": {}, "tun": {},
 	}
 	for spec := range tests {
 		t.Run(spec, func(t *testing.T) {
@@ -146,6 +148,28 @@ func TestUnsupportedModes(t *testing.T) {
 			}
 			if diff := gocmp.Diff([]string{"regular"}, m.Options.Seq("mode")); diff != "" {
 				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestWireGuardConfDir(t *testing.T) {
+	tests := map[string]struct{ mode string }{
+		"default configuration path": {mode: "wireguard@127.0.0.1:0"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			m, ps, _, _ := fixture(t, false)
+			directory := t.TempDir()
+			update(t, m, map[string]any{"mode": []string{tt.mode}, "confdir": directory, "server": true})
+			if err := ps.SetupServers(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if len(ps.ListenAddrs()) != 1 || ps.ListenAddrs()[0].Port == 0 {
+				t.Fatal("WireGuard mode did not bind its UDP listener")
+			}
+			if _, err := os.Stat(filepath.Join(directory, "wireguard.conf")); err != nil {
+				t.Fatalf("WireGuard configuration was not created in confdir: %v", err)
 			}
 		})
 	}

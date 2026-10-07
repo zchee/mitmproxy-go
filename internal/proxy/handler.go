@@ -110,6 +110,11 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn, modeSpec string, to
 	raw := asLayerConn(conn)
 
 	client := newHandledClient(conn, modeSpec)
+	destination, err := packetSourceDestination(modeSpec, conn)
+	if err != nil {
+		_ = raw.Close()
+		return err
+	}
 	peer := formattedPeer(client)
 	logger := h.logger.With("client", peer)
 	watchdog := newWatchdog(h.timeout(), h.clock, func() {
@@ -138,7 +143,7 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn, modeSpec string, to
 	packets := &packetServers{ctx: connCtx, client: client, hooks: runner, do: h.manager.Do, watchdog: watchdog}
 	queue := newInjectionQueue()
 	c := &layer.Context{
-		Data:          &hookdata.Context{Client: client, Server: connection.NewServer(nil), Options: h.options},
+		Data:          &hookdata.Context{Client: client, Server: connection.NewServer(destination), Options: h.options},
 		Client:        Record(&activityConn{Conn: raw, watchdog: watchdog}),
 		Record:        Record,
 		OpenPackets:   packets.open,

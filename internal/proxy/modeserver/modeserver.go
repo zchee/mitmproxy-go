@@ -35,6 +35,9 @@ import (
 type Config struct {
 	// Handler owns accepted clients and their connection registry.
 	Handler *proxy.Handler
+	// ConfDir is the immutable configuration directory for packet-source modes.
+	// An empty value uses the default ~/.mitmproxy directory.
+	ConfDir string
 	// ListenHost is used when the mode has no explicit listen host.
 	ListenHost string
 	// ListenPort overrides the mode's default port, unless its spec supplies one.
@@ -59,6 +62,7 @@ type Config struct {
 type Instance struct {
 	mode       modespec.Mode
 	handler    *proxy.Handler
+	confDir    string
 	limiter    *ClientLimiter
 	host       string
 	port       int
@@ -73,6 +77,7 @@ type Instance struct {
 }
 
 type instanceState struct {
+	wireguard       *wireguardSource
 	listeners       []net.Listener
 	packetListeners []io.Closer
 	addrs           []connection.Address
@@ -80,7 +85,7 @@ type instanceState struct {
 }
 
 // New validates the mode and configuration without opening a listener.
-// Regular, upstream, reverse and DNS modes are admitted. DNS and reverse HTTPS
+// Regular, upstream, reverse, DNS and WireGuard modes are admitted. DNS and reverse HTTPS
 // bind TCP and UDP on the same port. QUIC and HTTP/3 require listener integrations.
 // Unsupported modes return the same message used by proxyserver's configure.
 func New(mode modespec.Mode, cfg Config) (*Instance, error) {
@@ -98,6 +103,8 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 		kind = hookdata.LayerRegular
 	case modespec.UpstreamMode:
 		kind = hookdata.LayerUpstream
+	case modespec.WireGuardMode:
+		kind = "wireguard"
 	case modespec.DNSMode:
 		kind = "dns"
 	case modespec.ReverseMode:
@@ -121,7 +128,11 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	i := &Instance{mode: mode, handler: cfg.Handler, limiter: cfg.ClientLimiter, host: host, port: port, top: hookdata.LayerSpec{Kind: kind}, logger: logger}
+	confDir := cfg.ConfDir
+	if confDir == "" {
+		confDir = "~/.mitmproxy"
+	}
+	i := &Instance{mode: mode, handler: cfg.Handler, confDir: confDir, limiter: cfg.ClientLimiter, host: host, port: port, top: hookdata.LayerSpec{Kind: kind}, logger: logger}
 	i.factories = registeredFactories(cfg.ListenerFactories)
 	i.listenTCP = new(net.ListenConfig).Listen
 	i.listenUDP = new(net.ListenConfig).ListenPacket
@@ -154,6 +165,9 @@ func (i *Instance) Start(ctx context.Context) error {
 	defer i.mu.Unlock()
 	if i.IsRunning() {
 		return nil
+	}
+	if _, ok := i.mode.(modespec.WireGuardMode); ok {
+		return i.startWireGuard(ctx)
 	}
 	transport := i.mode.TransportProtocol()
 	var listeners []net.Listener
@@ -217,8 +231,9 @@ func (i *Instance) Start(ctx context.Context) error {
 }
 
 // Stop closes the listening sockets, clears the bound addresses, and returns
-// any close errors. UDP tuples are evicted because they share the socket. Stop
-// never waits for connection goroutines or cancels accepted TCP clients.
+// any close errors. UDP tuples are evicted because they share the socket.
+// Socket listener modes never wait for accepted TCP clients. WireGuard stops
+// its virtual transports and joins their handlers before returning.
 // Call outside dispatch; cancellation of the Start context ends all clients.
 func (i *Instance) Stop() error {
 	i.mu.Lock()
@@ -228,6 +243,13 @@ func (i *Instance) Stop() error {
 
 func (i *Instance) stopLocked() error {
 	state := i.state.Load()
+	if source := state.wireguard; source != nil {
+		err := source.Close()
+		<-source.monitorDone
+		i.state.Store(&instanceState{err: err})
+		i.logger.Info(i.mode.Description() + " at " + formatAddrs(state.addrs) + " stopped.")
+		return err
+	}
 	if len(state.listeners) == 0 && len(state.packetListeners) == 0 {
 		return nil
 	}

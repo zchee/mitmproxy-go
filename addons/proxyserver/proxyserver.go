@@ -219,7 +219,7 @@ func (p *ProxyServer) run() {
 }
 
 func (p *ProxyServer) configuredInstances() ([]*modeserver.Instance, error) {
-	cfg := modeserver.Config{Handler: p.handler, ClientLimiter: &p.limiter, ListenHost: p.opts.Str("listen_host"), ListenPort: p.opts.OptInt("listen_port"), Logger: p.logger}
+	cfg := modeserver.Config{Handler: p.handler, ConfDir: p.opts.Str("confdir"), ClientLimiter: &p.limiter, ListenHost: p.opts.Str("listen_host"), ListenPort: p.opts.OptInt("listen_port"), Logger: p.logger}
 	var instances []*modeserver.Instance
 	var addresses []connection.Address
 	counts := make(map[connection.Address]int)
@@ -233,7 +233,10 @@ func (p *ProxyServer) configuredInstances() ([]*modeserver.Instance, error) {
 			return nil, options.Errorf("%s", err)
 		}
 		instances = append(instances, instance)
-		port, _ := mode.ListenPort(cfg.ListenPort)
+		port, hasPort := mode.ListenPort(cfg.ListenPort)
+		if !hasPort {
+			continue
+		}
 		addr := connection.Address{Host: mode.ListenHost(cfg.ListenHost), Port: port}
 		addresses = append(addresses, addr)
 		counts[addr]++

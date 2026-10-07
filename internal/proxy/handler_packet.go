@@ -49,6 +49,11 @@ func (h *Handler) HandlePackets(ctx context.Context, conn layer.PacketTransport,
 	defer cancel()
 	client := connection.NewClient(*addressOf(conn.RemoteAddr()), *addressOf(conn.LocalAddr()), nowSeconds())
 	client.TransportProtocol, client.State, client.ProxyMode = connection.UDP, connection.Open, modeSpec
+	destination, err := packetSourceDestination(modeSpec, conn)
+	if err != nil {
+		_ = conn.Close()
+		return err
+	}
 	peer := formattedPeer(client)
 	logger := h.logger.With("client", peer)
 	watchdog := newPacketWatchdog(h.clock, func() { logger.Info("Closing connection due to inactivity: " + peer); cancel() })
@@ -71,7 +76,7 @@ func (h *Handler) HandlePackets(ctx context.Context, conn layer.PacketTransport,
 	pool := newServerPool(connCtx, client, dial, runner, h.manager.Do)
 	servers := &packetServers{ctx: connCtx, client: client, hooks: runner, do: h.manager.Do, watchdog: watchdog}
 	queue := newInjectionQueue()
-	server := connection.NewServer(nil)
+	server := connection.NewServer(destination)
 	server.TransportProtocol = connection.UDP
 	c := &layer.Context{
 		Data:          &hookdata.Context{Client: client, Server: server, Options: h.options},

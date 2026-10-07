@@ -159,7 +159,10 @@ func (e *Endpoint) ReceiveStream(ctx context.Context, id layer.StreamIdentity) (
 // for the peer's first SETTINGS and its concurrent-stream limit. An omitted
 // limit is capped at MaxConcurrentStreams. Context cancellation wakes it.
 // Opening after received GOAWAY returns ErrDraining without writing request bytes.
-// Opening after locally sent GOAWAY also fails.
+// Opening after locally sent GOAWAY also fails. Initial request HEADERS are
+// written in stream-id order: a higher stream waits until all lower allocated
+// streams have dispatched initial HEADERS or been cancelled. Call CancelStream
+// for an allocated stream that will not send initial HEADERS.
 func (e *Endpoint) OpenStream(ctx context.Context) (layer.StreamIdentity, error) {
 	if e.draining.Load() {
 		return layer.StreamIdentity{}, ErrDraining
@@ -176,6 +179,10 @@ func (e *Endpoint) OpenStream(ctx context.Context) (layer.StreamIdentity, error)
 // Success means socket-written, never merely queued. It waits for both stream
 // and connection credit; cancellation wakes stalled sends. Unknown, foreign
 // and closed streams return StreamError. Header normalization is the caller's.
+// In client mode, initial request HEADERS are written in stream-id order. A Send
+// on a higher locally allocated stream waits until every lower allocated stream
+// has dispatched its initial HEADERS or been cancelled. Call CancelStream for
+// an allocated stream that will not send initial HEADERS.
 func (e *Endpoint) Send(ctx context.Context, event Event) error {
 	r := newRequest(ctx, send)
 	r.event = event

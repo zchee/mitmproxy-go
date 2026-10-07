@@ -35,6 +35,9 @@ func TestStreamDone(t *testing.T) {
 			}
 			if test.termination == "goaway" {
 				id, other = other, id
+				if err := p.endpoint.Send(p.ctx, Event{Kind: Headers, Identity: other, Headers: requestFields()}); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if err := p.endpoint.Send(p.ctx, Event{Kind: Headers, Identity: id, Headers: requestFields(), EndStream: test.termination == "complete"}); err != nil {
 				t.Fatal(err)

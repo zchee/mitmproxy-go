@@ -656,6 +656,16 @@ func (o *owner) nextWrite() *writeFrame {
 		}
 		return &writeFrame{kind: writeCredit, stream: stream, value: value}
 	}
+	// Opening a higher local ID implicitly closes lower idle IDs at the peer.
+	firstPending := ^uint32(0)
+	if o.e.cfg.Client {
+		for _, id := range o.order {
+			s := o.streams[id]
+			if id%2 == 1 && s != nil && s.failed == nil && !s.wireStarted {
+				firstPending = min(firstPending, id)
+			}
+		}
+	}
 	for range len(o.order) {
 		if len(o.order) == 0 {
 			return nil
@@ -672,6 +682,9 @@ func (o *owner) nextWrite() *writeFrame {
 			continue
 		}
 		if r.event.Kind != Data {
+			if o.e.cfg.Client && id%2 == 1 && !s.wireStarted && id > firstPending {
+				continue
+			}
 			return &writeFrame{kind: writeHeaders, stream: id, end: r.event.EndStream, fields: r.event.Headers, maxFrame: o.peerFrame, request: r}
 		}
 		left := len(r.event.Data) - s.offset

@@ -19,6 +19,7 @@
 package proxytest
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -39,6 +40,7 @@ import (
 	"time"
 
 	"github.com/zchee/mitmproxy-go/addon/addontest"
+	"github.com/zchee/mitmproxy-go/addons/errorcheck"
 	"github.com/zchee/mitmproxy-go/addons/nextlayer"
 	"github.com/zchee/mitmproxy-go/addons/proxyserver"
 	"github.com/zchee/mitmproxy-go/addons/tlsconfig"
@@ -131,7 +133,9 @@ func Start(t testing.TB, opts ...Option) *Proxy {
 		}
 	}
 	confdir := t.TempDir()
-	logger := slog.New(slog.DiscardHandler)
+	var startupErrors bytes.Buffer
+	check := errorcheck.New(errorcheck.Config{Stderr: &startupErrors, RepeatErrorsOnStderr: true})
+	logger := slog.New(check.LogHandler())
 	m := master.New(master.Config{Logger: logger})
 	lifetime, cancel := context.WithCancel(t.Context())
 	t.Cleanup(func() {
@@ -160,8 +164,8 @@ func Start(t testing.TB, opts ...Option) *Proxy {
 		t.Fatal(err)
 	}
 	dialer = originDialer(cfg.origins, server.Dialer())
-	ready := &startup{ready: make(chan struct{})}
-	addons := append([]any{server, nextlayer.New(m.Options), tlsconfig.New(m.Options), recorder}, cfg.addons...)
+	ready := &startup{ready: make(chan struct{}), check: check}
+	addons := append([]any{check, server, nextlayer.New(m.Options), tlsconfig.New(m.Options), recorder}, cfg.addons...)
 	addons = append(addons, ready)
 	if err := m.Addons.Add(lifetime, addons...); err != nil {
 		t.Fatal(err)
@@ -181,19 +185,25 @@ func Start(t testing.TB, opts ...Option) *Proxy {
 		cancel()
 		wait(t, done, "master shutdown")
 		if runErr != nil {
-			t.Error(runErr)
+			t.Errorf("proxytest: master failed: %v\n%s", runErr, startupErrors.String())
 		}
 	})
 	select {
 	case <-ready.ready:
 	case <-done:
-		t.Fatalf("proxytest: master stopped before running: %v", runErr)
+		t.Fatalf("proxytest: master stopped before running: %v\n%s", runErr, startupErrors.String())
 	case <-time.After(30 * time.Second):
 		failHang(t, "master startup")
 	}
 	// Cross the dispatch barrier after the final running handler returned.
 	if err := m.Do(lifetime, func(context.Context) error { return nil }); err != nil {
 		t.Fatal(err)
+	}
+	if err := check.ShutdownIfErrored(lifetime); err != nil {
+		cancel()
+		// Master may still be reporting the same error to the collector output.
+		wait(t, done, "failed master startup")
+		t.Fatalf("proxytest: startup failed: %v\n%s", err, startupErrors.String())
 	}
 	confdir = m.Options.Str("confdir")
 	ca := readCA(t, confdir)
@@ -208,10 +218,19 @@ func Start(t testing.TB, opts ...Option) *Proxy {
 	return &Proxy{Addr: addr, Master: m, ConfDir: confdir, CA: ca, CAPool: pool, Recorder: recorder, Server: server}
 }
 
-type startup struct{ ready chan struct{} }
+type startup struct {
+	ready chan struct{}
+	check *errorcheck.ErrorCheck
+}
 
-// Running signals that the proxy master has completed startup.
-func (s *startup) Running(context.Context) error { close(s.ready); return nil }
+// Running stops startup error collection before publishing readiness.
+func (s *startup) Running(ctx context.Context) error {
+	if err := s.check.Finish(ctx); err != nil {
+		return err
+	}
+	close(s.ready)
+	return nil
+}
 
 func wait(t testing.TB, done <-chan struct{}, operation string) {
 	t.Helper()

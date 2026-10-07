@@ -7,6 +7,8 @@ package freeport
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"strconv"
 )
@@ -26,6 +28,17 @@ type listeners struct {
 // The port is released before GetFreePort returns, so another process can
 // take it before the caller binds it.
 func GetFreePort() int {
+	port, _ := FreePort()
+	return port
+}
+
+// FreePort returns an available port for TCP and UDP on all IPv4 interfaces.
+// It returns the last TCP and UDP bind errors if every candidate is rejected.
+// Rejected TCP candidates remain reserved until selection ends, so an ephemeral
+// allocator cannot repeatedly choose the same UDP-busy port. At most 64 TCP
+// listeners are retained, and every reservation is released before returning.
+// Another process can take the selected port before the caller binds it.
+func FreePort() (int, error) {
 	lc := &net.ListenConfig{}
 	return getFreePort(context.Background(), listeners{listen: lc.Listen, listenPacket: lc.ListenPacket})
 }
@@ -55,31 +68,35 @@ func getFreeTCPPort(ctx context.Context, lc listeners) int {
 	return 0
 }
 
-func getFreePort(ctx context.Context, lc listeners) int {
-	for range attempts {
-		if port, ok := tryPort(ctx, lc); ok {
-			return port
+func getFreePort(ctx context.Context, lc listeners) (int, error) {
+	var rejected []net.Listener
+	defer func() {
+		for _, tcp := range rejected {
+			_ = tcp.Close()
 		}
+	}()
+	var lastTCP, lastUDP error
+	for range attempts {
+		tcp, err := lc.listen(ctx, "tcp4", ":0")
+		if err != nil {
+			lastTCP = fmt.Errorf("TCP bind: %w", err)
+			continue
+		}
+		port := tcp.Addr().(*net.TCPAddr).Port
+		udp, err := lc.listenPacket(ctx, "udp4", ":"+strconv.Itoa(port))
+		if err != nil {
+			lastUDP = fmt.Errorf("UDP bind: %w", err)
+			rejected = append(rejected, tcp)
+			continue
+		}
+		if err := udp.Close(); err != nil {
+			lastUDP = fmt.Errorf("UDP close: %w", err)
+			rejected = append(rejected, tcp)
+			continue
+		}
+		// No connection was accepted, so closing cannot lose application data.
+		_ = tcp.Close()
+		return port, nil
 	}
-	return 0
-}
-
-// tryPort binds a TCP socket to an ephemeral port and checks that a UDP
-// socket can be bound to the same port.
-func tryPort(ctx context.Context, lc listeners) (int, bool) {
-	tcp, err := lc.listen(ctx, "tcp4", ":0")
-	if err != nil {
-		return 0, false
-	}
-	// Closing a listener that accepted nothing cannot lose data.
-	defer func() { _ = tcp.Close() }()
-	port := tcp.Addr().(*net.TCPAddr).Port
-	udp, err := lc.listenPacket(ctx, "udp4", ":"+strconv.Itoa(port))
-	if err != nil {
-		return 0, false
-	}
-	if err := udp.Close(); err != nil {
-		return 0, false
-	}
-	return port, true
+	return 0, fmt.Errorf("no paired TCP/UDP port after %d attempts: %w", attempts, errors.Join(lastTCP, lastUDP))
 }

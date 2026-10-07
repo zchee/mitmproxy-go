@@ -14,14 +14,19 @@ import (
 
 func TestGetFreePort(t *testing.T) {
 	tests := map[string]struct {
-		selectPort func() int
+		selectPort func() (int, error)
 	}{
-		"success: TCP and UDP": {selectPort: GetFreePort},
-		"success: TCP only":    {selectPort: GetFreeTCPPort},
+		"success: TCP and UDP":        {selectPort: FreePort},
+		"success: legacy TCP and UDP": {selectPort: func() (int, error) { return GetFreePort(), nil }},
+		"success: TCP only":           {selectPort: func() (int, error) { return GetFreeTCPPort(), nil }},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if port := tt.selectPort(); port <= 0 || port > 65535 {
+			port, err := tt.selectPort()
+			if err != nil {
+				t.Fatalf("select port: %v", err)
+			}
+			if port <= 0 || port > 65535 {
 				t.Fatalf("selected port = %d, want a port in 1..65535", port)
 			}
 		})
@@ -73,7 +78,11 @@ func TestGetFreePortAttempts(t *testing.T) {
 					return &portPacketConn{closes: &udpCloses}, nil
 				},
 			}
-			if diff := gocmp.Diff(tt.wantPort, getFreePort(t.Context(), lc)); diff != "" {
+			port, err := getFreePort(t.Context(), lc)
+			if got, want := err != nil, tt.wantPort == 0; got != want {
+				t.Fatalf("selection error = %v, want exhaustion=%v", err, want)
+			}
+			if diff := gocmp.Diff(tt.wantPort, port); diff != "" {
 				t.Errorf("selected port (-want +got):\n%s", diff)
 			}
 			if diff := gocmp.Diff([]int{tt.wantTCP, tt.wantUDP}, []int{tcpCalls, udpCalls}); diff != "" {

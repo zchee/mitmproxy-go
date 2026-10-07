@@ -773,7 +773,12 @@ func (o *owner) cancel(s *streamState, code http2.ErrCode, err error, sendReset 
 		s.receipt.Invalidate()
 		s.receipt = nil
 	}
-	s.queue = []queuedEvent{{event: Event{Kind: Reset, Identity: s.id, Code: code, Err: err}}}
+	eventErr := err
+	if _, ok := errors.AsType[*resetError](err); !ok {
+		// Local cancellations retain their existing diagnostic while preserving the cause.
+		eventErr = &resetError{cause: err, peer: "client", code: code}
+	}
+	s.queue = []queuedEvent{{event: Event{Kind: Reset, Identity: s.id, Code: code, Err: eventErr}}}
 	o.budget.release(&s.window)
 	o.publish()
 	delete(o.credits, s.id.Stream)
@@ -789,6 +794,14 @@ func (o *owner) cancel(s *streamState, code http2.ErrCode, err error, sendReset 
 			s.resetQueued = true
 		}
 	}
+}
+
+func (o *owner) resetReason(err error, code http2.ErrCode, connection bool, debug string) error {
+	peer := "client"
+	if o.e.cfg.Client {
+		peer = "server"
+	}
+	return &resetError{cause: err, peer: peer, code: code, connection: connection, debug: debug}
 }
 
 func (o *owner) fail(err error) {
@@ -808,8 +821,9 @@ func (o *owner) fail(err error) {
 	o.goaway = true
 	o.e.cfg.Logger.Error(err.Error())
 	o.connectionEvents = append(o.connectionEvents, Event{Kind: GoAway, Err: err, Code: code, LastStreamID: o.lastPeer})
+	reset := o.resetReason(err, code, true, err.Error())
 	for _, s := range o.streams {
-		o.cancel(s, code, err, false)
+		o.cancel(s, code, reset, false)
 	}
 	for _, r := range o.opens {
 		r.complete(Event{}, err)
@@ -921,12 +935,14 @@ func (o *owner) frame(frame http2.Frame) error {
 			return protocolError(http2.ErrCodeProtocol, "HTTP/2 RST_STREAM on idle stream")
 		}
 		if s != nil {
-			o.cancel(s, f.ErrCode, streamError(s.id, f.ErrCode, "stream reset by client ("+f.ErrCode.String()+")"), false)
+			err := streamError(s.id, f.ErrCode, "stream reset by client ("+f.ErrCode.String()+")")
+			o.cancel(s, f.ErrCode, o.resetReason(err, f.ErrCode, false, ""), false)
 		}
 	case *http2.GoAwayFrame:
 		o.goaway, o.shutdown = true, true
 		o.e.draining.Store(true)
-		o.connectionEvents = append(o.connectionEvents, Event{Kind: GoAway, Code: f.ErrCode, LastStreamID: f.LastStreamID, Err: errors.New("HTTP/2 connection closed: " + string(f.DebugData()))})
+		debug := string(f.DebugData())
+		o.connectionEvents = append(o.connectionEvents, Event{Kind: GoAway, Code: f.ErrCode, LastStreamID: f.LastStreamID, Err: errors.New("HTTP/2 connection closed: " + debug)})
 		for _, s := range o.streams {
 			locallyInitiated := (s.id.Stream%2 == 1) == o.e.cfg.Client
 			if locallyInitiated && (s.id.Stream > f.LastStreamID || !s.wireStarted) || f.ErrCode != http2.ErrCodeNo {
@@ -934,7 +950,7 @@ func (o *owner) frame(frame http2.Frame) error {
 				if locallyInitiated && !s.wireStarted && f.ErrCode == http2.ErrCodeNo {
 					err = errors.Join(err, ErrDraining)
 				}
-				o.cancel(s, f.ErrCode, err, false)
+				o.cancel(s, f.ErrCode, o.resetReason(err, f.ErrCode, true, debug), false)
 			}
 		}
 		for _, r := range o.opens {

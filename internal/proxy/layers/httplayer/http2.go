@@ -171,11 +171,16 @@ func (s *http2Stream) receive(ctx context.Context, request bool, head *h2.Event)
 			case http2.ErrCodeHTTP11Required:
 				code = HTTP11Required
 			}
-			name := wire.Code.String()
-			if wire.Code > http2.ErrCodeHTTP11Required {
-				name = strconv.FormatUint(uint64(wire.Code), 10)
+			var message string
+			if wire.Err != nil {
+				message = wire.Err.Error()
+			} else {
+				name := wire.Code.String()
+				if wire.Code > http2.ErrCodeHTTP11Required {
+					name = strconv.FormatUint(uint64(wire.Code), 10)
+				}
+				message = fmt.Sprintf("stream reset by client (%s)", name)
 			}
-			message := fmt.Sprintf("stream reset by client (%s)", name)
 			if request {
 				return RequestProtocolError{ID: s.id, Message: message, Code: code}, nil
 			}

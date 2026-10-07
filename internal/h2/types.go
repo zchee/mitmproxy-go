@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"golang.org/x/net/http2"
@@ -104,6 +105,27 @@ func (e *StreamError) Error() string { return e.Message }
 
 // Unwrap makes ended streams match the closed-transport sentinel.
 func (e *StreamError) Unwrap() error { return io.ErrClosedPipe }
+
+type resetError struct {
+	cause      error
+	peer       string
+	code       http2.ErrCode
+	connection bool
+	debug      string
+}
+
+func (e *resetError) Error() string {
+	if e.connection {
+		return "connection closed by " + e.peer + ": " + e.debug
+	}
+	name := e.code.String()
+	if e.code > http2.ErrCodeHTTP11Required {
+		name = strconv.FormatUint(uint64(e.code), 10)
+	}
+	return "stream reset by " + e.peer + " (" + name + ")"
+}
+
+func (e *resetError) Unwrap() error { return e.cause }
 
 type result struct {
 	event Event

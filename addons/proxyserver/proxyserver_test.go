@@ -133,7 +133,6 @@ func TestOptions(t *testing.T) {
 func TestUnsupportedModes(t *testing.T) {
 	tests := map[string]struct{}{
 		"transparent": {}, "socks5": {}, "wireguard": {}, "local": {}, "tun": {}, "dns": {},
-		"reverse:quic://example.com:1234": {}, "reverse:http3://example.com": {}, "reverse:dns://example.com": {},
 	}
 	for spec := range tests {
 		t.Run(spec, func(t *testing.T) {
@@ -147,6 +146,31 @@ func TestUnsupportedModes(t *testing.T) {
 			}
 			if diff := gocmp.Diff([]string{"regular"}, m.Options.Seq("mode")); diff != "" {
 				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestReverseProtocolDeferredStartup(t *testing.T) {
+	tests := map[string]struct{ scheme string }{
+		"DNS":    {"dns"},
+		"QUIC":   {"quic"},
+		"HTTP/3": {"http3"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			m, ps, logs, _ := fixture(t, false)
+			spec := "reverse:" + tt.scheme + "://example.test:443@127.0.0.1:0"
+			update(t, m, map[string]any{"mode": []string{spec}, "server": true})
+			if err := ps.SetupServers(t.Context()); err != nil {
+				t.Fatalf("SetupServers must leave start failures to the log: %v", err)
+			}
+			want := fmt.Sprintf("modeserver: reverse scheme %q is not implemented yet", tt.scheme)
+			if !strings.Contains(logs.String(), "msg="+strconv.Quote(want)) {
+				t.Fatalf("startup log = %q, want %q", logs.String(), want)
+			}
+			if len(ps.ListenAddrs()) != 0 {
+				t.Fatal("unimplemented protocol opened a listener")
 			}
 		})
 	}

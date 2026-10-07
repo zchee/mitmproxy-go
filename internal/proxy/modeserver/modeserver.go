@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"slices"
 	"strconv"
@@ -42,6 +43,11 @@ type Config struct {
 	Logger *slog.Logger
 	// ClientLimiter shares admission capacity across instances. Nil is unlimited.
 	ClientLimiter *ClientLimiter
+	// ListenerFactories supplies protocol-specific UDP acceptance by reverse
+	// scheme and transport. New clones the map and rejects nil factories or
+	// non-UDP keys. DNS, QUIC and HTTP/3 remain unavailable at Start until their
+	// protocol handler integrations are installed.
+	ListenerFactories map[ListenerKey]ListenerFactory
 }
 
 // Instance owns a mode's TCP or UDP listeners. Start and Stop serialize lifecycle work
@@ -60,6 +66,7 @@ type Instance struct {
 	state      atomic.Pointer[instanceState]
 	stopCancel func() bool
 	listenTCP  func(context.Context, string, string) (net.Listener, error)
+	factories  map[ListenerKey]ListenerFactory
 }
 
 type instanceState struct {
@@ -70,11 +77,17 @@ type instanceState struct {
 }
 
 // New validates the mode and configuration without opening a listener.
-// Only regular, upstream and reverse HTTP, HTTPS, TCP, TLS, UDP and DTLS are supported.
+// Regular, upstream and reverse modes are admitted. Reverse DNS, QUIC and HTTP/3
+// fail at Start until their protocol listener implementations are available.
 // Unsupported modes return the same message used by proxyserver's configure.
 func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 	if mode == nil || cfg.Handler == nil {
 		return nil, errors.New("modeserver: New requires a mode and handler")
+	}
+	for key, factory := range cfg.ListenerFactories {
+		if factory == nil || key.Transport != connection.UDP || key.Scheme == "" {
+			return nil, fmt.Errorf("modeserver: invalid listener factory for %q over %q", key.Scheme, key.Transport)
+		}
 	}
 	var kind hookdata.LayerKind
 	switch m := mode.(type) {
@@ -84,7 +97,7 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 		kind = hookdata.LayerUpstream
 	case modespec.ReverseMode:
 		switch m.Scheme {
-		case "http", "https", "tcp", "tls", "udp", "dtls":
+		case "http", "https", "tcp", "tls", "udp", "dtls", "dns", "quic", "http3":
 			kind = hookdata.LayerReverse
 		}
 	}
@@ -104,6 +117,7 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 		logger = slog.Default()
 	}
 	i := &Instance{mode: mode, handler: cfg.Handler, limiter: cfg.ClientLimiter, host: host, port: port, top: hookdata.LayerSpec{Kind: kind}, logger: logger}
+	i.factories = maps.Clone(cfg.ListenerFactories)
 	i.listenTCP = new(net.ListenConfig).Listen
 	i.state.Store(&instanceState{})
 	return i, nil
@@ -133,6 +147,14 @@ func (i *Instance) Start(ctx context.Context) error {
 	defer i.mu.Unlock()
 	if i.IsRunning() {
 		return nil
+	}
+	if reverse, ok := i.mode.(modespec.ReverseMode); ok {
+		switch reverse.Scheme {
+		case "dns", "quic", "http3":
+			err := fmt.Errorf("modeserver: reverse scheme %q is not implemented yet", reverse.Scheme)
+			i.state.Store(&instanceState{err: err})
+			return err
+		}
 	}
 	var listeners []net.Listener
 	var packets []*packettransport.Listener

@@ -50,8 +50,8 @@ func TestMake(t *testing.T) {
 		"reverse:tcp://example.com:1234": {true}, "reverse:tls://example.com:1234": {true},
 		"transparent": {}, "socks5": {}, "wireguard": {}, "local": {}, "tun": {}, "dns": {},
 		"reverse:udp://example.com:1234": {true}, "reverse:dtls://example.com:1234": {true},
-		"reverse:quic://example.com:1234": {}, "reverse:http3://example.com": {},
-		"reverse:dns://example.com": {},
+		"reverse:quic://example.com:1234": {true}, "reverse:http3://example.com": {true},
+		"reverse:dns://example.com": {true},
 	}
 	for spec, tt := range tests {
 		t.Run(spec, func(t *testing.T) {

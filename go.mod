@@ -13,6 +13,7 @@ require (
 	github.com/klauspost/compress v1.20.1
 	github.com/pion/dtls/v3 v3.1.10
 	github.com/quic-go/qpack v0.6.0
+	github.com/quic-go/quic-go v0.63.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/zchee/gows v0.0.0-20261007022926-36059bec13b6

@@ -110,6 +110,7 @@ section counts and rejected out-of-range fields, before codec tests run.
 | Module | Version | Licence | Importing adapter | Contract and upgrade check |
 |---|---|---|---|---|
 | `github.com/quic-go/qpack` | v0.6.0 | MIT | `internal/h3/qpack.go` | Static-table QPACK preserves ordered duplicate fields and opaque name/value bytes. Encoded and decoded field sections are capped at 128 KiB; decoded accounting includes 32 bytes per field. Dynamic references are rejected with advertised table capacity zero. After a bump, rerun `go test ./internal/h3` for static/literal wire vectors, empty sections, malformed prefixes, bounds and header-order preservation. |
+| `github.com/quic-go/quic-go` | v0.63.0 | MIT | `internal/h3/quic.go` | The latest tagged release supplies the QUIC connection and stream transport without converting HTTP headers into `net/http` types. Before upgrading, rerun the real-UDP adapter contract for certificate verification, h3 ALPN, connection dial/accept, bidirectional and unidirectional streams, application close-code propagation and goroutine cleanup. The caller closes its packet socket after the transport. |
 
 ## internal/netstack
 

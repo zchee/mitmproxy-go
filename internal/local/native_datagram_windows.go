@@ -9,7 +9,7 @@ import (
 )
 
 func connectNativeDatagram(_ *net.UnixConn, _ string) error {
-	return errors.New("Linux redirector Unix datagrams are unsupported on Windows")
+	return errors.New("linux redirector Unix datagrams are unsupported on Windows")
 }
 
 func nativeDatagramTruncated(_ int) bool { return true }

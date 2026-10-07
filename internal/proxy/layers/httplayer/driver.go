@@ -116,6 +116,12 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 			waitStreamFailed(context.Context) <-chan struct{}
 		}); ok {
 			workers.Go(func() {
+				if observer, ok := endpoint.(interface{ waitEndpointFailed(context.Context) bool }); ok {
+					if observer.waitEndpointFailed(ctx) {
+						terminateStream()
+					}
+					return
+				}
 				select {
 				case <-endpoint.waitStreamFailed(ctx):
 					terminateStream()
@@ -339,6 +345,46 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 		} else {
 			turns[source] = &driverTurn{output: out, receipt: result.receipt}
 		}
+	}
+}
+
+// waitEndpointFailed distinguishes an origin failure from retiring an identity
+// whose initial Send was rejected locally. That cleanup must unblock siblings,
+// but must not release an intercepted error hook while the origin stays usable.
+func (s *http2Stream) waitEndpointFailed(ctx context.Context) bool {
+	select {
+	case <-s.waitStreamFailed(ctx):
+	case <-ctx.Done():
+		return false
+	}
+	if s.initialSendFailure.Load() == nil {
+		return true
+	}
+	select {
+	case <-s.engine.Done():
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (s *lazyServer) waitEndpointFailed(ctx context.Context) bool {
+	select {
+	case <-s.ready:
+	case <-ctx.Done():
+		return false
+	}
+	s.mu.Lock()
+	endpoint := s.endpoint
+	s.mu.Unlock()
+	if observer, ok := endpoint.(interface{ waitEndpointFailed(context.Context) bool }); ok {
+		return observer.waitEndpointFailed(ctx)
+	}
+	select {
+	case <-s.waitStreamFailed(ctx):
+		return ctx.Err() == nil
+	case <-ctx.Done():
+		return false
 	}
 }
 

@@ -153,7 +153,6 @@ func TestUnsupportedModes(t *testing.T) {
 
 func TestReverseProtocolDeferredStartup(t *testing.T) {
 	tests := map[string]struct{ scheme string }{
-		"DNS":    {"dns"},
 		"QUIC":   {"quic"},
 		"HTTP/3": {"http3"},
 	}

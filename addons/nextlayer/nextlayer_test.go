@@ -33,10 +33,8 @@ const (
 // Test group              | Case names                              | Required protocol
 // test_ignore_connection  | quic sni; invalid quic; fragmented quic hello | QUIC
 // test_next_layer         | explicit proxy: experimental http3       | QUIC
-// test_next_layer         | reverse proxy: dns                       | DNS
 // test_next_layer         | reverse proxy: http3; reverse proxy: http3 in https mode; reverse proxy: quic | QUIC
 // test_next_layer         | transparent proxy: quic; transparent proxy: existing quic session; transparent proxy: http3 via ALPN | QUIC
-// test_next_layer         | transparent proxy: dns over udp; transparent proxy: dns over tcp; wireguard proxy: dns should not be ignored | DNS
 // test_next_layer         | transparent proxy: non-http quic; transparent proxy: http3 not ignored but with ignoring active | QUIC
 // test_starts_like_quic   | all assertions                           | QUIC
 

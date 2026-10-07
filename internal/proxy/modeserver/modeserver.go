@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"slices"
@@ -23,9 +24,9 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/human"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/proxy/modespec"
-	"github.com/zchee/mitmproxy-go/internal/proxy/packettransport"
 
-	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/modes" // Register the top layers passed to Handler.
+	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/dnslayer" // Register DNS before accepting protocol traffic.
+	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/modes"    // Register the top layers passed to Handler.
 )
 
 // Config supplies an instance's handler and fallback listen settings.
@@ -44,7 +45,7 @@ type Config struct {
 	ClientLimiter *ClientLimiter
 	// ListenerFactories supplies protocol-specific UDP acceptance by reverse
 	// scheme and transport. New copies registered defaults, applies explicit
-	// overrides and rejects nil factories or non-UDP keys. DNS, QUIC and HTTP/3
+	// overrides and rejects nil factories or non-UDP keys. QUIC and HTTP/3
 	// remain unavailable at Start until their protocol handler integrations
 	// are installed.
 	ListenerFactories map[ListenerKey]ListenerFactory
@@ -71,14 +72,14 @@ type Instance struct {
 
 type instanceState struct {
 	listeners       []net.Listener
-	packetListeners []*packettransport.Listener
+	packetListeners []io.Closer
 	addrs           []connection.Address
 	err             error
 }
 
 // New validates the mode and configuration without opening a listener.
-// Regular, upstream and reverse modes are admitted. Reverse DNS, QUIC and HTTP/3
-// fail at Start until their protocol listener implementations are available.
+// Regular, upstream and reverse modes are admitted. Reverse DNS serves UDP;
+// QUIC and HTTP/3 fail at Start until their listener implementations are available.
 // Unsupported modes return the same message used by proxyserver's configure.
 func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 	if mode == nil || cfg.Handler == nil {
@@ -148,19 +149,21 @@ func (i *Instance) Start(ctx context.Context) error {
 	if i.IsRunning() {
 		return nil
 	}
-	if reverse, ok := i.mode.(modespec.ReverseMode); ok {
-		switch reverse.Scheme {
-		case "dns", "quic", "http3":
-			err := fmt.Errorf("modeserver: reverse scheme %q is not implemented yet", reverse.Scheme)
-			i.state.Store(&instanceState{err: err})
-			return err
-		}
+	packetMode := i.mode.TransportProtocol() == modespec.UDP
+	if reverse, ok := i.mode.(modespec.ReverseMode); ok && reverse.Scheme == "dns" {
+		packetMode = true
 	}
 	var listeners []net.Listener
-	var packets []*packettransport.Listener
+	var packets []io.Closer
+	var addrs []connection.Address
 	var err error
-	if i.mode.TransportProtocol() == modespec.UDP {
-		packets, err = i.listenPackets(ctx)
+	if packetMode {
+		factory, factoryErr := i.packetFactory()
+		if factoryErr != nil {
+			i.state.Store(&instanceState{err: factoryErr})
+			return factoryErr
+		}
+		packets, addrs, err = i.startPacketFactories(ctx, i.port, factory, i.handlePacket)
 	} else {
 		listeners, err = i.listen(ctx)
 	}
@@ -177,11 +180,7 @@ func (i *Instance) Start(ctx context.Context) error {
 		i.state.Store(&instanceState{err: err})
 		return err
 	}
-	state := &instanceState{listeners: listeners, packetListeners: packets}
-	for _, listener := range packets {
-		addr := listener.LocalAddr().(*net.UDPAddr)
-		state.addrs = append(state.addrs, connection.Address{Host: addr.IP.String(), Port: addr.Port})
-	}
+	state := &instanceState{listeners: listeners, packetListeners: packets, addrs: addrs}
 	for _, listener := range listeners {
 		addr := listener.Addr().(*net.TCPAddr)
 		state.addrs = append(state.addrs, connection.Address{Host: addr.IP.String(), Port: addr.Port})
@@ -194,9 +193,6 @@ func (i *Instance) Start(ctx context.Context) error {
 			_ = i.stopLocked()
 		}
 	})
-	for _, listener := range packets {
-		go i.acceptPackets(ctx, listener)
-	}
 	for _, listener := range listeners {
 		go i.accept(ctx, listener)
 	}

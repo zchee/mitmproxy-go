@@ -193,6 +193,9 @@ func (a *NextLayer) choose(ctx context.Context, d *hookdata.NextLayer) (hookdata
 				return hookdata.LayerStack{{Kind: hookdata.LayerUDP}}, nil
 			}
 		}
+		if c.Server.Address != nil && (c.Server.Address.Port == 53 || c.Server.Address.Port == 5353) {
+			return hookdata.LayerStack{{Kind: "dns"}}, nil
+		}
 		return hookdata.LayerStack{{Kind: hookdata.LayerUDP}}, nil
 	}
 
@@ -226,6 +229,9 @@ func (a *NextLayer) choose(ctx context.Context, d *hookdata.NextLayer) (hookdata
 	switch string(c.Client.ALPN) {
 	case "h2", "http/1.1", "http/1.0", "http/0.9":
 		return hookdata.LayerStack{{Kind: hookdata.LayerHTTP, HTTPMode: hookdata.HTTPModeTransparent}}, nil
+	}
+	if c.Server.Address != nil && (c.Server.Address.Port == 53 || c.Server.Address.Port == 5353) {
+		return hookdata.LayerStack{{Kind: "dns"}}, nil
 	}
 	space := bytes.IndexByte(d.DataClient, ' ')
 	probablyNotHTTP := len(d.DataClient) < 3 || space < 0 || space > bytes.IndexByte(d.DataClient, '\n') ||
@@ -321,6 +327,8 @@ func reverseStack(spec string, clientTLS bool) (hookdata.LayerStack, error) {
 	}
 	var app hookdata.LayerSpec
 	switch reverse.Scheme {
+	case "dns":
+		return hookdata.LayerStack{{Kind: "dns"}}, nil
 	case "http", "https":
 		app = hookdata.LayerSpec{Kind: hookdata.LayerHTTP, HTTPMode: hookdata.HTTPModeTransparent}
 	case "tcp", "tls":

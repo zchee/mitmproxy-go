@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net"
 	"sync"
@@ -82,23 +83,61 @@ func (i *Instance) packetFactory() (ListenerFactory, error) {
 	}
 }
 
+func init() {
+	RegisterListenerFactory(ListenerKey{Scheme: "dns", Transport: connection.UDP}, func(ctx context.Context, socket net.PacketConn, handle PacketHandler) (io.Closer, error) {
+		return newPacketListener(ctx, socket, handle, slog.Default()), nil
+	})
+}
+
 func (i *Instance) servePackets(ctx context.Context, socket net.PacketConn, handle PacketHandler) (io.Closer, error) {
+	return newPacketListener(ctx, socket, handle, i.logger), nil
+}
+
+func newPacketListener(ctx context.Context, socket net.PacketConn, handle PacketHandler, logger *slog.Logger) *packettransport.Listener {
 	listener := packettransport.NewListener(ctx, socket)
 	go func() {
 		for {
 			client, err := listener.Accept(ctx)
 			if err != nil {
 				if errors.Is(err, layer.ErrPacketOverflow) {
-					i.logger.Error("Accepting proxy connection", "error", err)
+					logger.Error("Accepting proxy connection", "error", err)
 					continue
 				}
 				if !errors.Is(err, net.ErrClosed) && ctx.Err() == nil {
-					i.logger.Error("Accepting proxy connection", "error", err)
+					logger.Error("Accepting proxy connection", "error", err)
 				}
 				return
 			}
 			go func() { _ = handle(client.Context(), client) }()
 		}
 	}()
-	return listener, nil
+	return listener
+}
+
+func (i *Instance) startPacketFactories(ctx context.Context, port int, factory ListenerFactory, handle PacketHandler) ([]io.Closer, []connection.Address, error) {
+	sockets, err := i.listenPacketSockets(ctx, port)
+	if err != nil {
+		return nil, nil, err
+	}
+	listeners := make([]io.Closer, 0, len(sockets))
+	addrs := make([]connection.Address, 0, len(sockets))
+	for n, socket := range sockets {
+		addr := socket.LocalAddr().(*net.UDPAddr)
+		listener, err := factory(ctx, socket, handle)
+		if err == nil && listener == nil {
+			err = errors.New("modeserver: listener factory returned a nil closer")
+		}
+		if err != nil {
+			for _, pending := range sockets[n:] {
+				_ = pending.Close()
+			}
+			for _, opened := range listeners {
+				_ = opened.Close()
+			}
+			return nil, nil, err
+		}
+		listeners = append(listeners, listener)
+		addrs = append(addrs, connection.Address{Host: addr.IP.String(), Port: addr.Port})
+	}
+	return listeners, addrs, nil
 }

@@ -18,6 +18,15 @@ func TestReverseProtocolAdmission(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			instance := makeInstance(t, "reverse:"+tt.scheme+"://example.test:443@127.0.0.1:0", cfg)
+			if tt.scheme == "dns" {
+				if err := instance.Start(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				if !instance.IsRunning() || len(instance.ListenAddrs()) != 1 {
+					t.Fatal("DNS did not publish its packet listener")
+				}
+				return
+			}
 			want := fmt.Sprintf("modeserver: reverse scheme %q is not implemented yet", tt.scheme)
 			if err := instance.Start(t.Context()); err == nil || err.Error() != want {
 				t.Fatalf("Start = %v, want %q", err, want)

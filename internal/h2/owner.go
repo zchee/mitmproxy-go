@@ -247,7 +247,7 @@ func (o *owner) run(reads <-chan readFrame, writes chan<- *writeFrame, written <
 				}
 				close(incoming.accepted)
 			}
-			if len(o.controls) > MaxConcurrentStreams*2 || len(o.connectionEvents) > MaxConcurrentStreams {
+			if len(o.connectionEvents) > MaxConcurrentStreams {
 				o.fail(protocolError(http2.ErrCodeEnhanceYourCalm, "HTTP/2 control queue limit exceeded"))
 			}
 		case destination <- next:
@@ -974,7 +974,7 @@ func (o *owner) frame(frame http2.Frame) error {
 			o.e.cfg.Logger.Debug("Ignoring unknown HTTP/2 frame type: " + strconv.Itoa(int(f.Header().Type)))
 		}
 	}
-	if len(o.controls) > MaxConcurrentStreams*2 || len(o.connectionEvents) > MaxConcurrentStreams {
+	if len(o.connectionEvents) > MaxConcurrentStreams {
 		return protocolError(http2.ErrCodeEnhanceYourCalm, "HTTP/2 control queue limit exceeded")
 	}
 	return nil

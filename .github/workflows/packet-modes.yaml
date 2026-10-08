@@ -1,0 +1,91 @@
+name: Packet modes
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  linux-packet-modes:
+    name: privileged packet modes (Linux)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Install packet gate tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes iproute2 curl
+      - name: Verify gate orchestration
+        run: bash hack/packet-modes-gate_test.sh
+      - name: Run required packet-source acceptance
+        env:
+          PACKET_GATE_OUTPUT: ${{ github.workspace }}/_test/packet-modes
+        run: bash hack/packet-modes-gate.sh
+      - name: Upload packet logs and redirector stderr
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: packet-modes-linux-${{ github.run_id }}-${{ github.run_attempt }}
+          path: _test/packet-modes/
+          if-no-files-found: error
+
+  macos-wireguard:
+    name: WireGuard upstream client (macOS)
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Run userspace WireGuard acceptance
+        env:
+          PACKET_GATE_OUTPUT: ${{ github.workspace }}/_test/packet-modes
+        run: |
+          mkdir -p "${PACKET_GATE_OUTPUT}"
+          go test -tags packetmodes -count=1 -timeout 120s -v -run '^TestWireGuardExecutable$' ./internal/proxy/packetmodetest 2>&1 | tee "${PACKET_GATE_OUTPUT}/test.log"
+          if grep -Eq '^[[:space:]]*--- SKIP:' "${PACKET_GATE_OUTPUT}/test.log"; then
+            exit 1
+          fi
+          grep -Eq '^--- PASS: TestWireGuardExecutable ' "${PACKET_GATE_OUTPUT}/test.log"
+      - name: Upload WireGuard logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: packet-modes-macos-${{ github.run_id }}-${{ github.run_attempt }}
+          path: _test/packet-modes/
+          if-no-files-found: error
+
+  freebsd-build:
+    name: FreeBSD cross-compile (not native execution)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Build for FreeBSD
+        env:
+          GOOS: freebsd
+          GOARCH: amd64
+        run: go build ./...

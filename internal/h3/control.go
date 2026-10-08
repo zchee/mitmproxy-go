@@ -42,7 +42,20 @@ func (e *Endpoint) readUnidirectional(stream *incomingUniStream) {
 	defer func() { e.mu.Lock(); delete(e.incoming, uint64(stream.StreamID())); e.mu.Unlock() }()
 	kind, err := readVarint(stream)
 	if err != nil {
-		if e.ctx.Err() == nil && !errors.Is(err, io.EOF) {
+		if e.ctx.Err() != nil {
+			return
+		}
+		// A close can end this read before endpoint cancellation propagates.
+		// Preserve its typed cause before a normal close becomes EOF.
+		if _, ok := errors.AsType[*quic.ApplicationError](err); ok {
+			e.fail(connectionTransportError(err))
+			return
+		}
+		if cause := context.Cause(e.conn.context()); cause != nil {
+			e.fail(connectionTransportError(cause))
+			return
+		}
+		if !errors.Is(err, io.EOF) {
 			e.fail(connectionError(ErrCodeStreamCreation, "truncated stream type"))
 		}
 		return

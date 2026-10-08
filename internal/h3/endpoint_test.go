@@ -188,6 +188,11 @@ func newEndpointPairContexts(t *testing.T, ctx, serverCtx context.Context, cance
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A nil server context leaves both owners unstarted for isolated stream-read
+	// classification tests; the fixture still owns and closes their connections.
+	if serverCtx == nil {
+		return client, server, ctx
+	}
 	for i, endpoint := range []*Endpoint{client, server} {
 		runCtx := ctx
 		if i == 1 {

@@ -146,7 +146,7 @@ func streamTransportError(err error, id layer.StreamIdentity) error {
 
 func connectionTransportError(err error) error {
 	if appErr, ok := errors.AsType[*quic.ApplicationError](err); ok {
-		if ErrorCode(appErr.ErrorCode) == ErrCodeNoError {
+		if appErr.ErrorCode == 0 || ErrorCode(appErr.ErrorCode) == ErrCodeNoError {
 			return io.EOF
 		}
 		return connectionError(ErrorCode(appErr.ErrorCode), appErr.Error())

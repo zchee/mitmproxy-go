@@ -1,8 +1,8 @@
 // Copyright 2026 The mitmproxy-go Authors.
 // SPDX-License-Identifier: MIT
 
-// Package modeserver owns TCP and UDP listeners for regular, reverse, upstream
-// and DNS proxy modes. Stopping UDP evicts tuples; accepted TCP clients may finish.
+// Package modeserver owns listeners and packet sources for proxy modes.
+// Stopping UDP evicts tuples; accepted socket TCP clients may finish.
 package modeserver
 
 import (
@@ -19,11 +19,14 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	wgtun "golang.zx2c4.com/wireguard/tun"
+
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/internal/human"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/proxy/modespec"
+	"github.com/zchee/mitmproxy-go/internal/tun"
 
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/dnslayer" // Register DNS before accepting protocol traffic.
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/modes"    // Register the top layers passed to Handler.
@@ -73,10 +76,12 @@ type Instance struct {
 	stopCancel func() bool
 	listenTCP  func(context.Context, string, string) (net.Listener, error)
 	listenUDP  func(context.Context, string, string) (net.PacketConn, error)
+	openTun    func(string, *slog.Logger) (wgtun.Device, error)
 	factories  map[ListenerKey]ListenerFactory
 }
 
 type instanceState struct {
+	tun             *tunSource
 	wireguard       *wireguardSource
 	listeners       []net.Listener
 	packetListeners []io.Closer
@@ -85,8 +90,10 @@ type instanceState struct {
 }
 
 // New validates the mode and configuration without opening a listener.
-// Regular, upstream, reverse, DNS and WireGuard modes are admitted. DNS and reverse HTTPS
-// bind TCP and UDP on the same port. QUIC and HTTP/3 require listener integrations.
+// Regular, upstream, reverse, DNS, WireGuard and TUN modes are admitted.
+// DNS and reverse HTTPS bind TCP and UDP on the same port. TUN has no listen
+// port; native device availability is checked by Start, not validation.
+// QUIC and HTTP/3 require listener integrations.
 // Unsupported modes return the same message used by proxyserver's configure.
 func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 	if mode == nil || cfg.Handler == nil {
@@ -105,6 +112,8 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 		kind = hookdata.LayerUpstream
 	case modespec.WireGuardMode:
 		kind = "wireguard"
+	case modespec.TunMode:
+		kind = "tun"
 	case modespec.DNSMode:
 		kind = "dns"
 	case modespec.ReverseMode:
@@ -117,7 +126,7 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 		return nil, fmt.Errorf("Proxy mode %s is not supported by mitmproxy-go yet.", mode) //nolint:staticcheck // Preserve the user-facing unsupported-mode diagnostic.
 	}
 	port, ok := mode.ListenPort(cfg.ListenPort)
-	if !ok || port < 0 || port > 65535 {
+	if kind != "tun" && (!ok || port < 0 || port > 65535) {
 		return nil, fmt.Errorf("modeserver: invalid listen port %d", port)
 	}
 	host := mode.ListenHost(cfg.ListenHost)
@@ -136,6 +145,7 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 	i.factories = registeredFactories(cfg.ListenerFactories)
 	i.listenTCP = new(net.ListenConfig).Listen
 	i.listenUDP = new(net.ListenConfig).ListenPacket
+	i.openTun = tun.Open
 	i.state.Store(&instanceState{})
 	return i, nil
 }
@@ -143,8 +153,11 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 // Mode returns the immutable specification supplied to New.
 func (i *Instance) Mode() modespec.Mode { return i.mode }
 
-// IsRunning reports whether the instance has listening sockets.
-func (i *Instance) IsRunning() bool { return len(i.state.Load().addrs) != 0 }
+// IsRunning reports whether listeners or a native packet source are active.
+func (i *Instance) IsRunning() bool {
+	state := i.state.Load()
+	return state.tun != nil || len(state.addrs) != 0
+}
 
 // LastError returns the most recent Start or Stop failure, cleared on success.
 func (i *Instance) LastError() error { return i.state.Load().err }
@@ -168,6 +181,9 @@ func (i *Instance) Start(ctx context.Context) error {
 	}
 	if _, ok := i.mode.(modespec.WireGuardMode); ok {
 		return i.startWireGuard(ctx)
+	}
+	if _, ok := i.mode.(modespec.TunMode); ok {
+		return i.startTun(ctx)
 	}
 	transport := i.mode.TransportProtocol()
 	var listeners []net.Listener
@@ -232,8 +248,8 @@ func (i *Instance) Start(ctx context.Context) error {
 
 // Stop closes the listening sockets, clears the bound addresses, and returns
 // any close errors. UDP tuples are evicted because they share the socket.
-// Socket listener modes never wait for accepted TCP clients. WireGuard stops
-// its virtual transports and joins their handlers before returning.
+// Socket listener modes never wait for accepted TCP clients. Packet sources
+// stop their virtual transports and join their handlers before returning.
 // Call outside dispatch; cancellation of the Start context ends all clients.
 func (i *Instance) Stop() error {
 	i.mu.Lock()
@@ -243,6 +259,13 @@ func (i *Instance) Stop() error {
 
 func (i *Instance) stopLocked() error {
 	state := i.state.Load()
+	if source := state.tun; source != nil {
+		err := source.Close()
+		<-source.monitorDone
+		i.state.Store(&instanceState{err: err})
+		i.logger.Info(i.mode.Description() + " stopped.")
+		return err
+	}
 	if source := state.wireguard; source != nil {
 		err := source.Close()
 		<-source.monitorDone

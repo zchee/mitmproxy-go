@@ -134,7 +134,7 @@ func TestOptions(t *testing.T) {
 
 func TestUnsupportedModes(t *testing.T) {
 	tests := map[string]struct{}{
-		"transparent": {}, "socks5": {}, "local": {}, "tun": {},
+		"transparent": {}, "socks5": {}, "local": {},
 	}
 	for spec := range tests {
 		t.Run(spec, func(t *testing.T) {

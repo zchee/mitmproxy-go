@@ -241,15 +241,22 @@ func (e *Endpoint) Shutdown(ctx context.Context, code ErrorCode, debug []byte) e
 	if e.cfg.Client {
 		boundary = 0
 	}
+	// Snapshot the rejection boundary and close admission under the same lock,
+	// before GOAWAY reaches the wire. Keep the control stream alive until every
+	// pending GOAWAY write finishes, even if the last accepted request retires.
+	e.draining = true
+	e.goAwayWrites++
+	e.signalLocked()
 	e.mu.Unlock()
-	if err := e.controlFrame(ctx, frameGoAway, appendVarint(nil, boundary)); err != nil {
+	err := e.controlFrame(ctx, frameGoAway, appendVarint(nil, boundary))
+	e.mu.Lock()
+	e.goAwayWrites--
+	if err != nil {
+		e.mu.Unlock()
 		e.fail(connectionError(ErrCodeInternal, "GOAWAY write interrupted"))
 		return err
 	}
-	e.mu.Lock()
-	e.draining = true
-	e.signalLocked()
-	if len(e.streams) == 0 && e.opening == 0 && e.ctx.Err() == nil {
+	if len(e.streams) == 0 && e.opening == 0 && e.goAwayWrites == 0 && e.ctx.Err() == nil {
 		e.graceful = true
 		e.cancel()
 	}

@@ -26,6 +26,7 @@ type requestState struct {
 	bytes          int
 	receipt        *layer.Receipt
 	failure        *StreamError
+	announced      bool
 	resetDelivered bool
 	localEnd       bool
 	remoteEnd      bool
@@ -79,6 +80,7 @@ func (s *requestState) fail(code ErrorCode, err error) {
 	s.signalLocked()
 	s.mu.Unlock()
 	cancelRequestStream(s.wire, failure.Code)
+	s.e.retire(s)
 }
 
 func (s *requestState) reserve(size int) bool {
@@ -445,6 +447,14 @@ func (e *Endpoint) readRequest(s *requestState) {
 			}
 			event := Event{Kind: kind, Identity: s.id, Headers: fields}
 			if !e.cfg.Client && !initial {
+				s.mu.Lock()
+				if s.failure != nil {
+					s.mu.Unlock()
+					return
+				}
+				// Retain resets once the queued head can expose this identity.
+				s.announced = true
+				s.mu.Unlock()
 				if !e.notify(event) {
 					return
 				}

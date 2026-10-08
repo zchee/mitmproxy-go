@@ -33,6 +33,7 @@ type Endpoint struct {
 	workers         sync.WaitGroup
 	streams         map[uint64]*requestState
 	opening         int
+	goAwayWrites    int
 	notifications   chan Event
 	receiveLock     chan struct{}
 	controlLock     chan struct{}
@@ -450,7 +451,7 @@ func (e *Endpoint) StreamFailed(id layer.StreamIdentity) <-chan struct{} {
 
 func (e *Endpoint) retire(s *requestState) {
 	s.mu.Lock()
-	finished := s.failure != nil && s.resetDelivered || s.failure == nil && s.localEnd && s.remoteEnd && len(s.events) == 0 && s.receipt == nil && s.bytes == 0
+	finished := s.failure != nil && (s.resetDelivered || !e.cfg.Client && !s.announced) || s.failure == nil && s.localEnd && s.remoteEnd && len(s.events) == 0 && s.receipt == nil && s.bytes == 0
 	if finished && !s.doneClosed {
 		close(s.done)
 		s.doneClosed = true
@@ -464,7 +465,7 @@ func (e *Endpoint) retire(s *requestState) {
 		delete(e.streams, s.id.Stream)
 		e.signalLocked()
 	}
-	if e.draining && len(e.streams) == 0 && e.opening == 0 && e.ctx.Err() == nil {
+	if e.draining && len(e.streams) == 0 && e.opening == 0 && e.goAwayWrites == 0 && e.ctx.Err() == nil {
 		e.graceful = true
 		e.cancel()
 	}

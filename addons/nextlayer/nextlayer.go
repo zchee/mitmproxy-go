@@ -195,6 +195,20 @@ func (a *NextLayer) choose(ctx context.Context, d *hookdata.NextLayer) (hookdata
 	if isUDP {
 		if len(c.Layers) == 1 {
 			if top, ok := c.Layers[0].(interface{ Kind() hookdata.LayerKind }); ok && top.Kind() == hookdata.LayerReverse {
+				mode, err := modespec.Parse(c.Client.ProxyMode)
+				if err != nil {
+					return nil, err
+				}
+				if reverse, ok := mode.(modespec.ReverseMode); ok && reverse.Scheme == "https" {
+					if isQUIC && hello != nil {
+						for _, alpn := range hello.ALPNProtocols() {
+							if bytes.Equal(alpn, []byte("h3")) {
+								return hookdata.LayerStack{{Kind: hookdata.LayerHTTP3}}, nil
+							}
+						}
+					}
+					return hookdata.LayerStack{{Kind: "quic"}}, nil
+				}
 				return reverseStack(c.Client.ProxyMode, isDTLS)
 			}
 		}
@@ -344,6 +358,8 @@ func reverseStack(spec string, clientTLS bool) (hookdata.LayerStack, error) {
 	}
 	var app hookdata.LayerSpec
 	switch reverse.Scheme {
+	case "http3":
+		return hookdata.LayerStack{{Kind: hookdata.LayerHTTP3}}, nil
 	case "quic":
 		return hookdata.LayerStack{{Kind: "quic"}}, nil
 	case "dns":

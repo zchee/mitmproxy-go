@@ -140,8 +140,22 @@ func (a *NextLayer) choose(ctx context.Context, d *hookdata.NextLayer) (hookdata
 	isUDP := c.Client.TransportProtocol == connection.UDP
 	isTLS := !isUDP && tlsparse.StartsLikeTLSRecord(d.DataClient)
 	isDTLS := isUDP && tlsparse.StartsLikeDTLSRecord(d.DataClient)
+	isQUIC := isUDP && tlsparse.StartsLikeQUICInitial(d.DataClient)
 	var hello *tlsparse.ClientHello
 	var incomplete bool
+	if isQUIC {
+		// Upstream _get_client_hello passes cumulative datagrams as one
+		// coalesced buffer; malformed input is left for the protocol layer.
+		var parser tlsparse.QUICClientHelloParser
+		var err error
+		hello, err = parser.Feed(d.DataClient)
+		if errors.Is(err, tlsparse.ErrTooLarge) {
+			return nil, err
+		}
+		if err == nil && hello == nil {
+			return nil, errNeedsMoreData
+		}
+	}
 	if isDTLS {
 		var err error
 		hello, err = tlsparse.ParseDTLSClientHello(d.DataClient)
@@ -183,6 +197,9 @@ func (a *NextLayer) choose(ctx context.Context, d *hookdata.NextLayer) (hookdata
 			if top, ok := c.Layers[0].(interface{ Kind() hookdata.LayerKind }); ok && top.Kind() == hookdata.LayerReverse {
 				return reverseStack(c.Client.ProxyMode, isDTLS)
 			}
+		}
+		if isQUIC {
+			return hookdata.LayerStack{{Kind: "quic"}}, nil
 		}
 		if isDTLS {
 			return hookdata.LayerStack{{Kind: hookdata.LayerServerDTLS}, {Kind: hookdata.LayerClientDTLS}}, nil
@@ -327,6 +344,8 @@ func reverseStack(spec string, clientTLS bool) (hookdata.LayerStack, error) {
 	}
 	var app hookdata.LayerSpec
 	switch reverse.Scheme {
+	case "quic":
+		return hookdata.LayerStack{{Kind: "quic"}}, nil
 	case "dns":
 		return hookdata.LayerStack{{Kind: "dns"}}, nil
 	case "http", "https":

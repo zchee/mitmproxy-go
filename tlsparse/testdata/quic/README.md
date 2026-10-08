@@ -28,6 +28,13 @@ it did not accept TLS and did not rewrite the datagrams. Tests require
 that either datagram alone is incomplete, both yield the expected SNI,
 and reverse arrival order also completes.
 
-The build-tagged generator remains outside the proxy module until the
-QUIC dependency bootstrap lands. Fixture generation uses exclusive file
-creation to prevent accidental replacement of this capture.
+A maintained copy of the build-tagged generator is `generate.go` beside
+these fixtures. The original capture and its provenance above are unchanged.
+To reproduce the capture, use a new empty output directory:
+
+```sh
+go run -tags quicfixture ./tlsparse/testdata/quic/generate.go <output-directory>
+```
+
+Fixture generation uses exclusive file creation to prevent accidental
+replacement of the original capture.

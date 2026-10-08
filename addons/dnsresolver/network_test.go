@@ -24,16 +24,15 @@ import (
 
 func authoritativeServer(t *testing.T, truncate bool, reply func(*dns.Message) *dns.Message) (netip.AddrPort, <-chan string) {
 	t.Helper()
-	tcp, err := net.Listen("tcp4", "127.0.0.1:0")
+	tcp, udp, err := listenAuthoritativePair(func() (net.Listener, error) {
+		return net.Listen("tcp4", "127.0.0.1:0")
+	}, func(address *net.UDPAddr) (*net.UDPConn, error) {
+		return net.ListenUDP("udp4", address)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	address := tcp.Addr().(*net.TCPAddr).AddrPort()
-	udp, err := net.ListenUDP("udp4", net.UDPAddrFromAddrPort(address))
-	if err != nil {
-		_ = tcp.Close()
-		t.Fatal(err)
-	}
 	ctx, cancel := context.WithCancel(t.Context())
 	queries := make(chan string, 256)
 	respond := func(wire []byte, network string) []byte {

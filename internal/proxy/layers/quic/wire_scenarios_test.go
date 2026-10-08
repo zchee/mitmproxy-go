@@ -74,6 +74,9 @@ func TestQUICWireVerification(t *testing.T) {
 				o.hello = func(d *hookdata.ClientHello) { d.Context.Server.SNI = new("wrong-name.example") }
 			}
 			s := newWireSession(t, tt.settings, o)
+			if !tt.fail {
+				wireAwaitServerEstablished(t, o)
+			}
 			if err := s.manager.Do(t.Context(), func(context.Context) error {
 				want := tt.want
 				if want == nil {

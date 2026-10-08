@@ -43,6 +43,12 @@ import (
 	"github.com/zchee/mitmproxy-go/options"
 )
 
+// Cold full-tree race failures hit the default idle budget at 30.46s and
+// 30.33s. Keep the test peer active while dispatch catches up.
+const wireClientKeepAlivePeriod = time.Second
+
+const wireWaitTimeout = 30 * time.Second
+
 type wireObserver struct {
 	events              []string
 	hello               func(*hookdata.ClientHello)
@@ -56,7 +62,9 @@ type wireObserver struct {
 	connectionID        string
 	message             func(context.Context, *flow.TCPFlow) error
 	consumer            ConnectionConsumer
+	clientIdleTimeout   time.Duration
 	established         chan struct{}
+	serverEstablished   chan struct{}
 	passthrough         bool
 	preserveSettings    bool
 	clientSettings      *hookdata.QUICTLSSettings
@@ -96,6 +104,9 @@ func (o *wireObserver) TLSEstablishedClient(context.Context, *hookdata.TLS) erro
 
 func (o *wireObserver) TLSEstablishedServer(context.Context, *hookdata.TLS) error {
 	o.events = append(o.events, "established-server")
+	if o.serverEstablished != nil {
+		o.serverEstablished <- struct{}{}
+	}
 	return nil
 }
 
@@ -138,13 +149,18 @@ func wireAwait[T any](t *testing.T, ch <-chan T) T {
 	select {
 	case v := <-ch:
 		return v
-	case <-time.After(30 * time.Second):
+	case <-time.After(wireWaitTimeout):
 		buf := make([]byte, 1<<20)
 		n := runtime.Stack(buf, true)
 		t.Fatalf("QUIC fixture did not complete:\n%s", buf[:n])
 		var zero T
 		return zero
 	}
+}
+
+func wireAwaitServerEstablished(t *testing.T, o *wireObserver) {
+	t.Helper()
+	wireAwait(t, o.serverEstablished)
 }
 
 func originCertificate(t *testing.T) (*tls.Config, []byte) {
@@ -191,6 +207,7 @@ func newWireSession(t *testing.T, optsMap map[string]any, observe *wireObserver)
 	s := &wireSession{ctx: ctx, cancel: cancel, observer: observe, originReady: make(chan *quicgo.Conn, 1)}
 	observe.disconnected = make(chan struct{}, 1)
 	observe.established = make(chan struct{}, 1)
+	observe.serverEstablished = make(chan struct{}, 1)
 	t.Cleanup(func() {
 		cancel()
 		if s.client != nil {
@@ -321,7 +338,13 @@ func newWireSession(t *testing.T, optsMap map[string]any, observe *wireObserver)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.client, err = transport.Dial(ctx, peer, &tls.Config{MinVersion: tls.VersionTLS13, NextProtos: []string{"raw-test"}, ServerName: "two-datagram.example", RootCAs: clientRoots, CurvePreferences: []tls.CurveID{tls.X25519MLKEM768}}, transportConfig())
+	clientQUIC := transportConfig()
+	clientQUIC.KeepAlivePeriod = wireClientKeepAlivePeriod
+	if observe.clientIdleTimeout > 0 {
+		clientQUIC.MaxIdleTimeout = observe.clientIdleTimeout
+		clientQUIC.KeepAlivePeriod = observe.clientIdleTimeout / 3
+	}
+	s.client, err = transport.Dial(ctx, peer, &tls.Config{MinVersion: tls.VersionTLS13, NextProtos: []string{"raw-test"}, ServerName: "two-datagram.example", RootCAs: clientRoots, CurvePreferences: []tls.CurveID{tls.X25519MLKEM768}}, clientQUIC)
 	if err != nil && !observe.expectOriginFailure {
 		t.Fatal(err)
 	}

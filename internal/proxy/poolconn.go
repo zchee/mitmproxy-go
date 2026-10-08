@@ -56,10 +56,13 @@ func (c *poolConn) CloseWrite() error {
 
 func (c *poolConn) halfClose(direction connection.State) error {
 	c.entry.state.And(^uint32(direction))
-	err := c.pool.do(context.WithoutCancel(c.pool.ctx), func(context.Context) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.pool.ctx), poolCleanupTimeout)
+	defer cancel()
+	err := c.pool.do(ctx, func(context.Context) error {
 		c.entry.srv.State = connection.State(c.entry.state.Load())
 		return nil
 	})
+	err = errors.Join(err, ctx.Err())
 	if c.entry.state.Load() == uint32(connection.Closed) {
 		return errors.Join(err, c.Close())
 	}

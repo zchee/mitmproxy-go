@@ -21,6 +21,10 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/stateutil"
 )
 
+// poolCleanupTimeout bounds cleanup admission and each caller's shutdown wait.
+// It does not interrupt addon callbacks or kernel transport closure.
+const poolCleanupTimeout = 5 * time.Second
+
 type addressKey struct {
 	host     string
 	port     int
@@ -393,7 +397,9 @@ func (p *serverPool) refreshKey(entry *poolEntry) error {
 }
 
 func (p *serverPool) connectFailed(entry *poolEntry, cause error) error {
-	_, err := p.hooks.FireFunc(context.WithoutCancel(p.ctx), func(context.Context) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(p.ctx), poolCleanupTimeout)
+	defer cancel()
+	_, err := p.hooks.FireFunc(ctx, func(context.Context) error {
 		if entry.srv.Error == nil {
 			reason := cause.Error()
 			entry.srv.Error = &reason
@@ -401,7 +407,7 @@ func (p *serverPool) connectFailed(entry *poolEntry, cause error) error {
 		entry.srv.State = connection.Closed
 		return nil
 	}, addon.ServerConnectErrorHook{Data: &hookdata.ServerConnection{Server: entry.srv, Client: p.client}})
-	return errors.Join(cause, err)
+	return errors.Join(cause, err, ctx.Err())
 }
 
 // Upgrade applies setup once to a pooled connection and returns its wrapped transport.
@@ -451,11 +457,14 @@ func (p *serverPool) Upgrade(ctx context.Context, srv *connection.Server, setup 
 			if err != nil {
 				// Record the failure before closing the tracked connection,
 				// whose Close emits the disconnection hook.
-				metadataErr := p.do(context.WithoutCancel(p.ctx), func(context.Context) error {
+				cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(p.ctx), poolCleanupTimeout)
+				metadataErr := p.do(cleanupCtx, func(context.Context) error {
 					reason := err.Error()
 					entry.srv.Error = &reason
 					return nil
 				})
+				metadataErr = errors.Join(metadataErr, cleanupCtx.Err())
+				cancel()
 				closeErr := conn.Close()
 				if wrapped != nil {
 					_ = wrapped.Close()
@@ -509,35 +518,43 @@ func (p *serverPool) find(srv *connection.Server) *poolEntry {
 	return nil
 }
 
+// closeAll retains one cleanup owner even when a caller stops waiting.
+// closedDone signals actual completion, never a cancelled or expired wait.
 func (p *serverPool) closeAll(ctx context.Context) error {
 	p.mu.Lock()
-	if p.closed {
-		p.mu.Unlock()
-		select {
-		case <-p.closedDone:
-			return p.closeErr
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	p.closed = true
-	entries := slices.Clone(p.entries)
-	p.mu.Unlock()
-	p.cancel()
-	// All flight creation is serialized with closed under mu. Raw sockets
-	// have cancellation callbacks, so no setup read can prevent joining.
-	p.workers.Wait()
-	var errs []error
-	for _, entry := range entries {
-		if conn := entry.flight.conn; conn != nil {
-			if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-				errs = append(errs, err)
+	if !p.closed {
+		p.closed = true
+		entries := slices.Clone(p.entries)
+		go func() {
+			p.cancel()
+			// All flight creation is serialized with closed under mu. A
+			// foreign callback or Close may outlive the caller's budget,
+			// so ownership remains here until every worker and lease ends.
+			p.workers.Wait()
+			var errs []error
+			for _, entry := range entries {
+				if conn := entry.flight.conn; conn != nil {
+					if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+						errs = append(errs, err)
+					}
+				}
 			}
-		}
+			p.closeErr = errors.Join(errs...)
+			close(p.closedDone)
+		}()
 	}
-	p.closeErr = errors.Join(errs...)
-	close(p.closedDone)
-	return p.closeErr
+	p.mu.Unlock()
+	waitCtx, cancel := context.WithTimeout(ctx, poolCleanupTimeout)
+	defer cancel()
+	if err := waitCtx.Err(); err != nil {
+		return err
+	}
+	select {
+	case <-p.closedDone:
+		return p.closeErr
+	case <-waitCtx.Done():
+		return waitCtx.Err()
+	}
 }
 
 // end fires once even when both directions fail while teardown is closing.
@@ -545,7 +562,9 @@ func (p *serverPool) closeAll(ctx context.Context) error {
 func (p *serverPool) end(entry *poolEntry, cause error) error {
 	entry.state.Store(uint32(connection.Closed))
 	entry.end.Do(func() {
-		_, entry.endErr = p.hooks.FireFunc(context.WithoutCancel(p.ctx), func(context.Context) error {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(p.ctx), poolCleanupTimeout)
+		defer cancel()
+		_, entry.endErr = p.hooks.FireFunc(ctx, func(context.Context) error {
 			now := nowSeconds()
 			entry.srv.TimestampEnd = &now
 			entry.srv.State = connection.Closed
@@ -555,6 +574,7 @@ func (p *serverPool) end(entry *poolEntry, cause error) error {
 			}
 			return nil
 		}, addon.ServerDisconnectedHook{Data: &hookdata.ServerConnection{Server: entry.srv, Client: p.client}})
+		entry.endErr = errors.Join(entry.endErr, ctx.Err())
 		p.mu.Lock()
 		entry.endComplete = true
 		p.removeCompleted(entry)

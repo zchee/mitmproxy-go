@@ -47,7 +47,9 @@ func TestQUICSettingsOverride(t *testing.T) {
 			opts := options.New()
 			manager := addon.NewManager(opts, command.NewManager(), addon.Config{})
 			t.Cleanup(func() {
-				if err := manager.Clear(t.Context()); err != nil {
+				cleanupCtx, stopCleanup := context.WithTimeout(context.WithoutCancel(t.Context()), tlsFixtureCleanupTimeout)
+				defer stopCleanup()
+				if err := manager.Clear(cleanupCtx); err != nil {
 					t.Error(err)
 				}
 				manager.Close()

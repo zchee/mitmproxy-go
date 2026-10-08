@@ -388,8 +388,8 @@ func (m *Manager) Clear(ctx context.Context) error {
 // [Concurrent]. Update runs after a handler error, which is logged, and
 // after a handler halted the first hook with [ErrAddonHalt], as in
 // mitmproxy. It is skipped only when the first hook's dispatch fails: a
-// handler returned an [*options.OptionsError], or ctx carries a stale
-// frame.
+// handler returned an [*options.OptionsError], ctx carries a stale frame,
+// or cancellation prevented dispatch admission or Concurrent reacquisition.
 func (m *Manager) Hook(ctx context.Context, hook Hook) error {
 	return m.d.do(ctx, func(ctx context.Context) error {
 		return m.hookLocked(ctx, hook)
@@ -476,7 +476,9 @@ func (m *Manager) HookFunc(ctx context.Context, prepare func(context.Context) er
 // error wrapping [ErrAddonHalt] stops the hook without being logged. An
 // [*options.OptionsError] stops the hook and is returned, so that an option
 // change that a configure handler rejects is rolled back. Trigger returns
-// an error otherwise only when ctx carries a stale dispatch frame.
+// an error otherwise only when ctx carries a stale dispatch frame or
+// cancellation prevents admission or Concurrent reacquisition. A failed
+// reacquisition skips remaining handlers and sub-addon traversal.
 //
 // A handler that presents a stale frame, for example a context it kept
 // from an earlier hook, is not treated as an ordinary failing handler: the
@@ -502,6 +504,9 @@ func (m *Manager) trigger(ctx context.Context, hook Hook) error {
 	m.mu.RUnlock()
 	for _, a := range chain {
 		err := m.safeInvokeTree(ctx, a, hook)
+		if m.d.current(frameFrom(ctx)) == nil {
+			return frameFrom(ctx).hold.err
+		}
 		if err == nil {
 			continue
 		}
@@ -579,7 +584,11 @@ func (m *Manager) safeInvokeTree(ctx context.Context, addon any, hook Hook) (err
 func (m *Manager) invokeTree(ctx context.Context, addon any, hook Hook) error {
 	f := frameFrom(ctx)
 	for a := range traverse(addon) {
-		if _, err := hook.invoke(withFrame(ctx, m.d.current(f)), a); err != nil {
+		_, err := hook.invoke(withFrame(ctx, m.d.current(f)), a)
+		if m.d.current(f) == nil {
+			return f.hold.err
+		}
+		if err != nil {
 			return err
 		}
 	}

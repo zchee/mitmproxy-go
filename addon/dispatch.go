@@ -21,6 +21,10 @@
 // such as one started inside a hook, is caught the next time it presents the
 // frame: test binaries panic, and other builds get [ErrStaleFrame].
 //
+// Admission and Concurrent reacquisition honour context cancellation. A
+// cancelled reacquisition returns no frame; the hook must return without
+// touching addon state, and the manager skips the rest of the dispatch.
+//
 // Only the goroutine that holds the lock may use its frame. The epoch check
 // catches a frame used after the release; it cannot catch another goroutine
 // using the frame while the hook that issued it is still running.
@@ -61,6 +65,7 @@ var panicOnStaleFrame = testing.Testing()
 // Its fields never change after it is issued.
 type frame struct {
 	d     *dispatcher
+	hold  *dispatchHold
 	epoch uint64
 	depth int // 1 for the hold of the lock, plus one per re-entry
 	// sync describes the synchronous dispatch the frame was issued for,
@@ -86,19 +91,24 @@ func frameFrom(ctx context.Context) *frame {
 	return f
 }
 
+// dispatchHold belongs to one outer dispatch, even while Concurrent yields.
+// Only that dispatch's goroutine accesses current; nil means it owns no lock.
+// Its deferred release therefore cannot release another dispatch's hold.
+type dispatchHold struct {
+	current *frame
+	err     error
+}
+
 // dispatcher owns the dispatch lock and the frames issued under it.
 type dispatcher struct {
-	mu sync.Mutex
-	// epoch counts releases of mu. It is advanced while mu is still held,
-	// and read without mu by validity checks.
+	once sync.Once
+	lock chan struct{}
+	// epoch counts lock releases. It advances before releasing admission,
+	// and is read atomically by frame validity checks.
 	epoch atomic.Uint64
-	// cur is the outermost frame of the current hold of mu; nil while mu is
-	// free. Only accessed with mu held. [Concurrent] replaces it, so a hook
-	// chain picks it up again for each addon it calls.
-	cur *frame
 
-	// onStart and onEnd, when set, are called every time mu is acquired
-	// and just before it is released, by whichever goroutine holds it.
+	// onStart and onEnd, when set, run after admission and just before the
+	// lock is released, by whichever goroutine holds it.
 	// They serve process-level observability (lock hold-time metrics);
 	// per-connection state such as an idle watchdog is not managed here,
 	// because these fire for every acquisition by any goroutine.
@@ -120,27 +130,45 @@ func stale(f *frame) error {
 	return err
 }
 
-// acquire takes the lock and issues the outermost frame of the hold.
-func (d *dispatcher) acquire() *frame {
-	d.mu.Lock()
+// acquire waits cancellably for the lock and issues a fresh frame.
+func (d *dispatcher) acquire(ctx context.Context, hold *dispatchHold) (*frame, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	d.once.Do(func() { d.lock = make(chan struct{}, 1) })
+	select {
+	case d.lock <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	// Cancellation wins even when admission and Done became ready together.
+	if err := ctx.Err(); err != nil {
+		<-d.lock
+		return nil, err
+	}
+	if hold == nil {
+		hold = new(dispatchHold)
+	}
 	if d.onStart != nil {
 		d.onStart()
 	}
-	f := &frame{d: d, epoch: d.epoch.Load(), depth: 1}
-	d.cur = f
-	return f
+	f := &frame{d: d, hold: hold, epoch: d.epoch.Load(), depth: 1}
+	hold.current = f
+	return f, nil
 }
 
-// release makes every frame of the current hold stale, then releases the
-// lock. The epoch advances before the unlock so that the next holder's
-// frame is issued in the new epoch.
-func (d *dispatcher) release() {
-	d.cur = nil
+// release invalidates frames before admitting another holder. A dispatch that
+// yielded and failed to reacquire has nothing left to release.
+func (d *dispatcher) release(hold *dispatchHold) {
+	if hold.current == nil {
+		return
+	}
+	hold.current = nil
 	d.epoch.Add(1)
 	if d.onEnd != nil {
 		d.onEnd()
 	}
-	d.mu.Unlock()
+	<-d.lock
 }
 
 // enter returns a frame to run under the dispatch lock with, and the
@@ -154,9 +182,13 @@ func (d *dispatcher) enter(ctx context.Context) (*frame, func(), error) {
 		if !d.valid(f) {
 			return nil, nil, stale(f)
 		}
-		return &frame{d: d, epoch: f.epoch, depth: f.depth + 1, sync: f.sync}, func() {}, nil
+		return &frame{d: d, hold: f.hold, epoch: f.epoch, depth: f.depth + 1, sync: f.sync}, func() {}, nil
 	}
-	return d.acquire(), d.release, nil
+	f, err := d.acquire(ctx, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return f, func() { d.release(f.hold) }, nil
 }
 
 // inSync returns ctx with its frame replaced by one that marks a
@@ -164,17 +196,15 @@ func (d *dispatcher) enter(ctx context.Context) (*frame, func(), error) {
 // refused. ctx must carry a valid frame.
 func inSync(ctx context.Context, what string) context.Context {
 	f := frameFrom(ctx)
-	return withFrame(ctx, &frame{d: f.d, epoch: f.epoch, depth: f.depth, sync: what})
+	return withFrame(ctx, &frame{d: f.d, hold: f.hold, epoch: f.epoch, depth: f.depth, sync: what})
 }
 
-// current returns the frame to call the next addon of a chain with: the
-// chain's own frame when it is nested or synchronous, otherwise the
-// outermost frame of the hold, which [Concurrent] may have replaced since
-// the chain started. A synchronous chain keeps its own frame because
-// Concurrent cannot run in it. It must be called with the lock held.
+// current returns this dispatch's frame, refreshed after Concurrent, or nil
+// after cancelled reacquisition. It never reads another dispatch's frame.
+// Nested and synchronous chains keep their own frame because they cannot yield.
 func (d *dispatcher) current(f *frame) *frame {
 	if f.depth == 1 && f.sync == "" {
-		return d.cur
+		return f.hold.current
 	}
 	return f
 }
@@ -187,12 +217,19 @@ func (d *dispatcher) do(ctx context.Context, fn func(context.Context) error) err
 		return err
 	}
 	defer exit()
-	return fn(withFrame(ctx, f))
+	err = fn(withFrame(ctx, f))
+	if d.current(f) == nil {
+		return f.hold.err
+	}
+	return err
 }
 
 // Concurrent runs fn with the dispatch lock released, so that hooks of other
 // flows can run while fn blocks, for example on network I/O. The hook that
-// calls it waits for fn and then holds the lock again.
+// calls it waits for fn and then reacquires cancellably. If cancellation prevents
+// reacquisition, it returns ctx.Err() and a context without a dispatch frame;
+// the hook must return without touching addon state. Its remaining handlers,
+// update and finish are skipped, even if the handler ignores this error.
 //
 // ctx must be the context the hook was called with, at the outermost level
 // of dispatch: from a hook that was itself reached through another hook or a
@@ -236,15 +273,22 @@ func Concurrent(ctx context.Context, fn func(context.Context) error) (context.Co
 	}
 
 	var (
-		nf  *frame
-		err error
+		nf         *frame
+		err        error
+		acquireErr error
 	)
-	d.release()
+	d.release(f.hold)
 	func() {
-		// Take the lock back even when fn panics, so that the hook's own
-		// deferred release finds it held.
-		defer func() { nf = d.acquire() }()
+		// Panic unwinding reacquires only if the caller is still admitted.
+		// The outer release token remains empty if cancellation wins.
+		defer func() {
+			nf, acquireErr = d.acquire(ctx, f.hold)
+			f.hold.err = acquireErr
+		}()
 		err = fn(withFrame(ctx, nil))
 	}()
+	if acquireErr != nil {
+		return withFrame(ctx, nil), acquireErr
+	}
 	return withFrame(ctx, nf), err
 }

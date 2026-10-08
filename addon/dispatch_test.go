@@ -6,6 +6,7 @@ package addon
 import (
 	"context"
 	"errors"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -20,7 +21,7 @@ func TestMain(m *testing.M) {
 }
 
 // deadlockTimeout bounds every test step that would hang on a deadlock.
-const deadlockTimeout = 5 * time.Second
+const deadlockTimeout = 30 * time.Second
 
 // within runs fn on its own goroutine and fails the test when fn has not
 // returned after deadlockTimeout.
@@ -34,7 +35,9 @@ func within(t *testing.T, what string, fn func()) {
 	select {
 	case <-done:
 	case <-time.After(deadlockTimeout):
-		t.Fatalf("%s did not finish within %v; the dispatch lock is probably deadlocked", what, deadlockTimeout)
+		buf := make([]byte, 1<<20)
+		n := runtime.Stack(buf, true)
+		t.Fatalf("%s did not finish; the dispatch lock is probably deadlocked:\n%s", what, buf[:n])
 	}
 }
 

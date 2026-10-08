@@ -39,6 +39,8 @@ func TestTerminalHookTimeout(t *testing.T) {
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				entered, returned := make(chan struct{}), make(chan error, 1)
+				manager := addon.NewManager(options.New(), command.NewManager(), addon.Config{})
+				defer manager.Close()
 				const timeout = time.Second
 				var deadline time.Time
 				terminal := func(ctx context.Context, f *flow.TCPFlow) error {
@@ -55,14 +57,21 @@ func TestTerminalHookTimeout(t *testing.T) {
 						return ctx.Err()
 					}
 					if test.yield {
-						_, err := addon.Concurrent(ctx, waitDeadline)
+						next, err := addon.Concurrent(ctx, waitDeadline)
+						if !errors.Is(err, context.DeadlineExceeded) {
+							t.Errorf("lost reacquisition = %v, want deadline exceeded", err)
+						}
+						if err := manager.Do(next, func(context.Context) error {
+							t.Error("expired Concurrent context retained a dispatch frame")
+							return nil
+						}); !errors.Is(err, context.DeadlineExceeded) {
+							t.Errorf("expired callback admission = %v", err)
+						}
 						return err
 					}
 					return waitDeadline(ctx)
 				}
 				a := &observer{end: terminal, failed: terminal}
-				manager := addon.NewManager(options.New(), command.NewManager(), addon.Config{})
-				defer manager.Close()
 				if err := manager.Add(t.Context(), a); err != nil {
 					t.Fatal(err)
 				}
@@ -75,6 +84,9 @@ func TestTerminalHookTimeout(t *testing.T) {
 					Hooks: &proxy.HookRunner{Manager: manager},
 					Do: func(ctx context.Context, fn func(context.Context) error) error {
 						return manager.Do(ctx, func(ctx context.Context) error {
+							if test.yield && !deadline.IsZero() && f.Live && !f.Intercepted() {
+								t.Error("terminal finish ran after lost reacquisition")
+							}
 							err := fn(ctx)
 							if !f.Live {
 								if got, ok := ctx.Deadline(); !ok || got.Equal(deadline) || ctx.Err() != nil {

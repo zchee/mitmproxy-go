@@ -10,7 +10,8 @@ import (
 )
 
 // EncodeInterceptSpec validates and normalizes native interception rules.
-// Nonempty rules end with an exclusion of ownPID; empty rules disable interception.
+// Nonempty rules end with an exclusion of ownPID; an existing normalized
+// trailing exclusion is retained without duplication. Empty rules disable interception.
 // It returns an error for empty comma-separated patterns or empty exclusions.
 func EncodeInterceptSpec(spec string, ownPID uint32) (*InterceptConf, error) {
 	actions, err := parseInterceptSpec(spec)
@@ -18,7 +19,10 @@ func EncodeInterceptSpec(spec string, ownPID uint32) (*InterceptConf, error) {
 		return nil, err
 	}
 	if len(actions) != 0 {
-		actions = append(actions, "!"+strconv.FormatUint(uint64(ownPID), 10))
+		exclusion := "!" + strconv.FormatUint(uint64(ownPID), 10)
+		if actions[len(actions)-1] != exclusion {
+			actions = append(actions, exclusion)
+		}
 	}
 	return &InterceptConf{Actions: actions}, nil
 }

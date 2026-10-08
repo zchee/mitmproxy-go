@@ -12,28 +12,35 @@ import (
 func TestEncodeInterceptSpec(t *testing.T) {
 	// Normalization follows src/intercept_conf.rs:68-88,92-106; errors use
 	// src/intercept_conf.rs:43-53, which retains the original input verbatim.
+	// LocalRedirectorInstance._start in the pinned mode_servers.py passes
+	// exactly !ownPID for blank mode data; encoding must not duplicate it.
 	tests := map[string]struct {
 		spec     string
 		ownPID   uint32
 		expected []string
 		wantErr  string
 	}{
-		"success: disabled":                                         {ownPID: 42},
-		"success: whitespace disables":                              {spec: " \t\n", ownPID: 42},
-		"success: PID list":                                         {spec: "1,2,3", ownPID: 42, expected: []string{"1", "2", "3", "!42"}},
-		"success: process substring":                                {spec: "mitm", ownPID: 42, expected: []string{"mitm", "!42"}},
-		"success: exclusion first":                                  {spec: "!1234", ownPID: 42, expected: []string{"!1234", "!42"}},
-		"success: trim around exclusions":                           {spec: " curl , ! 0007 ", ownPID: 42, expected: []string{"curl", "!7", "!42"}},
-		"success: positive sign and leading zeros":                  {spec: "+0001,0002", ownPID: 42, expected: []string{"1", "2", "!42"}},
-		"success: uint32 boundary":                                  {spec: "4294967295,4294967296", ownPID: 0, expected: []string{"4294967295", "4294967296", "!0"}},
-		"success: negative integer is process substring":            {spec: "-1", ownPID: 42, expected: []string{"-1", "!42"}},
-		"success: only one exclusion prefix":                        {spec: "!!curl", ownPID: 42, expected: []string{"!!curl", "!42"}},
-		"success: self exclusion overrides explicit self inclusion": {spec: "42", ownPID: 42, expected: []string{"42", "!42"}},
-		"success: Unicode whitespace":                               {spec: " curl ", ownPID: 42, expected: []string{"curl", "!42"}},
-		"error: empty comma patterns":                               {spec: ",,", ownPID: 42, wantErr: "invalid intercept spec: ,,"},
-		"error: trailing comma":                                     {spec: "curl,", ownPID: 42, wantErr: "invalid intercept spec: curl,"},
-		"error: empty exclusion":                                    {spec: "! ", ownPID: 42, wantErr: "invalid intercept spec: ! "},
-		"error: original whitespace preserved":                      {spec: " curl, \t", ownPID: 42, wantErr: "invalid intercept spec:  curl, \t"},
+		"success: disabled":                                                 {ownPID: 42},
+		"success: whitespace disables":                                      {spec: " \t\n", ownPID: 42},
+		"success: PID list":                                                 {spec: "1,2,3", ownPID: 42, expected: []string{"1", "2", "3", "!42"}},
+		"success: process substring":                                        {spec: "mitm", ownPID: 42, expected: []string{"mitm", "!42"}},
+		"success: exclusion first":                                          {spec: "!1234", ownPID: 42, expected: []string{"!1234", "!42"}},
+		"success: trim around exclusions":                                   {spec: " curl , ! 0007 ", ownPID: 42, expected: []string{"curl", "!7", "!42"}},
+		"success: positive sign and leading zeros":                          {spec: "+0001,0002", ownPID: 42, expected: []string{"1", "2", "!42"}},
+		"success: uint32 boundary":                                          {spec: "4294967295,4294967296", ownPID: 0, expected: []string{"4294967295", "4294967296", "!0"}},
+		"success: negative integer is process substring":                    {spec: "-1", ownPID: 42, expected: []string{"-1", "!42"}},
+		"success: only one exclusion prefix":                                {spec: "!!curl", ownPID: 42, expected: []string{"!!curl", "!42"}},
+		"success: self exclusion overrides explicit self inclusion":         {spec: "42", ownPID: 42, expected: []string{"42", "!42"}},
+		"success: default local mode excludes self exactly once":            {spec: "!42", ownPID: 42, expected: []string{"!42"}},
+		"success: explicit trailing self exclusion":                         {spec: "curl,!42", ownPID: 42, expected: []string{"curl", "!42"}},
+		"success: normalized trailing self exclusion":                       {spec: " curl , ! +00042 ", ownPID: 42, expected: []string{"curl", "!42"}},
+		"success: zero self PID trailing exclusion":                         {spec: "!0", ownPID: 0, expected: []string{"!0"}},
+		"success: earlier self exclusion does not override later inclusion": {spec: "!42,42", ownPID: 42, expected: []string{"!42", "42", "!42"}},
+		"success: Unicode whitespace":                                       {spec: " curl ", ownPID: 42, expected: []string{"curl", "!42"}},
+		"error: empty comma patterns":                                       {spec: ",,", ownPID: 42, wantErr: "invalid intercept spec: ,,"},
+		"error: trailing comma":                                             {spec: "curl,", ownPID: 42, wantErr: "invalid intercept spec: curl,"},
+		"error: empty exclusion":                                            {spec: "! ", ownPID: 42, wantErr: "invalid intercept spec: ! "},
+		"error: original whitespace preserved":                              {spec: " curl, \t", ownPID: 42, wantErr: "invalid intercept spec:  curl, \t"},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -89,6 +89,9 @@ func (a *App) Request(ctx context.Context, f *flow.HTTPFlow) error {
 		response, err = serve(handler, req.WithContext(ctx))
 		return err
 	})
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err != nil {
 		return appError(f, err)
 	}

@@ -126,8 +126,12 @@ func (r *ReadFile) Running(ctx context.Context) error {
 		return nil
 	}); err == nil {
 		ctx = next
+	} else if !errors.Is(err, addon.ErrSyncContext) {
+		return err
 	}
-	_ = ctx
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	loadCtx, cancel := context.WithCancel(base)
 	r.cancel = cancel
 	r.closer = nil

@@ -6,6 +6,7 @@ package proxyauth
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -130,15 +131,18 @@ func TestLDAPReleasesDispatchAndCancels(t *testing.T) {
 		close(accepted)
 		_, _ = io.Copy(io.Discard, peer)
 	}()
-	_, manager, opts := newAuth(t, new("ldap:"+listener.Addr().String()+":cn=admin:secret:dc=example"))
+	auth, manager, opts := newAuth(t, new("ldap:"+listener.Addr().String()+":cn=admin:secret:dc=example"))
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	done := make(chan struct{})
 	f := requestWithAuth("user", "password")
 	go func() {
 		defer close(done)
-		if err := manager.Hook(ctx, addon.RequestHeadersHook{Flow: f}); err != nil {
-			t.Error(err)
+		// Do exposes the handler's cancellation instead of applying the
+		// ordinary hook-error logging policy, while retaining dispatch.
+		err := manager.Do(ctx, func(ctx context.Context) error { return auth.RequestHeaders(ctx, f) })
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("cancelled LDAP handler = %v, want context.Canceled", err)
 		}
 	}()
 	await(t, accepted)
@@ -153,8 +157,11 @@ func TestLDAPReleasesDispatchAndCancels(t *testing.T) {
 	cancel()
 	await(t, done)
 	await(t, peerDone)
-	if f.Response == nil || f.Response.StatusCode != 407 {
-		t.Fatal("canceled LDAP exchange did not fail closed")
+	if f.Response != nil {
+		t.Fatal("cancelled LDAP exchange published a response after yielding dispatch")
+	}
+	if _, ok := f.Metadata.Get("proxyauth"); ok {
+		t.Fatal("cancelled LDAP exchange published credentials")
 	}
 	replacement := requestWithAuth("replacement", "password")
 	if err := manager.Hook(t.Context(), addon.RequestHeadersHook{Flow: replacement}); err != nil {

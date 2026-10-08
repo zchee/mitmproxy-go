@@ -182,6 +182,9 @@ func (p *ProxyAuth) authenticate(ctx context.Context, f *flow.HTTPFlow) (bool, e
 				valid, err = directory.check(ctx, user, password)
 				return err
 			})
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
 			if err != nil {
 				slog.WarnContext(ctx, "LDAP authentication failed", "error_type", fmt.Sprintf("%T", err))
 			}

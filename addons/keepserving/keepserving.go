@@ -102,8 +102,12 @@ func (k *KeepServing) Running(ctx context.Context) error {
 		return nil
 	}); err == nil {
 		ctx = next
+	} else if !errors.Is(err, addon.ErrSyncContext) {
+		return err
 	}
-	_ = ctx
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	watchCtx, cancel := context.WithCancel(base)
 	if k.cancel != nil {
 		k.cancel()

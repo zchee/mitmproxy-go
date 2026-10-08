@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
+	"github.com/zchee/mitmproxy-go/internal/netutil/freeport"
 	"github.com/zchee/mitmproxy-go/internal/proxy/proxytest"
 )
 
@@ -69,25 +70,11 @@ func TestRuntimeModeSwitchKeepsAcceptedClients(t *testing.T) {
 	exchange(t, accepted, "after the switch")
 }
 
-// reserveTCPPort binds an ephemeral loopback TCP port and releases it so the
-// proxy can listen there. The TCP-only reservation is deliberate: a reverse
-// TCP mode needs no UDP port, and freeport's paired UDP bind fails often enough
-// on the Windows runner that it reports no port at all.
-func reserveTCPPort(t *testing.T) int {
-	t.Helper()
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	if err := listener.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return port
-}
-
 func TestSelfConnectGuard(t *testing.T) {
-	port := reserveTCPPort(t)
+	port := freeport.GetFreeTCPPort()
+	if port == 0 {
+		t.Fatal("no available TCP port for the self-connect guard")
+	}
 	p := proxytest.Start(t, proxytest.WithOptions(map[string]any{
 		"mode": []string{"reverse:tcp://127.0.0.1:" + strconv.Itoa(port) + "@" + strconv.Itoa(port)},
 	}))

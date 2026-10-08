@@ -95,8 +95,15 @@ func TestEndpointExchange(t *testing.T) {
 
 func newEndpointPair(t *testing.T, expectedFailure ...ErrorCode) (*Endpoint, *Endpoint, context.Context) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	// Testing cancels its context before cleanup callbacks. Let this fixture
+	// close both peers before cancelling their stream owners instead.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 30*time.Second)
 	t.Cleanup(cancel)
+	return newEndpointPairContexts(t, ctx, ctx, cancel, expectedFailure)
+}
+
+func newEndpointPairContexts(t *testing.T, ctx, serverCtx context.Context, cancel context.CancelFunc, expectedFailure []ErrorCode) (*Endpoint, *Endpoint, context.Context) {
+	t.Helper()
 	key, ca, err := certs.CreateCA("Endpoint contract", "Endpoint contract root", 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -115,6 +122,13 @@ func newEndpointPair(t *testing.T, expectedFailure ...ErrorCode) (*Endpoint, *En
 	var listener *quicListener
 	var finished []<-chan error
 	t.Cleanup(func() {
+		// Quiesce both peer connections before cancelling their stream owners;
+		// otherwise a peer can observe critical-stream resets during teardown.
+		for _, conn := range conns {
+			if err := conn.closeWithError(0x100); err != nil {
+				t.Error(err)
+			}
+		}
 		cancel()
 		for _, done := range finished {
 			select {
@@ -126,11 +140,6 @@ func newEndpointPair(t *testing.T, expectedFailure ...ErrorCode) (*Endpoint, *En
 				}
 			case <-time.After(30 * time.Second):
 				t.Error("Run did not join its workers")
-			}
-		}
-		for _, conn := range conns {
-			if err := conn.closeWithError(0x100); err != nil {
-				t.Error(err)
 			}
 		}
 		if listener != nil {
@@ -179,10 +188,14 @@ func newEndpointPair(t *testing.T, expectedFailure ...ErrorCode) (*Endpoint, *En
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, endpoint := range []*Endpoint{client, server} {
+	for i, endpoint := range []*Endpoint{client, server} {
+		runCtx := ctx
+		if i == 1 {
+			runCtx = serverCtx
+		}
 		done := make(chan error, 1)
 		finished = append(finished, done)
-		go func() { done <- endpoint.Run(ctx) }()
+		go func() { done <- endpoint.Run(runCtx) }()
 	}
 	return client, server, ctx
 }

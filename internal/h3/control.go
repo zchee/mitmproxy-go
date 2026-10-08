@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"io"
+
+	quic "github.com/quic-go/quic-go"
 )
 
 func (e *Endpoint) acceptUnidirectional() {
@@ -84,6 +86,12 @@ func (e *Endpoint) readUnidirectional(stream *incomingUniStream) {
 		}
 	}
 	if e.ctx.Err() != nil {
+		return
+	}
+	// Stream reads may observe the connection close before its context is
+	// cancelled. Preserve that terminal error before NO_ERROR becomes EOF.
+	if _, ok := errors.AsType[*quic.ApplicationError](err); ok {
+		e.fail(connectionTransportError(err))
 		return
 	}
 	if cause := context.Cause(e.conn.context()); cause != nil {

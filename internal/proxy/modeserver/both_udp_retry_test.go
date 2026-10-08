@@ -12,10 +12,11 @@ import (
 )
 
 type sharedUDPBindCase struct {
-	failure   error
-	failures  int
-	fixed     bool
-	wantCalls int
+	failure       error
+	failures      int
+	fixed         bool
+	realCollision bool
+	wantCalls     int
 }
 
 func checkSharedUDPBind(t *testing.T, tt sharedUDPBindCase) {
@@ -49,21 +50,44 @@ func checkSharedUDPBind(t *testing.T, tt sharedUDPBindCase) {
 		}
 		return stream, err
 	}
-	calls := 0
+	calls, realRejections := 0, 0
+	collided := false
 	instance.listenUDP = func(ctx context.Context, network, address string) (net.PacketConn, error) {
 		calls++
 		if calls <= tt.failures {
 			return nil, fmt.Errorf("UDP candidate acquisition: %w", tt.failure)
 		}
+		if tt.realCollision && !collided {
+			blocker, err := new(net.ListenConfig).ListenPacket(ctx, network, address)
+			if err != nil {
+				if !tt.fixed && isSharedUDPBindRetryable(err) {
+					realRejections++
+				} else {
+					t.Errorf("reserving real UDP collision: %v", err)
+				}
+				return nil, err
+			}
+			sockets = append(sockets, blocker)
+			defer func() { _ = blocker.Close() }()
+			collided = true
+		}
 		socket, err := new(net.ListenConfig).ListenPacket(ctx, network, address)
 		if err == nil {
 			sockets = append(sockets, socket)
+		} else if !tt.fixed && isSharedUDPBindRetryable(err) {
+			realRejections++
+		} else {
+			t.Errorf("non-retryable real UDP bind: %v", err)
 		}
 		return socket, err
 	}
 	accepted, packets, err := instance.listenBothSockets(t.Context())
-	if calls != tt.wantCalls {
-		t.Fatalf("UDP candidate calls = %d, want %d; error=%v", calls, tt.wantCalls, err)
+	wantCalls := tt.wantCalls + realRejections
+	if calls != wantCalls || calls > sharedPortAttempts {
+		t.Fatalf("UDP candidate calls = %d, want %d (real rejections=%d, budget=%d); error=%v", calls, wantCalls, realRejections, sharedPortAttempts, err)
+	}
+	if tt.realCollision && (!collided || realRejections == 0) {
+		t.Fatal("real UDP collision did not reject a candidate")
 	}
 	if tt.failures >= tt.wantCalls {
 		if !errors.Is(err, tt.failure) || len(accepted) != 0 || len(packets) != 0 {
@@ -89,12 +113,14 @@ func checkSharedUDPBind(t *testing.T, tt sharedUDPBindCase) {
 func TestSharedUDPBindFaults(t *testing.T) {
 	failure := errors.New("UDP acquisition denied")
 	tests := map[string]struct {
-		failure   error
-		failures  int
-		fixed     bool
-		wantCalls int
+		failure       error
+		failures      int
+		fixed         bool
+		realCollision bool
+		wantCalls     int
 	}{
 		"same port success":                 {failure: failure, wantCalls: 1},
+		"real UDP collision is counted":     {failure: failure, realCollision: true, wantCalls: 1},
 		"other UDP errors fail immediately": {failure: failure, failures: 1, wantCalls: 1},
 		"fixed port fails immediately":      {failure: failure, failures: 1, fixed: true, wantCalls: 1},
 	}

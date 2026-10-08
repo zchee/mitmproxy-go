@@ -17,12 +17,14 @@ import (
 
 func TestWindowsSharedUDPAccessRetry(t *testing.T) {
 	tests := map[string]struct {
-		failure   error
-		failures  int
-		fixed     bool
-		wantCalls int
+		failure       error
+		failures      int
+		fixed         bool
+		realCollision bool
+		wantCalls     int
 	}{
 		"rejected ephemeral candidate closes TCP":       {failure: windows.WSAEACCES, failures: 1, wantCalls: 2},
+		"synthetic failure then real UDP collision":     {failure: windows.WSAEACCES, failures: 1, realCollision: true, wantCalls: 2},
 		"access denied exhausts the bounded candidates": {failure: windows.WSAEACCES, failures: 64, wantCalls: 64},
 		"explicit port preserves access denied":         {failure: windows.WSAEACCES, failures: 1, fixed: true, wantCalls: 1},
 		"other permission error is not retried":         {failure: windows.ERROR_ACCESS_DENIED, failures: 1, wantCalls: 1},

@@ -25,6 +25,9 @@ import (
 // It does not interrupt addon callbacks or kernel transport closure.
 const poolCleanupTimeout = 5 * time.Second
 
+// maxFailedPoolEntries limits completed failures without expiring active flights.
+const maxFailedPoolEntries = 256
+
 type addressKey struct {
 	host     string
 	port     int
@@ -246,6 +249,7 @@ func (p *serverPool) claim(ctx context.Context, key poolKey, srv, snapshot *conn
 				close(flight.done)
 				p.mu.Lock()
 				p.removeCompleted(entry)
+				p.trimFailures()
 				p.mu.Unlock()
 			}()
 			flight.conn, flight.err = p.establish(entry, opts.Setup)
@@ -442,6 +446,7 @@ func (p *serverPool) Upgrade(ctx context.Context, srv *connection.Server, setup 
 				close(flight.done)
 				p.mu.Lock()
 				p.removeCompleted(entry)
+				p.trimFailures()
 				p.mu.Unlock()
 			}()
 			wrapped, err := setup(p.ctx, conn, entry.srv)
@@ -601,6 +606,40 @@ func (p *serverPool) removeCompleted(entry *poolEntry) {
 		p.entries = slices.Delete(p.entries, index, index+1)
 		p.version++
 	}
+}
+
+// trimFailures requires mu. Entries retain insertion order; evict only completed
+// failures, leaving immutable flight results available to existing waiters.
+func (p *serverPool) trimFailures() {
+	failed := 0
+	for _, entry := range p.entries {
+		select {
+		case <-entry.flight.done:
+			if entry.flight.err != nil {
+				failed++
+			}
+		default:
+		}
+	}
+	excess := failed - maxFailedPoolEntries
+	if excess <= 0 {
+		return
+	}
+	p.entries = slices.DeleteFunc(p.entries, func(entry *poolEntry) bool {
+		if excess <= 0 {
+			return false
+		}
+		select {
+		case <-entry.flight.done:
+			if entry.flight.err != nil {
+				excess--
+				return true
+			}
+		default:
+		}
+		return false
+	})
+	p.version++
 }
 
 func nowSeconds() float64 {

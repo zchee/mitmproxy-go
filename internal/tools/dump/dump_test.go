@@ -100,6 +100,7 @@ func TestAddonOrder(t *testing.T) {
 		"*core.Core",
 		"*browser.Browser",
 		"*block.Block",
+		"*stripdnshttpsrecords.StripDNSHTTPSRecords",
 		"*blocklist.BlockList",
 		"*anticache.AntiCache",
 		"*anticomp.AntiComp",
@@ -112,6 +113,7 @@ func TestAddonOrder(t *testing.T) {
 		"*onboarding.Onboarding",
 		"*proxyauth.ProxyAuth",
 		"*proxyserver.ProxyServer",
+		"*dnsresolver.DnsResolver",
 		"*nextlayer.NextLayer",
 		"*serverplayback.ServerPlayback",
 		"*mapremote.MapRemote",
@@ -205,6 +207,11 @@ func TestOptionTable(t *testing.T) {
 	items := m.Options.Items()
 	if len(items) == 0 {
 		t.Fatal("the assembled master registers no options")
+	}
+	for _, name := range []string{"dns_name_servers", "dns_use_hosts_file", "strip_ech", "http3"} {
+		if !m.Options.Has(name) {
+			t.Errorf("required upstream option %s is not registered", name)
+		}
 	}
 	for _, o := range items {
 		t.Run(o.Name(), func(t *testing.T) {

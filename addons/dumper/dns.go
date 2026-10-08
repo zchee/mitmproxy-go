@@ -6,10 +6,12 @@ package dumper
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/zchee/mitmproxy-go/dns"
 	"github.com/zchee/mitmproxy-go/flow"
+	"github.com/zchee/mitmproxy-go/internal/pyrepr"
 	"github.com/zchee/mitmproxy-go/internal/strutil"
 	"github.com/zchee/mitmproxy-go/internal/vtcodes"
 )
@@ -34,12 +36,8 @@ func (d *Dumper) echoDNSQuery(f *flow.DNSFlow) error {
 	return d.echo(d.fmtClient(f)+": "+desc+" "+name, 0, vtcodes.Style{})
 }
 
-// recordData renders a record's data as upstream's str() does for the
-// types the port decodes without the DNS wire codec: A and AAAA addresses,
-// TXT text, and the hexadecimal fallback for unknown types. NS, CNAME, PTR
-// and HTTPS data needs that codec (compressed domain names, HTTPS record
-// fields), so until it is ported those records render as their type name;
-// the difference is listed in docs/compat.md.
+// recordData renders upstream's str(ResourceRecord), including the Python
+// dictionary representation of decoded HTTPS parameters.
 func recordData(r *dns.ResourceRecord) string {
 	invalid := func() string {
 		return fmt.Sprintf("0x%x (invalid %s data)", r.Data, dns.TypeToString(r.Type))
@@ -63,8 +61,30 @@ func recordData(r *dns.ResourceRecord) string {
 			return invalid()
 		}
 		return s
-	case dns.TypeNS, dns.TypeCNAME, dns.TypePTR, dns.TypeHTTPS:
-		return dns.TypeToString(r.Type)
+	case dns.TypeNS, dns.TypeCNAME, dns.TypePTR:
+		name, err := r.DomainName()
+		if err != nil {
+			return invalid()
+		}
+		return name
+	case dns.TypeHTTPS:
+		record, err := dns.UnpackHTTPS(r.Data)
+		if err != nil {
+			return invalid()
+		}
+		out := pyrepr.AppendStr([]byte("{'target_name': "), record.TargetName)
+		out = strconv.AppendInt(append(out, ", 'priority': "...), int64(record.Priority), 10)
+		paramNames := [...]string{"mandatory", "alpn", "no_default_alpn", "port", "ipv4hint", "ech", "ipv6hint"}
+		for _, param := range record.Params {
+			out = append(out, ", "...)
+			if int(param.Key) < len(paramNames) {
+				out = pyrepr.AppendStr(out, paramNames[param.Key])
+			} else {
+				out = strconv.AppendUint(out, uint64(param.Key), 10)
+			}
+			out = pyrepr.AppendStr(append(out, ": "...), strutil.BytesToEscapedStr(param.Value, false, false))
+		}
+		return string(append(out, '}'))
 	}
 	return fmt.Sprintf("0x%x", r.Data)
 }

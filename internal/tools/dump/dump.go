@@ -22,6 +22,7 @@ import (
 	"github.com/zchee/mitmproxy-go/addons/core"
 	"github.com/zchee/mitmproxy-go/addons/cut"
 	"github.com/zchee/mitmproxy-go/addons/disableh2c"
+	"github.com/zchee/mitmproxy-go/addons/dnsresolver"
 	"github.com/zchee/mitmproxy-go/addons/dumper"
 	"github.com/zchee/mitmproxy-go/addons/errorcheck"
 	"github.com/zchee/mitmproxy-go/addons/export"
@@ -40,6 +41,7 @@ import (
 	"github.com/zchee/mitmproxy-go/addons/serverplayback"
 	"github.com/zchee/mitmproxy-go/addons/stickyauth"
 	"github.com/zchee/mitmproxy-go/addons/stickycookie"
+	"github.com/zchee/mitmproxy-go/addons/stripdnshttpsrecords"
 	"github.com/zchee/mitmproxy-go/addons/termlog"
 	"github.com/zchee/mitmproxy-go/addons/tlsconfig"
 	"github.com/zchee/mitmproxy-go/addons/updatealtsvc"
@@ -100,8 +102,7 @@ type Master struct {
 // default_addons, then the dumper, and last the serving watchdog, the flow
 // file reader and the startup error check.
 //
-// The default_addons entries without a ported counterpart are, in
-// upstream's order: strip_dns_https_records, script and dns_resolver.
+// The script addon has no ported counterpart yet.
 func New(ctx context.Context, cfg Config) (*Master, error) {
 	opts := cfg.Options
 	if opts == nil {
@@ -136,6 +137,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		core.New(m.Addons),
 		browser.New(opts, m.Addons),
 		block.New(opts),
+		stripdnshttpsrecords.New(opts),
 		blocklist.New(opts),
 		anticache.New(opts),
 		anticomp.New(opts),
@@ -148,6 +150,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		onboarding.New(opts),
 		proxyauth.New(opts),
 		ps,
+		dnsresolver.New(opts, logger),
 		nextlayer.New(opts),
 		serverplayback.New(m),
 		mapremote.New(opts),

@@ -9,6 +9,7 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/addon"
+	"github.com/zchee/mitmproxy-go/dns"
 	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
 )
 
@@ -95,6 +96,47 @@ func TestProtocolPresentation(t *testing.T) {
 			hook:   func() addon.Hook { return addon.WebSocketEndHook{Flow: testflow.TWebSocketFlow(testflow.WithError)} },
 			detail: 1,
 			want:   "Error in WebSocket connection to address:22: WebSocket Error: ABNORMAL_CLOSURE\n",
+		},
+		"dns decoded CNAME answer": {
+			hook: func() addon.Hook {
+				f := testflow.TDNSFlow(testflow.WithResponse)
+				f.Response.Answers = []dns.ResourceRecord{{Type: dns.TypeCNAME, Data: []byte{3, 'f', 'o', 'o', 0}}}
+				return addon.DNSResponseHook{Flow: f}
+			},
+			detail: 1,
+			want:   "127.0.0.1:22: DNS QUERY (A) dns.google\n << foo\n",
+		},
+		"http3 matching versions": {
+			hook: func() addon.Hook {
+				f := testflow.TFlow(testflow.WithResponse)
+				f.Request.HTTPVersion = "HTTP/3"
+				f.Response.HTTPVersion = "HTTP/3"
+				f.Response.Reason = "ignored"
+				return addon.ResponseHook{Flow: f}
+			},
+			detail: 1,
+			want:   "127.0.0.1:22: GET http://address:22/path HTTP/3\n    << HTTP/3 200 OK 7b\n",
+		},
+		"http3 to http2": {
+			hook: func() addon.Hook {
+				f := testflow.TFlow(testflow.WithResponse)
+				f.Request.HTTPVersion = "HTTP/3"
+				f.Response.HTTPVersion = "HTTP/2.0"
+				f.Response.Reason = "ignored"
+				return addon.ResponseHook{Flow: f}
+			},
+			detail: 1,
+			want:   "127.0.0.1:22: GET http://address:22/path HTTP/3\n  << HTTP/2.0 200 OK 7b\n",
+		},
+		"http1 to http3": {
+			hook: func() addon.Hook {
+				f := testflow.TFlow(testflow.WithResponse)
+				f.Response.HTTPVersion = "HTTP/3"
+				f.Response.Reason = "ignored"
+				return addon.ResponseHook{Flow: f}
+			},
+			detail: 1,
+			want:   "127.0.0.1:22: GET http://address:22/path HTTP/1.1\n    << HTTP/3 200 OK 7b\n",
 		},
 		"http2 matching versions": {
 			hook: func() addon.Hook {

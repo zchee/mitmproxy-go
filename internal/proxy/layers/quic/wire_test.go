@@ -62,6 +62,7 @@ type wireObserver struct {
 	connectionID        string
 	message             func(context.Context, *flow.TCPFlow) error
 	consumer            ConnectionConsumer
+	modifyConfig        quicConfigModifier
 	clientIdleTimeout   time.Duration
 	established         chan struct{}
 	serverEstablished   chan struct{}
@@ -271,6 +272,10 @@ func newWireSession(t *testing.T, optsMap map[string]any, observe *wireObserver)
 	opts := options.New()
 	if err := opts.Add(ctx, "connection_strategy", options.TypeStr, "eager", "Determine when server connections should be established."); err != nil {
 		t.Fatal(err)
+	}
+	if observe.modifyConfig != nil {
+		configFixtures.Store(opts, observe.modifyConfig)
+		t.Cleanup(func() { configFixtures.Delete(opts) })
 	}
 	if observe.consumer != nil {
 		consumerFixtures.Store(opts, observe.consumer)

@@ -36,7 +36,8 @@ func init() {
 // QUIC TLS hook installers must not mutate private-key internals after installation;
 // snapshots share immutable signing material, including opaque crypto.Signers.
 type RawQuicLayer struct {
-	consumer ConnectionConsumer
+	consumer     ConnectionConsumer
+	modifyConfig quicConfigModifier
 }
 
 // NewRawQuicLayer returns an interception layer with the given endpoint consumer.

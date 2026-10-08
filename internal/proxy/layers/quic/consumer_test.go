@@ -34,7 +34,9 @@ func init() {
 }
 
 func (o *wireObserver) NextLayer(_ context.Context, d *hookdata.NextLayer) error {
-	if o.consumer != nil {
+	if o.modifyConfig != nil {
+		d.Layer = hookdata.LayerStack{{Kind: "quic-config-test"}}
+	} else if o.consumer != nil {
 		d.Layer = hookdata.LayerStack{{Kind: "quic-consumer-test"}}
 	}
 	return nil

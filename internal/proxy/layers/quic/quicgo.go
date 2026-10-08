@@ -35,6 +35,16 @@ type ConnectionConsumer interface {
 	RunQUIC(ctx context.Context, c *layer.Context, client, server *quicgo.Conn) error
 }
 
+type quicConfigModifier func(*quicgo.Config)
+
+func (l *RawQuicLayer) config() *quicgo.Config {
+	config := transportConfig()
+	if l.modifyConfig != nil {
+		l.modifyConfig(config)
+	}
+	return config
+}
+
 type quicSession struct {
 	transport *quicgo.Transport
 	listener  *quicgo.Listener
@@ -71,7 +81,7 @@ func (l *RawQuicLayer) runQUIC(ctx context.Context, c *layer.Context, serverFirs
 	}()
 	var serverErr error
 	if serverFirst {
-		serverErr = startServer(ctx, c, &server)
+		serverErr = l.startServer(ctx, c, &server)
 		if serverErr != nil && c.Logger != nil {
 			c.Logger.InfoContext(ctx, "Unable to establish QUIC connection with server ("+serverErr.Error()+"). Trying to establish QUIC with client anyway. If you plan to redirect requests away from this server, consider setting `connection_strategy` to `lazy` to suppress early connections.")
 		}
@@ -86,7 +96,7 @@ func (l *RawQuicLayer) runQUIC(ctx context.Context, c *layer.Context, serverFirs
 	}
 	c.ClientPackets.StopRecording()
 	client.transport = &quicgo.Transport{Conn: c.ClientPackets}
-	client.listener, err = client.transport.Listen(conf, transportConfig())
+	client.listener, err = client.transport.Listen(conf, l.config())
 	if err == nil {
 		client.conn, err = client.listener.Accept(ctx)
 	}
@@ -100,7 +110,7 @@ func (l *RawQuicLayer) runQUIC(ctx context.Context, c *layer.Context, serverFirs
 		return serverErr
 	}
 	if server.conn == nil {
-		if err := startServer(ctx, c, &server); err != nil {
+		if err := l.startServer(ctx, c, &server); err != nil {
 			return err
 		}
 	}
@@ -136,7 +146,7 @@ func transportConfig() *quicgo.Config {
 	return &quicgo.Config{EnableDatagrams: true, MaxIncomingStreams: 100, MaxIncomingUniStreams: 100}
 }
 
-func startServer(ctx context.Context, c *layer.Context, session *quicSession) error {
+func (l *RawQuicLayer) startServer(ctx context.Context, c *layer.Context, session *quicSession) error {
 	var metadata *connection.Server
 	if err := c.Do(ctx, func(context.Context) error { metadata = c.Data.Server; return nil }); err != nil {
 		return err
@@ -161,7 +171,7 @@ func startServer(ctx context.Context, c *layer.Context, session *quicSession) er
 	}
 	c.ServerPackets.StopRecording()
 	session.transport = &quicgo.Transport{Conn: c.ServerPackets}
-	session.conn, err = session.transport.Dial(ctx, c.ServerPackets.RemoteAddr(), conf, transportConfig())
+	session.conn, err = session.transport.Dial(ctx, c.ServerPackets.RemoteAddr(), conf, l.config())
 	if err != nil {
 		return handshakeFailed(ctx, c, false, err)
 	}
@@ -507,6 +517,15 @@ func (d *datagrams) run(ctx context.Context, c *layer.Context, inject <-chan lay
 		if event.err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
+			}
+			// Reader errors precede Conn.Context cancellation. Preserve a remote
+			// application close before normal owner cleanup can send code zero.
+			if closed, ok := errors.AsType[*quicgo.ApplicationError](event.err); ok && closed.Remote {
+				peer := d.server
+				if !event.fromClient {
+					peer = d.client
+				}
+				_ = peer.CloseWithError(closed.ErrorCode, closed.ErrorMessage)
 			}
 			return event.err
 		}

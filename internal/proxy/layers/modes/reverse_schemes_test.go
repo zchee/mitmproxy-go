@@ -30,7 +30,7 @@ func TestReverseSchemeMetadata(t *testing.T) {
 		"dtls":  {connection.UDP, connection.UDP, hookdata.LayerUDP, true, false},
 		"dns":   {connection.UDP, connection.UDP, "dns", false, false},
 		"quic":  {connection.UDP, connection.UDP, "quic", true, false},
-		"http3": {connection.UDP, connection.UDP, hookdata.LayerHTTP, true, false},
+		"http3": {connection.UDP, connection.UDP, hookdata.LayerHTTP3, true, false},
 	}
 	for scheme, tt := range tests {
 		t.Run(scheme, func(t *testing.T) {

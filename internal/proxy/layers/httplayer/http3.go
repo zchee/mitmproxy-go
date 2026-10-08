@@ -67,10 +67,13 @@ func (s *http3Stream) waitEndpointFailed(ctx context.Context) bool {
 
 func (s *http3Stream) receiveFailure(ctx context.Context) error {
 	event, err := s.engine.ReceiveStream(ctx, s.identity)
-	if err != nil {
-		return err
+	if err == nil {
+		err = event.Err
 	}
-	return event.Err
+	if failure, ok := errors.AsType[*h3.StreamError](err); ok {
+		return fmt.Errorf("stream closed by client (%s): %w", failure.Code, err)
+	}
+	return err
 }
 
 func (s *http3Stream) receive(ctx context.Context, request bool, head *h3.Event) (Event, error) {
@@ -218,7 +221,12 @@ func h3ResetCode(code ErrorCode) h3.ErrorCode {
 	}
 }
 
-func (s *http3Stream) send(ctx context.Context, event Event) error {
+func (s *http3Stream) send(ctx context.Context, event Event) (err error) {
+	defer func() {
+		if failure, ok := errors.AsType[*h3.StreamError](err); ok {
+			err = fmt.Errorf("stream closed by client (%s): %w", failure.Code, err)
+		}
+	}()
 	wire := h3.Event{Identity: s.identity}
 	switch event := event.(type) {
 	case RequestProtocolError:

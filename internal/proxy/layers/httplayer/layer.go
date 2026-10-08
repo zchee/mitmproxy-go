@@ -279,6 +279,7 @@ func (l *httpLayer) exchangeRoute(c *layer.Context) routeConfig {
 func (l *httpLayer) connect(ctx context.Context, c *layer.Context, stream *httpStream, request *httpmsg.Request, wire *wireStore, endpoints *httpOrigins, setup func(context.Context, layer.Conn, *connection.Server) (layer.Conn, error), lazy *lazyServer) (ServerEndpoint, error) {
 	tls := request.Scheme == "https"
 	var metadata *connection.Server
+	var quicOrigin bool
 	if err := c.Do(ctx, func(context.Context) error {
 		srv := c.Data.Server
 		same := srv.Address != nil && srv.Address.Host == request.Host && srv.Address.Port == request.Port && srv.TLS == tls
@@ -286,6 +287,9 @@ func (l *httpLayer) connect(ctx context.Context, c *layer.Context, stream *httpS
 			via := srv.Via
 			srv = connection.NewServer(&connection.Address{Host: request.Host, Port: request.Port})
 			srv.TransportProtocol = connection.TCP
+			if tls && c.Data.Server.TransportProtocol == connection.UDP {
+				srv.TransportProtocol = connection.UDP
+			}
 			if via != nil {
 				srv.Via = new(*via)
 			}
@@ -303,9 +307,37 @@ func (l *httpLayer) connect(ctx context.Context, c *layer.Context, stream *httpS
 			}
 		}
 		metadata = srv
+		quicOrigin = tls && srv.TransportProtocol == connection.UDP
+		if quicOrigin {
+			if opts := c.Data.Options; opts != nil && opts.Has("http3") && !opts.Bool("http3") {
+				return errors.New("httplayer: HTTP/3 is disabled")
+			}
+			// Origin protocol selection is independent of the TCP client's ALPN.
+			if len(srv.ALPNOffers) == 0 {
+				srv.ALPNOffers = [][]byte{[]byte("h3")}
+			}
+		}
 		return nil
 	}); err != nil {
 		return nil, err
+	}
+	if quicOrigin {
+		endpoint, release, actual, err := endpoints.quic.acquire(ctx, c, metadata, stream)
+		if err != nil {
+			return nil, err
+		}
+		lazy.releaseOrigin = release
+		if err := c.Do(ctx, func(context.Context) error {
+			c.Data.Server, stream.flow.ServerConn = actual, actual
+			return nil
+		}); err != nil {
+			release()
+			return nil, err
+		}
+		return endpoint, nil
+	}
+	if c.Pool == nil {
+		return nil, errors.New("httplayer: HTTP origin requires a connection pool")
 	}
 	opts := layer.OpenOptions{Reuse: true}
 	if tls {

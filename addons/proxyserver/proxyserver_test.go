@@ -175,7 +175,7 @@ func TestWireGuardConfDir(t *testing.T) {
 	}
 }
 
-func TestReverseProtocolDeferredStartup(t *testing.T) {
+func TestReverseProtocolStartup(t *testing.T) {
 	tests := map[string]struct{ scheme string }{
 		"QUIC":   {"quic"},
 		"HTTP/3": {"http3"},
@@ -186,14 +186,22 @@ func TestReverseProtocolDeferredStartup(t *testing.T) {
 			spec := "reverse:" + tt.scheme + "://example.test:443@127.0.0.1:0"
 			update(t, m, map[string]any{"mode": []string{spec}, "server": true})
 			if err := ps.SetupServers(t.Context()); err != nil {
-				t.Fatalf("SetupServers must leave start failures to the log: %v", err)
+				t.Fatal(err)
 			}
-			want := fmt.Sprintf("modeserver: reverse scheme %q is not implemented yet", tt.scheme)
-			if !strings.Contains(logs.String(), "msg="+strconv.Quote(want)) {
-				t.Fatalf("startup log = %q, want %q", logs.String(), want)
+			addresses := ps.ListenAddrs()
+			if len(addresses) != 1 || addresses[0].Host != "127.0.0.1" || addresses[0].Port == 0 {
+				t.Fatalf("protocol listener did not bind: %v; logs: %s", addresses, logs.String())
 			}
-			if len(ps.ListenAddrs()) != 0 {
-				t.Fatal("unimplemented protocol opened a listener")
+			state := ps.instances.Load()
+			if state == nil || len(state.instances) != 1 || !state.instances[0].IsRunning() {
+				t.Fatal("protocol listener is not running")
+			}
+			instance := state.instances[0]
+			if err := instance.Stop(); err != nil {
+				t.Fatal("protocol listener stop:", err)
+			}
+			if instance.IsRunning() || instance.LastError() != nil || len(ps.ListenAddrs()) != 0 {
+				t.Fatal("protocol listener did not stop cleanly")
 			}
 		})
 	}

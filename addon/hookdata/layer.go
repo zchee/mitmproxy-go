@@ -36,6 +36,8 @@ const (
 	// (py:mitmproxy/proxy/layers/http HttpLayer). A spec with this kind
 	// carries the [HTTPMode].
 	LayerHTTP LayerKind = "http"
+	// LayerHTTP3 handles HTTP/3 exchanges over intercepted QUIC connections.
+	LayerHTTP3 LayerKind = "http3"
 	// LayerTCP relays raw TCP with message capture
 	// (py:mitmproxy/proxy/layers/tcp.py TCPLayer). A spec with this kind
 	// may carry Ignore.

@@ -10,10 +10,11 @@ import (
 	"testing"
 
 	"github.com/zchee/mitmproxy-go/connection"
+	"github.com/zchee/mitmproxy-go/internal/proxy/modespec"
 )
 
 func TestRegisteredListenerFactorySnapshot(t *testing.T) {
-	key := ListenerKey{Scheme: "quic", Transport: connection.UDP}
+	key := ListenerKey{Scheme: "factory-snapshot-test", Transport: connection.UDP}
 	t.Cleanup(func() { listenerRegistry.Delete(key) })
 	calls := make(chan string, 4)
 	factory := func(name string) ListenerFactory {
@@ -24,9 +25,9 @@ func TestRegisteredListenerFactorySnapshot(t *testing.T) {
 	}
 	RegisterListenerFactory(key, factory("registered"))
 	cfg, _, _ := fixture(t)
-	registered := makeInstance(t, "reverse:quic://example.test:443@127.0.0.1:0", cfg)
+	registered := makeInstance(t, "reverse:udp://example.test:443@127.0.0.1:0", cfg)
 	cfg.ListenerFactories = map[ListenerKey]ListenerFactory{key: factory("override")}
-	overridden := makeInstance(t, "reverse:quic://example.test:443@127.0.0.1:0", cfg)
+	overridden := makeInstance(t, "reverse:udp://example.test:443@127.0.0.1:0", cfg)
 	delete(cfg.ListenerFactories, key)
 	listenerRegistry.Delete(key)
 	tests := map[string]struct {
@@ -38,6 +39,11 @@ func TestRegisteredListenerFactorySnapshot(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
+			// Construction validates real mode schemes; factory selection uses
+			// this row's private key without changing the captured snapshots.
+			mode := tt.instance.mode.(modespec.ReverseMode)
+			mode.Scheme = key.Scheme
+			tt.instance.mode = mode
 			selected, err := tt.instance.packetFactory()
 			if err != nil {
 				t.Fatal(err)
@@ -65,10 +71,10 @@ func TestListenerFactoryRegistrationRejectsInvalid(t *testing.T) {
 		factory   ListenerFactory
 		duplicate bool
 	}{
-		"nil":              {ListenerKey{"quic", connection.UDP}, nil, false},
-		"duplicate":        {ListenerKey{"quic", connection.UDP}, factory, true},
+		"nil":              {ListenerKey{"factory-registration-test", connection.UDP}, nil, false},
+		"duplicate":        {ListenerKey{"factory-registration-test", connection.UDP}, factory, true},
 		"empty scheme":     {ListenerKey{"", connection.UDP}, factory, false},
-		"stream transport": {ListenerKey{"quic", connection.TCP}, factory, false},
+		"stream transport": {ListenerKey{"factory-registration-test", connection.TCP}, factory, false},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

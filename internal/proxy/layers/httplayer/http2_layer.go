@@ -66,14 +66,19 @@ type httpOrigins struct {
 	mu      sync.Mutex
 	entries map[layer.Conn]*httpOrigin
 	workers sync.WaitGroup
+	quic    *http3Origins
 }
 
 func newHTTPOrigins(ctx context.Context) *httpOrigins {
 	ctx, cancel := context.WithCancel(ctx)
-	return &httpOrigins{ctx: ctx, cancel: cancel, entries: make(map[layer.Conn]*httpOrigin)}
+	return &httpOrigins{ctx: ctx, cancel: cancel, entries: make(map[layer.Conn]*httpOrigin), quic: newHTTP3Origins(ctx)}
 }
 
-func (o *httpOrigins) stop() { o.cancel(); o.workers.Wait() }
+func (o *httpOrigins) stop() {
+	o.cancel()
+	o.quic.stop()
+	o.workers.Wait()
+}
 
 var errOriginInUse = errors.New("HTTP origin requires a separate connection")
 

@@ -6,6 +6,8 @@ package modeserver
 import (
 	"fmt"
 	"testing"
+
+	"github.com/zchee/mitmproxy-go/connection"
 )
 
 func TestReverseProtocolAdmission(t *testing.T) {
@@ -27,6 +29,22 @@ func TestReverseProtocolAdmission(t *testing.T) {
 				}
 				return
 			}
+			if err := instance.Start(t.Context()); err != nil {
+				t.Fatal("registered protocol start:", err)
+			}
+			addresses := instance.ListenAddrs()
+			if !instance.IsRunning() || instance.LastError() != nil || len(addresses) != 1 || addresses[0].Host != "127.0.0.1" || addresses[0].Port == 0 {
+				t.Fatalf("registered protocol listener was not published: %v", addresses)
+			}
+			if err := instance.Stop(); err != nil {
+				t.Fatal("registered protocol stop:", err)
+			}
+			if instance.IsRunning() || instance.LastError() != nil || len(instance.ListenAddrs()) != 0 {
+				t.Fatal("registered protocol did not stop cleanly")
+			}
+			// Remove only this instance's snapshot to exercise missing-factory
+			// admission without changing process-wide protocol registrations.
+			delete(instance.factories, ListenerKey{Scheme: tt.scheme, Transport: connection.UDP})
 			want := fmt.Sprintf("modeserver: reverse scheme %q is not implemented yet", tt.scheme)
 			if err := instance.Start(t.Context()); err == nil || err.Error() != want {
 				t.Fatalf("Start = %v, want %q", err, want)

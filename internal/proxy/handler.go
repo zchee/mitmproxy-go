@@ -91,8 +91,9 @@ func NewHandler(cfg Config) (*Handler, error) {
 // Handle serves one accepted client connection until it ends: it fills the
 // client metadata, fires client_connected and client_disconnected, builds
 // the top layer from the mode's spec through [layer.Build] and runs it, and
-// closes the client socket and every pooled server connection when the top
-// layer returns. modeSpec is the full proxy mode specification the client
+// closes the client socket and every stream or packet origin when the top
+// layer returns. Layers may acquire either origin transport independently of
+// the accepted client's transport. modeSpec is the full proxy mode specification the client
 // connected to, stored verbatim as the client's proxy mode. An idle
 // connection expires after the tcp_timeout option's seconds, counted
 // outside hooks and interception waits.
@@ -134,19 +135,22 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn, modeSpec string, to
 		return &activityConn{Conn: conn, watchdog: watchdog}, nil
 	}
 	pool := newServerPool(connCtx, client, dial, runner, h.manager.Do)
+	packets := &packetServers{ctx: connCtx, client: client, hooks: runner, do: h.manager.Do, watchdog: watchdog}
 	queue := newInjectionQueue()
 	c := &layer.Context{
-		Data:         &hookdata.Context{Client: client, Server: connection.NewServer(nil), Options: h.options},
-		Client:       Record(&activityConn{Conn: raw, watchdog: watchdog}),
-		Record:       Record,
-		Hooks:        runner,
-		Pool:         pool,
-		Inject:       queue.messages,
-		NextLayer:    nextLayer,
-		Do:           h.manager.Do,
-		Clock:        layerClock{h.clock},
-		HTTPFidelity: h.fidelity,
-		Logger:       logger,
+		Data:          &hookdata.Context{Client: client, Server: connection.NewServer(nil), Options: h.options},
+		Client:        Record(&activityConn{Conn: raw, watchdog: watchdog}),
+		Record:        Record,
+		OpenPackets:   packets.open,
+		RecordPackets: RecordPackets,
+		Hooks:         runner,
+		Pool:          pool,
+		Inject:        queue.messages,
+		NextLayer:     nextLayer,
+		Do:            h.manager.Do,
+		Clock:         layerClock{h.clock},
+		HTTPFidelity:  h.fidelity,
+		Logger:        logger,
 	}
 	id := client.ID
 	entry := &liveConn{client: client, queue: queue, cancel: cancel, do: h.manager.Do}
@@ -172,7 +176,7 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn, modeSpec string, to
 		client.State = connection.Closed
 		return nil
 	}, addon.ClientDisconnectedHook{Client: client})
-	closeErr := pool.closeAll(context.WithoutCancel(ctx))
+	closeErr := errors.Join(pool.closeAll(context.WithoutCancel(ctx)), packets.close())
 	h.connections.remove(id)
 	return errors.Join(runErr, closeErr, hookErr)
 }

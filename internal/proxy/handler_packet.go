@@ -30,8 +30,8 @@ func (c layerClock) Now() time.Time { return c.now() }
 func (c layerClock) AfterFunc(d time.Duration, f func()) func() bool { return c.afterFunc(d, f).Stop }
 
 // HandlePackets owns a fixed-peer packet transport until its top layer finishes.
-// It preserves packet boundaries, closes only this transport and its origin sockets,
-// and fires the same connection lifecycle hooks as Handle. An idle transport expires
+// It preserves packet boundaries, supports either byte or packet origin acquisition,
+// closes only this transport and its origin sockets, and fires the same connection lifecycle hooks as Handle. An idle transport expires
 // at UDPIdleTimeout; replay of recorded packets does not extend its lifetime.
 // A nil interface or typed-nil transport is rejected before hooks run.
 func (h *Handler) HandlePackets(ctx context.Context, conn layer.PacketTransport, modeSpec string, top hookdata.LayerSpec) error {
@@ -61,6 +61,14 @@ func (h *Handler) HandlePackets(ctx context.Context, conn layer.PacketTransport,
 		}
 	}()
 	runner := &HookRunner{Manager: h.manager, Disarm: watchdog.disarm, Rearm: watchdog.rearm}
+	dial := func(ctx context.Context, server *connection.Server) (layer.Conn, error) {
+		conn, err := h.dial(ctx, server)
+		if err != nil {
+			return conn, err
+		}
+		return &activityConn{Conn: conn, watchdog: watchdog}, nil
+	}
+	pool := newServerPool(connCtx, client, dial, runner, h.manager.Do)
 	servers := &packetServers{ctx: connCtx, client: client, hooks: runner, do: h.manager.Do, watchdog: watchdog}
 	queue := newInjectionQueue()
 	server := connection.NewServer(nil)
@@ -70,6 +78,8 @@ func (h *Handler) HandlePackets(ctx context.Context, conn layer.PacketTransport,
 		ClientPackets: RecordPackets(&activityPackets{PacketTransport: conn, watchdog: watchdog}),
 		RecordPackets: RecordPackets,
 		OpenPackets:   servers.open,
+		Pool:          pool,
+		Record:        Record,
 		Clock:         layerClock{h.clock},
 		Hooks:         runner,
 		Inject:        queue.messages,
@@ -95,7 +105,7 @@ func (h *Handler) HandlePackets(ctx context.Context, conn layer.PacketTransport,
 		client.TimestampEnd, client.State = &now, connection.Closed
 		return nil
 	}, addon.ClientDisconnectedHook{Client: client})
-	closeErr := servers.close()
+	closeErr := errors.Join(servers.close(), pool.closeAll(context.WithoutCancel(ctx)))
 	h.connections.remove(client.ID)
 	return errors.Join(runErr, hookErr, closeErr)
 }

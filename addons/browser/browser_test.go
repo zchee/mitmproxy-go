@@ -30,10 +30,14 @@ import (
 
 type logRecorder struct {
 	slog.Handler
-	records chan slog.Record
+	records      chan slog.Record
+	checkContext func(context.Context, slog.Record)
 }
 
-func (r *logRecorder) Handle(_ context.Context, record slog.Record) error {
+func (r *logRecorder) Handle(ctx context.Context, record slog.Record) error {
+	if r.checkContext != nil {
+		r.checkContext(ctx, record)
+	}
 	r.records <- record.Clone()
 	return nil
 }
@@ -94,7 +98,9 @@ func setupBrowser(t *testing.T, binary []byte, names ...string) (*Browser, *addo
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := manager.Clear(t.Context()); err != nil {
+		cleanupCtx, stopCleanup := context.WithTimeout(context.WithoutCancel(t.Context()), browserCleanupTimeout)
+		defer stopCleanup()
+		if err := manager.Clear(cleanupCtx); err != nil {
 			t.Error(err)
 		}
 		waitWorkers(t, browser)
@@ -162,6 +168,69 @@ func acceptRecord(t *testing.T, listener *net.TCPListener) (net.Conn, launchReco
 func connectionTerminated(err error) bool {
 	const wsaECONNRESET = syscall.Errno(10054)
 	return errors.Is(err, io.EOF) || runtime.GOOS == "windows" && errors.Is(err, wsaECONNRESET)
+}
+
+func TestCleanupAfterCallerCancellation(t *testing.T) {
+	binary := buildRecorder(t)
+	tests := map[string]struct {
+		removeFailure bool
+	}{
+		"success: cancelled caller releases process and profile":  {},
+		"error: reaper diagnostic survives lifetime cancellation": {removeFailure: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			originalRemove := removeProfile
+			failure := errors.New("profile removal failed after real cleanup")
+			removeProfile = func(path string) error {
+				err := originalRemove(path)
+				if tt.removeFailure {
+					return errors.Join(err, failure)
+				}
+				return err
+			}
+			t.Cleanup(func() { removeProfile = originalRemove })
+			browser, manager, listener, _ := setupBrowser(t, binary, "google-chrome")
+			logs := make(chan slog.Record, 4)
+			slog.SetDefault(slog.New(&logRecorder{Handler: slog.NewTextHandler(io.Discard, nil), records: logs, checkContext: func(ctx context.Context, rec slog.Record) {
+				if rec.Message == "Removing browser profile" {
+					if _, ok := ctx.Deadline(); !ok || ctx.Err() != nil {
+						t.Error("reaper diagnostic lacks an active cleanup deadline")
+					}
+				}
+			}}))
+			if _, err := manager.Call(t.Context(), "browser.start"); err != nil {
+				t.Fatal(err)
+			}
+			peer, _ := acceptRecord(t, listener)
+			var child browserProcess
+			if err := manager.Do(t.Context(), func(context.Context) error {
+				child = browser.browser[0]
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			caller, cancel := context.WithCancel(t.Context())
+			cancel()
+			cleanupCtx, stopCleanup := context.WithTimeout(context.WithoutCancel(caller), browserCleanupTimeout)
+			defer stopCleanup()
+			if err := manager.Clear(cleanupCtx); err != nil {
+				t.Fatal(err)
+			}
+			waitWorkers(t, browser)
+			if _, err := peer.Read(make([]byte, 1)); !connectionTerminated(err) {
+				t.Fatalf("browser socket after cleanup = %v", err)
+			}
+			if _, err := os.Stat(child.dir); !errors.Is(err, os.ErrNotExist) || child.cmd.ProcessState == nil {
+				t.Fatalf("profile cleanup = %v, process state = %v", err, child.cmd.ProcessState)
+			}
+			if tt.removeFailure {
+				if rec := nextLog(t, logs); rec.Message != "Removing browser profile" {
+					t.Fatalf("reaper diagnostic = %q", rec.Message)
+				}
+			}
+		})
+	}
 }
 
 func TestConnectionTerminated(t *testing.T) {

@@ -65,7 +65,11 @@ func (l *udpLayer) Run(ctx context.Context, c *layer.Context) (result error) {
 				}
 				return nil
 			}, hook)
-			endErr := c.Do(endCtx, func(context.Context) error {
+			// Hook expiry must not prevent the final dispatch-owned flow cleanup.
+			cleanupCtx, stopCleanup := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+			defer stopCleanup()
+			endErr := c.Do(cleanupCtx, func(context.Context) error {
+				l.flow.Resume()
 				l.flow.Live = false
 				return nil
 			})

@@ -26,9 +26,12 @@ func TestTerminalHookTimeout(t *testing.T) {
 	tests := map[string]struct {
 		cancel bool
 		hook   string
+		yield  bool
 	}{
-		"cancelled connection": {cancel: true, hook: "tcp_end"},
-		"opening failure":      {hook: "tcp_error"},
+		"cancelled connection":             {cancel: true, hook: "tcp_end"},
+		"opening failure":                  {hook: "tcp_error"},
+		"cancelled yielding terminal hook": {cancel: true, hook: "tcp_end", yield: true},
+		"failed yielding terminal hook":    {hook: "tcp_error", yield: true},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -46,9 +49,16 @@ func TestTerminalHookTimeout(t *testing.T) {
 					}
 					f.Intercept()
 					close(entered)
-					<-ctx.Done()
-					returned <- ctx.Err()
-					return ctx.Err()
+					waitDeadline := func(ctx context.Context) error {
+						<-ctx.Done()
+						returned <- ctx.Err()
+						return ctx.Err()
+					}
+					if test.yield {
+						_, err := addon.Concurrent(ctx, waitDeadline)
+						return err
+					}
+					return waitDeadline(ctx)
 				}
 				a := &observer{end: terminal, failed: terminal}
 				manager := addon.NewManager(options.New(), command.NewManager(), addon.Config{})
@@ -67,8 +77,11 @@ func TestTerminalHookTimeout(t *testing.T) {
 						return manager.Do(ctx, func(ctx context.Context) error {
 							err := fn(ctx)
 							if !f.Live {
-								if got, ok := ctx.Deadline(); !ok || !got.Equal(deadline) {
-									t.Error("cleanup lost terminal deadline")
+								if got, ok := ctx.Deadline(); !ok || got.Equal(deadline) || ctx.Err() != nil {
+									t.Error("cleanup did not receive an active, distinct deadline")
+								}
+								if f.Intercepted() {
+									t.Error("terminal cleanup retained interception")
 								}
 								cleanup <- ctx.Err()
 							}
@@ -94,8 +107,8 @@ func TestTerminalHookTimeout(t *testing.T) {
 				if err := await(t, returned); !errors.Is(err, context.DeadlineExceeded) {
 					t.Fatalf("terminal addon error = %v", err)
 				}
-				if err := await(t, cleanup); !errors.Is(err, context.DeadlineExceeded) {
-					t.Fatalf("cleanup context error = %v", err)
+				if err := await(t, cleanup); err != nil {
+					t.Fatalf("cleanup context error = %v, want active context", err)
 				}
 				wantErr := openErr
 				if test.cancel {

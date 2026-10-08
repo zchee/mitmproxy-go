@@ -38,10 +38,12 @@ func newReader(t *testing.T, input io.ReadCloser) (*master.Master, *ReadFile, *b
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := m.Addons.Trigger(context.WithoutCancel(t.Context()), addon.DoneHook{}); err != nil {
+		cleanupCtx, stopCleanup := context.WithTimeout(context.WithoutCancel(t.Context()), cleanupTimeout)
+		defer stopCleanup()
+		if err := m.Addons.Trigger(cleanupCtx, addon.DoneHook{}); err != nil {
 			t.Error(err)
 		}
-		if err := m.Close(context.WithoutCancel(t.Context())); err != nil {
+		if err := m.Close(cleanupCtx); err != nil {
 			t.Error(err)
 		}
 	})

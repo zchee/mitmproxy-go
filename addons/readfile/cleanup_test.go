@@ -50,7 +50,11 @@ func TestDoneCloseOutsideDispatch(t *testing.T) {
 		OnDispatchStart: func() { held.Store(true) },
 		OnDispatchEnd:   func() { held.Store(false) },
 	})
-	t.Cleanup(func() { _ = m.Close(t.Context()) })
+	t.Cleanup(func() {
+		cleanupCtx, stopCleanup := context.WithTimeout(context.WithoutCancel(t.Context()), cleanupTimeout)
+		defer stopCleanup()
+		_ = m.Close(cleanupCtx)
+	})
 	pipe := &gatedClosePipe{
 		File: input, entered: make(chan struct{}), release: make(chan struct{}), loaded: make(chan struct{}),
 		observeClose: func() { closeHeld.Store(held.Load()) },
@@ -112,11 +116,13 @@ func TestDoneCleanupBoundAndRestart(t *testing.T) {
 				} else {
 					time.Sleep(5 * time.Second)
 				}
-				if err := <-stopped; !errors.Is(err, want) || !strings.Contains(err.Error(), "stop loader") {
-					t.Errorf("Done = %v, want contextual %v", err, want)
+				if err := <-stopped; !errors.Is(err, want) || !test.cancelCaller && !strings.Contains(err.Error(), "stop loader") {
+					t.Errorf("Done = %v, want %v", err, want)
 				}
+				inspectionCtx, stopInspection := context.WithTimeout(context.WithoutCancel(t.Context()), cleanupTimeout)
+				defer stopInspection()
 				var cleanup *loaderCleanup
-				if err := m.Do(t.Context(), func(ctx context.Context) error {
+				if err := m.Do(inspectionCtx, func(ctx context.Context) error {
 					cleanup = r.cleanup
 					if cleanup == nil || r.cancel != nil || r.closer != nil {
 						t.Error("cancelled loader was not transferred to its cleanup owner")
@@ -124,11 +130,19 @@ func TestDoneCleanupBoundAndRestart(t *testing.T) {
 					if err := r.Running(ctx); err == nil || !strings.Contains(err.Error(), "cleanup is still pending") {
 						t.Errorf("Running during pending cleanup = %v", err)
 					}
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				err = m.Do(inspectionCtx, func(ctx context.Context) error {
 					ctx, cancel := context.WithCancel(ctx)
 					cancel()
-					if err := r.Done(ctx); !errors.Is(err, context.Canceled) {
-						t.Errorf("repeated Done = %v, want context canceled", err)
-					}
+					return r.Done(ctx)
+				})
+				if !errors.Is(err, context.Canceled) {
+					t.Errorf("repeated Done = %v, want context canceled", err)
+				}
+				if err := m.Do(inspectionCtx, func(context.Context) error {
 					if r.cleanup != cleanup {
 						t.Error("repeated Done replaced the unfinished cleanup owner")
 					}

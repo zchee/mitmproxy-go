@@ -13,10 +13,18 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/options"
 )
+
+// browserCleanupTimeout bounds detached reaper diagnostics, not process or filesystem I/O.
+const browserCleanupTimeout = 5 * time.Second
+
+// removeProfile is captured before reaping starts so tests can inject a real
+// removal followed by a failure without changing a running worker's operation.
+var removeProfile = os.RemoveAll
 
 // Browser owns the browsers and temporary profiles started by browser.start.
 // Its methods run under the addon's dispatch lock; reapers run outside it.
@@ -158,6 +166,7 @@ func (b *Browser) launch(name string, command []string) error {
 		return errors.Join(err, os.RemoveAll(dir))
 	}
 	lifetime := b.lifetime
+	remove := removeProfile
 	exited := make(chan struct{})
 	b.browser = append(b.browser, browserProcess{cmd: cmd, dir: dir, exited: exited})
 	b.workers.Go(func() {
@@ -165,8 +174,10 @@ func (b *Browser) launch(name string, command []string) error {
 		_ = cmd.Wait()
 		close(exited)
 		<-lifetime.Done()
-		if err := os.RemoveAll(dir); err != nil {
-			_ = b.manager.Do(lifetime, func(ctx context.Context) error {
+		if err := remove(dir); err != nil {
+			cleanupCtx, stopCleanup := context.WithTimeout(context.WithoutCancel(lifetime), browserCleanupTimeout)
+			defer stopCleanup()
+			_ = b.manager.Do(cleanupCtx, func(ctx context.Context) error {
 				slog.ErrorContext(ctx, "Removing browser profile", "error", err)
 				return nil
 			})

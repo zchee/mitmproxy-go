@@ -50,6 +50,9 @@ import (
 	"github.com/zchee/mitmproxy-go/options"
 )
 
+// tlsFixtureCleanupTimeout bounds detached test cleanup dispatch, not kernel I/O.
+const tlsFixtureCleanupTimeout = 5 * time.Second
+
 func newTLSConfig(t *testing.T) (*TLSConfig, *addon.Manager, *options.Manager) {
 	t.Helper()
 	opts := options.New()
@@ -59,7 +62,9 @@ func newTLSConfig(t *testing.T) (*TLSConfig, *addon.Manager, *options.Manager) {
 	tc := New(opts)
 	m := addon.NewManager(opts, command.NewManager(), addon.Config{})
 	t.Cleanup(func() {
-		if err := m.Clear(t.Context()); err != nil {
+		cleanupCtx, stopCleanup := context.WithTimeout(context.WithoutCancel(t.Context()), tlsFixtureCleanupTimeout)
+		defer stopCleanup()
+		if err := m.Clear(cleanupCtx); err != nil {
 			t.Error(err)
 		}
 		m.Close()
@@ -688,12 +693,14 @@ func TestTLSStartServer(t *testing.T) {
 // TestKeyLogDone checks shutdown closure without reopening the key log.
 func TestKeyLogDone(t *testing.T) {
 	tests := map[string]struct {
-		enabled    bool
-		closeEarly bool
+		enabled      bool
+		closeEarly   bool
+		cancelCaller bool
 	}{
-		"success: disabled":         {},
-		"success: opened log":       {enabled: true},
-		"error: already closed log": {enabled: true, closeEarly: true},
+		"success: disabled":                          {},
+		"success: opened log":                        {enabled: true},
+		"error: already closed log":                  {enabled: true, closeEarly: true},
+		"success: cancelled caller still closes log": {enabled: true, cancelCaller: true},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -720,7 +727,14 @@ func TestKeyLogDone(t *testing.T) {
 			} else if writer != nil {
 				t.Fatalf("disabled keyLog() = %T, want nil", writer)
 			}
-			err := m.Clear(t.Context())
+			caller, cancelCaller := context.WithCancel(t.Context())
+			defer cancelCaller()
+			if tt.cancelCaller {
+				cancelCaller()
+			}
+			cleanupCtx, stopCleanup := context.WithTimeout(context.WithoutCancel(caller), tlsFixtureCleanupTimeout)
+			defer stopCleanup()
+			err := m.Clear(cleanupCtx)
 			if diff := gocmp.Diff(tt.closeEarly, errors.Is(err, os.ErrClosed)); diff != "" {
 				t.Fatalf("Done error = %v (-want +got):\n%s", err, diff)
 			}
@@ -732,7 +746,7 @@ func TestKeyLogDone(t *testing.T) {
 					t.Fatalf("write after Done = %v, want closed file", err)
 				}
 			}
-			if err := m.Clear(t.Context()); err != nil {
+			if err := m.Clear(cleanupCtx); err != nil {
 				t.Fatalf("repeated Done = %v", err)
 			}
 			if tc.keyLog() != nil {

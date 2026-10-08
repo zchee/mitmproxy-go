@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	gocmp "github.com/google/go-cmp/cmp"
 	"github.com/quic-go/qpack"
 	quic "github.com/quic-go/quic-go"
 
@@ -114,6 +115,19 @@ func TestHTTP3ConsumerClientAborts(t *testing.T) {
 			case <-started:
 			case <-ctx.Done():
 				t.Fatal(ctx.Err())
+			}
+			if !test.response && test.streamed {
+				// Abort during upstream transmission, not while the header hook
+				// is still returning and the borrowed origin is being acquired.
+				upstream, err := origin.conn.AcceptStream(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				fields := readHTTP3TestHeaders(t, upstream)
+				want := []qpack.HeaderField{{Name: ":method", Value: "GET"}, {Name: ":scheme", Value: "https"}, {Name: ":path", Value: "/aborted"}, {Name: ":authority", Value: "example.com"}}
+				if diff := gocmp.Diff(want, fields); diff != "" {
+					t.Fatalf("upstream request HEADERS before abort (-want +got):\n%s", diff)
+				}
 			}
 			if test.reset {
 				request.CancelRead(quic.StreamErrorCode(h3.ErrCodeRequestCancelled))

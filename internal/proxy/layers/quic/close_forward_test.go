@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"runtime"
 	"strings"
 	"sync"
@@ -148,18 +149,43 @@ func TestQUICWireCloseBeforeContextPublication(t *testing.T) {
 			session := newWireSession(t, nil, observer)
 			sourceContext := wireAwait(t, gate.sourceContext)
 			wireAwaitServerEstablished(t, observer)
-			// Listener acceptance does not acknowledge raw relay application progress.
-			for _, path := range [][2]*quicgo.Conn{{session.client, session.origin}, {session.origin, session.client}} {
-				if err := path[0].SendDatagram([]byte("READY")); err != nil {
-					t.Fatal(err)
-				}
-				data, err := path[1].ReceiveDatagram(session.ctx)
-				if err != nil {
-					t.Fatalf("QUIC relay readiness failed: %v; source cause=%v", err, context.Cause(sourceContext))
-				}
-				if diff := gocmp.Diff([]byte("READY"), data); diff != "" {
-					t.Fatalf("readiness datagram (-want +got):\n%s", diff)
-				}
+			// DATAGRAM delivery is unreliable; use a completed stream for readiness.
+			stream, err := session.client.OpenStreamSync(session.ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := stream.Write([]byte("READY")); err != nil {
+				t.Fatal(err)
+			}
+			if err := stream.Close(); err != nil {
+				t.Fatal(err)
+			}
+			peer, err := session.origin.AcceptStream(session.ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := io.ReadAll(peer)
+			if err != nil {
+				t.Fatalf("QUIC relay readiness failed: %v; source cause=%v", err, context.Cause(sourceContext))
+			}
+			if diff := gocmp.Diff([]byte("READY"), data); diff != "" {
+				t.Fatalf("readiness request (-want +got):\n%s", diff)
+			}
+			if _, err := peer.Write([]byte("READY")); err != nil {
+				t.Fatal(err)
+			}
+			if err := peer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			data, err = io.ReadAll(stream)
+			if err != nil {
+				t.Fatalf("QUIC relay readiness failed: %v; source cause=%v", err, context.Cause(sourceContext))
+			}
+			if diff := gocmp.Diff([]byte("READY"), data); diff != "" {
+				t.Fatalf("readiness response (-want +got):\n%s", diff)
+			}
+			if completed := wireAwait(t, observer.ended); completed.Error != nil {
+				t.Fatalf("QUIC readiness flow failed: %v", completed.Error)
 			}
 			sender, receiver := session.client, session.origin
 			if !test.fromClient {

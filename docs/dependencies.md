@@ -27,7 +27,7 @@ plan records no upgrade path, the table says so instead of guessing.
 | Module | Version | Licence | Used by | Why this module and pin | Known-good upgrade path |
 |---|---|---|---|---|---|
 | `golang.org/x/net` (`http2`, `http2/hpack`, `html`, `publicsuffix`) | v0.59.0 | BSD-3 | h2, contentviews, console | Go 1.27 moved HTTP/2 into `net/http/internal/http2`, which cannot be imported; x/net keeps the public `Framer`. The port uses `Framer.ReadFrame`, `WriteRawFrame` and the `hpack` encoder and decoder, never `ReadMetaHeaders`, whose validation rejects uppercase names and late pseudo-headers and so contradicts `validate_inbound_headers=false`. | Behind the `internal/h2` adapter; bump and rerun its contract test. The plan expects x/net's `http2` to keep diverging from std. |
-| `golang.org/x/sys` | v0.48.0 | BSD-3 | platform, netstack, local, tun, `internal/vtcodes` | `SO_ORIGINAL_DST` for transparent mode (`IP6T_SO_ORIGINAL_DST` is defined locally). `internal/vtcodes` uses the termios and window-size ioctls (`unix`) and the console-mode calls (`windows`) for the terminal detection behind colour output. | Not recorded in the plan. |
+| `golang.org/x/sys` | v0.48.0 | BSD-3 | platform, netstack, local, tun, `internal/vtcodes`, `internal/privfile` | Supplies Unix descriptor connect/truncation/ioctl flags; Windows native message-mode pipes, overlapped cancellation/event completion, process handles and ShellExecuteExW; token-user/owner and handle-based protected-DACL private-output APIs. Existing terminal and planned original-destination calls also use it. | Rerun native Windows message-boundary/first-instance/max-one/reject-remote/cancellation/handle-lifetime and private-output create/append/narrow-before-write/non-reparse/foreign-owner tests. Cross-compilation is insufficient. Rerun Linux TUN descriptor/setup/bridge and separately privileged device/routing acceptance. |
 | `github.com/itchyny/timefmt-go` | v0.1.9 | MIT | save | `save_stream_file` requires strftime formatting of the stream path, which Go's reference-time layouts do not support. Pure Go, zero dependencies, with Python's `%f`; unsupported modifiers and locale differences are listed in [compat.md](compat.md#addonssave). | Rerun the save rotation tests; the formatted path decides when a new file is opened, so a directive behaviour change moves rotation boundaries. |
 | `golang.org/x/crypto` (`bcrypt`, `argon2`, `cryptobyte`) | v0.57.0 | BSD-3 | proxyauth and `internal/htpasswd`, webaddons, tlsparse | bcrypt and argon2 for the `proxyauth` and mitmweb addons; the htpasswd reader is ported from upstream onto `bcrypt` and `crypto/sha1` and accepts exactly upstream's bcrypt and `{SHA}` entries; `cryptobyte` for `tlsparse`. | Rerun the htpasswd password vectors for `$2a$`, `$2b$`, `$2y$` and the upstream fixture before upgrading bcrypt. |
 | `golang.org/x/text` (`encoding`, `encoding/ianaindex`, `encoding/htmlindex`) | v0.42.0 | BSD-3 | httpmsg, proxyauth | The IANA and WHATWG character-set indexes resolve the charset a message names for its text, since Go has no codec registry like Python's; where the labels differ from Python's is listed in [compat.md](compat.md#httpmsg). The UTF-8 decoder reproduces Python's replacement of invalid authentication bytes. | Bump and rerun the `httpmsg` charset tests (`TestLegacyCharsets`, `TestLegacyCharsetErrors`, `TestMessageTextLegacyCharset`) and the proxyauth differential test; an index change alters which labels resolve, so recheck the label list in compat.md. |
@@ -37,7 +37,7 @@ plan records no upgrade path, the table says so instead of guessing.
 | `codeberg.org/miekg/dns` | v0.6.118 | BSD-3 | dns | Has the `HTTPS`/`SVCB` RR types. The root package builds on go1.27.1 with only `x/crypto`, `x/net` and `x/sys` as indirect dependencies; module graph pruning keeps the dependencies of its `cmd/` packages out. DoQ is not implemented upstream. | Pre-1.0, so breaking changes are expected (the plan names a v0.7 `RR` interface change as a likely break). Behind the `dns` codec adapter; stay on v0.6.118 and add `exclude` directives to `go.mod` for known-bad versions. |
 | `golang.zx2c4.com/wireguard` | v0.0.0-20260522210424-ecfc5a8d5446 | MIT | wireguard, tun | Pure-Go WireGuard device over a userspace packet interface; the `tun` subpackage also supplies Linux TUN descriptor hand-over. | Rerun the `internal/wireguard` adapter's real-UDP encrypted packet and lifecycle contract tests before upgrading. |
 | `gvisor.dev/gvisor` | v0.0.0-20261004063249-f57b8fc79db4 (from the `go` branch) | Apache-2.0 | netstack | The only pure-Go TCP/IP stack that accepts connections to any destination (`tcp.NewForwarder`, `udp.NewForwarder`); tun2socks and Tailscale are prior art. Adds about 3 MB to the binary. | Take pseudo-versions from the `go` branch only: it builds on go1.27.1 for darwin/arm64 and linux/amd64, while `@latest` (master) does not. Behind the `internal/netstack` adapter. |
-| `github.com/Microsoft/go-winio` | v0.6.2 | MIT | local (Windows) | The only maintained Go named-pipe server with message mode, `FirstPipeInstance` and `RejectRemoteClients`. Accepting one client and then closing the listener reproduces upstream's `max_instances(1)`. | Not recorded in the plan. |
+| `github.com/Microsoft/go-winio` | v0.6.2 (unused plan candidate) | MIT | Not imported; absent from go.mod | Its ordinary message-byte pipe API uses byte-read behavior and suppresses ERROR_MORE_DATA, unlike the native one-message-per-read contract required by local mode. The implementation uses existing x/sys Windows calls instead. | Do not infer message-boundary compatibility from message-mode creation; no go-winio upgrade gate is applicable to the shipped code. |
 | `github.com/pion/dtls/v3` | v3.1.10 | MIT | tls layer (DTLS) | The standard library has no DTLS; pion is the only maintained pure-Go implementation. Declares `go 1.24.0` and builds on go1.27.1. | Not recorded in the plan. |
 | `software.sslmate.com/src/go-pkcs12` | v0.7.3 | BSD-3 | certs (`mitmproxy-ca.p12` and `mitmproxy-ca-cert.p12`) | Its `Passwordless` encoder writes both passwordless `.p12` files upstream writes: `Encode` the key-bearing file, `EncodeTrustStoreEntries` the cert-only file with the friendly name `mitmproxy`. The files carry no MAC and the cert-only bag carries a Java trust-store attribute, unlike `cryptography`'s (listed in `docs/compat.md`). | Run `go test -tags difftest ./certs`: Python must recover identical full private numbers and certificate DER from both bundles; the certificate-only file must contain no key. |
 | `github.com/andybalholm/brotli` | v1.2.6 | MIT | netutil/encoding | The standard library has no brotli. | Not recorded in the plan. |
@@ -95,7 +95,7 @@ must retain the typed hook override contract or migrate all consumers together.
 
 | Module | Version | Licence | Why and upgrade verification |
 |---|---|---|---|
-| `google.golang.org/protobuf` | v1.36.12 | BSD-3 | Generates and decodes the vendored native-redirector IPC schema. `protoc-gen-go` is pinned to the same version by `go generate ./internal/local`; regeneration preserves optional presence, oneof variants, field numbers, and the schema's Go-package mapping. Before upgrading, regenerate the bindings and rerun the IPC decode and wire-semantics tests, including the explicitly synthetic vectors and subsequent manual-platform captures. |
+| `google.golang.org/protobuf` | v1.36.12 | BSD-3 | Generates and decodes the vendored native-redirector IPC schema. `protoc-gen-go` is pinned to the runtime by `go generate ./internal/local`; regeneration preserves optional presence, oneof variants, field numbers and Go-package mapping. Rerun IPC decode/wire-semantics, native message-boundary/group-budget fixtures and native Windows synthetic pipe tests. Real native privilege/device/process-attribution captures remain separate acceptance. |
 
 ## dns
 
@@ -103,7 +103,10 @@ The wire adapter now imports `codeberg.org/miekg/dns v0.6.118` (BSD-3), the
 exact pin in the module table. It translates the message header without
 changing the flow-format-21 state or interpreting opaque record data.
 Upgrades must pass the adapter contract, including every reserved flag bit,
-section counts and rejected out-of-range fields, before codec tests run.
+section counts and rejected out-of-range fields, before codec tests run. Also retain the 65,535-byte wire and
+1 MiB expanded-data limits, backward-pointer/work limits, opaque RDATA and ordered HTTPS/SVCB parameter views.
+Rerun DNS JSON/YAML/flowjson fixtures, strip ECH/ALPN rules, the wire fuzz target, and real UDP/TCP DNS-layer
+and resolver tests. Repeated queries verify configuration reuse, not a TTL answer cache.
 
 ## internal/h3
 
@@ -116,4 +119,41 @@ section counts and rejected out-of-range fields, before codec tests run.
 
 | Module | Version | Licence | Adapter and upgrade evidence |
 |---|---|---|---|
-| `gvisor.dev/gvisor` | `v0.0.0-20261004063249-f57b8fc79db4` | Apache-2.0 | `gvisor.go` configures the IP stack and channel endpoint. The `go` branch supplies generated sources for ordinary Go builds. Upgrade only after the adapter contracts verify IPv4/IPv6, arbitrary-address binding, MTU 1420, 64 KiB TCP buffers and injected clock timers on each supported OS. |
+| `gvisor.dev/gvisor` | `v0.0.0-20261004063249-f57b8fc79db4` | Apache-2.0 | `gvisor.go` configures the IP stack and channel endpoint. The `go` branch supplies generated sources for ordinary Go builds. Upgrade only after contracts verify IPv4/IPv6 arbitrary-address binding, MTU 1420, 64 KiB TCP buffers, handshake-time acceptance, idle/keepalive injected clocks, ICMP echo, buffered-reset ordering, queue bounds, metadata ownership and sibling isolation on supported OSes. Then rerun encrypted WireGuard/forwarder and TUN bridge integration; executable privileged-mode evidence is separate. |
+
+## QUIC and HTTP/3 consumers
+
+These are additional uses of existing exact pins, not new dependencies.
+
+| Module | Version | Licence | Importing surface | Contract and upgrade check |
+|---|---|---|---|---|
+| `github.com/quic-go/quic-go` | v0.63.0 | MIT | `internal/proxy/layers/quic/quicgo.go` | Per-flow PacketTransport handoff, two-datagram ordered replay and exclusive stream/datagram relay/borrowed ownership. Rerun parser RFC/captured vectors/fuzz, certificate/ALPN/CA/ssl_insecure/opaque-signer snapshots, stream FIN/reset/STOP_SENDING/injection/isolation, application-close code/reason/close-before-context-publication and lifecycle joins with native Windows/Linux/macOS race evidence. Transport-close and closed-handler-retirement parity stay explicitly unrepaired. |
+| `github.com/quic-go/quic-go` | v0.63.0 | MIT | `internal/h3/quic.go`, `internal/proxy/layers/httplayer/quicgo.go` | Uses connections/streams and private origin Transports, not net/http HTTP3 wrappers. Upgrades must preserve packet-socket/borrowed-connection lifetime, typed close/reset codes, TLS snapshots/h3 ALPN, shared establishment, bounded retained state and drain ownership. Rerun real UDP contracts, HTTP3 race stress, mixed Handler/Alt-Svc cases and isolated Linux measurements. |
+| `github.com/quic-go/qpack` | v0.6.0 | MIT | `internal/h3/qpack.go`; integration frame-level peers | Ordered duplicate fields, static/literal QPACK with dynamic capacity zero and 128 KiB field-section bounds. Rerun static/literal/malformed/bounds/order contracts and HEADERS fuzz, then integration headers/trailers/reset cases. |
+
+## WireGuard and TUN consumers
+
+The existing `golang.zx2c4.com/wireguard` pin supplies the userspace engine, packet Bind and TUN device API.
+An upgrade must retain prebound socket ownership, caller-owned Stack lifetime, encrypted IPv4/IPv6 TCP/UDP/ICMP,
+configuration identity publication, canonical key handling and cancellation/idempotent joins. TUN checks include
+GSO valid-prefix preservation after ErrTooManySegments, descriptor nonblocking/CLOEXEC behavior, MTU/address
+setup and bridge read/write joining. Linux privileged device/routing/cleanup and full executable mode gates
+must run separately; a component contract pass is not native packet-capture acceptance.
+
+## Native redirector artifacts
+
+These 0.12.11 wheels are downloaded and verified by `internal/local/artifacts.go`, never vendored. The SHA-256
+pins are independent of Go-module versions. Wheel integrity does not certify native driver privileges, system
+extension approval, real process attribution, or licences of bundled driver components.
+
+| Platform | Exact wheel URL | SHA-256 |
+|---|---|---|
+| macOS | [macOS wheel](https://files.pythonhosted.org/packages/fe/7f/7f77310e810ab3ee47357e4ce1bdafc05d429e411bad63c0e546ceef2f2e/mitmproxy_macos-0.12.11-py3-none-any.whl) | `63349d9b46514ca679547651f7c0548f9222892edfbcba087b82b3244fbae859` |
+| Windows | [Windows wheel](https://files.pythonhosted.org/packages/52/c9/969db83d2e72de672e88a4ff556d07763ac2a106ba676f6831ced8c4db4e/mitmproxy_windows-0.12.11-py3-none-any.whl) | `59addc8864669a08f8cb48d8b29129efb1ca5f6cba9696e2d91f1f506b21a2d7` |
+| Linux arm64 | [Linux arm64 wheel](https://files.pythonhosted.org/packages/f0/2a/ad2ae5e4c6383175c89fbc1c24c9e084a2f5b9325951e91cc3eb4b2e1649/mitmproxy_linux-0.12.11-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl) | `3de4f96c11565cca2d051655f8ca23f8f24f4b3220e9ca3b0ad81007f293e9da` |
+| Linux amd64 | [Linux amd64 wheel](https://files.pythonhosted.org/packages/53/db/1a4295e7fc6d6d975ce93a49107514bd2e13873a39c643c75109391fd336/mitmproxy_linux-0.12.11-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl) | `0e5670a6b82546ebc0f947d79adfcb3c001ba3136a10ce848a2f4e2f336611c4` |
+
+On any artifact change, verify all four URLs/digests, bounded ZIP extraction, cache tamper/traversal/link refusal,
+cancellation and concurrent publication, then run real opt-in wheel downloads without execution. Native
+platform capture/launch checks remain required separately. macOS acquisition returns an application tar,
+not an installed/approved system extension.

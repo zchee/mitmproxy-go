@@ -6,6 +6,7 @@ package h2
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"runtime"
 	"slices"
@@ -218,7 +219,8 @@ func (o *owner) run(reads <-chan readFrame, writes chan<- *writeFrame, written <
 				_, connection := errors.AsType[http2.ConnectionError](incoming.err)
 				if stream, ok := errors.AsType[http2.StreamError](incoming.err); ok {
 					if s := o.streams[stream.StreamID]; s != nil {
-						o.cancel(s, stream.Code, streamError(s.id, stream.Code, stream.Error()), true)
+						failure := fmt.Errorf("%w: %w", streamError(s.id, stream.Code, "malformed HTTP/2 frame"), protocolError(stream.Code, stream.Error()))
+						o.cancel(s, stream.Code, failure, true)
 					} else if o.e.cfg.Client && stream.StreamID%2 == 1 {
 						if stream.StreamID > o.lastLocal {
 							o.fail(protocolError(http2.ErrCodeProtocol, "HTTP/2 framer error on idle stream"))
@@ -777,7 +779,8 @@ func (o *owner) cancel(s *streamState, code http2.ErrCode, err error, sendReset 
 		s.receipt = nil
 	}
 	eventErr := err
-	if _, ok := errors.AsType[*resetError](err); !ok {
+	_, protocolFailure := errors.AsType[*ProtocolError](err)
+	if _, ok := errors.AsType[*resetError](err); !ok && !protocolFailure {
 		// Local cancellations retain their existing diagnostic while preserving the cause.
 		eventErr = &resetError{cause: err, peer: "client", code: code}
 	}

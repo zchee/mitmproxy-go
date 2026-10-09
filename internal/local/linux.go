@@ -47,7 +47,7 @@ func startLinuxRedirector(ctx context.Context, path, dir string) (*exec.Cmd, io.
 	preflight := exec.CommandContext(ctx, "sudo", "echo", "-n")
 	preflight.Stdin, preflight.Stdout, preflight.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := preflight.Run(); err != nil {
-		return nil, nil, fmt.Errorf("elevate Linux redirector privileges: %w", err)
+		return nil, nil, fmt.Errorf("Failed to elevate privileges: %w", err) //nolint:staticcheck // Preserve upstream's startup log text.
 	}
 	cmd := exec.CommandContext(ctx, "sudo", "--non-interactive", "--preserve-env", path, dir) //nolint:gosec // The executable is verified or operator-selected, and arguments bypass a shell.
 	cmd.Stderr = os.Stderr

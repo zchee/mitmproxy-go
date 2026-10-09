@@ -24,6 +24,7 @@ import (
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/internal/human"
+	"github.com/zchee/mitmproxy-go/internal/local"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/proxy/modespec"
 	"github.com/zchee/mitmproxy-go/internal/tun"
@@ -41,6 +42,9 @@ type Config struct {
 	// ConfDir is the immutable configuration directory for packet-source modes.
 	// An empty value uses the default ~/.mitmproxy directory.
 	ConfDir string
+	// LocalRedirector is the shared process-lifetime daemon for local frontends.
+	// Its owner closes it only after all frontend instances have stopped.
+	LocalRedirector local.Redirector
 	// ListenHost is used when the mode has no explicit listen host.
 	ListenHost string
 	// ListenPort overrides the mode's default port, unless its spec supplies one.
@@ -66,6 +70,7 @@ type Instance struct {
 	mode       modespec.Mode
 	handler    *proxy.Handler
 	confDir    string
+	redirector local.Redirector
 	limiter    *ClientLimiter
 	host       string
 	port       int
@@ -81,6 +86,7 @@ type Instance struct {
 }
 
 type instanceState struct {
+	local           *localSource
 	tun             *tunSource
 	wireguard       *wireguardSource
 	listeners       []net.Listener
@@ -90,9 +96,9 @@ type instanceState struct {
 }
 
 // New validates the mode and configuration without opening a listener.
-// Regular, upstream, reverse, DNS, WireGuard and TUN modes are admitted.
-// DNS and reverse HTTPS bind TCP and UDP on the same port. TUN has no listen
-// port; native device availability is checked by Start, not validation.
+// Regular, upstream, reverse, DNS, WireGuard, TUN and local modes are admitted.
+// DNS and reverse HTTPS bind TCP and UDP on the same port. TUN and local modes
+// have no listen port; native availability is checked by Start, not validation.
 // QUIC and HTTP/3 require listener integrations.
 // Unsupported modes return the same message used by proxyserver's configure.
 func New(mode modespec.Mode, cfg Config) (*Instance, error) {
@@ -114,6 +120,8 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 		kind = "wireguard"
 	case modespec.TunMode:
 		kind = "tun"
+	case modespec.LocalMode:
+		kind = "local"
 	case modespec.DNSMode:
 		kind = "dns"
 	case modespec.ReverseMode:
@@ -126,7 +134,7 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 		return nil, fmt.Errorf("Proxy mode %s is not supported by mitmproxy-go yet.", mode) //nolint:staticcheck // Preserve the user-facing unsupported-mode diagnostic.
 	}
 	port, ok := mode.ListenPort(cfg.ListenPort)
-	if kind != "tun" && (!ok || port < 0 || port > 65535) {
+	if kind != "tun" && kind != "local" && (!ok || port < 0 || port > 65535) {
 		return nil, fmt.Errorf("modeserver: invalid listen port %d", port)
 	}
 	host := mode.ListenHost(cfg.ListenHost)
@@ -141,7 +149,7 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 	if confDir == "" {
 		confDir = "~/.mitmproxy"
 	}
-	i := &Instance{mode: mode, handler: cfg.Handler, confDir: confDir, limiter: cfg.ClientLimiter, host: host, port: port, top: hookdata.LayerSpec{Kind: kind}, logger: logger}
+	i := &Instance{mode: mode, handler: cfg.Handler, confDir: confDir, redirector: cfg.LocalRedirector, limiter: cfg.ClientLimiter, host: host, port: port, top: hookdata.LayerSpec{Kind: kind}, logger: logger}
 	i.factories = registeredFactories(cfg.ListenerFactories)
 	i.listenTCP = new(net.ListenConfig).Listen
 	i.listenUDP = new(net.ListenConfig).ListenPacket
@@ -155,6 +163,9 @@ func (i *Instance) Mode() modespec.Mode { return i.mode }
 
 // IsRunning reports whether listeners or a native packet source are active.
 func (i *Instance) IsRunning() bool {
+	if _, ok := i.mode.(modespec.LocalMode); ok {
+		return currentLocal.Load() != nil
+	}
 	state := i.state.Load()
 	return state.tun != nil || len(state.addrs) != 0
 }
@@ -176,6 +187,9 @@ func (i *Instance) ListenAddrs() []connection.Address { return slices.Clone(i.st
 func (i *Instance) Start(ctx context.Context) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if _, ok := i.mode.(modespec.LocalMode); ok {
+		return i.startLocal(ctx)
+	}
 	if i.IsRunning() {
 		return nil
 	}
@@ -259,6 +273,14 @@ func (i *Instance) Stop() error {
 
 func (i *Instance) stopLocked() error {
 	state := i.state.Load()
+	if source := state.local; source != nil {
+		err := source.Close()
+		<-source.monitorDone
+		currentLocal.CompareAndSwap(i, nil)
+		i.state.Store(&instanceState{err: err})
+		i.logger.Info(i.mode.Description() + " stopped.")
+		return err
+	}
 	if source := state.tun; source != nil {
 		err := source.Close()
 		<-source.monitorDone

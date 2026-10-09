@@ -15,6 +15,7 @@ import (
 func init() {
 	layer.Register("wireguard", newDestinationMode)
 	layer.Register("tun", newDestinationMode)
+	layer.Register("local", newDestinationMode)
 }
 
 type destinationMode struct{ kind hookdata.LayerKind }

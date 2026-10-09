@@ -11,6 +11,9 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +26,7 @@ import (
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/internal/human"
+	"github.com/zchee/mitmproxy-go/internal/local"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 	"github.com/zchee/mitmproxy-go/internal/proxy/modeserver"
@@ -55,6 +59,11 @@ type ProxyServer struct {
 	cancel      context.CancelFunc
 	wake        chan struct{}
 	workers     sync.WaitGroup
+	localDaemon struct {
+		sync.Mutex
+		redirector local.Redirector
+		closed     bool
+	}
 }
 
 type serverState struct{ instances []*modeserver.Instance }
@@ -207,6 +216,15 @@ func (p *ProxyServer) run() {
 			}
 		}
 		p.connections.Close()
+		p.localDaemon.Lock()
+		p.localDaemon.closed = true
+		redirector := p.localDaemon.redirector
+		p.localDaemon.Unlock()
+		if redirector != nil {
+			if err := redirector.Close(); err != nil {
+				p.logger.Error("Closing local redirector", "error", err)
+			}
+		}
 	}()
 	for {
 		select {
@@ -228,11 +246,49 @@ func (p *ProxyServer) configuredInstances() ([]*modeserver.Instance, error) {
 		if err != nil {
 			return nil, options.Errorf("Invalid proxy mode specification: %s (%v)", spec, err)
 		}
+		if _, ok := mode.(modespec.LocalMode); ok {
+			redirector, err := func() (local.Redirector, error) {
+				p.localDaemon.Lock()
+				defer p.localDaemon.Unlock()
+				if p.localDaemon.closed || p.lifetime.Err() != nil {
+					return nil, net.ErrClosed
+				}
+				if p.localDaemon.redirector == nil {
+					dir := cfg.ConfDir
+					if rest, ok := strings.CutPrefix(dir, "~/"); ok || dir == "~" {
+						home, err := os.UserHomeDir()
+						if err != nil {
+							return nil, err
+						}
+						dir = filepath.Join(home, rest)
+					}
+					switch runtime.GOOS {
+					case "linux":
+						p.localDaemon.redirector = local.NewLinuxRedirector(dir, "")
+					case "darwin":
+						p.localDaemon.redirector = local.NewMacOSRedirector(dir, "")
+					case "windows":
+						p.localDaemon.redirector = local.NewWindowsRedirector(dir, "")
+					default:
+						return nil, errors.New(local.UnavailableReason(runtime.GOOS, 0))
+					}
+				}
+				return p.localDaemon.redirector, nil
+			}()
+			if err != nil {
+				return nil, options.Errorf("%s", err)
+			}
+			cfg.LocalRedirector = redirector
+		}
 		instance, err := modeserver.New(mode, cfg)
 		if err != nil {
 			return nil, options.Errorf("%s", err)
 		}
 		instances = append(instances, instance)
+		switch mode.(type) {
+		case modespec.LocalMode, modespec.TunMode:
+			continue
+		}
 		port, hasPort := mode.ListenPort(cfg.ListenPort)
 		if !hasPort {
 			continue

@@ -29,6 +29,8 @@ and why, is listed in [docs/compat.md](docs/compat.md).
 
 Go 1.27 or newer.
 
+Native local-mode manual acceptance: [macOS](docs/runbooks/local-mode-macos.md) and [Windows](docs/runbooks/local-mode-windows.md).
+
 ## Development
 
 ```sh

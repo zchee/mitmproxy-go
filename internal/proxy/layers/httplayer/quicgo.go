@@ -472,7 +472,9 @@ func http3OriginTLS(ctx context.Context, c *layer.Context) (*tls.Config, error) 
 	}
 	conf := &tls.Config{MinVersion: tls.VersionTLS13}
 	var paths []string
-	var directory, requiredPath string
+	var directory *string
+	var requiredPath string
+	var customTrust bool
 	if err := c.Do(ctx, func(context.Context) error {
 		settings := data.Settings
 		if settings == nil {
@@ -495,30 +497,33 @@ func http3OriginTLS(ctx context.Context, c *layer.Context) (*tls.Config, error) 
 			}
 			conf.Certificates = []tls.Certificate{certificate}
 		}
+		customTrust = settings.CAFile != nil || settings.CAPath != nil
 		if settings.CAFile != nil {
 			requiredPath = *settings.CAFile
 			paths = append(paths, requiredPath)
 		}
 		if settings.CAPath != nil {
-			directory = *settings.CAPath
+			directory = new(*settings.CAPath)
 		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	if directory != "" {
-		entries, err := os.ReadDir(directory)
+	if customTrust {
+		conf.RootCAs = x509.NewCertPool()
+	}
+	if directory != nil {
+		entries, err := os.ReadDir(*directory)
 		if err != nil {
 			return nil, fmt.Errorf("httplayer: QUIC trusted CA directory: %w", err)
 		}
 		for _, entry := range entries {
 			if !entry.IsDir() {
-				paths = append(paths, filepath.Join(directory, entry.Name()))
+				paths = append(paths, filepath.Join(*directory, entry.Name()))
 			}
 		}
 	}
 	if len(paths) != 0 {
-		conf.RootCAs = x509.NewCertPool()
 		for _, path := range paths {
 			required := path == requiredPath
 			pem, err := os.ReadFile(filepath.Clean(path))

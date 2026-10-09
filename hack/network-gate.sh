@@ -14,7 +14,8 @@ fail() {
 }
 
 required=(HTTP_LOAD_TAG HTTP_LOAD_PACKAGE HTTP_LOAD_ENV_NAME HTTP_LOAD_ENV_VALUE
-  HTTP_TRANSFER_TEST HTTP_UNRELATED_TEST HTTP_HEAP_TEST HTTP_SMALL_FRAME_HEAP_TEST
+  HTTP_TRANSFER_TEST HTTP_UNRELATED_TEST HTTP3_TRANSFER_TEST HTTP3_UNRELATED_TEST
+  HTTP_HEAP_TEST HTTP_SMALL_FRAME_HEAP_TEST
   HTTP_SSE_TEST HTTP_NETEM_TEST WS_GATE_RUNNER WS_CASE_MANIFEST WS_GATE_CONFIG)
 for name in "${required[@]}"; do
   [[ -n "${!name:-}" ]] || fail "missing required input ${name}"
@@ -45,7 +46,8 @@ sudo -n true
 
 binary="${output}/http-load.test"
 go test -tags "${HTTP_LOAD_TAG}" -c -o "${binary}" "${HTTP_LOAD_PACKAGE}"
-tests=("${HTTP_TRANSFER_TEST}" "${HTTP_UNRELATED_TEST}" "${HTTP_HEAP_TEST}"
+tests=("${HTTP_TRANSFER_TEST}" "${HTTP_UNRELATED_TEST}"
+  "${HTTP3_TRANSFER_TEST}" "${HTTP3_UNRELATED_TEST}" "${HTTP_HEAP_TEST}"
   "${HTTP_SMALL_FRAME_HEAP_TEST}" "${HTTP_SSE_TEST}" "${HTTP_NETEM_TEST}")
 for test_name in "${tests[@]}"; do
   [[ "${test_name}" =~ ^Test[A-Za-z0-9_]+$ ]] || fail "invalid top-level test name ${test_name}"
@@ -120,6 +122,8 @@ run_test() {
 # Each measurement owns its process and heap; no scenarios run concurrently.
 run_test transfer "${HTTP_TRANSFER_TEST}" 120s
 run_test unrelated-response "${HTTP_UNRELATED_TEST}" 120s
+run_test http3-transfer "${HTTP3_TRANSFER_TEST}" 120s
+run_test http3-unrelated-response "${HTTP3_UNRELATED_TEST}" 120s
 run_test heap-stalls "${HTTP_HEAP_TEST}" 300s
 run_test heap-small-frames "${HTTP_SMALL_FRAME_HEAP_TEST}" 300s
 run_test sse-latency "${HTTP_SSE_TEST}" 120s

@@ -22,7 +22,7 @@ jobs:
   network-gates:
     name: isolated network gates
     runs-on: ubuntu-26.04
-    # Scenario deadlines total 61 minutes; setup and evidence upload need margin.
+    # Scenario deadlines total 65 minutes; setup and evidence upload need margin.
     timeout-minutes: 75
     env:
       NETWORK_GATE_OUTPUT: ${{ github.workspace }}/_test/network-gate
@@ -32,6 +32,8 @@ jobs:
       HTTP_LOAD_ENV_VALUE: "1"
       HTTP_TRANSFER_TEST: TestHTTP2LoadLargeTransfer
       HTTP_UNRELATED_TEST: TestHTTP2LoadUnrelatedResponse
+      HTTP3_TRANSFER_TEST: TestHTTP3LoadLargeTransfer
+      HTTP3_UNRELATED_TEST: TestHTTP3LoadUnrelatedResponse
       HTTP_HEAP_TEST: TestHTTP2LoadHeapStalls
       HTTP_SMALL_FRAME_HEAP_TEST: TestHTTP2LoadHeapSmallWindow
       HTTP_SSE_TEST: TestHTTP2LoadSSELatency
@@ -43,7 +45,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version-file: go.mod
+          check-latest: true
       - name: Test incomplete gate configurations
         run: bash hack/network-gate_test.sh
       - name: Install network tools

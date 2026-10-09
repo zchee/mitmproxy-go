@@ -36,7 +36,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ matrix.go }}
+          go-version-file: go.mod
+          check-latest: true
       - name: go build and go vet
         run: go build ./... && go vet ./...
 
@@ -57,7 +58,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ matrix.go }}
+          go-version-file: go.mod
+          check-latest: true
       - name: go test -race
         run: go test -race -count=1 ./...
 
@@ -77,7 +79,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ matrix.go }}
+          go-version-file: go.mod
+          check-latest: true
       # Heap measurements exclude the race detector's allocation overhead.
       # The race-safe proxy tests already run in the test job above.
       - name: Proxy streaming integration tests
@@ -99,7 +102,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version-file: go.mod
+          check-latest: true
       - name: Authenticate against OpenLDAP
         env:
           MITMPROXY_TEST_LDAP_ADDRESS: 127.0.0.1:${{ job.services.openldap.ports['389'] }}
@@ -138,7 +142,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version-file: go.mod
+          check-latest: true
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
@@ -160,7 +165,22 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version-file: go.mod
+          check-latest: true
+      - name: Verify required protocol fuzz targets
+        run: |
+          set -euo pipefail
+          while read -r pkg target; do
+            listed="$(go test -list "^${target}$" "${pkg}")"
+            grep -Fx -- "${target}" <<<"${listed}" || {
+              echo "required fuzz target ${pkg} ${target} is absent" >&2
+              exit 1
+            }
+          done <<'TARGETS'
+          ./dns FuzzUnpack
+          ./tlsparse FuzzQUICClientHello
+          ./internal/h3 FuzzHeaders
+          TARGETS
       - name: Run every fuzz target for 30 seconds
         run: |
           set -euo pipefail
@@ -187,7 +207,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version-file: go.mod
+          check-latest: true
       - name: Install go-licenses
         run: |
           go install github.com/google/go-licenses/v2@v2.0.1
@@ -210,7 +231,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version-file: go.mod
+          check-latest: true
       # setup-uv has published no floating major tag since v8, so this pins
       # the full version and dependabot bumps it. Switch to "@vN" if upstream
       # publishes major tags again.

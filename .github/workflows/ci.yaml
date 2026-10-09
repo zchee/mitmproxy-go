@@ -60,8 +60,12 @@ jobs:
         with:
           go-version-file: go.mod
           check-latest: true
-      - name: go test -race
-        run: go test -race -count=1 ./...
+      - name: go test -race with skip report
+        env:
+          TEST_SKIPS_ENFORCE: ${{ vars.TEST_SKIPS_ENFORCE || '0' }}
+        run: |
+          set -euo pipefail
+          go test -race -count=1 -json ./... | bash hack/test-skips.sh
 
   stress:
     name: stress (${{ matrix.os }})
@@ -82,6 +86,8 @@ jobs:
           go-version-file: go.mod
           check-latest: true
       - name: Named race stress rows
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           mkdir -p stress-logs
@@ -93,7 +99,7 @@ jobs:
             echo "::group::${pkg} ${pattern}"
             {
               date '+%Y-%m-%d %H:%M:%S %Z'
-              git rev-parse HEAD
+              printf 'candidate_sha=%s\ncheckout_sha=%s\n' "${CANDIDATE_SHA}" "$(git rev-parse HEAD)"
               go version
               printf 'go test -race -count=%s -cpu=%s -timeout=60m -run %q %q\n' \
                 "${count}" "${cpu}" "${pattern}" "${pkg}"
@@ -105,7 +111,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: stress-${{ matrix.os }}-${{ github.sha }}
+          name: stress-${{ matrix.os }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: stress-logs/
           if-no-files-found: error
 
@@ -203,6 +209,8 @@ jobs:
           version: v2.14
           args: --build-tags difftest
           skip-save-cache: true
+      - name: Skip-report shell contracts
+        run: bash hack/test-skips_test.sh
 
   fuzz-smoke:
     runs-on: ubuntu-26.04

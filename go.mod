@@ -6,7 +6,7 @@ require (
 	codeberg.org/miekg/dns v0.6.118
 	github.com/andybalholm/brotli v1.2.6
 	github.com/dlclark/regexp2 v1.12.0
-	github.com/go-ldap/ldap/v3 v3.4.14
+	github.com/go-ldap/ldap/v3 v3.4.15
 	github.com/google/btree v1.1.3
 	github.com/google/go-cmp v0.7.0
 	github.com/itchyny/timefmt-go v0.1.9
@@ -24,9 +24,9 @@ require (
 	golang.org/x/net v0.60.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0
-	golang.zx2c4.com/wireguard v0.0.0-20260522210424-ecfc5a8d5446
+	golang.zx2c4.com/wireguard v0.0.0-20261006164505-2631ce99a06f
 	google.golang.org/protobuf v1.36.12
-	gvisor.dev/gvisor v0.0.0-20261004063249-f57b8fc79db4
+	gvisor.dev/gvisor v0.0.0-20261009044828-bd481cb16efb
 	software.sslmate.com/src/go-pkcs12 v0.7.3
 )
 
@@ -37,12 +37,12 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/pion/logging v0.2.4 // indirect
-	github.com/pion/transport/v5 v5.0.0 // indirect
+	github.com/pion/transport/v5 v5.1.1 // indirect
 	golang.design/x/x11 v0.2.0 // indirect
-	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
-	golang.org/x/exp/shiny v0.0.0-20261005173118-76772065c9b0 // indirect
+	golang.org/x/exp v0.0.0-20261007192929-f45ad48fbe92 // indirect
+	golang.org/x/exp/shiny v0.0.0-20261007192929-f45ad48fbe92 // indirect
 	golang.org/x/image v0.46.0 // indirect
 	golang.org/x/mobile v0.0.0-20260908204917-8b95e45f8d3e // indirect
-	golang.org/x/time v0.15.0 // indirect
+	golang.org/x/time v0.16.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 )

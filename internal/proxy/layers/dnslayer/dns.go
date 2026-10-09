@@ -37,6 +37,8 @@ func New() *Layer { return &Layer{} }
 // Kind returns the DNS protocol layer kind.
 func (*Layer) Kind() hookdata.LayerKind { return "dns" }
 
+const maxOutstandingTransactions = 1024
+
 type messageEvent struct {
 	wire       []byte
 	fromClient bool
@@ -122,15 +124,20 @@ func (*Layer) Run(ctx context.Context, c *layer.Context) (runErr error) {
 			}
 			f := o.flows[msg.ID]
 			if f == nil {
+				if len(o.flows) >= maxOutstandingTransactions {
+					err := fmt.Errorf("dnslayer: outstanding DNS transaction limit exceeded (%d)", maxOutstandingTransactions)
+					o.invalid(event.fromClient, err)
+					return err
+				}
 				if err := c.Do(ctx, func(context.Context) error { f = flow.NewDNSFlow(c.Data.Client, c.Data.Server, true); return nil }); err != nil {
 					return err
 				}
 				o.flows[msg.ID] = f
 			}
 			if event.fromClient {
-				err = o.request(f, msg)
+				err = o.request(msg.ID, f, msg)
 			} else {
-				err = o.response(f, msg)
+				err = o.response(msg.ID, f, msg)
 			}
 			if err != nil {
 				return err
@@ -201,7 +208,7 @@ func (o *owner) startServerReader() {
 	o.startReader(false, o.c.Server, o.c.ServerPackets)
 }
 
-func (o *owner) request(f *flow.DNSFlow, msg *dns.Message) error {
+func (o *owner) request(id int, f *flow.DNSFlow, msg *dns.Message) error {
 	snap, err := o.c.Hooks.FireFunc(o.ctx, func(context.Context) error { f.Request = msg; return nil }, addon.DNSRequestHook{Flow: f})
 	if err != nil {
 		return err
@@ -214,21 +221,21 @@ func (o *owner) request(f *flow.DNSFlow, msg *dns.Message) error {
 		return err
 	}
 	if response != nil {
-		return o.response(f, response)
+		return o.response(id, f, response)
 	}
 	if problem != "" {
-		return o.fail(f, problem)
+		return o.fail(id, f, problem)
 	}
 	var server *connection.Server
 	if err := o.c.Do(o.ctx, func(context.Context) error { server = o.c.Data.Server.Clone(); return nil }); err != nil {
 		return err
 	}
 	if server.Address == nil {
-		return o.fail(f, "No hook has set a response and there is no upstream server.")
+		return o.fail(id, f, "No hook has set a response and there is no upstream server.")
 	}
 	if o.c.Server == nil && o.c.ServerPackets == nil {
 		if err := o.open(server); err != nil {
-			return o.fail(f, err.Error())
+			return o.fail(id, f, err.Error())
 		}
 	}
 	return o.send(request, false)
@@ -268,7 +275,7 @@ func (o *owner) open(server *connection.Server) error {
 	return nil
 }
 
-func (o *owner) response(f *flow.DNSFlow, msg *dns.Message) error {
+func (o *owner) response(id int, f *flow.DNSFlow, msg *dns.Message) error {
 	snap, err := o.c.Hooks.FireFunc(o.ctx, func(context.Context) error { f.Response = msg; return nil }, addon.DNSResponseHook{Flow: f})
 	if err != nil {
 		return err
@@ -280,16 +287,34 @@ func (o *owner) response(f *flow.DNSFlow, msg *dns.Message) error {
 	if err != nil || response == nil {
 		return err
 	}
-	return o.send(response, true)
+	if err := o.send(response, true); err != nil {
+		return err
+	}
+	return o.finish(id, f)
 }
 
-func (o *owner) fail(f *flow.DNSFlow, reason string) error {
+func (o *owner) finish(id int, f *flow.DNSFlow) error {
+	if err := o.c.Do(o.ctx, func(context.Context) error {
+		f.Resume()
+		f.Live = false
+		return nil
+	}); err != nil {
+		return err
+	}
+	delete(o.flows, id)
+	return nil
+}
+
+func (o *owner) fail(id int, f *flow.DNSFlow, reason string) error {
 	snap, err := o.c.Hooks.FireFunc(o.ctx, func(context.Context) error { f.Error = flow.NewError(reason); return nil }, addon.DNSErrorHook{Flow: f})
 	if err != nil {
 		return err
 	}
 	if snap != nil && snap.Killed() {
 		return errors.New(flow.KilledMessage) //nolint:staticcheck // Preserve the upstream flow-killed diagnostic.
+	}
+	if err := o.finish(id, f); err != nil {
+		return err
 	}
 	request, _, _, err := o.snapshot(f)
 	if err != nil {

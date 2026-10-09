@@ -758,9 +758,13 @@ Replay API: `proxy.Replay` takes a `ReplayRunner` supplied as `httplayer.Replay`
 | Upstream | Go | Reason |
 |---|---|---|
 | All complete DNS TCP frames from one socket read are parsed before dispatch; a later malformed frame suppresses earlier frames in that read (`mitmproxy/proxy/layers/dns.py`). | Dispatches complete frames in order and closes at the first malformed frame. | Avoid flow construction depending on socket read boundaries. The difference is runtime-read-boundary-dependent, not a DNS message-semantic change. |
+| Retains each transaction ID's flow until shutdown, without an aggregate entry bound (`py:mitmproxy/proxy/layers/dns.py:61,67,164-169,180`). | Evicts after forwarding a response and running `dns_response`, or after `dns_error`, first calling Resume and clearing Live. Unanswered retransmissions reuse the flow, run `dns_request` per arrival and forward again. A response for an evicted ID creates a requestless flow, fires `dns_response` and is forwarded like a never-seen ID (`py:mitmproxy/proxy/layers/dns.py:71-101`). A hook-removed response remains outstanding. At 1,024 outstanding IDs, another new ID follows the invalid-message path and ends the connection; the handler evicts a UDP tuple. | Bound traffic-driven retention while preserving unanswered retransmissions and intercepted-flow ownership. |
 
 Malformed UDP/TCP input closes/logs without creating a DNS flow or firing dns_error. A separate valid-flow failure
 fires one error hook and answers SERVFAIL; no FORMERR response is fabricated. Other active tuples remain usable.
+
+`TestDNSTransactionCompletion` pins the intentional deviation:
+"resend after the answer creates a new flow".
 
 ## internal/h3
 

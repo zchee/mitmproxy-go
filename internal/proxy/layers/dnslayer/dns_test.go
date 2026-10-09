@@ -334,7 +334,10 @@ func TestTCPFramingAndResend(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			s := newSession(t, false, &observer{request: func(_ context.Context, f *flow.DNSFlow) error { f.Response = f.Request.Succeed(nil); return nil }})
+			s := newSession(t, false, nil)
+			origin := newSession(t, false, nil)
+			s.context.Server = origin.context.Client
+			s.context.Data.Server.Address = &connection.Address{Host: "example.test", Port: 53}
 			if tt.fragmented {
 				s.context.Client = byteReader{s.context.Client}
 			}
@@ -357,7 +360,15 @@ func TestTCPFramingAndResend(t *testing.T) {
 			if _, err := s.client.Write(wire); err != nil {
 				t.Fatal(err)
 			}
+			// Preservation: receive every request, including the unanswered resend,
+			// before releasing any answer from the origin.
 			for _, id := range []int{17, 18, 17} {
+				if got := origin.read(t); got.ID != id {
+					t.Fatalf("request ID = %d, want %d", got.ID, id)
+				}
+			}
+			for _, id := range []int{18, 17} {
+				origin.write(t, query(id).Succeed(nil))
 				if got := s.read(t); got.ID != id {
 					t.Fatalf("response ID = %d, want %d", got.ID, id)
 				}

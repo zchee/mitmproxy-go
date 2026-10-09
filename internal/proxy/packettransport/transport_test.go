@@ -19,17 +19,23 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 )
 
+type testPacketDelivery struct {
+	n    int
+	addr net.Addr
+	err  error
+}
+
 type observedTestPacketRead struct {
 	net.PacketConn
 	ready    chan struct{}
-	received chan error
+	received chan testPacketDelivery
 	once     sync.Once
 }
 
 func (c *observedTestPacketRead) ReadFrom(p []byte) (int, net.Addr, error) {
 	c.once.Do(func() { close(c.ready) })
 	n, addr, err := c.PacketConn.ReadFrom(p)
-	c.received <- err
+	c.received <- testPacketDelivery{n, addr, err}
 	return n, addr, err
 }
 
@@ -56,7 +62,7 @@ func newTestListener(t *testing.T) (*Listener, *net.UDPConn) {
 		_ = socket.Close()
 		t.Fatal(err)
 	}
-	observed := &observedTestPacketRead{PacketConn: socket, ready: make(chan struct{}), received: make(chan error, layer.PacketQueueCapacity+1)}
+	observed := &observedTestPacketRead{PacketConn: socket, ready: make(chan struct{}), received: make(chan testPacketDelivery, layer.PacketQueueCapacity+1)}
 	listener := NewListener(t.Context(), observed)
 	t.Cleanup(func() { _ = listener.Close() })
 	peer, err := net.DialUDP("udp", nil, socket.LocalAddr().(*net.UDPAddr))
@@ -90,11 +96,12 @@ func acceptTestTuple(t *testing.T, listener *Listener, peer *net.UDPConn, payloa
 		t.Fatal(err)
 	}
 	if observedRead {
-		if err := awaitPacketSignal(t, observed.received, "first datagram socket delivery"); err != nil {
-			t.Fatal(err)
+		result := awaitPacketSignal(t, observed.received, "first datagram socket delivery (tuple not yet admitted)")
+		if result.err != nil || result.n != len(payload) || result.addr.String() != peer.LocalAddr().String() {
+			t.Fatalf("first socket delivery = (%d, %v, %v), want (%d, %v, nil)", result.n, result.addr, result.err, len(payload), peer.LocalAddr())
 		}
 	}
-	result := awaitPacketSignal(t, accepted, "tuple admission after first datagram")
+	result := awaitPacketSignal(t, accepted, "tuple admission (first datagram delivered)")
 	if result.err != nil {
 		t.Fatal(result.err)
 	}
@@ -120,6 +127,7 @@ func readTestPacket(t *testing.T, input net.PacketConn, buf []byte) (int, net.Ad
 	return result.n, result.addr, result.err
 }
 
+// TestTuplePackets is a preservation row for admission and datagram boundaries.
 func TestTuplePackets(t *testing.T) {
 	tests := map[string]struct {
 		packets [][]byte
@@ -137,8 +145,9 @@ func TestTuplePackets(t *testing.T) {
 				if _, err := peer.Write(payload); err != nil {
 					t.Fatal(err)
 				}
-				if err := awaitPacketSignal(t, listener.socket.(*observedTestPacketRead).received, "following datagram socket delivery"); err != nil {
-					t.Fatal(err)
+				result := awaitPacketSignal(t, listener.socket.(*observedTestPacketRead).received, "following datagram socket delivery (tuple admitted)")
+				if result.err != nil || result.n != len(payload) || result.addr.String() != peer.LocalAddr().String() {
+					t.Fatalf("following socket delivery = (%d, %v, %v), want (%d, %v, nil)", result.n, result.addr, result.err, len(payload), peer.LocalAddr())
 				}
 			}
 			for _, payload := range test.packets {

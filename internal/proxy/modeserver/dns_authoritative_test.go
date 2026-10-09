@@ -5,8 +5,10 @@ package modeserver
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/netip"
+	"runtime"
 	"testing"
 	"time"
 
@@ -18,11 +20,12 @@ import (
 	"github.com/zchee/mitmproxy-go/options"
 )
 
+// TestReverseDNSAuthoritativeTransports is a preservation row for real origin delivery.
 func TestReverseDNSAuthoritativeTransports(t *testing.T) {
 	tests := map[string]struct{ network string }{"UDP": {"udp"}, "TCP": {"tcp"}}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			cfg, m, _ := fixture(t)
+			cfg, m, lifecycle := fixture(t)
 			if err := m.Options.Add(t.Context(), "connection_strategy", options.TypeStr, "eager", "Server connection strategy."); err != nil {
 				t.Fatal(err)
 			}
@@ -62,10 +65,35 @@ func TestReverseDNSAuthoritativeTransports(t *testing.T) {
 			}
 			client := &miekg.Client{Transport: &miekg.Transport{Dialer: &net.Dialer{Timeout: 30 * time.Second}, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}}
 			request := miekg.NewMsg("example.test", miekg.TypeA)
-			response, _, err := client.Exchange(t.Context(), request, tt.network, instance.ListenAddrs()[0].String())
-			if err != nil {
-				t.Fatalf("DNS exchange: %v; request hooks=%d response hooks=%d error hooks=%d origin replies=%d", err, len(hooks.requests), len(hooks.responses), len(hooks.errors), len(served))
+			delivered := make(chan struct {
+				response *miekg.Msg
+				err      error
+			}, 1)
+			go func() {
+				response, _, err := client.Exchange(t.Context(), request, tt.network, instance.ListenAddrs()[0].String())
+				delivered <- struct {
+					response *miekg.Msg
+					err      error
+				}{response, err}
+			}()
+			admitted, requestDelivered, originReplied := false, false, false
+			progress := func() string {
+				return fmt.Sprintf("admitted=%t request delivered=%t origin replied=%t; pending response hooks=%d error hooks=%d client deliveries=%d", admitted, requestDelivered, originReplied, len(hooks.responses), len(hooks.errors), len(delivered))
 			}
+			awaitFixtureSignal(t, lifecycle.connected, "DNS client admission", progress)
+			admitted = true
+			requestFlow := awaitFixtureSignal(t, hooks.requests, "DNS request delivery", progress)
+			requestDelivered = true
+			if err := awaitFixtureSignal(t, served, "DNS origin reply", progress); err != nil {
+				t.Fatal(err)
+			}
+			originReplied = true
+			result := awaitFixtureSignal(t, delivered, "DNS client response delivery", progress)
+			if result.err != nil {
+				stack := make([]byte, 1<<20)
+				t.Fatalf("DNS exchange: %v; %s\n%s", result.err, progress(), stack[:runtime.Stack(stack, true)])
+			}
+			response := result.response
 			if !response.Response || !response.Authoritative || response.ID != request.ID || len(response.Answer) != 1 {
 				t.Fatalf("unexpected authoritative response: %s", response)
 			}
@@ -79,10 +107,7 @@ func TestReverseDNSAuthoritativeTransports(t *testing.T) {
 			if answer.Hdr.TTL != 60 {
 				t.Fatalf("upstream TTL changed: %d", answer.Hdr.TTL)
 			}
-			if err := await(t, served); err != nil {
-				t.Fatal(err)
-			}
-			if await(t, hooks.requests) != await(t, hooks.responses) {
+			if requestFlow != awaitFixtureSignal(t, hooks.responses, "DNS response hook", progress) {
 				t.Fatal("request and response used different flows")
 			}
 			if err := instance.Stop(); err != nil {

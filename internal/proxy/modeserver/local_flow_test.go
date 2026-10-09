@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -56,6 +57,7 @@ func (o *localDestinationObserver) NextLayer(_ context.Context, value *hookdata.
 	return nil
 }
 
+// TestLocalIPCOrigins is a preservation row for native IPC origin delivery.
 func TestLocalIPCOrigins(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		return
@@ -76,6 +78,7 @@ func TestLocalIPCOrigins(t *testing.T) {
 				t.Fatal(err)
 			}
 			var expected connection.Address
+			var admittedMode string
 			instance := localIPCMode(t, cfg, redirector, "local")
 			t.Cleanup(func() { _ = instance.Stop() })
 			if err := instance.Start(t.Context()); err != nil {
@@ -97,20 +100,35 @@ func TestLocalIPCOrigins(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer func() { _ = origin.Close() }()
-				if err := origin.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
-					t.Fatal(err)
+				delivered := make(chan struct {
+					data   []byte
+					client net.Addr
+					err    error
+				}, 1)
+				go func() {
+					data := make([]byte, 64)
+					n, client, err := origin.ReadFrom(data)
+					delivered <- struct {
+						data   []byte
+						client net.Addr
+						err    error
+					}{data[:n], client, err}
+				}()
+				progress := func() string {
+					return fmt.Sprintf("admitted=%t; pending destination hooks=%d origin deliveries=%d", admittedMode != "", len(observer.destinations), len(delivered))
 				}
 				destination := origin.LocalAddr().(*net.UDPAddr)
 				expected = connection.Address{Host: destination.IP.String(), Port: destination.Port}
 				address := &local.Address{Host: destination.IP.String(), Port: uint32(destination.Port)}
 				localIPCWrite(t, peer, &local.NewFlow{Message: &local.NewFlow_Udp{Udp: &local.UdpFlow{LocalAddress: &local.Address{Host: "10.0.0.1", Port: 4242}, TunnelInfo: tunnel}}})
 				localIPCWrite(t, peer, &local.UdpPacket{RemoteAddress: address, Data: []byte("local-udp")})
-				data := make([]byte, 64)
-				n, client, err := origin.ReadFrom(data)
-				if err != nil || string(data[:n]) != "local-udp" {
-					t.Fatalf("UDP origin = %q, %v", data[:n], err)
+				admittedMode = awaitFixtureSignal(t, hooks.connected, "local UDP tuple admission", progress)
+				result := awaitFixtureSignal(t, delivered, "local UDP origin datagram delivery", progress)
+				if result.err != nil || string(result.data) != "local-udp" {
+					stack := make([]byte, 1<<20)
+					t.Fatalf("UDP origin = %q, %v; %s\n%s", result.data, result.err, progress(), stack[:runtime.Stack(stack, true)])
 				}
-				if _, err := origin.WriteTo(data[:n], client); err != nil {
+				if _, err := origin.WriteTo(result.data, result.client); err != nil {
 					t.Fatal(err)
 				}
 				var reply local.UdpPacket
@@ -158,8 +176,11 @@ func TestLocalIPCOrigins(t *testing.T) {
 			if got := await(t, observer.destinations); got != expected {
 				t.Fatalf("destination before next-layer hook = %v, want %v", got, expected)
 			}
-			if mode := await(t, hooks.connected); mode != "local" {
-				t.Fatalf("hook mode = %q", mode)
+			if admittedMode == "" {
+				admittedMode = await(t, hooks.connected)
+			}
+			if admittedMode != "local" {
+				t.Fatalf("hook mode = %q", admittedMode)
 			}
 		})
 	}

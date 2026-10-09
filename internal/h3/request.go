@@ -136,6 +136,9 @@ func (e *Endpoint) Send(ctx context.Context, event Event) error {
 		return err
 	}
 	if err := take(ctx, s.sendLock, e.done); err != nil {
+		if errors.Is(err, io.EOF) {
+			return e.endError()
+		}
 		return err
 	}
 	defer func() { <-s.sendLock }()

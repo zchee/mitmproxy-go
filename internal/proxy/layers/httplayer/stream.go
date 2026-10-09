@@ -573,7 +573,6 @@ func (s *httpStream) fail(ctx context.Context, message string, code ErrorCode, c
 	s.request.body, s.response.body = nil, nil
 	s.request.trailers, s.response.trailers = nil, nil
 	if s.flow != nil && !s.errorHook && !s.responseHook {
-		s.errorHook = true
 		var err error
 		s.snapshot, err = s.fireHook(ctx, func(context.Context) error {
 			s.flow.Error = flow.NewError(message)
@@ -582,6 +581,7 @@ func (s *httpStream) fail(ctx context.Context, message string, code ErrorCode, c
 		if err != nil {
 			return streamOutput{}, err
 		}
+		s.errorHook = true
 		if s.snapshot.Killed() {
 			code = Kill
 		}

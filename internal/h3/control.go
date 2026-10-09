@@ -189,6 +189,9 @@ func (e *Endpoint) controlFrame(ctx context.Context, kind uint64, payload []byte
 		return err
 	}
 	if err := take(ctx, e.controlLock, e.done); err != nil {
+		if errors.Is(err, io.EOF) {
+			return e.endError()
+		}
 		return err
 	}
 	defer func() { <-e.controlLock }()

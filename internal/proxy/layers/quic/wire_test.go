@@ -70,6 +70,8 @@ type wireObserver struct {
 	preserveSettings    bool
 	clientSettings      *hookdata.QUICTLSSettings
 	clientTLS           *hookdata.QUICTLS
+	originKeyLog        io.Writer
+	originPackets       func(net.PacketConn) net.PacketConn
 }
 
 func (o *wireObserver) TLSClientHello(_ context.Context, d *hookdata.ClientHello) error {
@@ -238,6 +240,7 @@ func newWireSession(t *testing.T, optsMap map[string]any, observe *wireObserver)
 		}
 	})
 	originTLS, rootPEM := originCertificate(t)
+	originTLS.KeyLogWriter = observe.originKeyLog
 	if observe.preserveSettings {
 		leaf, err := x509.ParseCertificate(originTLS.Certificates[0].Certificate[0])
 		if err != nil {
@@ -253,6 +256,9 @@ func newWireSession(t *testing.T, optsMap map[string]any, observe *wireObserver)
 	s.originSocket, err = net.ListenPacket("udp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if observe.originPackets != nil {
+		s.originSocket = observe.originPackets(s.originSocket)
 	}
 	// ListenAddr hides a transport that outlives Listener.Close while closed
 	// connection IDs remain cached. Own it explicitly so leak checks follow joins.

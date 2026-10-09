@@ -29,6 +29,7 @@ type Endpoint struct {
 	started         chan struct{}
 	ready           chan struct{}
 	done            chan struct{}
+	failed          chan struct{}
 	changed         chan struct{}
 	workers         sync.WaitGroup
 	streams         map[uint64]*requestState
@@ -173,6 +174,9 @@ func (e *Endpoint) fail(err error) {
 		return
 	}
 	e.err = err
+	// Notify consumers before CloseWithError waits for transport context
+	// publication. Critical-stream cancellation still follows the wire close.
+	close(e.failed)
 	e.mu.Unlock()
 	if failure, ok := errors.AsType[*ConnectionError](err); ok {
 		e.cfg.Logger.Debug("HTTP/3 connection failed", "code", failure.Code.String(), "error", failure.Message)
@@ -206,7 +210,7 @@ func (e *Endpoint) waitStarted(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-e.done:
-		return io.EOF
+		return e.endError()
 	}
 }
 
@@ -217,10 +221,18 @@ func (e *Endpoint) Receive(ctx context.Context) (Event, error) {
 		return Event{}, err
 	}
 	if err := take(ctx, e.receiveLock, e.done); err != nil {
+		if errors.Is(err, io.EOF) {
+			return Event{}, e.endError()
+		}
 		return Event{}, err
 	}
 	defer func() { <-e.receiveLock }()
 	var event Event
+	select {
+	case <-e.failed:
+		return Event{}, e.endError()
+	default:
+	}
 	select {
 	case event = <-e.notifications:
 	default:
@@ -228,6 +240,8 @@ func (e *Endpoint) Receive(ctx context.Context) (Event, error) {
 		case event = <-e.notifications:
 		case <-ctx.Done():
 			return Event{}, ctx.Err()
+		case <-e.failed:
+			return Event{}, e.endError()
 		case <-e.done:
 			return Event{}, e.endError()
 		}
@@ -283,6 +297,9 @@ func (e *Endpoint) ReceiveStream(ctx context.Context, id layer.StreamIdentity) (
 		return Event{}, err
 	}
 	if err := take(ctx, s.receiveLock, e.done); err != nil {
+		if errors.Is(err, io.EOF) {
+			return Event{}, e.endError()
+		}
 		return Event{}, err
 	}
 	defer func() { <-s.receiveLock }()
@@ -350,6 +367,8 @@ func (e *Endpoint) ReceiveStream(ctx context.Context, id layer.StreamIdentity) (
 		case <-changed:
 		case <-ctx.Done():
 			return Event{}, ctx.Err()
+		case <-e.failed:
+			return Event{}, e.endError()
 		case <-e.done:
 			return Event{}, e.endError()
 		}

@@ -95,7 +95,7 @@ func New(conn *quic.Conn, cfg Config) (*Endpoint, error) {
 		cfg.Logger = slog.Default()
 	}
 	return &Endpoint{
-		conn: &quicConnection{conn: conn}, cfg: cfg, done: make(chan struct{}),
+		conn: &quicConnection{conn: conn}, cfg: cfg, done: make(chan struct{}), failed: make(chan struct{}),
 		started: make(chan struct{}), ready: make(chan struct{}), changed: make(chan struct{}),
 		streams: make(map[uint64]*requestState), notifications: make(chan Event, 2*MaxConcurrentStreams),
 		controlLock: make(chan struct{}, 1), receiveLock: make(chan struct{}, 1),

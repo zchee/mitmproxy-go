@@ -95,7 +95,7 @@ func (l *httpLayer) RunQUIC(ctx context.Context, c *layer.Context, client, serve
 	}
 	lifecycle := ctx
 	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	exchangeCtx, cancelExchanges := context.WithCancel(context.WithoutCancel(lifecycle))
+	exchangeCtx, cancelExchanges := context.WithCancelCause(context.WithoutCancel(lifecycle))
 	var exchanges sync.WaitGroup
 	endpoints := newHTTPOrigins(ctx)
 	defer endpoints.stop()
@@ -105,50 +105,62 @@ func (l *httpLayer) RunQUIC(ctx context.Context, c *layer.Context, client, serve
 		}
 		return nil
 	}); err != nil {
-		cancelExchanges()
+		cancelExchanges(result)
 		cancel()
 		return err
 	}
 	var workers sync.WaitGroup
+	var failureSource *quic.Conn
 	defer func() {
-		// Publish an abort before cancellation can reset critical streams and
-		// make the peer report a different connection failure.
+		// A connection failure must reach terminal hooks before closing the
+		// opposite endpoint can introduce a competing local cleanup error.
 		if failure, ok := errors.AsType[*h3.ConnectionError](result); ok && failure.Code != h3.ErrCodeNoError && failure.Code != 0 {
-			_ = client.CloseWithError(quic.ApplicationErrorCode(failure.Code), "")
-			_ = server.CloseWithError(quic.ApplicationErrorCode(failure.Code), "")
+			cancelExchanges(result)
+			exchanges.Wait()
+			// The source engine already initiated its close. Re-closing it can
+			// block behind transport context publication and delay error hooks.
+			for _, conn := range []*quic.Conn{client, server} {
+				if conn != failureSource {
+					_ = conn.CloseWithError(quic.ApplicationErrorCode(failure.Code), "")
+				}
+			}
 		}
 		if client.Context().Err() != nil || server.Context().Err() != nil {
 			clock := c.Clock
 			if clock == nil {
 				clock = layer.WallClock
 			}
-			stop := clock.AfterFunc(http3DrainTimeout, cancelExchanges)
+			stop := clock.AfterFunc(http3DrainTimeout, func() { cancelExchanges(result) })
 			defer stop()
 		} else {
-			cancelExchanges()
+			cancelExchanges(result)
 		}
 		exchanges.Wait()
-		cancelExchanges()
+		cancelExchanges(result)
 		cancel()
 		workers.Wait()
 	}()
 	heads := make(chan h3.Event)
-	failures := make(chan error, 4)
-	report := func(err error) {
+	type endpointFailure struct {
+		conn *quic.Conn
+		err  error
+	}
+	failures := make(chan endpointFailure, 4)
+	report := func(conn *quic.Conn, err error) {
 		select {
-		case failures <- err:
+		case failures <- endpointFailure{conn: conn, err: err}:
 		case <-ctx.Done():
 		}
 	}
-	workers.Go(func() { report(incoming.Run(ctx)) })
-	workers.Go(func() { report(outgoing.Run(ctx)) })
+	workers.Go(func() { report(client, incoming.Run(ctx)) })
+	workers.Go(func() { report(server, outgoing.Run(ctx)) })
 	// Exactly one owner consumes each connection notification queue. Response
 	// payloads stay in their per-stream queues and are read by exchange owners.
 	workers.Go(func() {
 		for {
 			head, err := incoming.Receive(ctx)
 			if err != nil {
-				report(err)
+				report(client, err)
 				return
 			}
 			if head.Kind != h3.Headers {
@@ -164,7 +176,7 @@ func (l *httpLayer) RunQUIC(ctx context.Context, c *layer.Context, client, serve
 	workers.Go(func() {
 		for {
 			if _, err := outgoing.Receive(ctx); err != nil {
-				report(err)
+				report(server, err)
 				return
 			}
 		}
@@ -174,11 +186,12 @@ func (l *httpLayer) RunQUIC(ctx context.Context, c *layer.Context, client, serve
 		select {
 		case <-lifecycle.Done():
 			return lifecycle.Err()
-		case err := <-failures:
-			if errors.Is(err, io.EOF) {
+		case failure := <-failures:
+			failureSource = failure.conn
+			if errors.Is(failure.err, io.EOF) {
 				return nil
 			}
-			return err
+			return failure.err
 		case head := <-heads:
 			derived := *c
 			var data hookdata.Context
@@ -209,9 +222,13 @@ func (l *httpLayer) RunQUIC(ctx context.Context, c *layer.Context, client, serve
 				if err := (&streamDriver{stream: stream, client: clientEndpoint, server: origin}).run(exchangeCtx); err != nil {
 					// External cancellation stops wire work immediately, but terminal
 					// hook publication remains owned and joined by this exchange.
-					if stream.flow != nil && !stream.done() {
+					if stream.flow != nil && !stream.responseHook && (!stream.request.done || !stream.response.done) {
 						endCtx, stop := context.WithTimeout(context.WithoutCancel(lifecycle), layer.TerminalHookTimeout)
-						_, endErr := stream.fail(endCtx, "peer closed connection", ClientDisconnected, err)
+						cause, message := err, "peer closed connection"
+						if failure, ok := errors.AsType[*h3.ConnectionError](context.Cause(exchangeCtx)); ok {
+							cause, message = failure, failure.Error()
+						}
+						_, endErr := stream.fail(endCtx, message, ClientDisconnected, cause)
 						stop()
 						err = errors.Join(err, endErr)
 					}

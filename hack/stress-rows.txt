@@ -1,4 +1,6 @@
 ./internal/proxy/layers/httplayer	^TestHTTP3ConsumerClientAborts$	200	1,2,8
+./internal/proxy/layers/httplayer	^TestHTTP3ConsumerAbortBeforeContextPublication$	200	1,2,8
+./internal/h3	.	200	1,2,8
 ./internal/proxy/layers/quic	.	50	1,2,8
 ./internal/wireguard	.	50	1,2,8
 ./internal/h2	.	50	1,2,8

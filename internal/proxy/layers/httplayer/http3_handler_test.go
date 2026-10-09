@@ -192,11 +192,13 @@ func TestHTTP3DefaultHandlerPairing(t *testing.T) {
 				if err != nil {
 					return
 				}
-				startHTTP3RoutingPeer(t, runCtx, origin)
 				if test.tcpOrigin {
+					// Fixture-sensitivity: the rerouted TCP response may finish
+					// before this unused QUIC peer opens its critical streams.
 					<-runCtx.Done()
 					return
 				}
+				startHTTP3RoutingPeer(t, runCtx, origin)
 				stream, err := origin.AcceptStream(runCtx)
 				if err != nil {
 					t.Error(err)

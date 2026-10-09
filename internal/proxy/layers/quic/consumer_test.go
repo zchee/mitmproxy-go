@@ -19,7 +19,18 @@ import (
 
 var consumerFixtures sync.Map
 
-type consumerFixtureLayer struct{ *RawQuicLayer }
+type consumerFixtureLayer struct {
+	*RawQuicLayer
+	returned func(error)
+}
+
+func (l *consumerFixtureLayer) Run(ctx context.Context, c *layer.Context) error {
+	err := l.RawQuicLayer.Run(ctx, c)
+	if l.returned != nil {
+		l.returned(err)
+	}
+	return err
+}
 
 func (*consumerFixtureLayer) Kind() hookdata.LayerKind { return "quic-consumer-test" }
 
@@ -29,7 +40,11 @@ func init() {
 		if !ok {
 			return nil, errors.New("missing test consumer")
 		}
-		return &consumerFixtureLayer{NewRawQuicLayer(value.(ConnectionConsumer))}, nil
+		fixture := &consumerFixtureLayer{RawQuicLayer: NewRawQuicLayer(value.(ConnectionConsumer))}
+		if observer, ok := value.(interface{ rawReturned(error) }); ok {
+			fixture.returned = observer.rawReturned
+		}
+		return fixture, nil
 	})
 }
 

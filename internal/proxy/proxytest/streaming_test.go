@@ -28,12 +28,13 @@ import (
 )
 
 type bodyStreamHooks struct {
-	upload    bool
-	transform bool
-	headers   atomic.Int32
-	complete  atomic.Int32
-	final     atomic.Int32
-	done      chan bool
+	upload          bool
+	transform       bool
+	headers         atomic.Int32
+	complete        atomic.Int32
+	final           atomic.Int32
+	done            chan bool
+	requestObserved chan struct{}
 }
 
 func (a *bodyStreamHooks) RequestHeaders(_ context.Context, f *flow.HTTPFlow) error {
@@ -53,6 +54,9 @@ func (a *bodyStreamHooks) ResponseHeaders(_ context.Context, f *flow.HTTPFlow) e
 func (a *bodyStreamHooks) Request(_ context.Context, f *flow.HTTPFlow) error {
 	if a.upload {
 		a.complete.Add(1)
+		if a.requestObserved != nil {
+			close(a.requestObserved)
+		}
 		a.done <- f.Request.RawContent == nil
 	}
 	return nil
@@ -78,6 +82,8 @@ func (a *bodyStreamHooks) prepare(message *httpmsg.Message) {
 	}
 }
 
+// TestLargeBodyStreaming preserves bounded streaming with request-hook ordering.
+// Fixture hardening does not establish a production regression.
 func TestLargeBodyStreaming(t *testing.T) {
 	const bodySize = 100 << 20
 	tests := map[string]struct{ upload bool }{
@@ -86,7 +92,7 @@ func TestLargeBodyStreaming(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			hooks := &bodyStreamHooks{upload: tt.upload, done: make(chan bool, 2)}
+			hooks := &bodyStreamHooks{upload: tt.upload, done: make(chan bool, 2), requestObserved: make(chan struct{})}
 			tail := make(chan struct{})
 			releaseTail := sync.OnceFunc(func() { close(tail) })
 			writeBody := func(w io.Writer) error {
@@ -151,6 +157,18 @@ func TestLargeBodyStreaming(t *testing.T) {
 				defer func() { _ = request.Body.Close() }()
 				if tt.upload {
 					err = readBody(request.Body)
+					if err == nil {
+						// A fast response must not tear down the exchange before its
+						// completed request has reached the addon dispatcher.
+						select {
+						case <-hooks.requestObserved:
+						case <-t.Context().Done():
+							err = t.Context().Err()
+						case <-time.After(30 * time.Second):
+							buf := make([]byte, 1<<20)
+							err = fmt.Errorf("waiting for test event request hook hung; arrived header hooks=%d completion hooks=%d\n%s", hooks.headers.Load(), hooks.complete.Load(), buf[:runtime.Stack(buf, true)])
+						}
+					}
 					if err == nil {
 						_, err = io.WriteString(conn, "HTTP/1.1 204 No Content\r\n\r\n")
 					}
@@ -222,10 +240,14 @@ func TestLargeBodyStreaming(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := receive(t, originDone); err != nil {
+			if err := receive(t, originDone, testEvent{name: "origin body transfer", arrived: p.Recorder.Hooks}); err != nil {
 				t.Fatalf("origin transfer: %v", err)
 			}
-			if rawNil := receive(t, hooks.done); !rawNil {
+			completionHook := "response"
+			if tt.upload {
+				completionHook = "request"
+			}
+			if rawNil := receive(t, hooks.done, testEvent{name: completionHook, arrived: p.Recorder.Hooks}); !rawNil {
 				t.Fatal("completion hook retained the streamed body")
 			}
 			if got := hooks.complete.Load(); got != 1 {

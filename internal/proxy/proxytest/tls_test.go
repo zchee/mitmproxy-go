@@ -124,7 +124,7 @@ func TestOriginTLSFailures(t *testing.T) {
 			if err := client.HandshakeContext(t.Context()); err != nil {
 				t.Fatalf("client TLS after origin failure: %v", err)
 			}
-			message := receive(t, failed.server)
+			message := receive(t, failed.server, testEvent{name: "tls_failed_server", arrived: p.Recorder.Hooks})
 			if !strings.Contains(message, tt.want) {
 				t.Fatalf("tls_failed_server error = %q, want substring %q", message, tt.want)
 			}
@@ -147,7 +147,7 @@ func TestClientTLSFailure(t *testing.T) {
 	if err := client.HandshakeContext(t.Context()); err == nil {
 		t.Fatal("client trusted the proxy without its CA")
 	}
-	if message := receive(t, failed.client); message == "" {
+	if message := receive(t, failed.client, testEvent{name: "tls_failed_client", arrived: p.Recorder.Hooks}); message == "" {
 		t.Fatal("tls_failed_client did not publish its error")
 	}
 }
@@ -171,14 +171,27 @@ func (f *tlsFailures) TLSFailedServer(_ context.Context, data *hookdata.TLS) err
 	return nil
 }
 
-func receive[T any](t *testing.T, ch <-chan T) T {
+type testEvent struct {
+	name    string
+	arrived func() []string
+}
+
+func receive[T any](t *testing.T, ch <-chan T, events ...testEvent) T {
 	t.Helper()
 	select {
 	case value := <-ch:
 		return value
 	case <-time.After(30 * time.Second):
+		name := t.Name()
+		var arrived []string
+		if len(events) > 0 {
+			name = events[0].name
+			if events[0].arrived != nil {
+				arrived = events[0].arrived()
+			}
+		}
 		buf := make([]byte, 1<<20)
-		t.Fatalf("waiting for test event hung\n%s", buf[:runtime.Stack(buf, true)])
+		t.Fatalf("waiting for test event %q hung; arrived hooks=%v\n%s", name, arrived, buf[:runtime.Stack(buf, true)])
 		var zero T
 		return zero
 	}

@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"sync"
 	"time"
 
 	"golang.zx2c4.com/wireguard/device"
@@ -19,18 +20,19 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/netstack"
 )
 
-// Server owns one encrypted client tunnel and its socket and virtual packet device.
+// Server owns encrypted client tunnels sharing one bound socket.
 // The supplied IP stack remains owned by the caller.
 type Server struct {
-	engine *device.Device
-	bind   *socketBind
-	cancel context.CancelFunc
-	addr   netip.AddrPort
-	done   chan struct{}
-	err    error
+	engines []*device.Device
+	cancel  context.CancelFunc
+	addr    netip.AddrPort
+	done    chan struct{}
+	err     error
 }
 
-// New synchronously configures and starts a single client peer over socket.
+// New synchronously configures and starts the ordered client peers over socket.
+// Authenticated source addresses learn the last sending peer; unseen outbound
+// destinations use the first configured peer.
 // It consumes the bound UDP socket even on error, but never closes stack.
 // While active, it exclusively consumes stack.Outbound; the caller owns accepted
 // TCP and UDP transports. Cancellation stops and joins the server workers.
@@ -68,7 +70,7 @@ func New(ctx context.Context, socket net.PacketConn, cfg Config, stack *netstack
 	if err != nil {
 		return nil, err
 	}
-	clientKey, err := privateKey(cfg.ClientKey)
+	clientKeys, err := cfg.PeerKeys()
 	if err != nil {
 		return nil, err
 	}
@@ -84,41 +86,61 @@ func New(ctx context.Context, socket net.PacketConn, cfg Config, stack *netstack
 	ctx, cancel := context.WithCancel(ctx)
 	address := bound.AddrPort()
 	address = netip.AddrPortFrom(address.Addr().Unmap(), address.Port())
-	bind := &socketBind{socket: socket, cancel: cancel, logger: logger}
-	tunnel := &stackDevice{ctx: ctx, cancel: cancel, stack: stack, local: address, events: make(chan tun.Event), logger: logger}
-	engine := newDevice(tunnel, bind, deviceLogger(logger))
-	tunnel.engine = engine
+	router := newPacketRouter(len(clientKeys), logger)
+	demux := newSocketDemux(socket, len(clientKeys), logger)
+	engines := make([]*device.Device, 0, len(clientKeys))
 	defer func() {
 		if !started {
 			cancel()
-			engine.Close()
+			for _, engine := range engines {
+				engine.Close()
+			}
 		}
 	}()
-	configuration := fmt.Sprintf("private_key=%s\nlisten_port=0\nreplace_peers=true\npublic_key=%s\nreplace_allowed_ips=true\nallowed_ip=0.0.0.0/0\nallowed_ip=::/0\npersistent_keepalive_interval=25\n", hex.EncodeToString(private[:]), hex.EncodeToString(clientKey.PublicKey().Bytes()))
-	if err := engine.IpcSet(configuration); err != nil {
-		return nil, fmt.Errorf("configure WireGuard device: %w", err)
-	}
-	if err := engine.Up(); err != nil {
-		return nil, fmt.Errorf("start WireGuard device: %w", err)
+	for peer, text := range clientKeys {
+		clientKey, err := privateKey(text)
+		if err != nil {
+			return nil, err
+		}
+		bind := &socketBind{socket: socket, cancel: cancel, logger: logger, demux: demux, peer: peer, ctx: ctx, done: make(chan struct{})}
+		tunnel := &stackDevice{ctx: ctx, cancel: cancel, stack: stack, router: router, peer: peer, local: address, events: make(chan tun.Event), logger: logger}
+		engine := newDevice(tunnel, bind, deviceLogger(logger))
+		tunnel.engine = engine
+		engines = append(engines, engine)
+		configuration := fmt.Sprintf("private_key=%s\nlisten_port=0\nreplace_peers=true\npublic_key=%s\nreplace_allowed_ips=true\nallowed_ip=0.0.0.0/0\nallowed_ip=::/0\npersistent_keepalive_interval=25\n", hex.EncodeToString(private[:]), hex.EncodeToString(clientKey.PublicKey().Bytes()))
+		if err := engine.IpcSet(configuration); err != nil {
+			return nil, fmt.Errorf("configure WireGuard device: %w", err)
+		}
+		if err := engine.Up(); err != nil {
+			return nil, fmt.Errorf("start WireGuard device: %w", err)
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	server := &Server{engine: engine, bind: bind, cancel: cancel, addr: address, done: make(chan struct{})}
+	server := &Server{engines: engines, cancel: cancel, addr: address, done: make(chan struct{})}
 	started = true
+	var workers sync.WaitGroup
+	workers.Go(func() { demux.run(ctx, cancel) })
+	workers.Go(func() { router.run(ctx, stack, cancel) })
+	for _, engine := range engines {
+		workers.Go(func() {
+			select {
+			case <-ctx.Done():
+			case <-engine.Wait():
+				cancel()
+			}
+		})
+	}
 	go func() {
-		select {
-		case <-ctx.Done():
-		case <-engine.Wait():
-		}
-		cancel()
-		engine.Close()
-		bind.mu.Lock()
-		server.err = bind.closeErr
-		bind.mu.Unlock()
+		<-ctx.Done()
 		if err := socket.Close(); !errors.Is(err, net.ErrClosed) {
-			server.err = errors.Join(server.err, err)
+			server.err = err
 		}
+		for _, engine := range engines {
+			engine.Close()
+		}
+		workers.Wait()
 		close(server.done)
 	}()
 	return server, nil

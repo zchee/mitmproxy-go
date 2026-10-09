@@ -16,7 +16,7 @@ import (
 )
 
 // socketBind adapts an operator-bound UDP listener without rebinding all hosts.
-// One lifetime is supported: closing an opened bind consumes the supplied socket.
+// A shared bind closes only its own receiver; a standalone bind owns the socket.
 type socketBind struct {
 	mu       sync.Mutex
 	socket   net.PacketConn
@@ -25,6 +25,10 @@ type socketBind struct {
 	opened   bool
 	closed   bool
 	closeErr error
+	demux    *socketDemux
+	peer     int
+	ctx      context.Context
+	done     chan struct{}
 }
 
 var _ conn.Bind = (*socketBind)(nil)
@@ -58,6 +62,24 @@ func (b *socketBind) receive(packets [][]byte, sizes []int, endpoints []conn.End
 	if len(packets) != 1 || len(sizes) < 1 || len(endpoints) < 1 {
 		return 0, errors.New("WireGuard socket bind requires one receive buffer")
 	}
+	if b.demux != nil {
+		if b.ctx.Err() != nil {
+			return 0, net.ErrClosed
+		}
+		select {
+		case <-b.ctx.Done():
+			return 0, net.ErrClosed
+		case <-b.done:
+			return 0, net.ErrClosed
+		case datagram := <-b.demux.queues[b.peer]:
+			if len(datagram.packet) > len(packets[0]) {
+				return 0, io.ErrShortBuffer
+			}
+			sizes[0] = copy(packets[0], datagram.packet)
+			endpoints[0] = &conn.StdNetEndpoint{AddrPort: datagram.from}
+			return 1, nil
+		}
+	}
 	n, from, err := b.socket.ReadFrom(packets[0])
 	if err != nil {
 		if b.cancel != nil {
@@ -79,7 +101,7 @@ func (b *socketBind) receive(packets [][]byte, sizes []int, endpoints []conn.End
 	return 1, nil
 }
 
-// Close consumes an opened socket and interrupts every pending receive.
+// Close interrupts the opened receiver, consuming a standalone socket only.
 func (b *socketBind) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -88,6 +110,10 @@ func (b *socketBind) Close() error {
 		return b.closeErr
 	}
 	b.closed = true
+	if b.demux != nil {
+		close(b.done)
+		return nil
+	}
 	b.closeErr = b.socket.Close()
 	return b.closeErr
 }
@@ -110,6 +136,9 @@ func (b *socketBind) Send(packets [][]byte, endpoint conn.Endpoint) error {
 		return err
 	}
 	for _, packet := range packets {
+		if b.demux != nil {
+			b.demux.register(packet, b.peer)
+		}
 		n, err := b.socket.WriteTo(packet, net.UDPAddrFromAddrPort(peer))
 		if err != nil {
 			return err

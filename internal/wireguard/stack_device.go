@@ -26,6 +26,8 @@ type stackDevice struct {
 	cancel  context.CancelFunc
 	stack   *netstack.Stack
 	engine  *device.Device
+	router  *packetRouter
+	peer    int
 	local   netip.AddrPort
 	events  chan tun.Event
 	close   sync.Once
@@ -51,11 +53,7 @@ func (t *stackDevice) Read(packets [][]byte, sizes []int, offset int) (int, erro
 		select {
 		case <-t.ctx.Done():
 			return 0, os.ErrClosed
-		case packet, ok := <-t.stack.Outbound():
-			if !ok {
-				t.cancel()
-				return 0, os.ErrClosed
-			}
+		case packet := <-t.router.queues[t.peer]:
 			if len(packet) > len(packets[0])-offset {
 				t.drop(io.ErrShortBuffer)
 				continue
@@ -76,7 +74,7 @@ func (t *stackDevice) Write(packets [][]byte, offset int) (int, error) {
 		return 0, os.ErrClosed
 	}
 	info := map[string]any{"original_dst": t.local}
-	// IpcGet exposes the sole authenticated peer's roaming endpoint. Private-key
+	// IpcGet exposes this device's authenticated peer endpoint. Private-key
 	// fields are ignored and never passed to diagnostics or tunnel metadata.
 	if settings, err := t.engine.IpcGet(); err == nil {
 		for line := range strings.SplitSeq(settings, "\n") {
@@ -91,7 +89,21 @@ func (t *stackDevice) Write(packets [][]byte, offset int) (int, error) {
 		if offset > len(packet) {
 			return i, io.ErrShortBuffer
 		}
-		if err := t.stack.Inject(packet[offset:], info); err != nil {
+		plaintext := packet[offset:]
+		source, _, valid := packetAddresses(plaintext)
+		if !valid {
+			t.drop(netstack.ErrInvalidPacket)
+			continue
+		}
+		// An accepted packet can immediately generate a reply. Publish ownership
+		// before the outbound router can consume that reply, but only on admission.
+		t.router.mu.Lock()
+		err := t.stack.Inject(plaintext, info)
+		if err == nil {
+			t.router.sources[source] = t.peer
+		}
+		t.router.mu.Unlock()
+		if err != nil {
 			if errors.Is(err, netstack.ErrStackClosed) {
 				t.cancel()
 				return i, os.ErrClosed

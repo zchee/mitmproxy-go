@@ -72,8 +72,12 @@ func TestWireGuardExecutable(t *testing.T) {
 		runWireGuardDump(t)
 		return
 	}
-	tests := map[string]struct{ fixture string }{
+	tests := map[string]struct {
+		fixture string
+		multi   bool
+	}{
 		"success: upstream encrypted TCP and UDP replies": {fixture: "test.conf"},
+		"success: concurrent encrypted peers":             {fixture: "test.conf", multi: true},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -92,6 +96,10 @@ func TestWireGuardExecutable(t *testing.T) {
 			binary, err := os.Executable()
 			if err != nil {
 				t.Fatal(err)
+			}
+			if tt.multi {
+				testWireGuardMultiplePeers(t, binary, client, root)
+				return
 			}
 			p := startProcess(t, binary, []string{"-test.run", "^TestWireGuardExecutable$", "-test.v"}, []string{
 				"PACKET_WIREGUARD_CHILD=1", "PACKET_WIREGUARD_CONFIG=" + filepath.Join(root, "testdata/wg-test-client", tt.fixture),
@@ -135,36 +143,44 @@ func runWireGuardDump(t *testing.T) {
 	// addon hooks, not a replacement peer or a bypass of the Handler.
 	tcpHost, tcpPort := address(t, tcpOrigin.Addr().String())
 	udpHost, udpPort := address(t, udpOrigin.LocalAddr().String())
-	originErrors := make(chan error, 2)
+	peerCount := 1
+	if os.Getenv("PACKET_WIREGUARD_MULTI") == "1" {
+		peerCount = 2
+	}
+	originErrors := make(chan error, 2*peerCount)
 	go func() {
-		peer, err := tcpOrigin.Accept()
-		if err != nil {
+		for range peerCount {
+			peer, err := tcpOrigin.Accept()
+			if err != nil {
+				originErrors <- err
+				return
+			}
+			_ = peer.SetDeadline(time.Now().Add(30 * time.Second))
+			content := make([]byte, len("HELLO WORLD!"))
+			_, err = io.ReadFull(peer, content)
+			if err == nil && string(content) != "HELLO WORLD!" {
+				err = errors.New("TCP addon did not uppercase the client message")
+			}
+			if err == nil {
+				_, err = peer.Write(content)
+			}
+			_ = peer.Close()
 			originErrors <- err
-			return
 		}
-		defer func() { _ = peer.Close() }()
-		_ = peer.SetDeadline(time.Now().Add(30 * time.Second))
-		content := make([]byte, len("HELLO WORLD!"))
-		_, err = io.ReadFull(peer, content)
-		if err == nil && string(content) != "HELLO WORLD!" {
-			err = errors.New("TCP addon did not uppercase the client message")
-		}
-		if err == nil {
-			_, err = peer.Write(content)
-		}
-		originErrors <- err
 	}()
 	go func() {
 		_ = udpOrigin.SetDeadline(time.Now().Add(30 * time.Second))
 		content := make([]byte, 65535)
-		n, peer, err := udpOrigin.ReadFrom(content)
-		if err == nil && string(content[:n]) != "HELLO" {
-			err = errors.New("UDP addon did not uppercase the client datagram")
+		for range peerCount {
+			n, peer, err := udpOrigin.ReadFrom(content)
+			if err == nil && string(content[:n]) != "HELLO" {
+				err = errors.New("UDP addon did not uppercase the client datagram")
+			}
+			if err == nil {
+				_, err = udpOrigin.WriteTo(content[:n], peer)
+			}
+			originErrors <- err
 		}
-		if err == nil {
-			_, err = udpOrigin.WriteTo(content[:n], peer)
-		}
-		originErrors <- err
 	}()
 	m, err := dump.New(ctx, dump.Config{Stdout: os.Stdout, Stderr: os.Stderr, WithTermlog: true})
 	if err != nil {
@@ -184,7 +200,7 @@ func runWireGuardDump(t *testing.T) {
 	if err := m.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
-	for range 2 {
+	for range 2 * peerCount {
 		select {
 		case err := <-originErrors:
 			if err != nil {

@@ -28,9 +28,12 @@ func TestServerShutdown(t *testing.T) {
 	tests := map[string]struct {
 		host   string
 		cancel bool
+		multi  bool
 	}{
-		"success: explicit close IPv4":       {host: "127.0.0.1"},
-		"success: context cancellation IPv6": {host: "::1", cancel: true},
+		"success: explicit close IPv4":            {host: "127.0.0.1"},
+		"success: context cancellation IPv6":      {host: "::1", cancel: true},
+		"success: multi-peer explicit close IPv4": {host: "127.0.0.1", multi: true},
+		"success: multi-peer cancellation IPv6":   {host: "::1", cancel: true, multi: true},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -46,7 +49,12 @@ func TestServerShutdown(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			server, err := New(ctx, socket, cfg, stack, nil)
+			configuration := cfg
+			if test.multi {
+				configuration.ClientKeys = []string{configuration.ClientKey, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
+				configuration.ClientKey = ""
+			}
+			server, err := New(ctx, socket, configuration, stack, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -57,7 +65,14 @@ func TestServerShutdown(t *testing.T) {
 			if server.Addr().String() != socket.LocalAddr().String() {
 				t.Error("Addr exposed mutable listener storage")
 			}
-			settings, err := server.engine.IpcGet()
+			wantPeers := 1
+			if test.multi {
+				wantPeers = 2
+			}
+			if len(server.engines) != wantPeers {
+				t.Fatalf("configured engines = %d, want %d", len(server.engines), wantPeers)
+			}
+			settings, err := server.engines[0].IpcGet()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -92,6 +107,13 @@ func TestServerShutdown(t *testing.T) {
 			case <-server.Done():
 			default:
 				t.Fatal("Close returned before all server workers finished")
+			}
+			for peer, engine := range server.engines {
+				select {
+				case <-engine.Wait():
+				default:
+					t.Fatalf("Close returned before peer %d stopped", peer)
+				}
 			}
 			if err := socket.SetReadDeadline(time.Time{}); !errors.Is(err, net.ErrClosed) {
 				t.Errorf("consumed socket error=%v, want net.ErrClosed", err)

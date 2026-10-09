@@ -31,7 +31,7 @@ jobs:
       - name: Install packet gate tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes iproute2 curl
+          sudo apt-get install --yes iproute2 curl wget jq
       - name: Verify gate orchestration
         run: bash hack/packet-modes-gate_test.sh
       - name: Run required packet-source acceptance

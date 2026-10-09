@@ -9,7 +9,7 @@ bash -n "${script}"
 directory="$(mktemp -d "${TMPDIR:-/tmp}/packet-gate-contract.XXXXXX")"
 trap 'rm -rf "${directory}"' EXIT
 mkdir -p "${directory}/bin"
-for name in ip sudo curl timeout stat go; do
+for name in ip sudo curl wget jq timeout stat go; do
   printf '#!/usr/bin/env bash\nexit 1\n' >| "${directory}/bin/${name}"
   chmod +x "${directory}/bin/${name}"
 done
@@ -26,7 +26,8 @@ if grep -Fq 'PACKET MODES PASS' "${directory}/failure.log"; then
 fi
 for contract in 'trap cleanup EXIT' "trap 'exit 130' INT" "trap 'exit 143' TERM" \
   'run_test TestWireGuardExecutable user' 'run_test TestTunCreated root' \
-  'run_test TestTunPersistent user' 'required scenario ${name} was skipped' \
+  'run_test TestTunPersistent user' 'for name in TestLinuxLocalExecutable TestLinuxLocalSudoFailure' \
+  'required scenario ${name} was skipped' \
   'required evidence ${log} is missing'; do
   grep -Fq "${contract}" "${script}"
 done

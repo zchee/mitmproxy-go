@@ -13,7 +13,7 @@ fail() {
 
 [[ "$(uname -s)" == Linux ]] || fail 'privileged packet acceptance requires Linux'
 [[ "$(uname -m)" == x86_64 ]] || fail 'required WireGuard fixture requires amd64'
-for command in ip sudo curl timeout stat go; do
+for command in ip sudo curl wget jq timeout stat go; do
   command -v "${command}" >/dev/null || fail "missing required command ${command}"
 done
 sudo -n true || fail 'passwordless sudo is required'
@@ -35,7 +35,7 @@ binary="${output}/mitmdump"
 tests="${output}/packet-modes.test"
 go build -o "${binary}" ./cmd/mitmdump
 go test -tags packetmodes -c -o "${tests}" ./internal/proxy/packetmodetest
-for name in TestWireGuardExecutable TestTunCreated TestTunPersistent; do
+for name in TestWireGuardExecutable TestTunCreated TestTunPersistent TestLinuxLocalExecutable TestLinuxLocalSudoFailure; do
   "${tests}" -test.list "^${name}$" | grep -Fx "${name}" || fail "required test ${name} is missing"
 done
 
@@ -126,7 +126,22 @@ run_test() {
 run_test TestWireGuardExecutable user
 run_test TestTunCreated root
 run_test TestTunPersistent user
-for log in wireguard-client.log wireguard-proxy.log tun-created-proxy.log tun-attach-first.log tun-attach-second.log; do
+# The native redirector attaches to the runner's cgroup and host interfaces,
+# not the private TUN namespace. Match hosts to that interface before launch.
+primary="$(ip -j -4 route get 1.1.1.1 | jq -er '.[0].prefsrc | select(type == "string" and length > 0)')"
+sudo sed -i "/# ${host_marker}$/d" /etc/hosts
+printf '%s example.test # %s\n' "${primary}" "${host_marker}" | sudo tee -a /etc/hosts
+for name in TestLinuxLocalExecutable TestLinuxLocalSudoFailure; do
+  log="${output}/${name}.log"
+  timeout --signal=QUIT --kill-after=15s 180s \
+    env PACKET_GATE_ROOT="${PWD}" PACKET_GATE_OUTPUT="${output}" PACKET_GATE_BINARY="${binary}" PACKET_GATE_LOCAL_ADDRESS="${primary}" \
+    "${tests}" -test.run "^${name}$" -test.count=1 -test.parallel=1 -test.timeout 150s -test.v 2>&1 | tee "${log}"
+  if grep -Eq '^[[:space:]]*--- SKIP:' "${log}"; then
+    fail "required scenario ${name} was skipped"
+  fi
+  grep -Eq "^--- PASS: ${name} " "${log}" || fail "required scenario ${name} did not pass"
+done
+for log in local-proxy.log local-sudo-refusal.log wireguard-client.log wireguard-proxy.log tun-created-proxy.log tun-attach-first.log tun-attach-second.log; do
   [[ -s "${output}/${log}" ]] || fail "required evidence ${log} is missing"
 done
 printf 'PACKET MODES PASS\n'

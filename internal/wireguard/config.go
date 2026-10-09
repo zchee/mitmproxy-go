@@ -13,8 +13,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/zchee/mitmproxy-go/internal/privfile"
 )
@@ -23,11 +25,23 @@ const maxConfigSize = 4096
 
 var errInvalidKey = errors.New("Invalid key.") //nolint:staticcheck // Preserve upstream's key-validation diagnostic.
 
+var (
+	// ErrConflictingClientKeys rejects configurations containing both peer forms.
+	ErrConflictingClientKeys = errors.New("client_key and client_keys are mutually exclusive")
+	// ErrEmptyClientKeys rejects an empty ordered peer list.
+	ErrEmptyClientKeys = errors.New("client_keys must contain at least one peer")
+	// ErrDuplicateClientKeys rejects keys identifying the same X25519 peer.
+	ErrDuplicateClientKeys = errors.New("client_keys contains duplicate peers")
+)
+
 // Config contains the base64 X25519 private keys stored in wireguard.conf.
-// Treat both fields as secrets; only ClientConfig deliberately renders the client key.
+// ClientKey is the legacy single-peer form; ClientKeys is the ordered multi-peer
+// form, whose first entry is the fallback peer. They are mutually exclusive.
+// Treat every key as a secret; only client configuration rendering exposes them.
 type Config struct {
-	ServerKey string `json:"server_key"`
-	ClientKey string `json:"client_key"`
+	ServerKey  string   `json:"server_key"`
+	ClientKey  string   `json:"client_key,omitzero"`
+	ClientKeys []string `json:"client_keys,omitzero"`
 }
 
 // LoadConfig loads the operator-selected file or creates it with generated keys.
@@ -107,25 +121,69 @@ func readConfig(path string) (Config, error) {
 		return Config{}, fmt.Errorf("Invalid configuration file (%s): exceeds %d bytes", path, maxConfigSize) //nolint:staticcheck // Preserve upstream's file diagnostic prefix.
 	}
 	var fields struct {
-		ServerKey *string `json:"server_key"`
-		ClientKey *string `json:"client_key"`
+		ServerKey  *string        `json:"server_key"`
+		ClientKey  jsontext.Value `json:"client_key"`
+		ClientKeys jsontext.Value `json:"client_keys"`
 	}
 	// Python's json.loads accepts duplicate names and uses the last value.
 	if err := json.Unmarshal(data, &fields, jsontext.AllowDuplicateNames(true)); err != nil {
 		// Decoder diagnostics can quote private input; do not echo those values.
 		return Config{}, fmt.Errorf("Invalid configuration file (%s): invalid JSON configuration", path) //nolint:staticcheck // Preserve upstream's file diagnostic prefix.
 	}
-	if fields.ServerKey == nil || fields.ClientKey == nil {
+	if fields.ClientKey != nil && fields.ClientKeys != nil {
+		return Config{}, ErrConflictingClientKeys
+	}
+	if fields.ServerKey == nil || (fields.ClientKeys == nil && (fields.ClientKey == nil || string(fields.ClientKey) == "null")) {
 		return Config{}, fmt.Errorf("Invalid configuration file (%s): server_key and client_key are required", path) //nolint:staticcheck // Preserve upstream's file diagnostic prefix.
 	}
-	configuration := Config{ServerKey: *fields.ServerKey, ClientKey: *fields.ClientKey}
+	configuration := Config{ServerKey: *fields.ServerKey}
+	if fields.ClientKeys != nil {
+		if err := json.Unmarshal(fields.ClientKeys, &configuration.ClientKeys); err != nil {
+			return Config{}, fmt.Errorf("Invalid configuration file (%s): invalid JSON configuration", path) //nolint:staticcheck // Decoder errors must not expose private input.
+		}
+		if len(configuration.ClientKeys) == 0 {
+			return Config{}, ErrEmptyClientKeys
+		}
+	} else if err := json.Unmarshal(fields.ClientKey, &configuration.ClientKey); err != nil {
+		return Config{}, fmt.Errorf("Invalid configuration file (%s): invalid JSON configuration", path) //nolint:staticcheck // Decoder errors must not expose private input.
+	}
 	if _, err := privateKey(configuration.ServerKey); err != nil {
 		return Config{}, err
 	}
-	if _, err := privateKey(configuration.ClientKey); err != nil {
+	if _, err := configuration.PeerKeys(); err != nil {
 		return Config{}, err
 	}
 	return configuration, nil
+}
+
+// PeerKeys returns an independent ordered list of validated client private keys.
+// The first peer is the fallback for destinations with no learned source.
+// It returns ErrConflictingClientKeys, ErrEmptyClientKeys, ErrDuplicateClientKeys,
+// or "Invalid key." without quoting private material.
+func (c Config) PeerKeys() ([]string, error) {
+	if c.ClientKey != "" && c.ClientKeys != nil {
+		return nil, ErrConflictingClientKeys
+	}
+	keys := c.ClientKeys
+	if keys == nil {
+		keys = []string{c.ClientKey}
+	}
+	if len(keys) == 0 {
+		return nil, ErrEmptyClientKeys
+	}
+	seen := make(map[[32]byte]struct{}, len(keys))
+	for _, text := range keys {
+		key, err := privateKey(text)
+		if err != nil {
+			return nil, err
+		}
+		identity := [32]byte(key.PublicKey().Bytes())
+		if _, exists := seen[identity]; exists {
+			return nil, ErrDuplicateClientKeys
+		}
+		seen[identity] = struct{}{}
+	}
+	return slices.Clone(keys), nil
 }
 
 func privateKey(text string) (*ecdh.PrivateKey, error) {
@@ -143,15 +201,35 @@ func privateKey(text string) (*ecdh.PrivateKey, error) {
 	return key, nil
 }
 
-// ClientConfig renders the upstream client configuration for host and port.
-// It returns "Invalid key." for malformed keys and never logs their values.
+// ClientConfig renders the first peer's upstream configuration for host and port.
+// It returns the same validation errors as ClientConfigs, without logging keys.
 func (c Config) ClientConfig(host string, port uint16) (string, error) {
-	serverKey, err := privateKey(c.ServerKey)
+	configurations, err := c.ClientConfigs(host, port)
 	if err != nil {
 		return "", err
 	}
-	if _, err := privateKey(c.ClientKey); err != nil {
-		return "", err
+	return configurations[0], nil
+}
+
+// ClientConfigs renders one configuration per peer in configured order.
+// Addresses start at 10.0.0.1/32; DNS and AllowedIPs keep upstream's values.
+// It returns PeerKeys validation errors or "Invalid key." for a server key,
+// without logging private material.
+func (c Config) ClientConfigs(host string, port uint16) ([]string, error) {
+	serverKey, err := privateKey(c.ServerKey)
+	if err != nil {
+		return nil, err
 	}
-	return fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = 10.0.0.1/32\nDNS = 10.0.0.53\n\n[Peer]\nPublicKey = %s\nAllowedIPs = 0.0.0.0/0\nEndpoint = %s:%d", c.ClientKey, base64.StdEncoding.EncodeToString(serverKey.PublicKey().Bytes()), host, port), nil
+	keys, err := c.PeerKeys()
+	if err != nil {
+		return nil, err
+	}
+	publicKey := base64.StdEncoding.EncodeToString(serverKey.PublicKey().Bytes())
+	configurations := make([]string, len(keys))
+	address := netip.AddrFrom4([4]byte{10, 0, 0, 1})
+	for i, key := range keys {
+		configurations[i] = fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = %s/32\nDNS = 10.0.0.53\n\n[Peer]\nPublicKey = %s\nAllowedIPs = 0.0.0.0/0\nEndpoint = %s:%d", key, address, publicKey, host, port)
+		address = address.Next()
+	}
+	return configurations, nil
 }

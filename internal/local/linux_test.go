@@ -59,6 +59,7 @@ func syntheticLinuxLauncher(t *testing.T, messages chan<- *FromProxy, shutdown c
 		workers.Go(func() {
 			defer func() { _ = peer.Close(); _, _ = io.WriteString(stdin, "done\n"); _ = stdin.Close() }()
 			buf := make([]byte, maxNativeIPCMessageSize+1)
+			var lastConf *InterceptConf
 			for {
 				n, addr, err := peer.ReadFromUnix(buf)
 				if err != nil {
@@ -72,6 +73,12 @@ func syntheticLinuxLauncher(t *testing.T, messages chan<- *FromProxy, shutdown c
 				if err := proto.Unmarshal(buf[:n], &msg); err != nil {
 					t.Error(err)
 					return
+				}
+				if conf := msg.GetInterceptConf(); conf != nil {
+					if proto.Equal(conf, lastConf) {
+						continue
+					}
+					lastConf = conf
 				}
 				select {
 				case messages <- &msg:

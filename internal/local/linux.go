@@ -231,6 +231,13 @@ func (r *linuxRedirector) write(ctx context.Context, message *FromProxy) error {
 	if err != nil {
 		return err
 	}
+	copies := 1
+	if runtime.GOOS == "linux" && message.GetInterceptConf() != nil {
+		copies = 2
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
 	select {
 	case r.writeGate <- struct{}{}:
 		defer func() { <-r.writeGate }()
@@ -248,16 +255,43 @@ func (r *linuxRedirector) write(ctx context.Context, message *FromProxy) error {
 		_ = conn.SetWriteDeadline(time.Now())
 		close(canceled)
 	})
-	n, err := conn.Write(data)
+	for range copies {
+		var n int
+		n, err = conn.Write(data)
+		if err == nil && n != len(data) {
+			err = io.ErrShortWrite
+		}
+		if err != nil {
+			break
+		}
+	}
+	if err == nil && copies == 2 {
+		// The native peer publishes its endpoint before loading eBPF and applying
+		// rules; its socket-creation hook cannot intercept earlier sockets. It
+		// applies each config before receiving the next, so a drained identical
+		// barrier establishes application only if the peer remains alive. A closed
+		// peer also frees queued datagrams; reconnecting this same socket to its
+		// endpoint distinguishes that discard from receive without another frame.
+		err = waitLinuxInterceptDrain(ctx, conn, r.closedCh)
+		if err == nil {
+			select {
+			case <-r.closedCh:
+				err = net.ErrClosed
+			default:
+				err = connectNativeDatagram(conn, r.peer)
+			}
+		}
+	}
 	if !stop() {
 		<-canceled
 	}
 	resetErr := conn.SetWriteDeadline(time.Time{})
 	if ctx.Err() != nil {
+		if copies == 2 {
+			r.shutdown()
+			return fmt.Errorf("linux redirector intercept configuration was not applied: %w", ctx.Err())
+		}
 		return ctx.Err()
-	}
-	if err == nil && n != len(data) {
-		err = io.ErrShortWrite
 	}
 	if err != nil || resetErr != nil {
 		r.shutdown()

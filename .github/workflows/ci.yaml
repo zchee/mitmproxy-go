@@ -63,6 +63,52 @@ jobs:
       - name: go test -race
         run: go test -race -count=1 ./...
 
+  stress:
+    name: stress (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-26.04
+          - xcode-27
+          - windows-2025
+    runs-on: ${{ matrix.os }}
+    # Five 60-minute row budgets plus toolchain setup and artifact upload.
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Named race stress rows
+        run: |
+          set -euo pipefail
+          mkdir -p stress-logs
+          cp hack/stress-rows.txt stress-logs/
+          row=0
+          # An empty match is accepted until the upstream-sequence tests land.
+          while IFS=$'\t' read -r pkg pattern count cpu; do
+            row=$((row + 1))
+            echo "::group::${pkg} ${pattern}"
+            {
+              date '+%Y-%m-%d %H:%M:%S %Z'
+              git rev-parse HEAD
+              go version
+              printf 'go test -race -count=%s -cpu=%s -timeout=60m -run %q %q\n' \
+                "${count}" "${cpu}" "${pattern}" "${pkg}"
+              go test -race -count="${count}" -cpu="${cpu}" -timeout=60m -v -run "${pattern}" "${pkg}"
+            } 2>&1 | tee "stress-logs/${row}.log"
+            echo "::endgroup::"
+          done < hack/stress-rows.txt
+      - name: Upload exact-head stress logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: stress-${{ matrix.os }}-${{ github.sha }}
+          path: stress-logs/
+          if-no-files-found: error
+
   proxy-integration:
     name: proxy integration (${{ matrix.os }}, go ${{ matrix.go }})
     strategy:

@@ -5,8 +5,8 @@ package h3
 
 import (
 	"errors"
-	"fmt"
 	"runtime"
+	"strings"
 	"testing"
 
 	quic "github.com/quic-go/quic-go"
@@ -100,6 +100,69 @@ func TestStopSendingWithoutActiveSend(t *testing.T) {
 	}
 }
 
+func lateDataWriteAccepted(err error) bool {
+	if err == nil {
+		return true
+	}
+	cancelled, ok := errors.AsType[*quic.StreamError](err)
+	return ok && cancelled.Remote && cancelled.ErrorCode == quic.StreamErrorCode(ErrCodeFrameUnexpected)
+}
+
+func TestLateDataWriteAccepted(t *testing.T) {
+	tests := map[string]struct {
+		err      error
+		accepted bool
+	}{
+		"success: nil write error": {accepted: true},
+		"success: remote late DATA rejection": {
+			err: &quic.StreamError{Remote: true, ErrorCode: quic.StreamErrorCode(ErrCodeFrameUnexpected)}, accepted: true,
+		},
+		"error: different remote reset code": {
+			err: &quic.StreamError{Remote: true, ErrorCode: quic.StreamErrorCode(ErrCodeRequestCancelled)},
+		},
+		"error: local cancellation": {
+			err: &quic.StreamError{ErrorCode: quic.StreamErrorCode(ErrCodeFrameUnexpected)},
+		},
+		"error: unrelated write failure": {err: errors.New("connection closed")},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := lateDataWriteAccepted(test.err); got != test.accepted {
+				t.Fatalf("late DATA write accepted = %v; want %v (error=%v)", got, test.accepted, test.err)
+			}
+		})
+	}
+}
+
+func trailerCloseAccepted(err error, lateData bool) bool {
+	return err == nil || lateData && strings.HasPrefix(err.Error(), "close called for canceled stream")
+}
+
+func TestTrailerCloseAccepted(t *testing.T) {
+	// Certify fixture tolerance without weakening the delayed-FIN branch.
+	tests := map[string]struct {
+		err      error
+		lateData bool
+		accepted bool
+	}{
+		"success: nil in strict branch":             {accepted: true},
+		"success: nil after late DATA":              {lateData: true, accepted: true},
+		"success: current cancellation text":        {err: errors.New("close called for canceled stream 0"), lateData: true, accepted: true},
+		"success: other stream number":              {err: errors.New("close called for canceled stream 8"), lateData: true, accepted: true},
+		"success: trailing detail":                  {err: errors.New("close called for canceled stream 0: peer rejected late DATA"), lateData: true, accepted: true},
+		"error: unrelated close failure":            {err: errors.New("connection closed"), lateData: true},
+		"error: cancellation in strict branch":      {err: errors.New("close called for canceled stream 0")},
+		"error: unrelated failure in strict branch": {err: errors.New("connection closed")},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := trailerCloseAccepted(test.err, test.lateData); got != test.accepted {
+				t.Fatalf("Close accepted = %v; want %v (late DATA=%v, error=%v)", got, test.accepted, test.lateData, test.err)
+			}
+		})
+	}
+}
+
 func TestTrailersFollowActualFIN(t *testing.T) {
 	tests := map[string]struct{ lateData bool }{"delayed FIN": {}, "late DATA rejected": {lateData: true}}
 	for name, test := range tests {
@@ -138,12 +201,13 @@ func TestTrailersFollowActualFIN(t *testing.T) {
 				t.Fatalf("trailers without FIN = %+v, %v; must not terminate the message", trailer, err)
 			}
 			if test.lateData {
-				if err := writeFrame(state.wire, frameData, []byte("late")); err != nil {
+				// Rejection can arrive after the frame type but before its payload write.
+				if err := writeFrame(state.wire, frameData, []byte("late")); !lateDataWriteAccepted(err) {
 					t.Fatal(err)
 				}
 			}
 			// The late DATA rejection can cancel the write half before Close runs.
-			if err := state.wire.Close(); err != nil && (!test.lateData || err.Error() != fmt.Sprintf("close called for canceled stream %d", state.wire.StreamID())) {
+			if err := state.wire.Close(); !trailerCloseAccepted(err, test.lateData) {
 				t.Fatal(err)
 			}
 			end, err := client.ReceiveStream(ctx, id)

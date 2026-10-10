@@ -6,6 +6,12 @@ name: Stress
 # routine changes are not held for the slowest row. The path check sees the
 # row's own package, not its dependencies: a change to a package those rows
 # import (internal/proxy/layer, internal/netstack, ...) needs the label.
+#
+# Linux and Windows run one job per row, so the longest row bounds the wall
+# clock. macOS runs every row in one job: the hosted xcode-27 pool hands out
+# very few runners at a time (one, on 2026-10-10), so seven macOS jobs would
+# queue behind each other, pay the toolchain setup seven times and starve
+# the gating test jobs that share the pool.
 
 on:
   schedule:
@@ -103,7 +109,6 @@ jobs:
       matrix:
         os:
           - ubuntu-26.04
-          - xcode-27
           - windows-2025
         row: ${{ fromJSON(needs.plan.outputs.rows) }}
     runs-on: ${{ matrix.os }}
@@ -145,5 +150,52 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: stress-${{ matrix.os }}-row${{ matrix.row.id }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: stress-logs/
+          if-no-files-found: error
+
+  stress-macos:
+    name: stress (xcode-27, every row)
+    needs: plan
+    if: needs.plan.outputs.rows != '[]'
+    runs-on: xcode-27
+    # Seven 60-minute row budgets plus toolchain setup and artifact upload.
+    timeout-minutes: 450
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: stress
+      - name: Named race stress rows
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p stress-logs
+          cp hack/stress-rows.txt stress-logs/
+          row=0
+          # An empty match is accepted until the upstream-sequence tests land.
+          while IFS=$'\t' read -r pkg pattern count cpu; do
+            row=$((row + 1))
+            echo "::group::${pkg} ${pattern}"
+            {
+              date '+%Y-%m-%d %H:%M:%S %Z'
+              printf 'candidate_sha=%s\ncheckout_sha=%s\n' "${CANDIDATE_SHA}" "$(git rev-parse HEAD)"
+              go version
+              printf 'go test -race -count=%s -cpu=%s -timeout=60m -run %q %q\n' \
+                "${count}" "${cpu}" "${pattern}" "${pkg}"
+              go test -race -count="${count}" -cpu="${cpu}" -timeout=60m -v -run "${pattern}" "${pkg}"
+            } 2>&1 | tee "stress-logs/${row}.log"
+            echo "::endgroup::"
+          done < hack/stress-rows.txt
+      - name: Upload exact-head stress logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: stress-xcode-27-${{ github.event.pull_request.head.sha || github.sha }}
           path: stress-logs/
           if-no-files-found: error

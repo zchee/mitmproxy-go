@@ -77,6 +77,7 @@ These are installed by CI and are not module dependencies.
 |---|---|---|---|---|
 | `github.com/google/go-licenses/v2` | v2.0.1 | Apache-2.0 | Licence gate with the GPL, LGPL, AGPL and MPL denylist. | Not recorded in the plan. |
 | `actions/checkout`, `actions/setup-go` | `@v7` (v7.0.1 and v7.0.0 were the latest releases on 2026-10-05) | MIT | Project rule: pin the latest major version only. | Dependabot's weekly GitHub Actions PR. |
+| `cloudx-io/setup-go` | `@v1` (v1.0.0, the only release as of 2026-10-11) | MIT | Replaces `actions/setup-go` in every stable job: installs Go through `actions/setup-go` and caches `GOCACHE` and `GOMODCACHE` under a per-job key that is saved after every successful run, so a job rebuilds only the packages that changed. `go-version` is read from `go.mod` by a preceding step because the action takes a version string, not a file. The gotip job keeps `actions/setup-go` with `go-version: stable` as its bootstrap. Each successful run saves a new cache entry; watch the repository's Actions cache size (10 GB default). | Dependabot's weekly GitHub Actions PR. |
 
 ## Explicitly avoided
 

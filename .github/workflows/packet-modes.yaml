@@ -24,10 +24,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: linux-packet-modes
       - name: Install packet gate tools
         run: |
           sudo apt-get update
@@ -52,10 +56,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: macos-wireguard
       - name: Run userspace WireGuard acceptance
         env:
           PACKET_GATE_OUTPUT: ${{ github.workspace }}/_test/packet-modes
@@ -80,10 +88,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: freebsd-build
       - name: Build for FreeBSD
         env:
           GOOS: freebsd

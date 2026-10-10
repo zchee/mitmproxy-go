@@ -34,10 +34,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: build
       - name: go build and go vet
         run: go build ./... && go vet ./...
 
@@ -56,10 +60,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: test
       - name: go test -race with skip report
         env:
           TEST_SKIPS_ENFORCE: ${{ vars.TEST_SKIPS_ENFORCE || '0' }}
@@ -81,10 +89,14 @@ jobs:
     timeout-minutes: 330
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: stress
       - name: Named race stress rows
         env:
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -129,10 +141,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: proxy-integration
       # Heap measurements exclude the race detector's allocation overhead.
       # The race-safe proxy tests already run in the test job above.
       - name: Proxy streaming integration tests
@@ -152,10 +168,14 @@ jobs:
           - 389/tcp
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: ldap-integration
       - name: Authenticate against OpenLDAP
         env:
           MITMPROXY_TEST_LDAP_ADDRESS: 127.0.0.1:${{ job.services.openldap.ports['389'] }}
@@ -192,10 +212,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: lint
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
@@ -217,10 +241,14 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: fuzz-smoke
       - name: Verify required protocol fuzz targets
         run: |
           set -euo pipefail
@@ -259,10 +287,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: licenses
       - name: Install go-licenses
         run: |
           go install github.com/google/go-licenses/v2@v2.0.1
@@ -283,10 +315,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: difftest
       # setup-uv has published no floating major tag since v8, so this pins
       # the full version and dependabot bumps it. Switch to "@vN" if upstream
       # publishes major tags again.

@@ -1,11 +1,11 @@
 name: Stress
 
 # Named race stress rows (hack/stress-rows.txt) on every supported platform.
-# They run nightly on main and on demand; a pull request runs them only when
-# it carries the "stress" label, so no pull request is held for the slowest
-# row unless its author asks for it. Add the label to a change that touches a
-# row's package or anything those rows import (internal/proxy/layer,
-# internal/netstack, ...).
+# Manual runs only while the port is still being implemented: the rows take
+# about two hours on the serial macOS job, and a nightly or per-pull-request
+# run would hold the work for results that the next change invalidates. The
+# nightly schedule and the "stress"-labelled pull-request trigger return once
+# the implementation settles.
 #
 # Linux and Windows run one job per row, so the longest row bounds the wall
 # clock. macOS runs every row in one job: the hosted xcode-27 pool hands out
@@ -14,16 +14,7 @@ name: Stress
 # the gating test jobs that share the pool.
 
 on:
-  schedule:
-    # 18:00 UTC is 03:00 JST.
-    - cron: "0 18 * * *"
   workflow_dispatch:
-  pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - labeled
 
 permissions:
   contents: read

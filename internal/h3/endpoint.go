@@ -165,6 +165,7 @@ func (e *Endpoint) initialize() error {
 }
 
 func (e *Endpoint) fail(err error) {
+	err = connectionTransportError(err)
 	if err == nil {
 		err = io.EOF
 	}

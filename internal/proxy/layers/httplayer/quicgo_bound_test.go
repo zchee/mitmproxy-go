@@ -69,11 +69,13 @@ func TestHTTP3OriginRetention(t *testing.T) {
 				}
 			}()
 			joined := make(chan struct{})
+			peerReady := make(chan struct{}, 1)
 			go func() {
 				defer close(joined)
 				conn, err := listener.Accept(ownerCtx)
 				if err == nil {
 					startHTTP3RoutingPeer(t, ownerCtx, conn)
+					peerReady <- struct{}{}
 				}
 			}()
 			defer func() { cancel(); <-joined }()
@@ -83,6 +85,13 @@ func TestHTTP3OriginRetention(t *testing.T) {
 			}
 			if endpoint == nil || release == nil {
 				t.Fatal("acquisition did not return a usable lease")
+			}
+			// Fixture-sensitivity: releasing an overflow lease closes its
+			// transport, so join the peer's critical-stream setup first.
+			select {
+			case <-peerReady:
+			case <-ctx.Done():
+				t.Fatal("origin peer setup did not complete:", ctx.Err())
 			}
 			release()
 			origins.mu.Lock()

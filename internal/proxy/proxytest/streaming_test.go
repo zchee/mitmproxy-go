@@ -82,6 +82,105 @@ func (a *bodyStreamHooks) prepare(message *httpmsg.Message) {
 	}
 }
 
+type streamingHeapSampler struct {
+	baseline uint64
+	requests chan chan uint64
+	stop     func() uint64
+}
+
+func startStreamingHeapSampler(t *testing.T) *streamingHeapSampler {
+	sampler := &streamingHeapSampler{requests: make(chan chan uint64)}
+	baseline := make(chan uint64, 1)
+	stop := make(chan struct{})
+	stopped := make(chan struct{})
+	peakResult := make(chan uint64, 1)
+	go func() {
+		defer close(stopped)
+		samples := []metrics.Sample{{Name: "/gc/heap/live:bytes"}}
+		read := func() uint64 {
+			runtime.GC()
+			metrics.Read(samples)
+			return samples[0].Value.Uint64()
+		}
+		peak := read()
+		baseline <- peak
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				peak = max(peak, read())
+			case acknowledged := <-sampler.requests:
+				live := read()
+				peak = max(peak, live)
+				acknowledged <- live
+			case <-stop:
+				peakResult <- max(peak, read())
+				return
+			}
+		}
+	}()
+	sampler.stop = sync.OnceValue(func() uint64 {
+		close(stop)
+		<-stopped
+		return <-peakResult
+	})
+	t.Cleanup(func() { sampler.stop() })
+	sampler.baseline = receive(t, baseline, testEvent{name: "post-GC heap baseline"})
+	return sampler
+}
+
+func (s *streamingHeapSampler) sample(ctx context.Context) (uint64, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	acknowledged := make(chan uint64, 1)
+	select {
+	case s.requests <- acknowledged:
+	case <-ctx.Done():
+		return 0, s.sampleError(ctx.Err())
+	}
+	select {
+	case live := <-acknowledged:
+		return live, nil
+	case <-ctx.Done():
+		return 0, s.sampleError(ctx.Err())
+	}
+}
+
+func (*streamingHeapSampler) sampleError(err error) error {
+	buf := make([]byte, 1<<20)
+	return fmt.Errorf("waiting for acknowledged post-GC heap sample: %w\n%s", err, buf[:runtime.Stack(buf, true)])
+}
+
+func (s *streamingHeapSampler) growth() uint64 {
+	peak := s.stop()
+	return peak - min(peak, s.baseline)
+}
+
+// TestStreamingHeapSamplerSensitivity certifies detection of a retained body.
+func TestStreamingHeapSamplerSensitivity(t *testing.T) {
+	tests := map[string]struct{ size int }{
+		"success: retained body exceeds the streaming bound": {size: 100 << 20},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			sampler := startStreamingHeapSampler(t)
+			retained := make([]byte, tt.size)
+			live, err := sampler.sample(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			growth := sampler.growth()
+			// Keep the body reachable through the terminal reading and sampler join.
+			runtime.KeepAlive(retained)
+			t.Logf("acknowledged live heap %d bytes; peak live growth %d bytes", live, growth)
+			if growth < 50<<20 {
+				t.Fatalf("retained body growth = %d bytes, want at least %d", growth, 50<<20)
+			}
+		})
+	}
+}
+
 // TestLargeBodyStreaming preserves bounded streaming with request-hook ordering.
 // Fixture hardening does not establish a production regression.
 func TestLargeBodyStreaming(t *testing.T) {
@@ -93,6 +192,7 @@ func TestLargeBodyStreaming(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			hooks := &bodyStreamHooks{upload: tt.upload, done: make(chan bool, 2), requestObserved: make(chan struct{})}
+			var sampler *streamingHeapSampler
 			tail := make(chan struct{})
 			releaseTail := sync.OnceFunc(func() { close(tail) })
 			writeBody := func(w io.Writer) error {
@@ -135,6 +235,11 @@ func TestLargeBodyStreaming(t *testing.T) {
 				if got := hooks.complete.Load(); got != 0 {
 					return fmt.Errorf("completion hook fired %d times before the last body byte", got)
 				}
+				live, err := sampler.sample(t.Context())
+				if err != nil {
+					return err
+				}
+				t.Logf("acknowledged held-tail post-GC live heap %d bytes", live)
 				releaseTail()
 				if _, err := io.ReadFull(r, first[:]); err != nil {
 					return err
@@ -186,32 +291,7 @@ func TestLargeBodyStreaming(t *testing.T) {
 			client := dial(t, p.Addr)
 			t.Cleanup(releaseTail)
 
-			runtime.GC()
-			samples := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
-			metrics.Read(samples)
-			baseline := samples[0].Value.Uint64()
-			stop := make(chan struct{})
-			stopped := make(chan struct{})
-			peakResult := make(chan uint64, 1)
-			stopSampling := sync.OnceFunc(func() { close(stop); <-stopped })
-			t.Cleanup(stopSampling)
-			go func() {
-				defer close(stopped)
-				ticker := time.NewTicker(50 * time.Millisecond)
-				defer ticker.Stop()
-				peak := baseline
-				for {
-					select {
-					case <-ticker.C:
-						metrics.Read(samples)
-						peak = max(peak, samples[0].Value.Uint64())
-					case <-stop:
-						metrics.Read(samples)
-						peakResult <- max(peak, samples[0].Value.Uint64())
-						return
-					}
-				}
-			}()
+			sampler = startStreamingHeapSampler(t)
 
 			if tt.upload {
 				if _, err := fmt.Fprintf(client, "POST http://example.test/ HTTP/1.1\r\nHost: example.test\r\nContent-Length: %d\r\n\r\n", bodySize); err != nil {
@@ -253,11 +333,11 @@ func TestLargeBodyStreaming(t *testing.T) {
 			if got := hooks.complete.Load(); got != 1 {
 				t.Fatalf("completion hook count = %d, want 1", got)
 			}
-			stopSampling()
-			growth := receive(t, peakResult) - baseline
-			t.Logf("relayed %d bytes; peak heap growth %d bytes", bodySize, growth)
+			// Forced GC measures live retention, not allocations or throughput.
+			growth := sampler.growth()
+			t.Logf("relayed %d bytes; peak live heap growth %d bytes", bodySize, growth)
 			if growth >= 50<<20 {
-				t.Fatalf("peak heap growth = %d bytes, want below %d", growth, 50<<20)
+				t.Fatalf("peak live heap growth = %d bytes, want below %d", growth, 50<<20)
 			}
 		})
 	}

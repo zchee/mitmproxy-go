@@ -174,11 +174,15 @@ jobs:
         env:
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p stress-logs
           cp hack/stress-rows.txt stress-logs/
           row=0
-          # An empty match is accepted until the upstream-sequence tests land.
+          failed=""
+          # Every row runs even after an earlier one fails, so one red row
+          # cannot hide the result of the rows behind it; the job fails at
+          # the end. An empty match is accepted until the upstream-sequence
+          # tests land.
           while IFS=$'\t' read -r pkg pattern count cpu; do
             row=$((row + 1))
             echo "::group::${pkg} ${pattern}"
@@ -190,8 +194,16 @@ jobs:
                 "${count}" "${cpu}" "${pattern}" "${pkg}"
               go test -race -count="${count}" -cpu="${cpu}" -timeout=60m -v -run "${pattern}" "${pkg}"
             } 2>&1 | tee "stress-logs/${row}.log"
+            if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+              failed="${failed} ${row}"
+              echo "::error::stress row ${row} (${pkg} ${pattern}) failed"
+            fi
             echo "::endgroup::"
           done < hack/stress-rows.txt
+          if [ -n "${failed}" ]; then
+            echo "failed rows:${failed}" >&2
+            exit 1
+          fi
       - name: Upload exact-head stress logs
         if: always()
         uses: actions/upload-artifact@v7

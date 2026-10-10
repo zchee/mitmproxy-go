@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"slices"
 	"sync"
 	"time"
@@ -163,7 +164,7 @@ func (l *udpLayer) relay(ctx context.Context, c *layer.Context) error {
 			return err
 		}
 		if event.err != nil {
-			return event.err
+			return cancelledRelayError(ctx, event.err)
 		}
 		dst := c.ServerPackets
 		if !event.fromClient {
@@ -193,12 +194,23 @@ func (l *udpLayer) relay(ctx context.Context, c *layer.Context) error {
 		// as another datagram, which would change the sender's packet boundaries.
 		n, err := dst.WriteTo(content, nil)
 		if err != nil {
-			return err
+			return cancelledRelayError(ctx, err)
 		}
 		if n != len(content) {
 			return io.ErrShortWrite
 		}
 	}
+}
+
+// cancelledRelayError reports the context's own error when the relay was
+// interrupted: the interrupt sets an immediate deadline on both transports, so
+// a read or write that races with the cancellation surfaces as a deadline
+// error that would otherwise be mistaken for a transport fault.
+func cancelledRelayError(ctx context.Context, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, os.ErrDeadlineExceeded) {
+		return ctxErr
+	}
+	return err
 }
 
 func readPackets(ctx context.Context, conn layer.PacketTransport, fromClient bool, incoming chan<- received) {

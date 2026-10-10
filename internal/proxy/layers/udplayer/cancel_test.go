@@ -19,9 +19,10 @@ import (
 
 func TestRelayCancellationError(t *testing.T) {
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
-	tests := map[string]struct{ afterWrite bool }{
-		"error: cancellation wins over interrupted packet readers": {},
-		"error: cancelled owner receives pending reader failure":   {afterWrite: true},
+	tests := map[string]struct{ afterWrite, duringWrite bool }{
+		"error: cancellation wins over interrupted packet readers":            {},
+		"error: cancelled owner receives pending reader failure":              {afterWrite: true},
+		"error: cancellation during a relayed write is not a transport fault": {duringWrite: true},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -44,7 +45,7 @@ func TestRelayCancellationError(t *testing.T) {
 				}
 				t.Cleanup(func() { _ = peer.Close() })
 				peers[i] = peer
-				transports[i] = &observedPacketRead{PacketConn: socket, ctx: t.Context(), remote: peer.LocalAddr(), started: make(chan struct{}), failed: make(chan struct{})}
+				transports[i] = &observedPacketRead{PacketConn: socket, ctx: t.Context(), remote: peer.LocalAddr(), started: make(chan struct{}), failed: make(chan struct{}), deadlineSet: make(chan struct{})}
 			}
 			if test.afterWrite {
 				transports[1].afterWrite = func() {
@@ -53,6 +54,15 @@ func TestRelayCancellationError(t *testing.T) {
 					}
 					awaitTerminal(t, transports[0].failed)
 					cancel()
+				}
+			}
+			if test.duringWrite {
+				// Cancel while the relay is inside WriteTo: the interrupt sets an
+				// immediate deadline on both transports, so the write itself fails
+				// with a deadline error that must not be reported as the outcome.
+				transports[1].beforeWrite = func() {
+					cancel()
+					awaitTerminal(t, transports[1].deadlineSet)
 				}
 			}
 			c := &layer.Context{
@@ -66,7 +76,7 @@ func TestRelayCancellationError(t *testing.T) {
 			for _, transport := range transports {
 				awaitTerminal(t, transport.started)
 			}
-			if test.afterWrite {
+			if test.afterWrite || test.duringWrite {
 				if _, err := peers[0].WriteTo([]byte("request"), transports[0].LocalAddr()); err != nil {
 					t.Fatal(err)
 				}
@@ -92,12 +102,15 @@ func (*valueFreeContext) Value(any) any { return nil }
 // through deadlines, rather than relying on closing the underlying socket.
 type observedPacketRead struct {
 	net.PacketConn
-	ctx        context.Context
-	remote     net.Addr
-	started    chan struct{}
-	failed     chan struct{}
-	once       sync.Once
-	afterWrite func()
+	ctx         context.Context
+	remote      net.Addr
+	started     chan struct{}
+	failed      chan struct{}
+	deadlineSet chan struct{}
+	once        sync.Once
+	deadline    sync.Once
+	beforeWrite func()
+	afterWrite  func()
 }
 
 func (c *observedPacketRead) Context() context.Context { return c.ctx }
@@ -112,9 +125,21 @@ func (c *observedPacketRead) ReadFrom(p []byte) (int, net.Addr, error) {
 	return n, addr, err
 }
 
+// SetDeadline records the relay's interrupt so a test can order its write
+// after the deadline has been armed.
+func (c *observedPacketRead) SetDeadline(t time.Time) error {
+	if !t.IsZero() && c.deadlineSet != nil {
+		c.deadline.Do(func() { close(c.deadlineSet) })
+	}
+	return c.PacketConn.SetDeadline(t)
+}
+
 func (c *observedPacketRead) WriteTo(p []byte, addr net.Addr) (int, error) {
 	if addr == nil {
 		addr = c.remote
+	}
+	if c.beforeWrite != nil {
+		c.beforeWrite()
 	}
 	n, err := c.PacketConn.WriteTo(p, addr)
 	if err == nil && c.afterWrite != nil {

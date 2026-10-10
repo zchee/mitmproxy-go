@@ -5,6 +5,7 @@ package h3
 
 import (
 	"errors"
+	"fmt"
 	"runtime"
 	"testing"
 
@@ -141,7 +142,8 @@ func TestTrailersFollowActualFIN(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := state.wire.Close(); err != nil {
+			// The late DATA rejection can cancel the write half before Close runs.
+			if err := state.wire.Close(); err != nil && (!test.lateData || err.Error() != fmt.Sprintf("close called for canceled stream %d", state.wire.StreamID())) {
 				t.Fatal(err)
 			}
 			end, err := client.ReceiveStream(ctx, id)

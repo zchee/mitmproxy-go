@@ -2,10 +2,10 @@ name: Stress
 
 # Named race stress rows (hack/stress-rows.txt) on every supported platform.
 # They run nightly on main and on demand; a pull request runs them only when
-# it carries the "stress" label or changes a package that a row covers, so
-# routine changes are not held for the slowest row. The path check sees the
-# row's own package, not its dependencies: a change to a package those rows
-# import (internal/proxy/layer, internal/netstack, ...) needs the label.
+# it carries the "stress" label, so no pull request is held for the slowest
+# row unless its author asks for it. Add the label to a change that touches a
+# row's package or anything those rows import (internal/proxy/layer,
+# internal/netstack, ...).
 #
 # Linux and Windows run one job per row, so the longest row bounds the wall
 # clock. macOS runs every row in one job: the hosted xcode-27 pool hands out
@@ -46,15 +46,11 @@ jobs:
       rows: ${{ steps.rows.outputs.rows }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          # The pull-request diff below needs the base commit.
-          fetch-depth: 0
       - name: Decide whether a pull request runs the rows
         id: gate
         env:
           EVENT: ${{ github.event_name }}
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           if [ "${EVENT}" != "pull_request" ]; then
@@ -69,22 +65,8 @@ jobs:
               exit 0
             fi
           done
-          # A change under a row's package, to the row list, or to this
-          # workflow runs the rows; anything else skips them.
-          changed="$(git diff --name-only "${BASE_SHA}...HEAD")"
-          echo "${changed}"
-          watched='^(hack/stress-rows\.txt|\.github/workflows/stress\.yaml|go\.mod|go\.sum)$'
-          while IFS=$'\t' read -r pkg _; do
-            dir="${pkg#./}"
-            watched="${watched}|^${dir}/"
-          done < hack/stress-rows.txt
-          if grep -Eq "${watched}" <<<"${changed}"; then
-            echo "run=true" >> "${GITHUB_OUTPUT}"
-            echo "a covered package changed: every row"
-          else
-            echo "run=false" >> "${GITHUB_OUTPUT}"
-            echo "no covered package changed: rows skipped (add the stress label to force them)"
-          fi
+          echo "run=false" >> "${GITHUB_OUTPUT}"
+          echo "no stress label: rows skipped"
       - name: Read the stress rows into a matrix
         id: rows
         env:

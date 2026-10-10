@@ -19,32 +19,6 @@ defaults:
     shell: bash
 
 jobs:
-  build:
-    name: build (${{ matrix.os }}, go ${{ matrix.go }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-26.04
-          - xcode-27
-          - windows-2025
-        go:
-          - stable
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - name: Read the Go version from go.mod
-        id: go
-        shell: bash
-        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
-      - uses: cloudx-io/setup-go@v1
-        with:
-          go-version: ${{ steps.go.outputs.version }}
-          cache-key-prefix: build
-      - name: go build and go vet
-        run: go build ./... && go vet ./...
-
   test:
     name: test (${{ matrix.os }}, go ${{ matrix.go }})
     strategy:
@@ -68,6 +42,10 @@ jobs:
         with:
           go-version: ${{ steps.go.outputs.version }}
           cache-key-prefix: test
+      # go test compiles every package and runs the default vet checks; the
+      # explicit vet keeps the full analyzer set that the build job used to run.
+      - name: go vet
+        run: go vet ./...
       - name: go test -race with skip report
         env:
           TEST_SKIPS_ENFORCE: ${{ vars.TEST_SKIPS_ENFORCE || '0' }}
@@ -75,8 +53,26 @@ jobs:
           set -euo pipefail
           go test -race -count=1 -json ./... | bash hack/test-skips.sh
 
+  stress-plan:
+    name: stress plan
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      rows: ${{ steps.rows.outputs.rows }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read the stress rows into a matrix
+        id: rows
+        run: |
+          set -euo pipefail
+          # One job per row: the longest row bounds the wall clock, not the sum.
+          rows="$(awk -F'\t' 'NF == 4 { printf "%s{\"id\":%d,\"pkg\":\"%s\",\"pattern\":\"%s\",\"count\":\"%s\",\"cpu\":\"%s\"}", (NR > 1 ? "," : ""), NR, $1, $2, $3, $4 }' hack/stress-rows.txt)"
+          echo "rows=[${rows}]" >> "${GITHUB_OUTPUT}"
+          echo "[${rows}]"
+
   stress:
-    name: stress (${{ matrix.os }})
+    name: stress (${{ matrix.os }}, row ${{ matrix.row.id }})
+    needs: stress-plan
     strategy:
       fail-fast: false
       matrix:
@@ -84,9 +80,10 @@ jobs:
           - ubuntu-26.04
           - xcode-27
           - windows-2025
+        row: ${{ fromJSON(needs.stress-plan.outputs.rows) }}
     runs-on: ${{ matrix.os }}
-    # Five 60-minute row budgets plus toolchain setup and artifact upload.
-    timeout-minutes: 330
+    # One 60-minute row budget plus toolchain setup and artifact upload.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
       - name: Read the Go version from go.mod
@@ -97,33 +94,32 @@ jobs:
         with:
           go-version: ${{ steps.go.outputs.version }}
           cache-key-prefix: stress
-      - name: Named race stress rows
+      - name: Named race stress row
         env:
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ROW_ID: ${{ matrix.row.id }}
+          ROW_PKG: ${{ matrix.row.pkg }}
+          ROW_PATTERN: ${{ matrix.row.pattern }}
+          ROW_COUNT: ${{ matrix.row.count }}
+          ROW_CPU: ${{ matrix.row.cpu }}
         run: |
           set -euo pipefail
           mkdir -p stress-logs
           cp hack/stress-rows.txt stress-logs/
-          row=0
           # An empty match is accepted until the upstream-sequence tests land.
-          while IFS=$'\t' read -r pkg pattern count cpu; do
-            row=$((row + 1))
-            echo "::group::${pkg} ${pattern}"
-            {
-              date '+%Y-%m-%d %H:%M:%S %Z'
-              printf 'candidate_sha=%s\ncheckout_sha=%s\n' "${CANDIDATE_SHA}" "$(git rev-parse HEAD)"
-              go version
-              printf 'go test -race -count=%s -cpu=%s -timeout=60m -run %q %q\n' \
-                "${count}" "${cpu}" "${pattern}" "${pkg}"
-              go test -race -count="${count}" -cpu="${cpu}" -timeout=60m -v -run "${pattern}" "${pkg}"
-            } 2>&1 | tee "stress-logs/${row}.log"
-            echo "::endgroup::"
-          done < hack/stress-rows.txt
-      - name: Upload exact-head stress logs
+          {
+            date '+%Y-%m-%d %H:%M:%S %Z'
+            printf 'candidate_sha=%s\ncheckout_sha=%s\n' "${CANDIDATE_SHA}" "$(git rev-parse HEAD)"
+            go version
+            printf 'go test -race -count=%s -cpu=%s -timeout=60m -run %q %q\n' \
+              "${ROW_COUNT}" "${ROW_CPU}" "${ROW_PATTERN}" "${ROW_PKG}"
+            go test -race -count="${ROW_COUNT}" -cpu="${ROW_CPU}" -timeout=60m -v -run "${ROW_PATTERN}" "${ROW_PKG}"
+          } 2>&1 | tee "stress-logs/${ROW_ID}.log"
+      - name: Upload exact-head stress log
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: stress-${{ matrix.os }}-${{ github.event.pull_request.head.sha || github.sha }}
+          name: stress-${{ matrix.os }}-row${{ matrix.row.id }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: stress-logs/
           if-no-files-found: error
 
@@ -198,6 +194,15 @@ jobs:
         run: |
           go install golang.org/dl/gotip@latest
           echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+      - name: Date for the toolchain cache key
+        id: date
+        run: echo "today=$(date -u '+%Y-%m-%d')" >> "${GITHUB_OUTPUT}"
+      # The development toolchain changes daily; a same-day hit skips the
+      # two-minute source build, and gotip download is a no-op on a hit.
+      - uses: actions/cache@v5
+        with:
+          path: ~/sdk/gotip
+          key: gotip-${{ runner.os }}-${{ steps.date.outputs.today }}
       - name: Download and build the development toolchain
         run: gotip download
       - name: gotip build, vet and test
@@ -237,8 +242,17 @@ jobs:
         run: bash hack/test-skips_test.sh
 
   fuzz-smoke:
+    name: fuzz-smoke (shard ${{ matrix.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - 0
+          - 1
+          - 2
+          - 3
     runs-on: ubuntu-26.04
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: Read the Go version from go.mod
@@ -250,6 +264,7 @@ jobs:
           go-version: ${{ steps.go.outputs.version }}
           cache-key-prefix: fuzz-smoke
       - name: Verify required protocol fuzz targets
+        if: matrix.shard == 0
         run: |
           set -euo pipefail
           while read -r pkg target; do
@@ -264,23 +279,32 @@ jobs:
           ./internal/h3 FuzzHeaders
           TARGETS
       - name: Run every fuzz target for 30 seconds
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: 4
         run: |
           set -euo pipefail
           # go test -fuzz accepts one package and one target per run, so
           # loop over the targets each package lists. Assigning the output
-          # to a variable first makes a compile error fail the job.
+          # to a variable first makes a compile error fail the job. Targets
+          # are dealt round-robin across the shards so each runner takes a
+          # quarter of the 30-second runs.
           pkgs="$(go list ./...)"
           count=0
+          index=0
           for pkg in ${pkgs}; do
             listed="$(go test -list '^Fuzz' "${pkg}")"
             for target in $(grep '^Fuzz' <<<"${listed}" || true); do
-              echo "::group::${pkg} ${target}"
-              go test -run '^$' -fuzz "^${target}\$" -fuzztime 30s "${pkg}"
-              echo "::endgroup::"
-              count=$((count + 1))
+              if [ $((index % SHARDS)) -eq "${SHARD}" ]; then
+                echo "::group::${pkg} ${target}"
+                go test -run '^$' -fuzz "^${target}\$" -fuzztime 30s "${pkg}"
+                echo "::endgroup::"
+                count=$((count + 1))
+              fi
+              index=$((index + 1))
             done
           done
-          echo "ran ${count} fuzz target(s)"
+          echo "shard ${SHARD}/${SHARDS} ran ${count} of ${index} fuzz target(s)"
 
   licenses:
     runs-on: ubuntu-26.04

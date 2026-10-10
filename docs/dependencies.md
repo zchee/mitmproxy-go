@@ -5,6 +5,12 @@ module was chosen and pinned, and the known-good way to upgrade it. The facts co
 manifest and the package decisions in [plans/mitmproxy-go-port.md](plans/mitmproxy-go-port.md). Where the
 plan records no upgrade path, the table says so instead of guessing.
 
+New Go-module rows cover direct dependencies only; no further transitive
+rows are added. `golang.org/x/exp`, `golang.org/x/time`, and
+`golang.zx2c4.com/wintun` therefore have no independent rows. The existing
+ASN.1 BER entry is a legacy transitive boundary note, retained for its
+security context rather than presented as a direct dependency.
+
 ## Policy
 
 - **Exact pins.** Each module is pinned to the version below. A requirement enters `go.mod` together with
@@ -55,7 +61,7 @@ plan records no upgrade path, the table says so instead of guessing.
 | `github.com/shirou/gopsutil/v4` | v4.26.9 | BSD-3 | processinfo | Running executables for `processinfo`. | Not recorded in the plan. |
 | `github.com/ebitengine/purego` | v0.11.1 | Apache-2.0 | processinfo (darwin icons) | Objective-C calls for macOS application icons. | Not recorded in the plan. |
 | `github.com/go-ldap/ldap/v3` | v3.4.15 | MIT | proxyauth | LDAP proxy authentication; each service bind, bounded search and user bind runs outside the addon dispatch lock. | Run `go test -race -tags integration ./addons/proxyauth` against the OpenLDAP CI service (or local Docker) after upgrading; verify correct and incorrect passwords, missing users, escaped filters, cancellation and lazy connection failures. |
-| `github.com/go-asn1-ber/asn1-ber` (transitive) | v1.5.8 | MIT | go-ldap | Its recursive BER decoder has no depth limit and a process-global default packet limit of 2 GiB minus one byte. LDAP servers must be trusted configuration. The addon adds a per-connection 1 MiB received-byte limit without mutating library globals; this bounds bytes, not nesting or decoded-object overhead. | Recheck decoder depth and allocation behavior on every go-ldap upgrade; prefer per-connection library limits if they become available. Rerun the byte-limit and cancellation tests. |
+| `github.com/go-asn1-ber/asn1-ber` (transitive) | v1.5.8 | MIT | go-ldap | Legacy transitive boundary note, retained for its security context. Its recursive BER decoder has no depth limit and a process-global default packet limit of 2 GiB minus one byte. LDAP servers must be trusted configuration. The addon adds a per-connection 1 MiB received-byte limit without mutating library globals; this bounds bytes, not nesting or decoded-object overhead. | Recheck decoder depth and allocation behavior on every go-ldap upgrade; prefer per-connection library limits if they become available. Rerun the byte-limit and cancellation tests. |
 | `golang.design/x/clipboard` | v0.11.0 | MIT | export (build tag) | Clipboard export, behind the `clipboard` build tag; cgo-free on desktop and optional. | Not recorded in the plan. |
 | `go.opentelemetry.io/otel` (+ `sdk`, `exporters/otlp/otlptrace/otlptracegrpc`, `contrib/instrumentation/net/http/otelhttp`) | v1.47.0 / v0.72.0 | Apache-2.0 | observability | Chosen by the user on top of `log/slog`, `net/http/pprof` and `runtime/metrics`; the exporter is opt-in. | Not recorded in the plan. |
 | `github.com/chromedp/chromedp` | v0.19.1 | MIT | mitmweb end-to-end tests (test-only) | Reproducible browser tests on ubuntu-26.04 in CI. | Not recorded in the plan. |

@@ -140,10 +140,21 @@ func (d *socketDemux) dispatch(packet []byte, from netip.AddrPort) {
 		d.drop()
 		return
 	}
+	var logCounts []uint64
+	countDrop := func() {
+		if count := d.countDrop(); count != 0 {
+			logCounts = append(logCounts, count)
+		}
+	}
 	d.mu.Lock()
-	defer d.mu.Unlock()
+	defer func() {
+		d.mu.Unlock()
+		for _, count := range logCounts {
+			d.logDrop(count)
+		}
+	}()
 	if kind != device.MessageInitiationType && len(d.indices[index]) == 0 {
-		d.drop()
+		countDrop()
 		return
 	}
 	// One immutable copy can be shared by handshake recipients. Each bind
@@ -154,7 +165,7 @@ func (d *socketDemux) dispatch(packet []byte, from netip.AddrPort) {
 			select {
 			case queue <- datagram:
 			default:
-				d.drop()
+				countDrop()
 			}
 		}
 		return
@@ -167,14 +178,25 @@ func (d *socketDemux) dispatch(packet []byte, from netip.AddrPort) {
 		select {
 		case d.queues[peer.peer] <- datagram:
 		default:
-			d.drop()
+			countDrop()
 		}
 	}
 }
 
 func (d *socketDemux) drop() {
+	if count := d.countDrop(); count != 0 {
+		d.logDrop(count)
+	}
+}
+
+func (d *socketDemux) countDrop() uint64 {
 	count := d.dropped.Add(1)
 	if count&(count-1) == 0 {
-		d.logger.Debug("Dropping invalid, unknown-peer or full-queue WireGuard datagram.", "dropped", count)
+		return count
 	}
+	return 0
+}
+
+func (d *socketDemux) logDrop(count uint64) {
+	d.logger.Debug("Dropping invalid, unknown-peer or full-queue WireGuard datagram.", "dropped", count)
 }

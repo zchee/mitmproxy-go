@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	quic "github.com/quic-go/quic-go"
 	"golang.org/x/net/http/httpguts"
 
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
@@ -78,8 +79,15 @@ func (s *requestState) fail(code ErrorCode, err error) {
 		s.doneClosed = true
 	}
 	s.signalLocked()
+	localEnd := s.localEnd
 	s.mu.Unlock()
-	cancelRequestStream(s.wire, failure.Code)
+	// A FIN-closed write half still owns reliable delivery of unacknowledged
+	// bytes. Resetting it during receipt cleanup can discard a complete response.
+	if localEnd {
+		s.wire.CancelRead(quic.StreamErrorCode(failure.Code))
+	} else {
+		cancelRequestStream(s.wire, failure.Code)
+	}
 	s.e.retire(s)
 }
 

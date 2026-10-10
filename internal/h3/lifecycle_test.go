@@ -8,6 +8,8 @@ import (
 	"errors"
 	"testing"
 
+	gocmp "github.com/google/go-cmp/cmp"
+	quic "github.com/quic-go/quic-go"
 	"go.uber.org/goleak"
 )
 
@@ -123,6 +125,83 @@ func TestEndpointPeerResetCode(t *testing.T) {
 	case <-failed:
 	case <-ctx.Done():
 		t.Fatal("reset did not notify stream failure", ctx.Err())
+	}
+}
+
+func TestEndpointCancellationPreservesResponseFIN(t *testing.T) {
+	tests := map[string]struct{ end bool }{
+		"success: completed response retains FIN": {end: true},
+		"success: incomplete response is reset":   {},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			client, server, ctx := newEndpointPair(t)
+			id, err := client.OpenStream(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := client.Send(ctx, Event{Kind: Headers, Identity: id, Headers: []HeaderField{{Name: ":method", Value: "GET"}, {Name: ":scheme", Value: "https"}, {Name: ":path", Value: "/"}}, EndStream: true}); err != nil {
+				t.Fatal(err)
+			}
+			head, err := server.Receive(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			end, err := server.ReceiveStream(ctx, head.Identity)
+			if err != nil || !end.EndStream || end.Receipt == nil {
+				t.Fatalf("request FIN = %+v, %v", end, err)
+			}
+			// Retain the EOF receipt so cleanup cannot rely on StreamDone yet.
+			state, err := server.lookup(head.Identity)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := server.Send(ctx, Event{Kind: Headers, Identity: head.Identity, Headers: []HeaderField{{Name: ":status", Value: "502"}}}); err != nil {
+				t.Fatal(err)
+			}
+			body := []byte("502 Bad Gateway")
+			if err := server.Send(ctx, Event{Kind: Data, Identity: head.Identity, Data: body, EndStream: test.end}); err != nil {
+				t.Fatal(err)
+			}
+			if err := server.CancelStream(head.Identity, ErrCodeRequestCancelled); err != nil {
+				t.Fatal(err)
+			}
+			// QUIC distinguishes a reset from a normally closed write half even
+			// when the peer has already received its FIN.
+			_, err = state.wire.Write(nil)
+			reset, cancelled := errors.AsType[*quic.StreamError](err)
+			if test.end && cancelled || !test.end && (!cancelled || reset.ErrorCode != quic.StreamErrorCode(ErrCodeRequestCancelled)) {
+				t.Fatalf("write after cleanup = %v; completed response=%v", err, test.end)
+			}
+			if end.Receipt.Complete() {
+				t.Fatal("cleanup did not invalidate the retained request receipt")
+			}
+			if !test.end {
+				return
+			}
+			var received []byte
+			for {
+				event, err := client.ReceiveStream(ctx, id)
+				if err != nil || event.Kind == Reset {
+					t.Fatalf("completed response = %+v, %v", event, err)
+				}
+				if event.Kind == Headers {
+					if diff := gocmp.Diff([]HeaderField{{Name: ":status", Value: "502"}}, event.Headers); diff != "" {
+						t.Fatal(diff)
+					}
+				}
+				received = append(received, event.Data...)
+				if event.Receipt != nil {
+					event.Receipt.Complete()
+				}
+				if event.EndStream {
+					break
+				}
+			}
+			if diff := gocmp.Diff(body, received); diff != "" {
+				t.Fatal(diff)
+			}
+		})
 	}
 }
 

@@ -436,8 +436,9 @@ func (e *Endpoint) OpenStream(ctx context.Context) (layer.StreamIdentity, error)
 	return s.id, nil
 }
 
-// CancelStream cancels both directions and invalidates receipts without waiting
-// for network I/O. Repeated cancellation of a closed identity is harmless.
+// CancelStream cancels unfinished directions and invalidates receipts without
+// waiting for network I/O. A FIN-closed write half retains reliable delivery.
+// Repeated cancellation of a closed identity is harmless.
 func (e *Endpoint) CancelStream(id layer.StreamIdentity, code ErrorCode) error {
 	s, err := e.lookup(id)
 	if err != nil {

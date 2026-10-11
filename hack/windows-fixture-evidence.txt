@@ -1,0 +1,5 @@
+# Package, top-level test pattern, build tags (- means none).
+./internal/netutil/freeport	^Test	-
+./addons/dnsresolver	^Test	-
+./internal/proxy/modeserver	^Test.*DNS	-
+./internal/proxy/layers/dnslayer	^Test	-

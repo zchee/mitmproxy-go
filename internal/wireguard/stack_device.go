@@ -100,7 +100,7 @@ func (t *stackDevice) Write(packets [][]byte, offset int) (int, error) {
 		t.router.mu.Lock()
 		err := t.stack.Inject(plaintext, info)
 		if err == nil {
-			t.router.sources[source] = t.peer
+			t.router.learnLocked(source, t.peer)
 		}
 		t.router.mu.Unlock()
 		if err != nil {

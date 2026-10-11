@@ -72,6 +72,9 @@ func TestLoadConfig(t *testing.T) {
 				if err == nil || !strings.HasPrefix(err.Error(), "Invalid configuration file ("+path+"): ") {
 					t.Fatalf("invalid file error = %v", err)
 				}
+				if len(test.data) > maxConfigSize && err.Error() != "Invalid configuration file ("+path+"): exceeds 4096 bytes" {
+					t.Fatalf("oversized configuration error = %v, want size refusal", err)
+				}
 				return
 			}
 			if err != nil {

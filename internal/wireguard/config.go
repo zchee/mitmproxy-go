@@ -21,7 +21,10 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/privfile"
 )
 
-const maxConfigSize = 4096
+const (
+	maxConfigSize  = 4096
+	maxClientPeers = 255
+)
 
 var errInvalidKey = errors.New("Invalid key.") //nolint:staticcheck // Preserve upstream's key-validation diagnostic.
 
@@ -30,6 +33,8 @@ var (
 	ErrConflictingClientKeys = errors.New("client_key and client_keys are mutually exclusive")
 	// ErrEmptyClientKeys rejects an empty ordered peer list.
 	ErrEmptyClientKeys = errors.New("client_keys must contain at least one peer")
+	// ErrTooManyClientKeys rejects peer lists exceeding the printed IPv4 subnet.
+	ErrTooManyClientKeys = errors.New("client_keys must contain at most 255 peers")
 	// ErrDuplicateClientKeys rejects keys identifying the same X25519 peer.
 	ErrDuplicateClientKeys = errors.New("client_keys contains duplicate peers")
 )
@@ -158,8 +163,8 @@ func readConfig(path string) (Config, error) {
 
 // PeerKeys returns an independent ordered list of validated client private keys.
 // The first peer is the fallback for destinations with no learned source.
-// It returns ErrConflictingClientKeys, ErrEmptyClientKeys, ErrDuplicateClientKeys,
-// or "Invalid key." without quoting private material.
+// It returns ErrConflictingClientKeys, ErrEmptyClientKeys, ErrTooManyClientKeys,
+// ErrDuplicateClientKeys or "Invalid key." without quoting private material.
 func (c Config) PeerKeys() ([]string, error) {
 	if c.ClientKey != "" && c.ClientKeys != nil {
 		return nil, ErrConflictingClientKeys
@@ -170,6 +175,9 @@ func (c Config) PeerKeys() ([]string, error) {
 	}
 	if len(keys) == 0 {
 		return nil, ErrEmptyClientKeys
+	}
+	if len(keys) > maxClientPeers {
+		return nil, ErrTooManyClientKeys
 	}
 	seen := make(map[[32]byte]struct{}, len(keys))
 	for _, text := range keys {

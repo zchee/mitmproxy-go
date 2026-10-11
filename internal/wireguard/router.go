@@ -4,6 +4,7 @@
 package wireguard
 
 import (
+	"container/list"
 	"context"
 	"log/slog"
 	"net/netip"
@@ -15,20 +16,29 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/netstack"
 )
 
-const peerPacketQueueSize = 64
+const (
+	peerPacketQueueSize = 64
+	maxLearnedSources   = 4096
+)
+
+type sourceRoute struct {
+	source netip.Addr
+	peer   int
+}
 
 // packetRouter keeps authenticated source ownership separate from each engine's
-// default AllowedIPs. Old addresses remain learned when a peer changes address.
+// default AllowedIPs. Learned addresses share one bounded LRU across all peers.
 type packetRouter struct {
 	mu      sync.Mutex
-	sources map[netip.Addr]int
+	sources map[netip.Addr]*list.Element
+	recency list.List
 	queues  []chan []byte
 	logger  *slog.Logger
 	dropped atomic.Uint64
 }
 
 func newPacketRouter(peers int, logger *slog.Logger) *packetRouter {
-	router := &packetRouter{sources: make(map[netip.Addr]int), queues: make([]chan []byte, peers), logger: logger}
+	router := &packetRouter{sources: make(map[netip.Addr]*list.Element), queues: make([]chan []byte, peers), logger: logger}
 	for i := range peers {
 		router.queues[i] = make(chan []byte, peerPacketQueueSize)
 	}
@@ -50,9 +60,7 @@ func (r *packetRouter) run(ctx context.Context, stack *netstack.Stack, cancel co
 				r.drop()
 				continue
 			}
-			r.mu.Lock()
-			peer := r.sources[destination] // Missing addresses use the first configured peer.
-			r.mu.Unlock()
+			peer := r.peerFor(destination)
 			select {
 			case r.queues[peer] <- packet:
 			case <-ctx.Done():
@@ -62,6 +70,38 @@ func (r *packetRouter) run(ctx context.Context, stack *netstack.Stack, cancel co
 			}
 		}
 	}
+}
+
+func (r *packetRouter) peerFor(destination netip.Addr) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if entry := r.sources[destination]; entry != nil {
+		r.recency.MoveToFront(entry)
+		return entry.Value.(*sourceRoute).peer
+	}
+	// Missing or evicted sources use peer 0 until a successfully admitted
+	// authenticated packet relearns their sender; lookup does not learn routes.
+	return 0
+}
+
+// learnLocked publishes ownership only after admission, with r.mu held so an
+// immediately generated reply cannot observe a missing or previous owner.
+func (r *packetRouter) learnLocked(source netip.Addr, peer int) {
+	if entry := r.sources[source]; entry != nil {
+		entry.Value.(*sourceRoute).peer = peer
+		r.recency.MoveToFront(entry)
+		return
+	}
+	if len(r.sources) == maxLearnedSources {
+		entry := r.recency.Back()
+		route := entry.Value.(*sourceRoute)
+		delete(r.sources, route.source)
+		route.source, route.peer = source, peer
+		r.recency.MoveToFront(entry)
+		r.sources[source] = entry
+		return
+	}
+	r.sources[source] = r.recency.PushFront(&sourceRoute{source: source, peer: peer})
 }
 
 func (r *packetRouter) drop() {

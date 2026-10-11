@@ -1,0 +1,99 @@
+# Measures repeated paired-port and DNS fixtures on native Windows, with range
+# tables, identity counts and partial failure logs. Dispatch by hand on a frozen
+# head; this is evidence collection, not an automatic or required status check.
+name: Windows fixture evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Frozen checkout ref (empty uses the dispatching ref)
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  windows-fixtures:
+    runs-on: windows-2025
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      # Setup caps sum to eight minutes; finalization/upload have five, leaving
+      # two minutes of overhead around the aggregate sixty-minute test budget.
+      - name: Initialize evidence before setup
+        timeout-minutes: 1
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          JOB_ID: ${{ github.job }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $env:EVIDENCE_DIR = Join-Path $env:RUNNER_TEMP 'windows-fixture-evidence'
+          "EVIDENCE_DIR=$env:EVIDENCE_DIR" | Add-Content $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force $env:EVIDENCE_DIR | Out-Null
+          [Diagnostics.Stopwatch]::GetTimestamp().ToString() | Set-Content "$env:EVIDENCE_DIR/setup-clock.txt"
+          @("run-id=$env:RUN_ID", "run-attempt=$env:RUN_ATTEMPT", "job-id=$env:JOB_ID") | Set-Content "$env:EVIDENCE_DIR/run.txt"
+          & bash -c "date '+%Y-%m-%d %H:%M:%S %Z'" | Set-Content "$env:EVIDENCE_DIR/started.txt"
+          $job = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:RUN_ID/attempts/$env:RUN_ATTEMPT/jobs" --jq '.jobs[] | select(.name == "windows-fixtures") | .id'
+          if ($LASTEXITCODE -ne 0 -or $job -notmatch '^[0-9]+$') { throw 'Could not record the actual GitHub job ID' }
+          $job | Set-Content "$env:EVIDENCE_DIR/job-id.txt"
+      - uses: actions/checkout@v7
+        timeout-minutes: 2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Record checkout and read the Go version from go.mod
+        id: go
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          printf '%s\n' "$sha" > "$EVIDENCE_DIR/checkout-sha.txt"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
+        timeout-minutes: 4
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: windows-fixture-evidence
+      - name: Native focused race evidence
+        timeout-minutes: 60
+        run: |
+          $start = [long](Get-Content "$env:EVIDENCE_DIR/setup-clock.txt")
+          $elapsed = ([Diagnostics.Stopwatch]::GetTimestamp() - $start) / [Diagnostics.Stopwatch]::Frequency
+          if ($elapsed -gt 480) { throw 'Aggregate setup exceeded eight minutes' }
+          go version | Set-Content "$env:EVIDENCE_DIR/go-version.txt"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go env GOTOOLCHAIN | Set-Content "$env:EVIDENCE_DIR/gotoolchain.txt"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./hack/windows-fixture-evidence.ps1 -EvidenceDirectory $env:EVIDENCE_DIR
+          exit $LASTEXITCODE
+      - name: Finalize complete or interrupted evidence
+        if: always()
+        timeout-minutes: 2
+        run: |
+          $env:EVIDENCE_DIR = Join-Path $env:RUNNER_TEMP 'windows-fixture-evidence'
+          if (Test-Path './hack/windows-fixture-evidence.ps1') {
+            & ./hack/windows-fixture-evidence.ps1 -Mode Finalize -EvidenceDirectory $env:EVIDENCE_DIR
+            exit $LASTEXITCODE
+          }
+          New-Item -ItemType Directory -Force $env:EVIDENCE_DIR | Out-Null
+          'INCOMPLETE: checkout failed; producer unavailable' | Set-Content "$env:EVIDENCE_DIR/result.txt"
+          Get-ChildItem -File $env:EVIDENCE_DIR | Sort-Object Name | ForEach-Object {
+            "$( (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant())  $($_.Name)"
+          } | Set-Content "$env:EVIDENCE_DIR/SHA256SUMS"
+          exit 1
+      - name: Upload evidence even on failure
+        if: always()
+        timeout-minutes: 3
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-fixture-evidence-${{ steps.go.outputs.sha || 'checkout-unavailable' }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/windows-fixture-evidence
+          if-no-files-found: error

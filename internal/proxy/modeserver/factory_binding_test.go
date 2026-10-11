@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/zchee/mitmproxy-go/connection"
+	"github.com/zchee/mitmproxy-go/internal/netutil/freeport"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 )
 
@@ -73,21 +74,25 @@ func TestBoundPacketFactoryRollback(t *testing.T) {
 func TestPacketSocketSharesTCPPort(t *testing.T) {
 	cfg, _, _ := fixture(t)
 	instance := makeInstance(t, "reverse:udp://example.test:443@127.0.0.1:0", cfg)
-	stream, err := net.Listen("tcp4", "127.0.0.1:0")
+	stream, mate, err := freeport.ListenPair(t.Context(), "tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = stream.Close() }()
+	t.Cleanup(func() { _ = stream.Close() })
+	t.Cleanup(func() { _ = mate.Close() })
+	if err := mate.Close(); err != nil {
+		t.Fatal(err)
+	}
 	port := stream.Addr().(*net.TCPAddr).Port
 	sockets, err := instance.listenPacketSockets(t.Context(), port)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
+	t.Cleanup(func() {
 		for _, socket := range sockets {
 			_ = socket.Close()
 		}
-	}()
+	})
 	if len(sockets) != 1 || sockets[0].LocalAddr().(*net.UDPAddr).Port != port {
 		t.Fatalf("UDP did not reuse selected TCP port: %v", sockets)
 	}

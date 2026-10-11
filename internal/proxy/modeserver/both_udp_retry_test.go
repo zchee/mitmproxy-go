@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net"
 	"testing"
+
+	"github.com/zchee/mitmproxy-go/internal/netutil/freeport"
 )
 
 type sharedUDPBindCase struct {
@@ -34,21 +36,32 @@ func checkSharedUDPBind(t *testing.T, tt sharedUDPBindCase) {
 		}
 	})
 	if tt.fixed {
-		probe, err := net.Listen("tcp4", "127.0.0.1:0")
+		probe, mate, err := freeport.ListenPair(t.Context(), "tcp4", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)
 		}
+		streams = append(streams, probe)
+		sockets = append(sockets, mate)
 		instance.port = probe.Addr().(*net.TCPAddr).Port
+		if err := mate.Close(); err != nil {
+			t.Fatal(err)
+		}
 		if err := probe.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}
-	instance.listenTCP = func(ctx context.Context, network, address string) (net.Listener, error) {
-		stream, err := new(net.ListenConfig).Listen(ctx, network, address)
-		if err == nil {
-			streams = append(streams, stream)
+	instance.listenTCP = func(ctx context.Context, _, address string) (net.Listener, error) {
+		stream, mate, err := freeport.ListenPair(ctx, "tcp4", address)
+		if err != nil {
+			return nil, err
 		}
-		return stream, err
+		streams = append(streams, stream)
+		sockets = append(sockets, mate)
+		if err := mate.Close(); err != nil {
+			_ = stream.Close()
+			return nil, err
+		}
+		return stream, nil
 	}
 	calls, realRejections := 0, 0
 	collided := false

@@ -100,6 +100,7 @@ func TestListenPairSelection(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tcpCalls, udpCalls, closes := 0, 0, 0
 			selected := make(map[int]bool)
+			var udpAddress string
 			address := "127.0.0.1:0"
 			if test.fixed {
 				address = "127.0.0.1:12345"
@@ -115,16 +116,22 @@ func TestListenPairSelection(t *testing.T) {
 						t.Fatalf("retry occurred before rollback: closes=%d binds=%d", closes, tcpCalls)
 					}
 					tcpCalls++
-					if test.failTCP {
-						return nil, test.cause
-					}
-					_, number, err := net.SplitHostPort(address)
+					host, number, err := net.SplitHostPort(address)
 					if err != nil {
 						t.Fatal(err)
+					}
+					if host != "127.0.0.1" {
+						t.Fatalf("unexpected TCP host %q", host)
 					}
 					port, err := strconv.Atoi(number)
 					if err != nil {
 						t.Fatal(err)
+					}
+					if test.fixed && port != 12345 || !test.fixed && !test.domain.available && port != 0 {
+						t.Fatalf("unexpected requested port %d", port)
+					}
+					if test.failTCP {
+						return nil, test.cause
 					}
 					if test.domain.available {
 						if port < test.domain.bounds.first || port > test.domain.bounds.last || inPortRanges(port, test.domain.excluded) || selected[port] {
@@ -132,10 +139,15 @@ func TestListenPairSelection(t *testing.T) {
 						}
 						selected[port] = true
 					}
-					return &portListener{closes: &closes}, nil
+					if port == 0 {
+						port = 12345
+					}
+					bound := &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port}
+					udpAddress = bound.String()
+					return &pairedPortListener{address: bound, closes: &closes}, nil
 				},
 				listenPacket: func(ctx context.Context, network, address string) (net.PacketConn, error) {
-					if ctx != t.Context() || network != "udp4" || address != ":12345" {
+					if ctx != t.Context() || network != "udp4" || address != udpAddress {
 						t.Errorf("unexpected UDP arguments: %s %s", network, address)
 					}
 					udpCalls++

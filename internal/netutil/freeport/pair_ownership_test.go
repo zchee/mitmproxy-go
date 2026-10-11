@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"syscall"
 	"testing"
 	"time"
 
@@ -108,7 +107,7 @@ func TestListenPairOccupiedUDPReleasesTCP(t *testing.T) {
 	address := busy.LocalAddr().String()
 	lc := new(net.ListenConfig)
 	tcp, udp, err := ListenPair(t.Context(), "tcp4", address)
-	if tcp != nil || udp != nil || !errors.Is(err, syscall.EADDRINUSE) {
+	if tcp != nil || udp != nil || !collisionPairBind(err) {
 		t.Fatalf("occupied fixed UDP returned %v %v %v", tcp, udp, err)
 	}
 	rebound, err := lc.Listen(t.Context(), "tcp4", address)

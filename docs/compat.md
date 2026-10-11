@@ -432,6 +432,19 @@ heads without an original, and messages changed by an addon do not increment it;
 | Regular proxy mode is TCP, not an HTTP3 UDP listener (`mitmproxy/proxy/mode_specs.py:186-191`). | HTTP3 is provided by reverse/QUIC-based paths, not by a new regular-mode UDP listener. Saved HTTP3 replay remains rejected as documented under addons/clientplayback. | Scoped reverse-mode integration; live proxying does not imply saved replay support. |
 | Synthetic StreamReset injection after the request FIN is observed by the layer (`py:test/mitmproxy/proxy/layers/http/test_http3.py:1011-1058`). | After quic-go fully reads the request FIN, its completed receive stream drops a later RESET_STREAM (quic-go v0.63.0 `receive_stream.go:137-155`), so that order is transport-owned; real-peer acceptance certifies RESET/STOP orders while the request is open and STOP_SENDING on the still-open response side after the request FIN. | The Go layer sits on a real QUIC implementation rather than upstream's synthetic event injection; the completed-request RESET boundary is pinned, not emulated. |
 
+Each HTTP/3 load row publishes one terminal receipt before cleanup, on success
+or failure, with phase and stream, expected bytes, actual read bytes, separately
+validated payload bytes, elapsed time, last-progress offset and the original typed
+cause (`internal/proxy/layers/httplayer/http3_load_test.go` and
+`http3_load_diagnostics_test.go`). Available client/origin QUIC state is included;
+state not yet created is explicitly unavailable. Partial reads count before their
+error is checked, and cleanup cannot replace the first cause. The 64 MiB/30-second
+transfer and 4 MiB/2-second sibling limits, HTTP/2 netem thresholds and deadlines,
+and `hack/netem-gate.sh` classifier are unchanged. HTTP/3 receipts have their own
+log namespace and do not enter that classifier. The hosted HTTP/2 netem throughput
+and HTTP/3 large-transfer failures remain open observations: these diagnostics
+improve evidence, not throughput, and a green rerun is not a repair.
+
 Validated, enabled WebSocket upgrades select the WebSocket layer, transferring both already-read byte prefixes
 and all four extension-header snapshots. Other upgrades and disabled WebSocket handling retain the raw-TCP fallback.
 

@@ -28,8 +28,8 @@ func (h *dnsAnswerHooks) DNSRequest(ctx context.Context, f *flow.DNSFlow) error 
 // Default-resolver authoritative-server acceptance awaits resolver integration.
 func TestStandaloneDNSWireTransports(t *testing.T) {
 	tests := map[string]struct{ network, host string }{
-		"IPv4 UDP": {"udp", "127.0.0.1"}, "IPv4 TCP": {"tcp", "127.0.0.1"},
-		"IPv6 UDP": {"udp", "::1"}, "IPv6 TCP": {"tcp", "::1"},
+		"IPv4 UDP": {"udp4", "127.0.0.1"}, "IPv4 TCP": {"tcp4", "127.0.0.1"},
+		"IPv6 UDP": {"udp6", "::1"}, "IPv6 TCP": {"tcp6", "::1"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -46,9 +46,7 @@ func TestStandaloneDNSWireTransports(t *testing.T) {
 				t.Fatal(err)
 			}
 			instance := makeInstance(t, "dns@"+net.JoinHostPort(tt.host, "0"), cfg)
-			if err := instance.Start(t.Context()); err != nil {
-				t.Fatal(err)
-			}
+			startDNSInstance(t, instance)
 			client := &miekg.Client{Transport: &miekg.Transport{Dialer: &net.Dialer{Timeout: 30 * time.Second}, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}}
 			request := miekg.NewMsg("example.test", miekg.TypeA)
 			response, _, err := client.Exchange(t.Context(), request, tt.network, instance.ListenAddrs()[0].String())

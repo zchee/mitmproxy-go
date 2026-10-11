@@ -41,16 +41,18 @@ func TestReverseDNSUDPForwarding(t *testing.T) {
 	if err := m.Addons.Add(t.Context(), nextlayer.New(m.Options), hooks); err != nil {
 		t.Fatal(err)
 	}
-	origin, err := net.ListenPacket("udp4", "127.0.0.1:0")
-	if err != nil {
+	sockets := acquireDNSSockets(t, "tcp4", "127.0.0.1:0")
+	if err := sockets.tcp.Close(); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = origin.Close() }()
+	sockets.tcp = nil
+	origin := sockets.udp
 	if err := origin.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	originDone := make(chan error, 1)
+	originDone, originExited := make(chan error, 1), make(chan struct{})
 	go func() {
+		defer close(originExited)
 		var buf [65535]byte
 		n, peer, err := origin.ReadFrom(buf[:])
 		if err != nil {
@@ -69,10 +71,12 @@ func TestReverseDNSUDPForwarding(t *testing.T) {
 		}
 		originDone <- err
 	}()
+	t.Cleanup(func() {
+		sockets.close()
+		await(t, originExited)
+	})
 	instance := makeInstance(t, "reverse:dns://"+origin.LocalAddr().String()+"@127.0.0.1:0", cfg)
-	if err := instance.Start(t.Context()); err != nil {
-		t.Fatal(err)
-	}
+	startDNSInstance(t, instance)
 	client, err := net.Dial("udp4", instance.ListenAddrs()[0].String())
 	if err != nil {
 		t.Fatal(err)

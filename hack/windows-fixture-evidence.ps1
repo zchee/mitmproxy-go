@@ -66,16 +66,22 @@ if ($Mode -eq 'Test') {
         foreach ($line in Get-Content $Manifest) {
             if ($line -match '^\s*(#|$)') { continue }
             $fields = $line.Trim() -split '\s+'
-            if ($fields.Count -ne 3 -or $fields[0] -notmatch '^\./[a-zA-Z0-9_/.-]+$') {
+            if ($fields.Count -notin @(3, 4) -or $fields[0] -notmatch '^\./[a-zA-Z0-9_/.-]+$') {
                 throw "Invalid manifest row: $line"
             }
+            $count = 20
+            if ($fields.Count -eq 4 -and $fields[3] -ne '-') {
+                if ($fields[3] -notmatch '^[0-9]+$' -or -not [int]::TryParse($fields[3], [ref]$count) -or $count -lt 1) {
+                    throw "Invalid manifest count: $line"
+                }
+            }
             $index = $plan.Count
-            $arguments = @('test', '-race', '-count=20', '-cpu=1,2,8', '-timeout=60m', '-json', '-run', $fields[1])
+            $arguments = @('test', '-race', "-count=$count", '-cpu=1,2,8', '-timeout=60m', '-json', '-run', $fields[1])
             if ($fields[2] -ne '-') { $arguments += @('-tags', $fields[2]) }
             $arguments += $fields[0]
             $plan += [ordered]@{
                 Package = $fields[0]; Pattern = $fields[1]; Tags = $fields[2]
-                Count = 20; CPU = @(1, 2, 8); ExpectedOrdinaryExecutions = 60
+                Count = $count; CPU = @(1, 2, 8); ExpectedOrdinaryExecutions = $count * 3
                 Arguments = $arguments; Log = "package-$index"
                 Status = 'INCOMPLETE'; Reason = 'not started'; ExitCode = $null
                 Identities = @(); Started = $null; Finished = $null
@@ -96,17 +102,39 @@ if ($Mode -eq 'Test') {
         } else {
             'NON-NATIVE wrapper validation only; no Windows range evidence' | Set-Content (Join-Path $EvidenceDirectory 'non-native.txt')
         }
+        $freeportRows = @($plan | Where-Object { $_.Package -eq './internal/netutil/freeport' })
+        if ($freeportRows.Count) {
+            $inventory = Invoke-Bounded $GoExecutable @('test', '-race', '-list', '^Test', './internal/netutil/freeport') 'freeport-full-inventory'
+            if ($inventory.Interrupted -or $inventory.ExitCode -ne 0) { throw 'Full freeport inventory failed or interrupted' }
+            $allNames = @(Get-Content (Join-Path $EvidenceDirectory 'freeport-full-inventory.jsonl') | Where-Object { $_ -cmatch '^Test\S+$' })
+            foreach ($row in $freeportRows) {
+                $inventoryArgs = @('test', '-race', '-list', $row.Pattern)
+                if ($row.Tags -ne '-') { $inventoryArgs += @('-tags', $row.Tags) }
+                $inventoryArgs += $row.Package
+                $inventory = Invoke-Bounded $GoExecutable $inventoryArgs "$($row.Log)-inventory"
+                if ($inventory.Interrupted -or $inventory.ExitCode -ne 0) { throw 'Selected freeport inventory failed or interrupted' }
+                $row.Identities = @(Get-Content (Join-Path $EvidenceDirectory "$($row.Log)-inventory.jsonl") | Where-Object { $_ -cmatch '^Test\S+$' })
+                if ($row.Identities.Count -eq 0) { throw "Empty expanded test set for $($row.Package)" }
+            }
+            Save-Plan
+            $selectedNames = @($freeportRows | ForEach-Object { $_.Identities } | Sort-Object -Unique -CaseSensitive)
+            if ($allNames.Count -eq 0 -or @(Compare-Object -CaseSensitive $allNames $selectedNames).Count) {
+                throw 'Freeport manifest rows do not cover the full test inventory'
+            }
+        }
         foreach ($row in $plan) {
             $row.Started = & bash -c "date '+%Y-%m-%d %H:%M:%S %Z'"
             $row.Reason = 'inventory or tests interrupted'
             Save-Plan
-            $inventoryArgs = @('test', '-race', '-list', $row.Pattern)
-            if ($row.Tags -ne '-') { $inventoryArgs += @('-tags', $row.Tags) }
-            $inventoryArgs += $row.Package
-            $inventory = Invoke-Bounded $GoExecutable $inventoryArgs "$($row.Log)-inventory"
-            if ($inventory.Interrupted) { $row.Reason = $inventory.Reason; Save-Plan; break }
-            if ($inventory.ExitCode -ne 0) { throw "Test inventory failed for $($row.Package)" }
-            $row.Identities = @(Get-Content (Join-Path $EvidenceDirectory "$($row.Log)-inventory.jsonl") | Where-Object { $_ -cmatch '^Test\S+$' })
+            if ($row.Package -ne './internal/netutil/freeport') {
+                $inventoryArgs = @('test', '-race', '-list', $row.Pattern)
+                if ($row.Tags -ne '-') { $inventoryArgs += @('-tags', $row.Tags) }
+                $inventoryArgs += $row.Package
+                $inventory = Invoke-Bounded $GoExecutable $inventoryArgs "$($row.Log)-inventory"
+                if ($inventory.Interrupted) { $row.Reason = $inventory.Reason; Save-Plan; break }
+                if ($inventory.ExitCode -ne 0) { throw "Test inventory failed for $($row.Package)" }
+                $row.Identities = @(Get-Content (Join-Path $EvidenceDirectory "$($row.Log)-inventory.jsonl") | Where-Object { $_ -cmatch '^Test\S+$' })
+            }
             if ($row.Identities.Count -eq 0) { throw "Empty expanded test set for $($row.Package)" }
             Save-Plan
             $result = Invoke-Bounded $GoExecutable $row.Arguments $row.Log
@@ -177,7 +205,7 @@ try {
             if ($name -in $row.Identities -and $completed -ne $row.ExpectedOrdinaryExecutions) { $status = 'INCOMPLETE' }
             if ($counts.Run -gt $completed) { $status = 'INCOMPLETE' }
             if ($status -eq 'INCOMPLETE') { $row.Status = 'INCOMPLETE' }
-            $packageTallies += [ordered]@{ Package = $row.Package; ResolvedPackage = $observedPackage; Test = $name; Status = $status; Counts = $counts; ObservedCompletions = $completed; ExpectedOrdinaryExecutions = $(if ($name -in $row.Identities) { 60 } else { $null }); Interruption = $row.Reason }
+            $packageTallies += [ordered]@{ Package = $row.Package; ResolvedPackage = $observedPackage; Test = $name; Status = $status; Counts = $counts; ObservedCompletions = $completed; Count = $row.Count; CPU = $row.CPU; ExpectedOrdinaryExecutions = $(if ($name -in $row.Identities) { $row.ExpectedOrdinaryExecutions } else { $null }); Interruption = $row.Reason }
         }
         if ($row.Status -eq 'INCOMPLETE') {
             foreach ($tally in $packageTallies) { $tally.Status = 'INCOMPLETE' }
@@ -187,6 +215,9 @@ try {
     }
     Save-Plan
     ConvertTo-Json -Depth 8 -InputObject @($tallies) | Set-Content (Join-Path $EvidenceDirectory 'tallies.json')
+    @('Package | Pattern | Count | CPU | Expected per identity | Status') + @($plan | ForEach-Object {
+        "$($_.Package) | $($_.Pattern) | $($_.Count) | $($_.CPU -join ',') | $($_.ExpectedOrdinaryExecutions) | $($_.Status)"
+    }) | Set-Content (Join-Path $EvidenceDirectory 'summary.txt')
 } catch {
     $failed = $true
     $_.ToString() | Set-Content (Join-Path $EvidenceDirectory 'finalization-error.log')

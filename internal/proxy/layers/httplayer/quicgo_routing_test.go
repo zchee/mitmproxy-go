@@ -42,18 +42,26 @@ type http3RoutingPackets struct {
 func (p *http3RoutingPackets) Context() context.Context { return p.ctx }
 func (p *http3RoutingPackets) RemoteAddr() net.Addr     { return p.peer }
 
-func newHTTP3RoutingListener(t *testing.T) (*quic.Listener, *net.UDPAddr) {
+func newHTTP3RoutingListener(t *testing.T, diagnostics ...func(error)) (*quic.Listener, *net.UDPAddr) {
 	t.Helper()
+	record := func(err error) {
+		for _, diagnostic := range diagnostics {
+			diagnostic(err)
+		}
+	}
 	key, ca, err := certs.CreateCA("HTTP3 routing", "HTTP3 routing root", 2048)
 	if err != nil {
+		record(err)
 		t.Fatal(err)
 	}
 	leaf, err := certs.DummyCert(key, ca, "localhost", []certs.GeneralName{certs.DNSName("localhost")}, "", "")
 	if err != nil {
+		record(err)
 		t.Fatal(err)
 	}
 	socket, err := net.ListenPacket("udp4", "127.0.0.1:0")
 	if err != nil {
+		record(err)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = socket.Close() })
@@ -61,28 +69,42 @@ func newHTTP3RoutingListener(t *testing.T) (*quic.Listener, *net.UDPAddr) {
 	t.Cleanup(func() { _ = transport.Close() })
 	listener, err := transport.Listen(&tls.Config{MinVersion: tls.VersionTLS13, NextProtos: []string{"h3"}, Certificates: []tls.Certificate{{Certificate: [][]byte{leaf.X509().Raw}, PrivateKey: key}}}, nil)
 	if err != nil {
+		record(err)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = listener.Close() })
 	return listener, socket.LocalAddr().(*net.UDPAddr)
 }
 
-func startHTTP3RoutingPeer(t *testing.T, ctx context.Context, conn *quic.Conn) {
+func startHTTP3RoutingPeer(t *testing.T, ctx context.Context, conn *quic.Conn, diagnostics ...func(error)) {
 	t.Helper()
+	record := func(err error) {
+		for _, diagnostic := range diagnostics {
+			diagnostic(err)
+		}
+	}
 	var workers sync.WaitGroup
 	workers.Go(func() {
 		for {
 			stream, err := conn.AcceptUniStream(ctx)
 			if err != nil {
+				if ctx.Err() == nil {
+					record(err)
+				}
 				return
 			}
-			workers.Go(func() { _, _ = io.Copy(io.Discard, stream) })
+			workers.Go(func() {
+				if _, err := io.Copy(io.Discard, stream); err != nil && ctx.Err() == nil {
+					record(err)
+				}
+			})
 		}
 	})
 	t.Cleanup(func() { _ = conn.CloseWithError(0x100, ""); workers.Wait() })
 	for _, kind := range []uint64{0, 2, 3} {
 		stream, err := conn.OpenUniStreamSync(ctx)
 		if err != nil {
+			record(err)
 			t.Fatal(err)
 		}
 		data := quicvarint.Append(nil, kind)
@@ -90,6 +112,7 @@ func startHTTP3RoutingPeer(t *testing.T, ctx context.Context, conn *quic.Conn) {
 			data = append(data, 4, 0)
 		}
 		if _, err := stream.Write(data); err != nil {
+			record(err)
 			t.Fatal(err)
 		}
 	}

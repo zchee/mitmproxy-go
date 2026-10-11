@@ -167,16 +167,28 @@ func writeHTTP3TestHeaders(t *testing.T, writer io.Writer, fields []qpack.Header
 
 func readHTTP3TestFrame(t *testing.T, reader io.Reader) (uint64, []byte) {
 	t.Helper()
+	record := func(err error) {
+		if diagnostic, ok := reader.(interface{ recordHTTP3Failure(error) }); ok {
+			diagnostic.recordHTTP3Failure(err)
+		}
+	}
 	kind, err := quicvarint.Read(quicvarint.NewReader(reader))
 	if err != nil {
+		record(err)
 		t.Fatal(err)
 	}
 	length, err := quicvarint.Read(quicvarint.NewReader(reader))
 	if err != nil || length > h3.MaxHeaderBytes {
+		cause := err
+		if cause == nil {
+			cause = errors.New("HTTP3 frame exceeds header byte limit")
+		}
+		record(cause)
 		t.Fatalf("frame length = %d, error = %v", length, err)
 	}
 	payload := make([]byte, int(length))
 	if _, err := io.ReadFull(reader, payload); err != nil {
+		record(err)
 		t.Fatal(err)
 	}
 	return kind, payload
@@ -184,8 +196,14 @@ func readHTTP3TestFrame(t *testing.T, reader io.Reader) (uint64, []byte) {
 
 func readHTTP3TestHeaders(t *testing.T, reader io.Reader) []qpack.HeaderField {
 	t.Helper()
+	record := func(err error) {
+		if diagnostic, ok := reader.(interface{ recordHTTP3Failure(error) }); ok {
+			diagnostic.recordHTTP3Failure(err)
+		}
+	}
 	kind, block := readHTTP3TestFrame(t, reader)
 	if kind != 1 {
+		record(errors.New("HTTP3 frame is not HEADERS"))
 		t.Fatalf("frame kind = %d, want HEADERS", kind)
 	}
 	decode := qpack.NewDecoder().Decode(block)
@@ -196,6 +214,7 @@ func readHTTP3TestHeaders(t *testing.T, reader io.Reader) []qpack.HeaderField {
 			return fields
 		}
 		if err != nil {
+			record(err)
 			t.Fatal(err)
 		}
 		fields = append(fields, field)

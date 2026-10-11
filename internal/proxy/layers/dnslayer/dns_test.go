@@ -26,6 +26,7 @@ import (
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/dns"
 	"github.com/zchee/mitmproxy-go/flow"
+	"github.com/zchee/mitmproxy-go/internal/netutil/freeport"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer/layertest"
@@ -112,8 +113,12 @@ func newSession(t *testing.T, udp bool, observed *observer) *session {
 		Logger: slog.New(slog.NewTextHandler(&s.logs, nil)), Record: proxy.Record,
 	}
 	if udp {
-		socket, err := net.ListenPacket("udp4", "127.0.0.1:0")
+		tcp, socket, err := freeport.ListenPair(t.Context(), "tcp4", "127.0.0.1:0")
 		if err != nil {
+			t.Fatal(err)
+		}
+		if err := tcp.Close(); err != nil {
+			_ = socket.Close()
 			t.Fatal(err)
 		}
 		listener := packettransport.NewListener(t.Context(), socket)

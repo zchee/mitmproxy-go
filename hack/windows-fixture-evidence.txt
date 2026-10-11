@@ -1,6 +1,6 @@
 # Package, top-level test pattern, build tags (- means none), count (omitted or - means 20).
-./internal/netutil/freeport	^Test(FreePortBindErrorsAndRelease|ParseExcludedPorts|ExcludedPortReservations|InPortRanges|GetFreePort|GetFreePortAttempts|ListenPairLiveOwnership|ListenPairSelection|ListenPairInvalidAddress|ListenPairFixedOccupied|ListenPairDiscoveryCancellation|ParseDynamicPorts|GetFreePortReusedCandidate|GetFreeTCPPort)$	-	20
-./internal/netutil/freeport	^TestWindows(ExcludedRangesDiagnostic|ListenPairDomains|ExcludedCandidates)$	-	1
+./internal/netutil/freeport	^Test(ExcludedPortReservations|FreePortBindErrorsAndRelease|GetFreePort|GetFreePortAttempts|GetFreePortReusedCandidate|GetFreeTCPPort|InPortRanges|ListenPairCandidateSelectionFailure|ListenPairDiscoveryCancellation|ListenPairFixedOccupied|ListenPairIPv6BypassesIPv4Discovery|ListenPairInvalidAddress|ListenPairLiveOwnership|ListenPairOccupiedUDPReleasesTCP|ListenPairPartialCancellation|ListenPairPrecancelled|ListenPairRejectsNonUDPSocket|ListenPairSelection|ListenPairStaleKnowledge|PairBindErrorClassification|PairForbiddenIntervalAdapters|ParseDynamicPorts|ParseExcludedPorts)$	-	20
+./internal/netutil/freeport	^TestWindows(ExcludedCandidates|ExcludedRangesDiagnostic|ListenPairDiscoveryCancellation|ListenPairDomains|ListenPairNativeCollision|ListenPairUnavailableDomainRetries)$	-	1
 ./addons/dnsresolver	^Test	-
-./internal/proxy/modeserver	^Test.*DNS	-
+./internal/proxy/modeserver	^(Test.*DNS|TestPacketSocketSharesTCPPort|TestSharedUDPBindFaults|TestWindowsSharedUDPAccessRetry)	-
 ./internal/proxy/layers/dnslayer	^Test	-

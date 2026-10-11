@@ -20,6 +20,8 @@ type listeners struct {
 	listen       func(context.Context, string, string) (net.Listener, error)
 	listenPacket func(context.Context, string, string) (net.PacketConn, error)
 	excluded     func(int, bool) bool
+	domain       func(context.Context, bool) (pairDomain, error)
+	choose       func(int) (int, error)
 }
 
 // GetFreePort returns a port on which both a TCP and a UDP socket could be
@@ -34,7 +36,9 @@ func GetFreePort() int {
 }
 
 // FreePort returns an available port for TCP and UDP on all IPv4 interfaces.
-// On Windows, cached TCP and UDP excluded port ranges are skipped when readable.
+// On Windows, candidates come from the readable IPv4 TCP/UDP dynamic-range
+// intersection minus cached exclusions, or distinct randomized IANA dynamic
+// ports when bounds are unavailable.
 // It returns the last TCP and UDP candidate errors if every port is rejected.
 // Rejected TCP candidates remain reserved until selection ends, so an ephemeral
 // allocator cannot repeatedly choose the same UDP-busy port. At most 64 TCP
@@ -42,7 +46,7 @@ func GetFreePort() int {
 // Another process can take the selected port before the caller binds it.
 func FreePort() (int, error) {
 	lc := &net.ListenConfig{}
-	return getFreePort(context.Background(), listeners{listen: lc.Listen, listenPacket: lc.ListenPacket, excluded: isExcludedPort})
+	return getFreePort(context.Background(), listeners{listen: lc.Listen, listenPacket: lc.ListenPacket, excluded: isExcludedPort, domain: legacyPortDomain})
 }
 
 // GetFreeTCPPort returns a port on which a TCP socket could be bound on all
@@ -54,18 +58,33 @@ func FreePort() (int, error) {
 // take it before the caller binds it.
 func GetFreeTCPPort() int {
 	lc := &net.ListenConfig{}
-	return getFreeTCPPort(context.Background(), listeners{listen: lc.Listen, listenPacket: lc.ListenPacket, excluded: isExcludedPort})
+	return getFreeTCPPort(context.Background(), listeners{listen: lc.Listen, listenPacket: lc.ListenPacket, excluded: isExcludedPort, domain: legacyPortDomain})
 }
 
 func getFreeTCPPort(ctx context.Context, lc listeners) int {
+	candidates, err := lc.portCandidates(ctx, false)
+	if err != nil {
+		return 0
+	}
+	limit := attempts
+	if candidates != nil {
+		limit = min(limit, len(candidates))
+	}
 	var rejected []net.Listener
 	defer func() {
 		for _, tcp := range rejected {
 			_ = tcp.Close()
 		}
 	}()
-	for range attempts {
-		tcp, err := lc.listen(ctx, "tcp4", ":0")
+	for range limit {
+		candidate := 0
+		if candidates != nil {
+			candidate, err = takePortCandidate(&candidates, lc.choose)
+			if err != nil {
+				return 0
+			}
+		}
+		tcp, err := lc.listen(ctx, "tcp4", ":"+strconv.Itoa(candidate))
 		if err != nil {
 			continue
 		}
@@ -81,7 +100,26 @@ func getFreeTCPPort(ctx context.Context, lc listeners) int {
 	return 0
 }
 
+func (lc listeners) portCandidates(ctx context.Context, paired bool) ([]int, error) {
+	if lc.domain == nil {
+		return nil, nil
+	}
+	domain, err := lc.domain(ctx, paired)
+	if err != nil {
+		return nil, err
+	}
+	return portCandidates(domain)
+}
+
 func getFreePort(ctx context.Context, lc listeners) (int, error) {
+	candidates, err := lc.portCandidates(ctx, true)
+	if err != nil {
+		return 0, fmt.Errorf("no paired TCP/UDP port after %d attempts: %w", attempts, err)
+	}
+	limit := attempts
+	if candidates != nil {
+		limit = min(limit, len(candidates))
+	}
 	var rejected []net.Listener
 	defer func() {
 		for _, tcp := range rejected {
@@ -89,8 +127,16 @@ func getFreePort(ctx context.Context, lc listeners) (int, error) {
 		}
 	}()
 	var lastTCP, lastUDP error
-	for range attempts {
-		tcp, err := lc.listen(ctx, "tcp4", ":0")
+	for range limit {
+		candidate := 0
+		if candidates != nil {
+			candidate, err = takePortCandidate(&candidates, lc.choose)
+			if err != nil {
+				lastTCP = fmt.Errorf("TCP candidate: %w", err)
+				break
+			}
+		}
+		tcp, err := lc.listen(ctx, "tcp4", ":"+strconv.Itoa(candidate))
 		if err != nil {
 			lastTCP = fmt.Errorf("TCP bind: %w", err)
 			continue

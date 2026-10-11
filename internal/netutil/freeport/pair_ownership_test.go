@@ -22,7 +22,8 @@ func TestListenPairIPv6BypassesIPv4Discovery(t *testing.T) {
 			t.Fatal("IPv6 invoked IPv4 discovery")
 			return pairDomain{}, nil
 		},
-		retryable: collisionPairBind,
+		retryable:  retryablePairBind,
+		randomIPv6: randomIPv6PairCandidates,
 	})
 	if err != nil {
 		t.Fatal(err)

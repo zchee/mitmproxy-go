@@ -21,6 +21,11 @@ func TestMain(m *testing.M) {
 	executable, err := os.Executable()
 	if err == nil && strings.EqualFold(filepath.Base(executable), "netsh.exe") && os.Getenv("MITMPROXY_FREEPORT_FIXTURE") != "" {
 		mode := os.Getenv("MITMPROXY_FREEPORT_FIXTURE")
+		if marker := os.Getenv("MITMPROXY_FREEPORT_FIXTURE_CALLS"); marker != "" {
+			if err := os.WriteFile(marker, []byte(strings.Join(os.Args[1:], " ")), 0o600); err != nil {
+				os.Exit(1)
+			}
+		}
 		if mode == "stall" {
 			if err := stallWindowsRangeFixture(os.Args[len(os.Args)-2], os.Args[len(os.Args)-1]); err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, err)
@@ -73,6 +78,57 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+func TestWindowsListenPairIPv6Domains(t *testing.T) {
+	if mode := os.Getenv("MITMPROXY_FREEPORT_FIXTURE"); mode != "" {
+		tcp, udp, err := ListenPair(t.Context(), "tcp6", "[::1]:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tcp.Close(); _ = udp.Close() }()
+		if tcp.Addr().String() != udp.LocalAddr().String() {
+			t.Fatalf("IPv6 paired addresses differ: %s %s", tcp.Addr(), udp.LocalAddr())
+		}
+		address := tcp.Addr().(*net.TCPAddr)
+		if address.IP.To4() != nil || address.Port < 49152 || address.Port > 65535 {
+			t.Fatalf("IPv6 candidate outside IANA dynamic range: %s", address)
+		}
+		if _, err := os.Stat(os.Getenv("MITMPROXY_FREEPORT_FIXTURE_CALLS")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("IPv6 acquisition invoked netsh discovery: %v", err)
+		}
+		t.Logf("IPv6 pair=%s; no netsh discovery", address)
+		return
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	binary, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "netsh.exe"), binary, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tests := map[string]struct{ mode string }{
+		"success: IPv4 exclusions do not constrain IPv6":       {mode: "both"},
+		"success: IPv4 disjoint bounds do not constrain IPv6":  {mode: "disjoint"},
+		"success: unavailable command does not constrain IPv6": {mode: "command failure"},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			marker := filepath.Join(t.TempDir(), "netsh-calls.txt")
+			cmd := exec.CommandContext(t.Context(), executable, "-test.run=^TestWindowsListenPairIPv6Domains$", "-test.v")
+			cmd.Env = append(os.Environ(), "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"), "MITMPROXY_FREEPORT_FIXTURE="+test.mode, "MITMPROXY_FREEPORT_FIXTURE_CALLS="+marker)
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("IPv6 domain subprocess: %v\n%s", err, output)
+			}
+			t.Logf("%s", output)
+		})
+	}
 }
 
 func TestWindowsListenPairDomains(t *testing.T) {
@@ -152,7 +208,7 @@ func TestWindowsListenPairDomains(t *testing.T) {
 func TestWindowsExcludedCandidates(t *testing.T) {
 	if mode := os.Getenv("MITMPROXY_FREEPORT_FIXTURE"); mode != "" {
 		paired, err := FreePort()
-		blocked := mode == "both" || mode == "udp only"
+		blocked := mode == "both" || mode == "udp only" || mode == "malformed all bounds" || mode == "disjoint"
 		if blocked {
 			if paired != 0 || err == nil {
 				t.Fatalf("selected excluded candidate %d, error=%v; fixture excludes ports 1..65535", paired, err)
@@ -160,9 +216,30 @@ func TestWindowsExcludedCandidates(t *testing.T) {
 		} else if paired == 0 || err != nil {
 			t.Fatalf("fallback/empty selection = %d, %v", paired, err)
 		}
+		legacy := GetFreePort()
+		if (legacy == 0) != blocked {
+			t.Fatalf("legacy paired selection=%d for fixture %q", legacy, mode)
+		}
 		tcp := GetFreeTCPPort()
-		if (tcp == 0) != (mode == "both") {
+		if (tcp == 0) != (mode == "both" || mode == "malformed all bounds" || mode == "disjoint") {
 			t.Fatalf("TCP-only selection=%d for fixture %q", tcp, mode)
+		}
+		selections := map[string]struct {
+			port   int
+			paired bool
+		}{
+			"FreePort":       {port: paired, paired: true},
+			"GetFreePort":    {port: legacy, paired: true},
+			"GetFreeTCPPort": {port: tcp},
+		}
+		for name, selection := range selections {
+			if selection.port == 0 {
+				continue
+			}
+			domain, err := legacyPortDomain(t.Context(), selection.paired)
+			if err != nil || selection.port < domain.bounds.first || selection.port > domain.bounds.last || inPortRanges(selection.port, domain.excluded) {
+				t.Fatalf("%s candidate %d outside domain %+v: %v", name, selection.port, domain, err)
+			}
 		}
 		return
 	}
@@ -179,11 +256,17 @@ func TestWindowsExcludedCandidates(t *testing.T) {
 		t.Fatal(err)
 	}
 	tests := map[string]struct{ mode string }{
-		"error: both protocols excluded": {mode: "both"},
-		"error: UDP-only exclusion":      {mode: "udp only"},
-		"success: no exclusions":         {mode: "empty"},
-		"success: command fallback":      {mode: "command failure"},
-		"success: parse fallback":        {mode: "parse failure"},
+		"error: both protocols excluded":      {mode: "both"},
+		"error: UDP-only exclusion":           {mode: "udp only"},
+		"error: all excluded without bounds":  {mode: "malformed all bounds"},
+		"error: disjoint dynamic domains":     {mode: "disjoint"},
+		"success: TCP exclusion":              {mode: "tcp only"},
+		"success: wide UDP exclusion":         {mode: "wide"},
+		"success: overlapping exclusions":     {mode: "overlap"},
+		"success: unavailable dynamic bounds": {mode: "malformed bounds"},
+		"success: no exclusions":              {mode: "empty"},
+		"success: command fallback":           {mode: "command failure"},
+		"success: parse fallback":             {mode: "parse failure"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

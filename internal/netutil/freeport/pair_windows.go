@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+const randomIPv6PairCandidates = true
+
 var dynamicWindowsPorts = sync.OnceValue(func() pairDomain {
 	var bounds [2]portRange
 	for index, protocol := range []string{"tcp", "udp"} {
@@ -40,6 +42,14 @@ var pairPortDomain = newPairDiscovery(func() pairDomain {
 	domain.excluded = append(append([]portRange(nil), excluded.tcp...), excluded.udp...)
 	return domain
 })
+
+func legacyPortDomain(ctx context.Context, paired bool) (pairDomain, error) {
+	domain, err := pairPortDomain(ctx)
+	if err == nil && !paired {
+		domain.excluded = excludedWindowsPorts().tcp
+	}
+	return domain, err
+}
 
 func collisionPairBind(err error) bool {
 	// Winsock bind errors use their native codes, not Go's invented POSIX errno namespace.

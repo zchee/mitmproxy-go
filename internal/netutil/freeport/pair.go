@@ -28,6 +28,7 @@ type pairListeners struct {
 	domain       func(context.Context) (pairDomain, error)
 	retryable    func(error) bool
 	choose       func(int) (int, error)
+	randomIPv6   bool
 }
 
 // ListenPair acquires live TCP and UDP sockets on the same host and port.
@@ -36,7 +37,8 @@ type pairListeners struct {
 // Only port zero permits reselection, with at most 64 candidate acquisitions.
 // Every partial pair is closed before retrying or returning an error.
 // On Windows IPv4, readable dynamic and excluded ranges constrain selection.
-// Unavailable dynamic bounds use distinct randomized IANA dynamic-range candidates.
+// Windows IPv6 and unavailable IPv4 bounds use distinct randomized IANA
+// dynamic-range candidates; IPv4 discovery is never applied to IPv6.
 // Exhaustion errors include candidate and per-protocol bind tallies.
 // Context cancellation stops waiting for shared discovery without duplicating
 // its bounded background worker; it does not close successfully returned sockets.
@@ -47,6 +49,7 @@ func ListenPair(ctx context.Context, network, address string) (net.Listener, *ne
 		listenPacket: lc.ListenPacket,
 		domain:       pairPortDomain,
 		retryable:    retryablePairBind,
+		randomIPv6:   randomIPv6PairCandidates,
 	})
 }
 
@@ -63,18 +66,17 @@ func listenPair(ctx context.Context, network, address string, lc pairListeners) 
 		if err != nil {
 			return nil, nil, &net.OpError{Op: "listen", Net: network, Err: err}
 		}
-		if domain.available || domain.bounds != (portRange{}) {
-			if domain.bounds.first < 1 || domain.bounds.last > 65535 {
-				return nil, nil, &net.OpError{Op: "listen", Net: network, Err: errors.New("invalid TCP/UDP dynamic-range bounds")}
-			}
-			for candidate := domain.bounds.first; candidate <= domain.bounds.last; candidate++ {
-				if !inPortRanges(candidate, domain.excluded) {
-					candidates = append(candidates, candidate)
-				}
-			}
-			if len(candidates) == 0 {
-				return nil, nil, &net.OpError{Op: "listen", Net: network, Err: errors.New("no unexcluded port in the TCP/UDP dynamic-range intersection")}
-			}
+		candidates, err = portCandidates(domain)
+		if err != nil {
+			return nil, nil, &net.OpError{Op: "listen", Net: network, Err: err}
+		}
+	}
+	if port == 0 && network == "tcp6" && lc.randomIPv6 {
+		// Sequential native ports can all fall inside one UDP-excluded block.
+		// Spread IPv6 bind checks across the IANA range without IPv4 discovery.
+		candidates, err = portCandidates(pairDomain{bounds: portRange{first: 49152, last: 65535}})
+		if err != nil {
+			return nil, nil, &net.OpError{Op: "listen", Net: network, Err: err}
 		}
 	}
 	limit := attempts
@@ -94,25 +96,10 @@ func listenPair(ctx context.Context, network, address string, lc pairListeners) 
 		}
 		candidate := port
 		if candidates != nil {
-			var selected int
-			if lc.choose != nil {
-				selected, err = lc.choose(len(candidates))
-			} else {
-				var index *big.Int
-				index, err = rand.Int(rand.Reader, big.NewInt(int64(len(candidates))))
-				if err == nil {
-					selected = int(index.Int64())
-				}
-			}
+			candidate, err = takePortCandidate(&candidates, lc.choose)
 			if err != nil {
 				return nil, nil, &net.OpError{Op: "listen", Net: network, Err: err}
 			}
-			if selected < 0 || selected >= len(candidates) {
-				return nil, nil, &net.OpError{Op: "listen", Net: network, Err: errors.New("candidate selector returned an invalid index")}
-			}
-			candidate = candidates[selected]
-			candidates[selected] = candidates[len(candidates)-1]
-			candidates = candidates[:len(candidates)-1]
 		}
 		tcpBinds++
 		tcp, err := lc.listen(ctx, network, net.JoinHostPort(host, strconv.Itoa(candidate)))
@@ -158,6 +145,49 @@ func listenPair(ctx context.Context, network, address string, lc pairListeners) 
 		last = fmt.Errorf("paired acquisition exhausted: candidates=%d TCP_binds=%d UDP_binds=%d: %w", tcpBinds, tcpBinds, udpBinds, last)
 	}
 	return nil, nil, &net.OpError{Op: "listen", Net: network, Err: last}
+}
+
+func portCandidates(domain pairDomain) ([]int, error) {
+	if !domain.available && domain.bounds == (portRange{}) {
+		return nil, nil
+	}
+	if domain.bounds.first < 1 || domain.bounds.last > 65535 {
+		return nil, errors.New("invalid TCP/UDP dynamic-range bounds")
+	}
+	var candidates []int
+	for candidate := domain.bounds.first; candidate <= domain.bounds.last; candidate++ {
+		if !inPortRanges(candidate, domain.excluded) {
+			candidates = append(candidates, candidate)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, errors.New("no unexcluded port in the TCP/UDP dynamic-range intersection")
+	}
+	return candidates, nil
+}
+
+func takePortCandidate(candidates *[]int, choose func(int) (int, error)) (int, error) {
+	var selected int
+	var err error
+	if choose != nil {
+		selected, err = choose(len(*candidates))
+	} else {
+		var index *big.Int
+		index, err = rand.Int(rand.Reader, big.NewInt(int64(len(*candidates))))
+		if err == nil {
+			selected = int(index.Int64())
+		}
+	}
+	if err != nil {
+		return 0, err
+	}
+	if selected < 0 || selected >= len(*candidates) {
+		return 0, errors.New("candidate selector returned an invalid index")
+	}
+	candidate := (*candidates)[selected]
+	(*candidates)[selected] = (*candidates)[len(*candidates)-1]
+	*candidates = (*candidates)[:len(*candidates)-1]
+	return candidate, nil
 }
 
 func resolvePairAddress(ctx context.Context, network, address string) (string, int, error) {

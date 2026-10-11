@@ -11,7 +11,11 @@ import (
 	"syscall"
 )
 
+const randomIPv6PairCandidates = false
+
 func pairPortDomain(context.Context) (pairDomain, error) { return pairDomain{}, nil }
+
+func legacyPortDomain(context.Context, bool) (pairDomain, error) { return pairDomain{}, nil }
 
 func collisionPairBind(err error) bool { return errors.Is(err, syscall.EADDRINUSE) }
 

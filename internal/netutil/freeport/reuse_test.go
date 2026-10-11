@@ -23,19 +23,17 @@ func TestGetFreePortReusedCandidate(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			lc := new(net.ListenConfig)
-			first, err := lc.Listen(t.Context(), "tcp4", ":0")
+			first, firstUDP, err := ListenPair(t.Context(), "tcp4", "0.0.0.0:0")
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = first.Close() })
+			t.Cleanup(func() { _ = first.Close(); _ = firstUDP.Close() })
 			address := first.Addr().String()
 			firstPort := first.Addr().(*net.TCPAddr).Port
-			if test.reserveUDP {
-				busy, err := lc.ListenPacket(t.Context(), "udp4", address)
-				if err != nil {
+			if !test.reserveUDP {
+				if err := firstUDP.Close(); err != nil {
 					t.Fatal(err)
 				}
-				t.Cleanup(func() { _ = busy.Close() })
 			}
 			calls, firstSelections := 0, 0
 			nextReserved := false
@@ -51,17 +49,16 @@ func TestGetFreePortReusedCandidate(t *testing.T) {
 						firstSelections++
 						return recycled, nil
 					}
-					candidate, err := lc.Listen(ctx, network, requested)
-					if err == nil && test.reserveNextUDP && !nextReserved {
-						busy, err := lc.ListenPacket(ctx, "udp4", candidate.Addr().String())
+					if test.reserveNextUDP && !nextReserved {
+						candidate, busy, err := ListenPair(ctx, network, "0.0.0.0:0")
 						if err != nil {
-							_ = candidate.Close()
-							t.Fatalf("reserve another UDP-busy candidate: %v", err)
+							return nil, err
 						}
 						t.Cleanup(func() { _ = busy.Close() })
 						nextReserved = true
+						return candidate, nil
 					}
-					return candidate, err
+					return lc.Listen(ctx, network, requested)
 				},
 				listenPacket: lc.ListenPacket,
 			})

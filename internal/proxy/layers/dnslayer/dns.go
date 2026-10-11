@@ -27,7 +27,7 @@ func init() {
 	layer.Register("dns", func(_ *layer.Context, _ hookdata.LayerSpec, _ layer.Layer) (layer.Layer, error) { return New(), nil })
 }
 
-// Layer handles DNS request/response matching on one client connection.
+// Layer handles DNS request/response matching on one client connection or UDP tuple.
 // Run owns its protocol state; exported values are constructed with New.
 type Layer struct{}
 
@@ -37,7 +37,12 @@ func New() *Layer { return &Layer{} }
 // Kind returns the DNS protocol layer kind.
 func (*Layer) Kind() hookdata.LayerKind { return "dns" }
 
-const maxOutstandingTransactions = 1024
+// maxRetainedTransactions bounds retained transaction-ID entries per client
+// connection or UDP tuple, not just unanswered queries. Forwarded responses,
+// including unsolicited ones, finalize and remove their entries; hook-suppressed
+// responses remain retained. Same-ID requests reuse retained entries without
+// new-entry admission.
+const maxRetainedTransactions = 1024
 
 type messageEvent struct {
 	wire       []byte
@@ -124,8 +129,8 @@ func (*Layer) Run(ctx context.Context, c *layer.Context) (runErr error) {
 			}
 			f := o.flows[msg.ID]
 			if f == nil {
-				if len(o.flows) >= maxOutstandingTransactions {
-					err := fmt.Errorf("dnslayer: outstanding DNS transaction limit exceeded (%d)", maxOutstandingTransactions)
+				if len(o.flows) >= maxRetainedTransactions {
+					err := fmt.Errorf("dnslayer: retained DNS transaction limit exceeded (%d)", maxRetainedTransactions)
 					o.invalid(event.fromClient, err)
 					return err
 				}

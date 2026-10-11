@@ -118,46 +118,73 @@ func TestDNSLateResponseAfterCompletion(t *testing.T) {
 	}
 }
 
-// Intentional deviation: the 1,025th distinct unanswered ID ends the transport
+// Preservation: the 1,025th distinct retained ID ends the transport
 // through the invalid-message path; an existing ID still fits at the bound.
-func TestDNSOutstandingTransactionLimit(t *testing.T) {
-	tests := map[string]struct{ udp bool }{
-		"error: TCP outstanding bound":       {},
-		"error: UDP tuple outstanding bound": {udp: true},
+func TestDNSRetainedTransactionLimit(t *testing.T) {
+	tests := map[string]struct{ udp, suppressResponses, newResponse bool }{
+		"error: TCP unanswered retained bound":                {},
+		"error: UDP unanswered retained bound":                {udp: true},
+		"error: TCP suppressed replies refuse a new request":  {suppressResponses: true},
+		"error: UDP suppressed replies refuse a new request":  {udp: true, suppressResponses: true},
+		"error: TCP suppressed replies refuse a new response": {suppressResponses: true, newResponse: true},
+		"error: UDP suppressed replies refuse a new response": {udp: true, suppressResponses: true, newResponse: true},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			requests := make(chan int, 1)
-			a := &observer{request: func(_ context.Context, f *flow.DNSFlow) error { requests <- f.Request.ID; return nil }}
+			arrivals := make(chan *flow.DNSFlow, 1)
+			a := &observer{
+				request: func(_ context.Context, f *flow.DNSFlow) error { arrivals <- f; return nil },
+				response: func(_ context.Context, f *flow.DNSFlow) error {
+					if f.Request != nil {
+						t.Error("initial unsolicited response has a request")
+					}
+					f.Response = nil
+					arrivals <- f
+					return nil
+				},
+			}
 			s := newSession(t, tt.udp, a)
 			origin := newSession(t, tt.udp, nil)
 			s.context.Server, s.context.ServerPackets = origin.context.Client, origin.context.ClientPackets
 			s.context.Data.Server.Address = &connection.Address{Host: "example.test", Port: 53}
 			s.start(t)
+			retained := make([]*flow.DNSFlow, 0, 1024)
 			for id := range 1024 {
-				s.write(t, query(id))
-				if got := await(t, requests); got != id {
-					t.Fatalf("request hook ID = %d, want %d", got, id)
+				if tt.suppressResponses {
+					origin.write(t, query(id).Succeed(nil))
+				} else {
+					s.write(t, query(id))
 				}
-				if got := origin.read(t); got.ID != id {
-					t.Fatalf("forwarded request ID = %d, want %d", got.ID, id)
+				f := await(t, arrivals)
+				retained = append(retained, f)
+				if !tt.suppressResponses {
+					if f.Request.ID != id {
+						t.Fatalf("request hook ID = %d, want %d", f.Request.ID, id)
+					}
+					if got := origin.read(t); got.ID != id {
+						t.Fatalf("forwarded request ID = %d, want %d", got.ID, id)
+					}
 				}
 			}
 			s.write(t, query(0))
-			if got := await(t, requests); got != 0 {
-				t.Fatalf("at-bound retransmit ID = %d", got)
+			if got := await(t, arrivals); got != retained[0] || got.Request.ID != 0 {
+				t.Fatalf("at-bound retransmit flow = %p, want %p with ID 0", got, retained[0])
 			}
 			if got := origin.read(t); got.ID != 0 {
 				t.Fatalf("forwarded retransmit ID = %d", got.ID)
 			}
-			s.write(t, query(1024))
+			if tt.newResponse {
+				origin.write(t, query(1024).Succeed(nil))
+			} else {
+				s.write(t, query(1024))
+			}
 			select {
 			case err := <-s.done:
-				if err == nil || !strings.Contains(err.Error(), "outstanding DNS transaction limit") {
+				if err == nil || err.Error() != "dnslayer: retained DNS transaction limit exceeded (1024)" {
 					t.Fatalf("limit result = %v", err)
 				}
-			case id := <-requests:
-				t.Fatalf("over-limit ID %d reached dns_request", id)
+			case f := <-arrivals:
+				t.Fatalf("over-limit message reached a DNS hook: %+v", f)
 			case <-time.After(layertest.Timeout):
 				t.Fatal("over-limit request did not terminate the DNS layer")
 			}
@@ -165,9 +192,9 @@ func TestDNSOutstandingTransactionLimit(t *testing.T) {
 			if !strings.Contains(s.logs.String(), "sent an invalid message:") {
 				t.Fatalf("limit diagnostic = %q", s.logs.String())
 			}
-			for index, f := range a.flows {
+			for index, f := range retained {
 				if f.Live || f.Intercepted() {
-					t.Errorf("outstanding flow %d was not finalized", index)
+					t.Errorf("retained flow %d was not finalized", index)
 				}
 			}
 		})

@@ -11,17 +11,24 @@ import (
 	"github.com/zchee/mitmproxy-go/flow"
 )
 
-// Certification of the new retention policy: completion releases only the
-// original transaction key, after finalizing its flow in addon dispatch.
+// Certification: completion releases only the original transaction key, after
+// finalizing its flow in addon dispatch. Suppressed replies retain that entry.
 func TestDNSTransactionMap(t *testing.T) {
-	tests := map[string]struct{ failed, removeResponse bool }{
-		"success: response evicts original ID":          {},
-		"success: error evicts original ID":             {failed: true},
-		"success: removed response remains outstanding": {removeResponse: true},
+	tests := map[string]struct{ failed, removeResponse, requestless, udp bool }{
+		"success: TCP response evicts original ID":              {},
+		"success: TCP error evicts original ID":                 {failed: true},
+		"success: TCP removed response remains retained":        {removeResponse: true},
+		"success: UDP response evicts original ID":              {udp: true},
+		"success: UDP error evicts original ID":                 {failed: true, udp: true},
+		"success: UDP removed response remains retained":        {removeResponse: true, udp: true},
+		"success: TCP unsolicited response evicts original ID":  {requestless: true},
+		"success: UDP unsolicited response evicts original ID":  {requestless: true, udp: true},
+		"success: TCP suppressed unsolicited response retained": {requestless: true, removeResponse: true},
+		"success: UDP suppressed unsolicited response retained": {requestless: true, removeResponse: true, udp: true},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			s := newSession(t, false, &observer{
+			s := newSession(t, tt.udp, &observer{
 				response: func(_ context.Context, f *flow.DNSFlow) error {
 					f.Response.ID = 23
 					if tt.removeResponse {
@@ -32,23 +39,44 @@ func TestDNSTransactionMap(t *testing.T) {
 				failed: func(_ context.Context, f *flow.DNSFlow) error { f.Request.ID = 23; return nil },
 			})
 			f := flow.NewDNSFlow(s.context.Data.Client, s.context.Data.Server, true)
-			f.Request = query(17)
+			if !tt.requestless {
+				f.Request = query(17)
+			}
 			other := flow.NewDNSFlow(s.context.Data.Client, s.context.Data.Server, true)
 			o := &owner{ctx: t.Context(), c: s.context, flows: map[int]*flow.DNSFlow{17: f, 23: other}}
+			finalizedWhileRetained := false
+			dispatch := s.context.Do
+			s.context.Do = func(ctx context.Context, fn func(context.Context) error) error {
+				return dispatch(ctx, func(ctx context.Context) error {
+					if err := fn(ctx); err != nil {
+						return err
+					}
+					if !f.Live && !f.Intercepted() && o.flows[17] == f {
+						finalizedWhileRetained = true
+					}
+					return nil
+				})
+			}
 			var err error
 			if tt.failed {
 				err = o.fail(17, f, "resolver failed")
 			} else {
-				err = o.response(17, f, f.Request.Succeed(nil))
+				err = o.response(17, f, query(17).Succeed(nil))
 			}
 			if err != nil {
 				t.Fatal(err)
 			}
+			if tt.requestless && f.Request != nil {
+				t.Fatal("unsolicited response acquired a request")
+			}
 			if tt.removeResponse {
-				if len(o.flows) != 2 || o.flows[17] != f || !f.Live {
-					t.Fatal("hook-removed response evicted its outstanding request")
+				if len(o.flows) != 2 || o.flows[17] != f || !f.Live || finalizedWhileRetained {
+					t.Fatal("hook-suppressed response lost its retained live entry")
 				}
 				return
+			}
+			if !finalizedWhileRetained {
+				t.Fatal("flow was deleted before finalization in addon dispatch")
 			}
 			if got := s.read(t); got.ID != 23 {
 				t.Fatalf("hook-edited reply ID = %d, want 23", got.ID)

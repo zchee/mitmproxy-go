@@ -21,6 +21,12 @@ func TestMain(m *testing.M) {
 	executable, err := os.Executable()
 	if err == nil && strings.EqualFold(filepath.Base(executable), "netsh.exe") && os.Getenv("MITMPROXY_FREEPORT_FIXTURE") != "" {
 		mode := os.Getenv("MITMPROXY_FREEPORT_FIXTURE")
+		if mode == "stall" {
+			if err := stallWindowsRangeFixture(os.Args[len(os.Args)-2], os.Args[len(os.Args)-1]); err != nil {
+				_, _ = fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		}
 		if mode == "command failure" {
 			os.Exit(1)
 		}

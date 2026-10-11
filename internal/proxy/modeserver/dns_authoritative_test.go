@@ -34,8 +34,17 @@ func TestReverseDNSAuthoritativeTransports(t *testing.T) {
 				t.Fatal(err)
 			}
 			started, served, done := make(chan struct{}), make(chan error, 1), make(chan error, 1)
+			sockets := acquireDNSSockets(t, "tcp4", "127.0.0.1:0")
 			origin := miekg.NewServer()
-			origin.Addr, origin.Net = "127.0.0.1:0", tt.network
+			origin.Addr, origin.Net = sockets.address, tt.network
+			if tt.network == "tcp" {
+				origin.Listener = sockets.tcp
+				sockets.tcp = nil
+			} else {
+				origin.PacketConn = sockets.udp
+				sockets.udp = nil
+			}
+			sockets.close()
 			origin.ReadTimeout, origin.IdleTimeout = 30*time.Second, 30*time.Second
 			origin.NotifyStartedFunc = func(context.Context) { close(started) }
 			origin.Handler = miekg.HandlerFunc(func(_ context.Context, w miekg.ResponseWriter, request *miekg.Msg) {
@@ -46,23 +55,24 @@ func TestReverseDNSAuthoritativeTransports(t *testing.T) {
 				served <- err
 			})
 			go func() { done <- origin.ListenAndServe() }()
-			await(t, started)
 			t.Cleanup(func() {
 				origin.Shutdown(context.WithoutCancel(t.Context()))
 				if err := await(t, done); err != nil {
 					t.Error(err)
 				}
 			})
+			await(t, started)
 			var address string
 			if tt.network == "tcp" {
 				address = origin.Listener.Addr().String()
 			} else {
 				address = origin.PacketConn.LocalAddr().String()
 			}
-			instance := makeInstance(t, "reverse:dns://"+address+"@127.0.0.1:0", cfg)
-			if err := instance.Start(t.Context()); err != nil {
-				t.Fatal(err)
+			if diff := gocmp.Diff(sockets.address, address); diff != "" {
+				t.Fatalf("authoritative DNS address (-acquired +serving):\n%s", diff)
 			}
+			instance := makeInstance(t, "reverse:dns://"+address+"@127.0.0.1:0", cfg)
+			startDNSInstance(t, instance)
 			client := &miekg.Client{Transport: &miekg.Transport{Dialer: &net.Dialer{Timeout: 30 * time.Second}, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}}
 			request := miekg.NewMsg("example.test", miekg.TypeA)
 			delivered := make(chan struct {

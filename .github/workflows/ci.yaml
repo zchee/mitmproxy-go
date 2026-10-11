@@ -48,10 +48,17 @@ jobs:
         run: go vet ./...
       - name: go test -race with skip report
         env:
-          TEST_SKIPS_ENFORCE: ${{ vars.TEST_SKIPS_ENFORCE || '0' }}
+          TEST_SKIPS_ENFORCE: "on"
         run: |
           set -euo pipefail
+          # Capture both statuses so producer failure is never hidden by the reader.
+          set +e
           go test -race -count=1 -json ./... | bash hack/test-skips.sh
+          statuses=("${PIPESTATUS[@]}")
+          set -e
+          printf 'go-test-producer=%s skip-reader=%s\n' "${statuses[0]}" "${statuses[1]}"
+          (( statuses[1] == 0 )) || exit "${statuses[1]}"
+          exit "${statuses[0]}"
 
   proxy-integration:
     name: proxy integration (${{ matrix.os }}, go ${{ matrix.go }})

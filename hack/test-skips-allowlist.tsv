@@ -1,0 +1,44 @@
+# Package	Full test identity	Classification	Normalized reason	Platform
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialMigrate/mitmproxy/dumpfile-19.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialMigrate/mitmproxy/flows/diff_data.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialMigrate/mitmproxy/flows/error_log.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialMigrate/mitmproxy/flows/event_stream.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialMigrate/mitmproxy/flows/incomplete_log.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialMigrate/mitmproxy/flows/successful_log.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialMigrate/mitmproxy/flows/websocket.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialWrite/mitmproxy/dumpfile-19.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialWrite/mitmproxy/flows/corrupted_gzip_body.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialWrite/mitmproxy/flows/diff_data.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialWrite/mitmproxy/flows/error_log.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialWrite/mitmproxy/flows/event_stream.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialWrite/mitmproxy/flows/incomplete_log.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialWrite/mitmproxy/flows/successful_log.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialWrite/mitmproxy/flows/websocket.mitm	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialMetadata/success:_integers_beyond_int64	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio	TestDifferentialMetadata/success:_byte-string_keys,_not_UTF-8	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/filter/regex	TestPatternPython	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/filter/regex	TestPatternBytesBackreferenceDifference	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/flowio/tnetstring	TestDifferentialFloats	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/internal/difftest	TestPinnedCommit	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/internal/difftest	TestPython/success:_upstream_modules_are_importable	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/internal/difftest	TestPython/error:_a_failing_script_shows_its_standard_error	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/internal/difftest	TestPython/success:_stdin_is_passed_to_the_script	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/internal/difftest	TestScript	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/internal/testutil/testflow	TestBuildersMatchUpstream	environment	differential test: build with -tags difftest to run it	all
+github.com/zchee/mitmproxy-go/addons/cut	TestPrivateOutputPaths/error:_foreign_owner_refused	privilege	cannot create a foreign-owned file: chown <temp-path>: operation not permitted	all
+github.com/zchee/mitmproxy-go/addons/cut	TestPrivateOutputPaths/error:_append_foreign_owner_refused	privilege	cannot create a foreign-owned file: chown <temp-path>: operation not permitted	all
+github.com/zchee/mitmproxy-go/addons/commandhistory	TestPrivateOutputPaths/error:_foreign_owner_refused	privilege	cannot create a foreign-owned file: chown <temp-path>: operation not permitted	all
+github.com/zchee/mitmproxy-go/addons/commandhistory	TestPrivateOutputPaths/error:_append_foreign_owner_refused	privilege	cannot create a foreign-owned file: chown <temp-path>: operation not permitted	all
+github.com/zchee/mitmproxy-go/addons/export	TestPrivateOutputPaths/error:_foreign_owner_refused	privilege	cannot create a foreign-owned file: chown <temp-path>: operation not permitted	all
+github.com/zchee/mitmproxy-go/addons/save	TestPrivateOutputPaths/error:_foreign_owner_refused	privilege	cannot create a foreign-owned file: chown <temp-path>: operation not permitted	all
+github.com/zchee/mitmproxy-go/addons/save	TestPrivateOutputPaths/error:_append_foreign_owner_refused	privilege	cannot create a foreign-owned file: chown <temp-path>: operation not permitted	all
+github.com/zchee/mitmproxy-go/addons/save	TestPrivateOutputPaths/error:_stream_foreign_owner_refused	privilege	cannot create a foreign-owned file: chown <temp-path>: operation not permitted	all
+github.com/zchee/mitmproxy-go/addons/savehar	TestPrivateOutputPaths/error:_foreign_owner_refused	privilege	cannot create a foreign-owned file: chown <temp-path>: operation not permitted	all
+github.com/zchee/mitmproxy-go/internal/privfile	TestForeignOwner/error:_overwrite_foreign_owner	privilege	cannot create a foreign-owned file: chown <temp-path>: operation not permitted	all
+github.com/zchee/mitmproxy-go/internal/privfile	TestForeignOwner/error:_append_foreign_owner	privilege	cannot create a foreign-owned file: chown <temp-path>: operation not permitted	all
+github.com/zchee/mitmproxy-go/addons/commandhistory	TestFailures/permission	privilege	POSIX write permissions require a non-root user	all
+github.com/zchee/mitmproxy-go/internal/local	TestAcquirePinnedArtifacts	environment	real-network artifact verification requires MITMPROXY_TEST_REDIRECTOR_DOWNLOAD=1	all
+github.com/zchee/mitmproxy-go/internal/local	TestWindowsPipeFixture	environment	subprocess fixture is launched by the Windows contract cases	windows
+github.com/zchee/mitmproxy-go/internal/tools/cmdline	TestCompletionScripts/success:_zsh/syntax	capability	shell syntax check requires zsh: exec: "zsh": executable file not found in <PATH>	all
+github.com/zchee/mitmproxy-go/internal/tools/cmdline	TestCompletionScripts/success:_fish/syntax	capability	shell syntax check requires fish: exec: "fish": executable file not found in <PATH>	all
+github.com/zchee/mitmproxy-go/internal/tools/cmdline	TestCompletionScripts/success:_powershell/syntax	capability	shell syntax check requires pwsh: exec: "pwsh": executable file not found in <PATH>	all

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"runtime"
 	"syscall"
 	"testing"
 	"time"
@@ -18,6 +19,10 @@ import (
 )
 
 func TestAuthoritativePairRetry(t *testing.T) {
+	addrInUse := syscall.EADDRINUSE
+	if runtime.GOOS == "windows" {
+		addrInUse = syscall.Errno(10048) // WSAEADDRINUSE, the native Winsock bind error.
+	}
 	tests := map[string]struct {
 		network  string
 		address  string
@@ -28,8 +33,8 @@ func TestAuthoritativePairRetry(t *testing.T) {
 	}{
 		"success: same port":               {},
 		"success: IPv6 identity":           {network: "tcp6", address: "[::1]:0"},
-		"error: fixed TCP port occupied":   {occupied: "tcp", wantErr: syscall.EADDRINUSE},
-		"error: fixed UDP port occupied":   {occupied: "udp", wantErr: syscall.EADDRINUSE},
+		"error: fixed TCP port occupied":   {occupied: "tcp", wantErr: addrInUse},
+		"error: fixed UDP port occupied":   {occupied: "udp", wantErr: addrInUse},
 		"error: cancelled acquisition":     {cancel: true, wantErr: context.Canceled},
 		"error: unrelated invalid address": {invalid: true},
 	}

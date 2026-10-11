@@ -21,8 +21,9 @@ security context rather than presented as a direct dependency.
 - **Updates.** Dependabot opens one grouped pull request for Go modules and one for GitHub Actions every
   week ([.github/dependabot.yaml](../.github/dependabot.yaml)). A failing dependabot PR, a red `gotip` job
   or `//nolint` comments accumulating in an adapter are the early signs that an update breaks the build.
-- **Toolchain.** CI blocks on the `stable` Go release and runs the development toolchain (`gotip`) without
-  blocking. `oldstable` is not tested: the repository requires `go 1.27.2` for standard-library security fixes.
+- **Toolchain.** CI blocks on the exact Go version declared by `go.mod`; the matrix label is `stable`.
+  The development toolchain (`gotip`) runs without blocking. `oldstable` is not tested: the repository
+  requires `go 1.27.2` for standard-library security fixes.
   `encoding/json/v2` and `codeberg.org/miekg/dns` (which declares `go 1.27.0`) require Go 1.27.
 - **Licences.** CI runs `go-licenses` with a denylist (GPL, LGPL, AGPL, MPL), because licence
   contamination is a low-likelihood, high-impact risk. Upstream static assets and fixtures carry their MIT

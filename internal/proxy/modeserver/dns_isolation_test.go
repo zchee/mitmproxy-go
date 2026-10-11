@@ -52,9 +52,7 @@ func TestMalformedDNSTupleIsolation(t *testing.T) {
 		},
 	}
 	instance := makeInstance(t, "reverse:dns://127.0.0.1:53@127.0.0.1:0", cfg)
-	if err := instance.Start(t.Context()); err != nil {
-		t.Fatal(err)
-	}
+	startDNSInstance(t, instance)
 	observed := await(t, sockets)
 	await(t, observed.ready)
 	dial := func() net.Conn {

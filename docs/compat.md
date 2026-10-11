@@ -131,6 +131,31 @@ No differences beyond the message content rule listed under [flow](#flow).
 | DNS wire and expanded record data are parsed through Python helpers (`mitmproxy/dns.py`, `mitmproxy/net/dns/domain_names.py`). | Wire messages are capped at 65,535 bytes; decoded names and RDATA share a 1 MiB expansion budget. Compression pointers are iterative, backward-only and work-bounded. | Bound untrusted decoding. Codec round-trip, malformed-pointer, expansion and fuzz tests verify these limits. |
 | Domain names use Python's IDNA 2003 codec and Unicode 3.2 nameprep tables (`mitmproxy/net/dns/domain_names.py`). | Uses x/net/idna UTS #46 transitional processing. Later assignments can differ: U+1E9E maps to `ss` rather than `xn--kkg`. | Use the maintained Go IDNA implementation; `TestIDNAMappings` records the difference. |
 
+Socket-backed DNS resolver origins, mode-server DNS listeners and origins,
+DNS-layer UDP sessions, and packet-factory shared-port test rows acquire live
+TCP/UDP pairs through `freeport.ListenPair`
+(`internal/netutil/freeport/pair.go`). The helper returns caller-owned sockets
+on the same host and port. DNS mode fixtures transfer them through the existing
+private listen seams; single-protocol fixtures close the unused mate. The
+packet-factory binding rows release the UDP mate before exercising the existing
+binder against the retained TCP port.
+
+On Windows IPv4, port-zero selection avoids the union of the TCP and UDP excluded
+port ranges within their dynamic-range intersection. Range discovery is cached
+once per process. If the exclusion commands cannot be read, the helper tries
+bounded distinct randomized candidates with real bind checks; unavailable dynamic
+bounds use the IANA dynamic range 49152–65535. Partial pairs close before retry,
+and only a requested port zero permits reselection. IPv6 retains native binding
+and retries without applying IPv4 exclusion tables; IPv6 exclusions are not
+queried.
+
+This is a fixture-level repair, not a Windows product-listener guarantee.
+Production standalone DNS pairing, reverse DNS UDP listeners and packet-factory
+binding retain their existing paths and retry behavior
+(`internal/proxy/modeserver/both.go`, `internal/proxy/modeserver/packet.go`).
+Cross-package resolver acceptance tests still start mode listeners through these
+production paths; their origins use the owned-pair helper.
+
 ## flowio
 
 | Upstream | Go | Reason |

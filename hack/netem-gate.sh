@@ -18,7 +18,10 @@ netem_classify() {
     def prefix($expected): $phases == $expected;
     def diagnostic:
       test("^[[:space:]]+[^[:space:]]+_test.go:[0-9]+:") | not;
-    if ($lines | any(test("--- SKIP:|panic:|WARNING: DATA RACE"))) then
+    if (($records | any(.outcome == "protocol-failure")) or
+      ($lines | any(test("netem protocol failure|netem peer ended|netem peer context ended|netem upstream owner ended|netem measured wait ended")))) then
+      error("measured transfer failed for a protocol reason")
+    elif ($lines | any(test("--- SKIP:|panic:|WARNING: DATA RACE"))) then
       error("skip or abnormal test termination")
     elif ($lines | any(select(diagnostic | not) |
       (contains("NETEM ") or test("_test.go:[0-9]+: (tcp_[rw]mem=|qdisc: |netem measured transfer did not complete$|proxy/direct throughput = [0-9.]+, want at least 0.8$)")) | not)) then

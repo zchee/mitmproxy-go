@@ -70,9 +70,12 @@ write_transcript() {
 }
 
 check_transcript() {
-  local name="$1" expected="$2" expression="$3" producer="$4" consumer="${5:-0}" restoration="${6:-0}"
+  local name="$1" expected="$2" expression="$3" producer="$4" consumer="${5:-0}" restoration="${6:-0}" diagnostic="${7:-}"
   local log="${output}/contracts/${name}.log" classification=invalid
   write_transcript "${expression}" "${producer}" "${log}"
+  if [[ -n "${diagnostic}" ]]; then
+    printf '    http2_load_netem_test.go:1: %s\n' "${diagnostic}" >> "${log}"
+  fi
   if netem_classify "${log}" "${producer}" "${consumer}" "${restoration}" >| "${log}.receipt" 2>| "${log}.error"; then
     classification="$(jq -r '.classification' "${log}.receipt")"
   fi
@@ -90,6 +93,26 @@ check_transcript pass pass '.' 0
 check_transcript below-floor retryable "${below}" 1
 check_transcript direct-timeout retryable "${direct_timeout}" 1
 check_transcript proxy-timeout retryable "${proxy_timeout}" 1
+protocol_record='{phase:"measured-transfer",outcome:"protocol-failure"}'
+for leg in direct proxy; do
+  transfer_prefix='.[0:4]'
+  timeout="${direct_timeout}"
+  if [[ "${leg}" == proxy ]]; then
+    transfer_prefix='.[0:7]'
+    timeout="${proxy_timeout}"
+  fi
+  check_transcript "${leg}-protocol-failure" invalid "${transfer_prefix} + [${protocol_record}]" 1 0 0 'netem protocol failure: stream reset'
+  check_transcript "${leg}-protocol-failure-stray-timeout" invalid "${timeout}" 1 0 0 'netem protocol failure: GOAWAY'
+  check_transcript "${leg}-contradictory-protocol-marker" invalid "${timeout} | .[0:-1] + [${protocol_record}, .[-1]]" 1
+  check_transcript "${leg}-protocol-marker-only" invalid "${transfer_prefix} + [${protocol_record}]" 1
+  for diagnostic in \
+    'netem peer ended before measured completion' \
+    'netem peer context ended: context canceled' \
+    'netem upstream owner ended before measured completion' \
+    'netem measured wait ended without a live peer'; do
+    check_transcript "${leg}-${diagnostic%%:*}-stray-timeout" invalid "${timeout}" 1 0 0 "${diagnostic}"
+  done
+done
 for phase in setup direct-handshake direct-warmup proxy-setup-warmup protocol; do
   check_transcript "failure-${phase}" invalid ".[0:3] + [{phase:\"${phase}\",outcome:\"failed\"}]" 1
 done

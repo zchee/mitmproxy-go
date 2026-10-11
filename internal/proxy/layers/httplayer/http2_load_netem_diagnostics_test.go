@@ -8,11 +8,70 @@ package httplayer
 import (
 	"errors"
 	"net"
+	"os"
+	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
+	gocmp "github.com/google/go-cmp/cmp"
 	"golang.org/x/net/http2"
 )
+
+func TestLoadNetemTimeoutDiagnostics(t *testing.T) {
+	const childEnv = "MITMPROXY_GO_NETEM_TIMEOUT_DIAGNOSTIC"
+	if mode := os.Getenv(childEnv); mode != "" {
+		client, origin := new(loadHTTP2Peer), new(loadHTTP2Peer)
+		switch mode {
+		case "client-failure":
+			client.failure = errors.New("stream reset after deadline liveness check")
+		case "origin-failure":
+			origin.failure = errors.New("GOAWAY after deadline liveness check")
+		case "live":
+		default:
+			t.Fatalf("unknown diagnostic fixture %q", mode)
+		}
+		logLoadNetemTimeout(t, client, origin, `NETEM {"phase":"measured-transfer-timeout","outcome":"measured-transfer-timeout"}`)
+		t.Log("timeout receipt returned")
+		return
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := map[string]struct {
+		mode    string
+		failure bool
+	}{
+		"success: live peers publish timeout":                         {mode: "live"},
+		"error: client failure supersedes timeout before publication": {mode: "client-failure", failure: true},
+		"error: origin failure supersedes timeout before publication": {mode: "origin-failure", failure: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			// A subprocess observes FailNow without failing the surrounding diagnostic contract.
+			cmd := exec.CommandContext(t.Context(), executable, "-test.run=^TestLoadNetemTimeoutDiagnostics$", "-test.v")
+			cmd.Env = append(os.Environ(), childEnv+"="+tt.mode)
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				if _, ok := errors.AsType[*exec.ExitError](err); !ok {
+					t.Fatalf("diagnostic child execution failed: %v\n%s", err, output)
+				}
+			}
+			want := map[string]bool{"failure": tt.failure, "protocol": tt.failure, "timeout": !tt.failure, "returned": !tt.failure}
+			got := map[string]bool{
+				"failure":  err != nil,
+				"protocol": strings.Contains(string(output), `"outcome":"protocol-failure"`),
+				"timeout":  strings.Contains(string(output), `"outcome":"measured-transfer-timeout"`),
+				"returned": strings.Contains(string(output), "timeout receipt returned"),
+			}
+			if diff := gocmp.Diff(want, got); diff != "" {
+				t.Fatalf("timeout diagnostic (-want +got):\n%s\nchild output:\n%s", diff, output)
+			}
+		})
+	}
+}
 
 func TestLoadNetemPeerDiagnostics(t *testing.T) {
 	tests := map[string]struct {

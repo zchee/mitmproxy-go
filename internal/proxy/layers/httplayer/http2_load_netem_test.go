@@ -66,18 +66,22 @@ func awaitLoadNetem(t *testing.T, client, origin *loadHTTP2Peer, ownerDone <-cha
 			err := peer.failure
 			peer.mu.Unlock()
 			if err != nil {
+				t.Log(`NETEM {"phase":"measured-transfer","outcome":"protocol-failure"}`)
 				t.Fatalf("netem protocol failure: %v", err)
 			}
 			select {
 			case <-peer.done:
+				t.Log(`NETEM {"phase":"measured-transfer","outcome":"protocol-failure"}`)
 				t.Fatal("netem peer ended before measured completion")
 			case <-peer.ctx.Done():
+				t.Log(`NETEM {"phase":"measured-transfer","outcome":"protocol-failure"}`)
 				t.Fatalf("netem peer context ended: %v", peer.ctx.Err())
 			default:
 			}
 		}
 		select {
 		case <-ownerDone:
+			t.Log(`NETEM {"phase":"measured-transfer","outcome":"protocol-failure"}`)
 			t.Fatal("netem upstream owner ended before measured completion")
 		default:
 		}
@@ -107,8 +111,25 @@ func awaitLoadNetem(t *testing.T, client, origin *loadHTTP2Peer, ownerDone <-cha
 		return 0, false
 	}
 	assertAlive()
+	t.Log(`NETEM {"phase":"measured-transfer","outcome":"protocol-failure"}`)
 	t.Fatal("netem measured wait ended without a live peer")
 	return 0, false
+}
+
+func logLoadNetemTimeout(t *testing.T, client, origin *loadHTTP2Peer, format string, args ...any) {
+	t.Helper()
+	// Serialize the receipt with failure recording so an already-failed peer cannot report a timeout.
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	origin.mu.Lock()
+	defer origin.mu.Unlock()
+	for _, peer := range []*loadHTTP2Peer{client, origin} {
+		if peer.failure != nil {
+			t.Log(`NETEM {"phase":"measured-transfer","outcome":"protocol-failure"}`)
+			t.Fatalf("netem protocol failure: %v", peer.failure)
+		}
+	}
+	t.Logf(format, args...)
 }
 
 func loadDirectDownload(t *testing.T, size, window int64) time.Duration {
@@ -178,7 +199,7 @@ func loadDirectDownload(t *testing.T, size, window int64) time.Duration {
 		var ok bool
 		completed, ok = awaitLoadNetem(t, client, origin, nil)
 		if !ok {
-			t.Logf(`NETEM {"phase":"measured-transfer-timeout","outcome":"measured-transfer-timeout","leg":"direct","last_phase":"direct-transfer","stream":3,"expected_bytes":%d,"window":%d,"actual_bytes":"unavailable","direct_bytes":"unavailable","proxy_bytes":"unavailable","progress_bytes":%d,"elapsed_ns":%d,"direct_duration_ns":"unavailable","proxy_duration_ns":"unavailable","ratio":"unavailable"}`, size, window, client.bytes(3), time.Since(started).Nanoseconds())
+			logLoadNetemTimeout(t, client, origin, `NETEM {"phase":"measured-transfer-timeout","outcome":"measured-transfer-timeout","leg":"direct","last_phase":"direct-transfer","stream":3,"expected_bytes":%d,"window":%d,"actual_bytes":"unavailable","direct_bytes":"unavailable","proxy_bytes":"unavailable","progress_bytes":%d,"elapsed_ns":%d,"direct_duration_ns":"unavailable","proxy_duration_ns":"unavailable","ratio":"unavailable"}`, size, window, client.bytes(3), time.Since(started).Nanoseconds())
 			t.Fatal("netem measured transfer did not complete")
 		}
 	} else {
@@ -225,7 +246,7 @@ func TestHTTP2LoadNetem(t *testing.T) {
 			t.Logf(`NETEM {"phase":"proxy-transfer","leg":"proxy","stream":3,"expected_bytes":%d,"window":%d}`, tt.size, tt.window)
 			got, ok := awaitLoadNetem(t, s.client, s.origin, s.view.endpoint(t).Done())
 			if !ok {
-				t.Logf(`NETEM {"phase":"measured-transfer-timeout","outcome":"measured-transfer-timeout","leg":"proxy","last_phase":"proxy-transfer","stream":3,"expected_bytes":%d,"window":%d,"actual_bytes":"unavailable","direct_bytes":%d,"proxy_bytes":"unavailable","progress_bytes":%d,"elapsed_ns":%d,"direct_duration_ns":%d,"proxy_duration_ns":"unavailable","ratio":"unavailable"}`, tt.size, tt.window, tt.size, s.client.bytes(3), time.Since(started).Nanoseconds(), direct.Nanoseconds())
+				logLoadNetemTimeout(t, s.client, s.origin, `NETEM {"phase":"measured-transfer-timeout","outcome":"measured-transfer-timeout","leg":"proxy","last_phase":"proxy-transfer","stream":3,"expected_bytes":%d,"window":%d,"actual_bytes":"unavailable","direct_bytes":%d,"proxy_bytes":"unavailable","progress_bytes":%d,"elapsed_ns":%d,"direct_duration_ns":%d,"proxy_duration_ns":"unavailable","ratio":"unavailable"}`, tt.size, tt.window, tt.size, s.client.bytes(3), time.Since(started).Nanoseconds(), direct.Nanoseconds())
 				t.Fatal("netem measured transfer did not complete")
 			}
 			if got != 3 {

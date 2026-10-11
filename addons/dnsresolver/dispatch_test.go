@@ -5,7 +5,7 @@ package dnsresolver
 
 import (
 	"context"
-	"net"
+	"net/netip"
 	"runtime"
 	"sync"
 	"testing"
@@ -16,6 +16,7 @@ import (
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/dns"
 	"github.com/zchee/mitmproxy-go/flow"
+	"github.com/zchee/mitmproxy-go/internal/netutil/freeport"
 	"github.com/zchee/mitmproxy-go/options"
 )
 
@@ -26,7 +27,14 @@ func TestPendingLookupDispatch(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+			tcp, conn, err := freeport.ListenPair(t.Context(), "tcp4", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = tcp.Close()
+			closeSocket := sync.OnceFunc(func() { _ = conn.Close() })
+			t.Cleanup(closeSocket)
+			address, err := netip.ParseAddrPort(conn.LocalAddr().String())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -64,12 +72,12 @@ func TestPendingLookupDispatch(t *testing.T) {
 					}
 				}
 			}()
-			t.Cleanup(func() { unblock(); _ = conn.Close(); <-serverDone })
+			t.Cleanup(func() { unblock(); closeSocket(); <-serverDone })
 			opts := options.New()
 			manager := addon.NewManager(opts, command.NewManager(), addon.Config{})
 			t.Cleanup(manager.Close)
 			r := New(opts, nil)
-			r.port = conn.LocalAddr().(*net.UDPAddr).AddrPort().Port()
+			r.port = address.Port()
 			r.hostsPath = t.TempDir() + "/missing-hosts"
 			if err := manager.Add(t.Context(), r); err != nil {
 				t.Fatal(err)

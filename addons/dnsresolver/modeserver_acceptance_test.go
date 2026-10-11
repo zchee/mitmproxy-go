@@ -20,6 +20,7 @@ import (
 
 	"github.com/zchee/mitmproxy-go/addons/nextlayer"
 	"github.com/zchee/mitmproxy-go/dns"
+	"github.com/zchee/mitmproxy-go/internal/netutil/freeport"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/proxy/modeserver"
 	"github.com/zchee/mitmproxy-go/internal/proxy/modespec"
@@ -55,16 +56,17 @@ func acceptanceValue[T any](t *testing.T, ch <-chan T) T {
 
 func startAcceptanceUpstream(t *testing.T) *acceptanceUpstream {
 	t.Helper()
-	stream, err := net.Listen("tcp4", "127.0.0.1:0")
+	stream, packet, err := freeport.ListenPair(t.Context(), "tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	packet, err := net.ListenPacket("udp4", stream.Addr().String())
+	address, err := netip.ParseAddrPort(packet.LocalAddr().String())
 	if err != nil {
+		_ = packet.Close()
 		_ = stream.Close()
 		t.Fatal(err)
 	}
-	u := &acceptanceUpstream{address: stream.Addr().(*net.TCPAddr).AddrPort(), queries: make(map[uint16]int), errors: make(chan error, 32)}
+	u := &acceptanceUpstream{address: address, queries: make(map[uint16]int), errors: make(chan error, 32)}
 	handler := miekg.HandlerFunc(func(_ context.Context, w miekg.ResponseWriter, request *miekg.Msg) {
 		if len(request.Question) != 1 || request.Question[0].Header().Name != "example.test." {
 			u.errors <- fmt.Errorf("unexpected authoritative question: %s", request)

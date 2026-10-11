@@ -5,10 +5,10 @@ package dnsresolver
 
 import (
 	"context"
-	"net"
 	"net/netip"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 
 	gocmp "github.com/google/go-cmp/cmp"
@@ -18,12 +18,20 @@ import (
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/dns"
 	"github.com/zchee/mitmproxy-go/flow"
+	"github.com/zchee/mitmproxy-go/internal/netutil/freeport"
 	"github.com/zchee/mitmproxy-go/options"
 )
 
 func dnsServer(t *testing.T) netip.AddrPort {
 	t.Helper()
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	tcp, conn, err := freeport.ListenPair(t.Context(), "tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = tcp.Close()
+	closeSocket := sync.OnceFunc(func() { _ = conn.Close() })
+	t.Cleanup(closeSocket)
+	address, err := netip.ParseAddrPort(conn.LocalAddr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,8 +85,8 @@ func dnsServer(t *testing.T) netip.AddrPort {
 			}
 		}
 	}()
-	t.Cleanup(func() { _ = conn.Close(); <-done })
-	return conn.LocalAddr().(*net.UDPAddr).AddrPort()
+	t.Cleanup(func() { closeSocket(); <-done })
+	return address
 }
 
 func TestDNSRequest(t *testing.T) {

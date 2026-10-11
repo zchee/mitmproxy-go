@@ -12,6 +12,8 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +32,7 @@ func TestHTTP3LoadSetupReceiptContract(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 			defer cancel()
-			cmd := exec.CommandContext(ctx, executable, "-test.run=^"+test.row+"$", "-test.v", "-test.timeout=15s")
+			cmd := exec.CommandContext(ctx, executable, "-test.run=^"+test.row+"$", "-test.v", "-test.timeout=15s", "-test.cpu="+strconv.Itoa(runtime.GOMAXPROCS(0)))
 			cmd.Env = append(os.Environ(), "MITMPROXY_GO_HTTP2_LOAD=0")
 			output, err := cmd.CombinedOutput()
 			if _, ok := errors.AsType[*exec.ExitError](err); !ok {

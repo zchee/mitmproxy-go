@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"runtime/pprof"
@@ -181,7 +182,7 @@ func readHTTP3TestFrame(t *testing.T, reader io.Reader) (uint64, []byte) {
 	if err != nil || length > h3.MaxHeaderBytes {
 		cause := err
 		if cause == nil {
-			cause = errors.New("HTTP3 frame exceeds header byte limit")
+			cause = fmt.Errorf("frame length = %d, error = %v", length, err)
 		}
 		record(cause)
 		t.Fatalf("frame length = %d, error = %v", length, err)
@@ -203,7 +204,7 @@ func readHTTP3TestHeaders(t *testing.T, reader io.Reader) []qpack.HeaderField {
 	}
 	kind, block := readHTTP3TestFrame(t, reader)
 	if kind != 1 {
-		record(errors.New("HTTP3 frame is not HEADERS"))
+		record(fmt.Errorf("frame kind = %d, want HEADERS", kind))
 		t.Fatalf("frame kind = %d, want HEADERS", kind)
 	}
 	decode := qpack.NewDecoder().Decode(block)

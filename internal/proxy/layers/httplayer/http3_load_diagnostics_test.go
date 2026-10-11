@@ -117,7 +117,7 @@ func loadHTTP3QUICState(conn *quic.Conn) string {
 	}
 	state := conn.ConnectionState()
 	cause := context.Cause(conn.Context())
-	return fmt.Sprintf("version=%s handshake=%t alpn=%s context=%T:%v", state.Version, state.TLS.HandshakeComplete, state.TLS.NegotiatedProtocol, cause, cause)
+	return fmt.Sprintf("version=%s handshake=%t alpn=%s used_0rtt=%t gso=%t datagrams=%t/%t partial_reset=%t/%t context=%T:%v", state.Version, state.TLS.HandshakeComplete, state.TLS.NegotiatedProtocol, state.Used0RTT, state.GSO, state.SupportsDatagrams.Local, state.SupportsDatagrams.Remote, state.SupportsStreamResetPartialDelivery.Local, state.SupportsStreamResetPartialDelivery.Remote, cause, cause)
 }
 
 func (r *loadHTTP3Receipt) phaseStream(phase string, stream *quic.Stream) {
@@ -143,6 +143,12 @@ func (r *loadHTTP3Receipt) fail(phase string, err error) bool {
 			r.phase = r.stage + phase
 		}
 		r.cause = err
+		if !r.frozen {
+			if started := r.started.Load(); started != nil {
+				r.elapsed = time.Since(*started)
+			}
+			r.frozen = true
+		}
 		return true
 	}
 	return false

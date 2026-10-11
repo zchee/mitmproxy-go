@@ -61,6 +61,8 @@ type loadHTTP2Peer struct {
 	ready          chan struct{}
 	done           chan struct{}
 	workers        sync.WaitGroup
+	failure        error
+	failed         chan struct{}
 	onHead         func(uint32, []hpack.HeaderField, bool)
 	onEnd          func(uint32)
 }
@@ -68,7 +70,7 @@ type loadHTTP2Peer struct {
 func newLoadHTTP2Peer(t *testing.T, ctx context.Context, conn net.Conn, client bool, onHead func(uint32, []hpack.HeaderField, bool), onEnd func(uint32), windows ...int64) *loadHTTP2Peer {
 	t.Helper()
 	ctx, cancel := context.WithCancel(ctx)
-	p := &loadHTTP2Peer{conn: conn, ctx: ctx, cancel: cancel, reader: http2.NewFramer(nil, conn), writer: http2.NewFramer(conn, nil), connCredit: 65535, initialCredit: 65535, frameSize: 16384, creditChanged: make(chan struct{}), streamCredit: make(map[uint32]int64), received: make(map[uint32]int64), stopped: make(chan struct{}), notices: make(chan time.Time, 2), firstData: make(chan time.Time, 1), finished: make(chan uint32, 256), ready: make(chan struct{}), done: make(chan struct{}), onHead: onHead, onEnd: onEnd}
+	p := &loadHTTP2Peer{conn: conn, ctx: ctx, cancel: cancel, reader: http2.NewFramer(nil, conn), writer: http2.NewFramer(conn, nil), connCredit: 65535, initialCredit: 65535, frameSize: 16384, creditChanged: make(chan struct{}), streamCredit: make(map[uint32]int64), received: make(map[uint32]int64), stopped: make(chan struct{}), notices: make(chan time.Time, 2), firstData: make(chan time.Time, 1), finished: make(chan uint32, 256), ready: make(chan struct{}), done: make(chan struct{}), failed: make(chan struct{}), onHead: onHead, onEnd: onEnd}
 	p.reader.ReadMetaHeaders = hpack.NewDecoder(4096, nil)
 	t.Cleanup(func() { p.cancel(); _ = conn.Close(); <-p.done; p.workers.Wait() })
 	if client {
@@ -111,7 +113,22 @@ func newLoadHTTP2Peer(t *testing.T, ctx context.Context, conn net.Conn, client b
 func (p *loadHTTP2Peer) write(fn func(*http2.Framer) error) error {
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
-	return fn(p.writer)
+	err := fn(p.writer)
+	p.recordFailure(err)
+	return err
+}
+
+// Failure recording is diagnostic only: the existing reader and writer lifecycle stays unchanged.
+func (p *loadHTTP2Peer) recordFailure(err error) {
+	if err == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.failure == nil {
+		p.failure = err
+		close(p.failed)
+	}
 }
 
 func (p *loadHTTP2Peer) read() {
@@ -129,9 +146,14 @@ func (p *loadHTTP2Peer) read() {
 		}
 		frame, err := p.reader.ReadFrame()
 		if err != nil {
+			p.recordFailure(err)
 			return
 		}
 		switch frame := frame.(type) {
+		case *http2.RSTStreamFrame:
+			p.recordFailure(fmt.Errorf("stream %d reset: %s", frame.StreamID, frame.ErrCode))
+		case *http2.GoAwayFrame:
+			p.recordFailure(fmt.Errorf("connection GOAWAY: %s", frame.ErrCode))
 		case *http2.SettingsFrame:
 			if frame.IsAck() {
 				if !acknowledged {
@@ -158,6 +180,7 @@ func (p *loadHTTP2Peer) read() {
 			p.creditChanged = make(chan struct{})
 			p.mu.Unlock()
 			if err != nil || p.write(func(f *http2.Framer) error { return f.WriteSettingsAck() }) != nil {
+				p.recordFailure(err)
 				return
 			}
 		case *http2.WindowUpdateFrame:

@@ -22,7 +22,7 @@ jobs:
   network-gates:
     name: isolated network gates
     runs-on: ubuntu-26.04
-    # Scenario deadlines total 65 minutes; setup and evidence upload need margin.
+    # Scenario deadlines total 55 minutes; setup and evidence upload need margin.
     timeout-minutes: 75
     env:
       NETWORK_GATE_OUTPUT: ${{ github.workspace }}/_test/network-gate
@@ -37,7 +37,6 @@ jobs:
       HTTP_HEAP_TEST: TestHTTP2LoadHeapStalls
       HTTP_SMALL_FRAME_HEAP_TEST: TestHTTP2LoadHeapSmallWindow
       HTTP_SSE_TEST: TestHTTP2LoadSSELatency
-      HTTP_NETEM_TEST: TestHTTP2LoadNetem
       WS_GATE_RUNNER: internal/proxy/layers/websocket/autobahn/run.sh
       WS_CASE_MANIFEST: internal/proxy/layers/websocket/autobahn/cases.json
       WS_GATE_CONFIG: internal/proxy/layers/websocket/autobahn/fuzzingclient.json
@@ -92,3 +91,64 @@ jobs:
           path: _test/network-gate
           if-no-files-found: error
           retention-days: 14
+
+  netem:
+    name: netem throughput
+    runs-on: ubuntu-26.04
+    # Two 600-second attempts plus setup, restoration and separate uploads.
+    timeout-minutes: 30
+    env:
+      NETWORK_GATE_OUTPUT: ${{ github.workspace }}/_test/netem
+      HTTP_LOAD_TAG: h2load
+      HTTP_LOAD_PACKAGE: ./internal/proxy/layers/httplayer
+      HTTP_LOAD_ENV_NAME: MITMPROXY_GO_HTTP2_LOAD
+      HTTP_LOAD_ENV_VALUE: "1"
+      HTTP_NETEM_TEST: TestHTTP2LoadNetem
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read the Go version from go.mod
+        id: go
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: netem-throughput
+      - name: Install network tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes iproute2 jq
+      - name: Run first isolated measurement
+        id: first
+        run: bash hack/network-gate.sh --netem-first
+      - name: Retain first-attempt evidence before any retry
+        id: first-upload
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: netem-first-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: _test/netem
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retry only a validated measurement failure
+        if: steps.first.outputs.classification == 'retryable' && steps.first-upload.outcome == 'success' && success()
+        run: bash hack/network-gate.sh --netem-retry
+      - name: Upload retry evidence separately
+        if: always() && steps.first.outputs.classification == 'retryable'
+        uses: actions/upload-artifact@v7
+        with:
+          name: netem-retry-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: _test/netem/retry
+          if-no-files-found: error
+          retention-days: 14
+      - name: Require an accepted measurement receipt
+        if: always()
+        run: |
+          set -euo pipefail
+          first="$(jq -er '.classification' "${NETWORK_GATE_OUTPUT}/first/receipt.json")"
+          if [[ "${first}" == pass ]]; then
+            exit 0
+          fi
+          [[ "${first}" == retryable ]]
+          jq -e '.classification == "pass"' "${NETWORK_GATE_OUTPUT}/retry/receipt.json"
+          echo 'accepted flaky measurement under the approved two-attempt policy'

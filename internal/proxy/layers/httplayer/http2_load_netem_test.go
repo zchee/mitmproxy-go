@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"golang.org/x/net/http2/hpack"
+
+	"github.com/zchee/mitmproxy-go/internal/proxy/layer/layertest"
 )
 
 func requireLoadNetem(t *testing.T) {
@@ -56,8 +58,65 @@ func requireLoadNetem(t *testing.T) {
 	t.Logf("qdisc: %s", strings.TrimSpace(string(output)))
 }
 
+func awaitLoadNetem(t *testing.T, client, origin *loadHTTP2Peer, ownerDone <-chan struct{}) (uint32, bool) {
+	t.Helper()
+	assertAlive := func() {
+		for _, peer := range []*loadHTTP2Peer{client, origin} {
+			peer.mu.Lock()
+			err := peer.failure
+			peer.mu.Unlock()
+			if err != nil {
+				t.Fatalf("netem protocol failure: %v", err)
+			}
+			select {
+			case <-peer.done:
+				t.Fatal("netem peer ended before measured completion")
+			case <-peer.ctx.Done():
+				t.Fatalf("netem peer context ended: %v", peer.ctx.Err())
+			default:
+			}
+		}
+		select {
+		case <-ownerDone:
+			t.Fatal("netem upstream owner ended before measured completion")
+		default:
+		}
+	}
+	timer := time.NewTimer(layertest.Timeout)
+	defer timer.Stop()
+	select {
+	case id := <-client.finished:
+		assertAlive()
+		return id, true
+	case <-client.failed:
+	case <-origin.failed:
+	case <-client.done:
+	case <-origin.done:
+	case <-client.ctx.Done():
+	case <-origin.ctx.Done():
+	case <-ownerDone:
+	case <-timer.C:
+		// A completion already queued at the deadline is still completion evidence.
+		select {
+		case id := <-client.finished:
+			assertAlive()
+			return id, true
+		default:
+		}
+		assertAlive()
+		return 0, false
+	}
+	assertAlive()
+	t.Fatal("netem measured wait ended without a live peer")
+	return 0, false
+}
+
 func loadDirectDownload(t *testing.T, size, window int64) time.Duration {
 	t.Helper()
+	netem := strings.HasPrefix(t.Name(), "TestHTTP2LoadNetem/")
+	if netem {
+		t.Log(`NETEM {"phase":"direct-handshake"}`)
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	t.Cleanup(cancel)
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -96,7 +155,10 @@ func loadDirectDownload(t *testing.T, size, window int64) time.Duration {
 		t.Fatal(err)
 	}
 	client := newLoadHTTP2Peer(t, ctx, conn, true, nil, nil, window, window)
-	_ = await(t, ready)
+	origin := await(t, ready)
+	if netem {
+		t.Log(`NETEM {"phase":"direct-warmup"}`)
+	}
 	request := func(id uint32, path string) error {
 		return client.headers(id, []hpack.HeaderField{{Name: ":method", Value: "GET"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: listener.Addr().String()}, {Name: ":path", Value: path}}, true)
 	}
@@ -110,12 +172,27 @@ func loadDirectDownload(t *testing.T, size, window int64) time.Duration {
 	if err := request(3, "/netem"); err != nil {
 		t.Fatal(err)
 	}
-	if got := await(t, client.finished); got != 3 {
-		t.Fatalf("direct completed stream = %d", got)
+	var completed uint32
+	if netem {
+		t.Logf(`NETEM {"phase":"direct-transfer","leg":"direct","stream":3,"expected_bytes":%d,"window":%d}`, size, window)
+		var ok bool
+		completed, ok = awaitLoadNetem(t, client, origin, nil)
+		if !ok {
+			t.Logf(`NETEM {"phase":"measured-transfer-timeout","outcome":"measured-transfer-timeout","leg":"direct","last_phase":"direct-transfer","stream":3,"expected_bytes":%d,"window":%d,"actual_bytes":"unavailable","direct_bytes":"unavailable","proxy_bytes":"unavailable","progress_bytes":%d,"elapsed_ns":%d,"direct_duration_ns":"unavailable","proxy_duration_ns":"unavailable","ratio":"unavailable"}`, size, window, client.bytes(3), time.Since(started).Nanoseconds())
+			t.Fatal("netem measured transfer did not complete")
+		}
+	} else {
+		completed = await(t, client.finished)
+	}
+	if completed != 3 {
+		t.Fatalf("direct completed stream = %d", completed)
 	}
 	elapsed := time.Since(started)
 	if got := client.bytes(3); got != size {
 		t.Fatalf("direct bytes = %d, want %d", got, size)
+	}
+	if netem {
+		t.Logf(`NETEM {"phase":"direct-complete","bytes":%d,"duration_ns":%d}`, size, elapsed.Nanoseconds())
 	}
 	return elapsed
 }
@@ -133,17 +210,25 @@ func TestHTTP2LoadDirectPeer(t *testing.T) {
 }
 
 func TestHTTP2LoadNetem(t *testing.T) {
+	t.Log(`NETEM {"phase":"setup"}`)
 	requireLoadNetem(t)
 	tests := map[string]struct{ size, window int64 }{"success: matched 16 MiB windows keep proxy throughput above 80 percent": {size: 256 << 20, window: 16 << 20}}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			direct := loadDirectDownload(t, tt.size, tt.window)
+			t.Log(`NETEM {"phase":"proxy-setup-warmup"}`)
 			s := newLoadHTTP2Session(t, 128<<10, nil, 5*time.Minute, tt.window, tt.window)
 			started := time.Now()
 			if err := s.request(3, "GET", "/netem", true); err != nil {
 				t.Fatal(err)
 			}
-			if got := await(t, s.client.finished); got != 3 {
+			t.Logf(`NETEM {"phase":"proxy-transfer","leg":"proxy","stream":3,"expected_bytes":%d,"window":%d}`, tt.size, tt.window)
+			got, ok := awaitLoadNetem(t, s.client, s.origin, s.view.endpoint(t).Done())
+			if !ok {
+				t.Logf(`NETEM {"phase":"measured-transfer-timeout","outcome":"measured-transfer-timeout","leg":"proxy","last_phase":"proxy-transfer","stream":3,"expected_bytes":%d,"window":%d,"actual_bytes":"unavailable","direct_bytes":%d,"proxy_bytes":"unavailable","progress_bytes":%d,"elapsed_ns":%d,"direct_duration_ns":%d,"proxy_duration_ns":"unavailable","ratio":"unavailable"}`, tt.size, tt.window, tt.size, s.client.bytes(3), time.Since(started).Nanoseconds(), direct.Nanoseconds())
+				t.Fatal("netem measured transfer did not complete")
+			}
+			if got != 3 {
 				t.Fatalf("proxy completed stream = %d", got)
 			}
 			proxied := time.Since(started)
@@ -151,7 +236,11 @@ func TestHTTP2LoadNetem(t *testing.T) {
 				t.Fatalf("proxy bytes = %d, want %d", got, tt.size)
 			}
 			ratio := float64(direct) / float64(proxied)
-			t.Logf("256 MiB netem download, matched stream/connection windows=%d: direct=%s (%.3f MiB/s), proxy=%s (%.3f MiB/s), throughput ratio=%.6f, receive budget=%+v", tt.window, direct, float64(tt.size)/(1<<20)/direct.Seconds(), proxied, float64(tt.size)/(1<<20)/proxied.Seconds(), ratio, s.view.endpoint(t).Budget())
+			outcome := "pass"
+			if ratio < 0.8 {
+				outcome = "below-floor"
+			}
+			t.Logf(`NETEM {"phase":"measurement-complete","outcome":%q,"stream":3,"expected_bytes":%d,"window":%d,"direct_bytes":%d,"proxy_bytes":%d,"direct_duration_ns":%d,"proxy_duration_ns":%d,"ratio":%.12g}`, outcome, tt.size, tt.window, tt.size, tt.size, direct.Nanoseconds(), proxied.Nanoseconds(), ratio)
 			if ratio < 0.8 {
 				t.Errorf("proxy/direct throughput = %.6f, want at least 0.8", ratio)
 			}

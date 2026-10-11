@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -20,19 +19,21 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/dns"
+	"github.com/zchee/mitmproxy-go/internal/netutil/freeport"
 )
 
 func authoritativeServer(t *testing.T, truncate bool, reply func(*dns.Message) *dns.Message) (netip.AddrPort, <-chan string) {
 	t.Helper()
-	tcp, udp, err := listenAuthoritativePair(func() (net.Listener, error) {
-		return net.Listen("tcp4", "127.0.0.1:0")
-	}, func(address *net.UDPAddr) (*net.UDPConn, error) {
-		return net.ListenUDP("udp4", address)
-	})
+	tcp, udp, err := freeport.ListenPair(t.Context(), "tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	address := tcp.Addr().(*net.TCPAddr).AddrPort()
+	closeSockets := sync.OnceFunc(func() { _ = udp.Close(); _ = tcp.Close() })
+	t.Cleanup(closeSockets)
+	address, err := netip.ParseAddrPort(udp.LocalAddr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithCancel(t.Context())
 	queries := make(chan string, 256)
 	respond := func(wire []byte, network string) []byte {
@@ -114,7 +115,7 @@ func authoritativeServer(t *testing.T, truncate bool, reply func(*dns.Message) *
 			}()
 		}
 	})
-	t.Cleanup(func() { cancel(); _ = udp.Close(); _ = tcp.Close(); workers.Wait(); close(queries) })
+	t.Cleanup(func() { cancel(); closeSockets(); workers.Wait(); close(queries) })
 	return address, queries
 }
 

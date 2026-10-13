@@ -5,3 +5,4 @@
 ./internal/proxy/modeserver	^(Test.*DNS|TestPacketSocketSharesTCPPort|TestSharedUDPBindFaults|TestWindowsSharedUDPAccessRetry)	-
 ./internal/proxy/layers/dnslayer	^Test	-
 ./internal/netutil/freeport	^(TestPortCandidateSelection|TestPortCandidateDiscoveryCancellation|TestPortCandidateDiscoveryFallback)$	-	20
+./internal/proxy/modeserver	^(TestBothListenersSharePort|TestBothListenersRetryEphemeralCollision|TestWindowsSharedTCPAccessDenied|TestBothProtocolStartStop|TestBothListenerDualStack|TestPacketStartStop|TestBothListenerFactoryRollback|TestPacketStartError|TestBothCandidateSelection|TestBothCandidateOwnership)$	-	20

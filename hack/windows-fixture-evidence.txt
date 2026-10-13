@@ -4,3 +4,4 @@
 ./addons/dnsresolver	^Test	-
 ./internal/proxy/modeserver	^(Test.*DNS|TestPacketSocketSharesTCPPort|TestSharedUDPBindFaults|TestWindowsSharedUDPAccessRetry)	-
 ./internal/proxy/layers/dnslayer	^Test	-
+./internal/netutil/freeport	^(TestPortCandidateSelection|TestPortCandidateDiscoveryCancellation|TestPortCandidateDiscoveryFallback)$	-	20

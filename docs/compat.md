@@ -131,30 +131,39 @@ No differences beyond the message content rule listed under [flow](#flow).
 | DNS wire and expanded record data are parsed through Python helpers (`mitmproxy/dns.py`, `mitmproxy/net/dns/domain_names.py`). | Wire messages are capped at 65,535 bytes; decoded names and RDATA share a 1 MiB expansion budget. Compression pointers are iterative, backward-only and work-bounded. | Bound untrusted decoding. Codec round-trip, malformed-pointer, expansion and fuzz tests verify these limits. |
 | Domain names use Python's IDNA 2003 codec and Unicode 3.2 nameprep tables (`mitmproxy/net/dns/domain_names.py`). | Uses x/net/idna UTS #46 transitional processing. Later assignments can differ: U+1E9E maps to `ss` rather than `xn--kkg`. | Use the maintained Go IDNA implementation; `TestIDNAMappings` records the difference. |
 
-Socket-backed DNS resolver origins, mode-server DNS listeners and origins,
-DNS-layer UDP sessions, and packet-factory shared-port test rows acquire live
-TCP/UDP pairs through `freeport.ListenPair`
-(`internal/netutil/freeport/pair.go`). The helper returns caller-owned sockets
-on the same host and port. DNS mode fixtures transfer them through the existing
-private listen seams; single-protocol fixtures close the unused mate. The
-packet-factory binding rows release the UDP mate before exercising the existing
-binder against the retained TCP port.
+Test fixtures for socket-backed DNS resolver origins, mode-server DNS listeners
+and origins, DNS-layer UDP sessions, and packet-factory shared-port rows acquire
+live TCP/UDP pairs through `freeport.ListenPair`
+(`internal/netutil/freeport/pair.go`). This test-side acquisition returns
+caller-owned sockets on the same host and port; production listeners do not use
+the helper. DNS mode fixtures transfer sockets through the existing private listen
+seams; single-protocol fixtures close the unused mate. Packet-factory binding rows
+release the UDP mate before exercising the existing binder against the retained
+TCP port.
 
-On Windows IPv4, port-zero selection avoids the union of the TCP and UDP excluded
-port ranges within their dynamic-range intersection. Range discovery is cached
-once per process. If the exclusion commands cannot be read, the helper tries
-bounded distinct randomized candidates with real bind checks; unavailable dynamic
-bounds use the IANA dynamic range 49152–65535. Partial pairs close before retry,
-and only a requested port zero permits reselection. IPv6 retains native binding
-and retries without applying IPv4 exclusion tables; IPv6 exclusions are not
-queried.
+On Windows IPv4, the helper's port-zero selection avoids the union of the TCP and
+UDP excluded port ranges within their dynamic-range intersection. Range discovery
+is cached once per process. Exclusion discovery is all-or-fallback: if either
+protocol's command or parsing fails, both exclusion tables are discarded. The
+helper then tries at most 64 distinct randomized candidates with real bind checks;
+unavailable dynamic bounds use the IANA range 49152–65535, retaining exclusions
+only when both exclusion tables were successfully discovered. Partial pairs close
+before retry, and only a requested port zero permits reselection. Windows
+`ListenPair` tcp6 acquisition also uses distinct randomized IANA-range candidates,
+without querying or applying IPv4 exclusion tables. Non-Windows acquisition stays
+native. Windows product IPv6 selection remains native, not randomized.
 
 This is a fixture-level repair, not a Windows product-listener guarantee.
-Production standalone DNS pairing, reverse DNS UDP listeners and packet-factory
-binding retain their existing paths and retry behavior
-(`internal/proxy/modeserver/both.go`, `internal/proxy/modeserver/packet.go`).
+Production standalone DNS, reverse DNS and reverse HTTPS use the Both binder;
+packet-only listeners retain their existing path
+(`internal/proxy/modeserver/both.go`, `internal/proxy/modeserver/packet.go`). Both
+still fails immediately on TCP bind errors; its Windows port-zero UDP retry
+predicate accepts only native WSAEADDRINUSE/10048 and WSAEACCES/10013.
 Cross-package resolver acceptance tests still start mode listeners through these
-production paths; their origins use the owned-pair helper.
+production paths; their origins use the owned-pair helper. The planned production
+change will be the first product consumption of the helper's candidate-selection
+policy, not its paired-socket acquisition. This does not establish native
+local-mode acceptance.
 
 ## flowio
 

@@ -25,6 +25,8 @@ func checkSharedUDPBind(t *testing.T, tt sharedUDPBindCase) {
 	t.Helper()
 	cfg, _, _ := fixture(t)
 	instance := makeInstance(t, "dns@127.0.0.1:0", cfg)
+	// This fixture owns paired allocation; the product must pass its zero request.
+	instance.portCandidates = nil
 	var streams []net.Listener
 	var sockets []net.PacketConn
 	t.Cleanup(func() {

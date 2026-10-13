@@ -68,6 +68,7 @@ func TestExcludedPortReservations(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			var candidates []net.Listener
+			mates := make(map[int]net.PacketConn)
 			blocked := make(map[int]bool)
 			lc := &net.ListenConfig{}
 			input := listeners{
@@ -79,7 +80,18 @@ func TestExcludedPortReservations(t *testing.T) {
 							t.Fatalf("excluded candidate %v released before selection ended", candidate.Addr())
 						}
 					}
-					candidate, err := lc.Listen(ctx, network, address)
+					var candidate net.Listener
+					var err error
+					if tt.paired {
+						var mate net.PacketConn
+						candidate, mate, err = ListenPair(ctx, "tcp4", "127.0.0.1:0")
+						if err == nil {
+							mates[candidate.Addr().(*net.TCPAddr).Port] = mate
+							t.Cleanup(func() { _ = mate.Close() })
+						}
+					} else {
+						candidate, err = lc.Listen(ctx, network, address)
+					}
 					if err == nil {
 						candidates = append(candidates, candidate)
 						blocked[candidate.Addr().(*net.TCPAddr).Port] = len(candidates) <= tt.excluded
@@ -87,7 +99,17 @@ func TestExcludedPortReservations(t *testing.T) {
 					}
 					return candidate, err
 				},
-				listenPacket: lc.ListenPacket,
+				listenPacket: func(_ context.Context, _, address string) (net.PacketConn, error) {
+					addr, err := net.ResolveUDPAddr("udp4", address)
+					if err != nil {
+						return nil, err
+					}
+					mate := mates[addr.Port]
+					if mate == nil {
+						t.Fatalf("no held UDP mate for %s", address)
+					}
+					return mate, nil
+				},
 				excluded: func(port int, paired bool) bool {
 					if paired != tt.paired {
 						t.Fatalf("paired exclusion check=%t, want %t", paired, tt.paired)

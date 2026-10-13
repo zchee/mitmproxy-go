@@ -106,7 +106,7 @@ func TestBothCandidateSelection(t *testing.T) {
 					selected++
 					return candidateCursor(func(context.Context) (int, error) { return 50123, nil }), nil
 				}
-				cause := fmt.Errorf("TCP bind: %w", syscall.Errno(10013))
+				cause := errors.New("TCP bind refused")
 				instance.listenTCP = func(_ context.Context, network, address string) (net.Listener, error) {
 					tcpCalls++
 					wantNetwork, wantHost, wantPort := "tcp", test.host, test.port
@@ -133,7 +133,7 @@ func TestBothCandidateSelection(t *testing.T) {
 				if diff := gocmp.Diff([]int{wantSelection, 1, 0, test.port}, []int{selected, tcpCalls, udpCalls, instance.port}); diff != "" {
 					t.Fatalf("selection/bind/request tallies (-want +got):\n%s", diff)
 				}
-				if len(streams) != 0 || len(packets) != 0 || !errors.Is(err, syscall.Errno(10013)) {
+				if len(streams) != 0 || len(packets) != 0 || !errors.Is(err, cause) {
 					t.Fatalf("TCP fail-fast lost cause or acquired sockets: %v", err)
 				}
 			})
@@ -216,7 +216,11 @@ func TestBothCandidateSelection(t *testing.T) {
 				const first, last = 50000, 50100
 				if !test.parent {
 					instance.portCandidates = func(context.Context) (portCandidateCursor, error) {
-						return candidateCursor(func(context.Context) (int, error) { return last + 1, nil }), nil
+						draws := 0
+						return candidateCursor(func(context.Context) (int, error) {
+							draws++
+							return last + draws, nil
+						}), nil
 					}
 				}
 				cause := fmt.Errorf("TCP bind: %w", test.tcpCause)
@@ -260,8 +264,11 @@ func TestBothCandidateSelection(t *testing.T) {
 				wantTCP, wantUDP, wantCloses := 1, 1, 0
 				if test.tcpCause != nil {
 					wantUDP = 0
+					if !test.parent && runtime.GOOS == "windows" {
+						wantTCP = sharedPortAttempts
+					}
 					if !errors.Is(err, cause) {
-						t.Fatalf("TCP fail-fast cause: %v", err)
+						t.Fatalf("TCP acquisition lost cause: %v", err)
 					}
 				} else if test.parent {
 					wantTCP, wantUDP, wantCloses = sharedPortAttempts, sharedPortAttempts, sharedPortAttempts

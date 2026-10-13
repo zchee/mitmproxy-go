@@ -47,6 +47,10 @@ func TestBothListenersRetryEphemeralCollision(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cfg, _, _ := fixture(t)
 			instance := makeInstance(t, "reverse:https://example.test:443@127.0.0.1:0", cfg)
+			// The exhaustion fixture counts successful TCP acquisitions, not draws.
+			if tt.blockAll {
+				instance.portCandidates = nil
+			}
 			calls := 0
 			var blockers []net.PacketConn
 			var opened []net.Listener

@@ -61,6 +61,7 @@ func TestGetFreePortReusedCandidate(t *testing.T) {
 					return lc.Listen(ctx, network, requested)
 				},
 				listenPacket: lc.ListenPacket,
+				domain:       legacyPortDomain,
 			})
 			if err != nil {
 				t.Fatalf("reused UDP-busy candidate exhausted %d attempts: %v", calls, err)

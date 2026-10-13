@@ -65,25 +65,58 @@ type loadHTTP2Peer struct {
 	failed         chan struct{}
 	onHead         func(uint32, []hpack.HeaderField, bool)
 	onEnd          func(uint32)
+	readerStarted  bool
+	closeConn      func()
+	payload        *loadPayloadReader
 }
 
 func newLoadHTTP2Peer(t *testing.T, ctx context.Context, conn net.Conn, client bool, onHead func(uint32, []hpack.HeaderField, bool), onEnd func(uint32), windows ...int64) *loadHTTP2Peer {
 	t.Helper()
+	p := makeLoadHTTP2Peer(ctx, conn, onHead, onEnd, false)
+	t.Cleanup(p.close)
+	if err := p.setup(client, windows...); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func makeLoadHTTP2Peer(ctx context.Context, conn net.Conn, onHead func(uint32, []hpack.HeaderField, bool), onEnd func(uint32), diagnostic bool) *loadHTTP2Peer {
 	ctx, cancel := context.WithCancel(ctx)
-	p := &loadHTTP2Peer{conn: conn, ctx: ctx, cancel: cancel, reader: http2.NewFramer(nil, conn), writer: http2.NewFramer(conn, nil), connCredit: 65535, initialCredit: 65535, frameSize: 16384, creditChanged: make(chan struct{}), streamCredit: make(map[uint32]int64), received: make(map[uint32]int64), stopped: make(chan struct{}), notices: make(chan time.Time, 2), firstData: make(chan time.Time, 1), finished: make(chan uint32, 256), ready: make(chan struct{}), done: make(chan struct{}), failed: make(chan struct{}), onHead: onHead, onEnd: onEnd}
+	p := &loadHTTP2Peer{conn: conn, ctx: ctx, cancel: cancel, writer: http2.NewFramer(conn, nil), connCredit: 65535, initialCredit: 65535, frameSize: 16384, creditChanged: make(chan struct{}), streamCredit: make(map[uint32]int64), received: make(map[uint32]int64), stopped: make(chan struct{}), notices: make(chan time.Time, 2), firstData: make(chan time.Time, 1), finished: make(chan uint32, 256), ready: make(chan struct{}), done: make(chan struct{}), failed: make(chan struct{}), onHead: onHead, onEnd: onEnd}
+	p.closeConn = sync.OnceFunc(func() { _ = conn.Close() })
+	var reader io.Reader = conn
+	if diagnostic {
+		p.payload = &loadPayloadReader{peer: p, source: conn, actual: make(map[uint32]int64), progress: make(map[uint32]int64)}
+		reader = p.payload
+	}
+	p.reader = http2.NewFramer(nil, reader)
 	p.reader.ReadMetaHeaders = hpack.NewDecoder(4096, nil)
-	t.Cleanup(func() { p.cancel(); _ = conn.Close(); <-p.done; p.workers.Wait() })
+	return p
+}
+
+func (p *loadHTTP2Peer) close() {
+	p.cancel()
+	p.closeConn()
+	if p.readerStarted {
+		<-p.done
+	}
+	p.workers.Wait()
+}
+
+func (p *loadHTTP2Peer) setup(client bool, windows ...int64) (err error) {
+	defer func() { p.recordFailure(err) }()
+	conn, ctx := p.conn, p.ctx
 	if client {
 		if _, err := io.WriteString(conn, http2.ClientPreface); err != nil {
-			t.Fatal(err)
+			return err
 		}
 	} else {
 		prefix := make([]byte, len(http2.ClientPreface))
 		if _, err := io.ReadFull(conn, prefix); err != nil {
-			t.Fatal(err)
+			return err
 		}
 		if string(prefix) != http2.ClientPreface {
-			t.Fatal("wrong client preface")
+			return errors.New("wrong client preface")
 		}
 	}
 	initialWindow, connectionWindow := int64(1<<20), int64(16<<20)
@@ -93,21 +126,30 @@ func newLoadHTTP2Peer(t *testing.T, ctx context.Context, conn net.Conn, client b
 	if len(windows) == 2 {
 		initialWindow, connectionWindow = windows[0], windows[1]
 	}
+	p.mu.Lock()
+	p.readerStarted = true
+	p.mu.Unlock()
 	go p.read()
 	if err := p.write(func(f *http2.Framer) error {
 		return f.WriteSettings(http2.Setting{ID: http2.SettingInitialWindowSize, Val: uint32(initialWindow)}, http2.Setting{ID: http2.SettingMaxConcurrentStreams, Val: 100}, http2.Setting{ID: http2.SettingMaxFrameSize, Val: 128 << 10})
 	}); err != nil {
-		t.Fatal(err)
+		return err
 	}
 	if err := p.write(func(f *http2.Framer) error { return f.WriteWindowUpdate(0, uint32(connectionWindow-65535)) }); err != nil {
-		t.Fatal(err)
+		return err
 	}
 	select {
 	case <-p.ready:
 	case <-ctx.Done():
-		t.Fatal(ctx.Err())
+		p.mu.Lock()
+		failure := p.failure
+		p.mu.Unlock()
+		if failure != nil {
+			return failure
+		}
+		return ctx.Err()
 	}
-	return p
+	return nil
 }
 
 func (p *loadHTTP2Peer) write(fn func(*http2.Framer) error) error {

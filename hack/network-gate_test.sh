@@ -176,3 +176,43 @@ check_policy two-failures retryable retryable 1 2
 check_policy invalid-first invalid pass 1 1
 check_policy invalid-retry retryable invalid 1 2
 check_policy upload-failure upload-failure pass 1 1
+
+# Sidecars are retained evidence, never inputs to transcript classification.
+for name in pass direct-timeout proxy-timeout below-floor direct-protocol-failure unknown-diagnostic; do
+  case "${name}" in
+    pass) expression='.'; producer=0; diagnostic='' ;;
+    direct-timeout) expression="${direct_timeout}"; producer=1; diagnostic='' ;;
+    proxy-timeout) expression="${proxy_timeout}"; producer=1; diagnostic='' ;;
+    below-floor) expression="${below}"; producer=1; diagnostic='' ;;
+    direct-protocol-failure) expression=".[0:4] + [${protocol_record}]"; producer=1; diagnostic='netem protocol failure: stream reset' ;;
+    unknown-diagnostic) expression="${below}"; producer=1; diagnostic='unexpected protocol failure' ;;
+  esac
+  for sidecar in absent present malformed; do
+    directory="${output}/contracts/sidecar-${name}-${sidecar}"
+    mkdir -p "${directory}"
+    log="${directory}/attempt.log"
+    write_transcript "${expression}" "${producer}" "${log}"
+    if [[ -n "${diagnostic}" ]]; then
+      printf '    http2_load_netem_test.go:1: %s\n' "${diagnostic}" >> "${log}"
+    fi
+    case "${sidecar}" in
+      absent) ;;
+      present) printf '%s\n' '{"phase":"direct-transfer","outcome":"success","actual_bytes":268435456}' >| "${directory}/direct-terminal-fixture.json" ;;
+      malformed) printf '%s\n' '{not-json' >| "${directory}/direct-terminal-fixture.json" ;;
+    esac
+    status=0
+    netem_classify /dev/stdin "${producer}" 0 0 < "${log}" >| "${directory}/receipt.json" 2>| "${directory}/error.log" || status=$?
+    printf '%s\n' "${status}" >| "${directory}/exit.txt"
+    if [[ "${sidecar}" == absent ]]; then
+      baseline="${directory}"
+    else
+      for retained in attempt.log receipt.json error.log exit.txt; do
+        cmp "${baseline}/${retained}" "${directory}/${retained}" || {
+          printf 'FAIL: sidecar %s changed %s %s\n' "${sidecar}" "${name}" "${retained}" >&2
+          exit 1
+        }
+      done
+    fi
+    printf 'PASS: sidecar %s leaves %s classification and exit unchanged\n' "${sidecar}" "${name}"
+  done
+done

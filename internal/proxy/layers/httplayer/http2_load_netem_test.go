@@ -7,11 +7,14 @@ package httplayer
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -134,27 +137,86 @@ func logLoadNetemTimeout(t *testing.T, client, origin *loadHTTP2Peer, format str
 
 func loadDirectDownload(t *testing.T, size, window int64) time.Duration {
 	t.Helper()
+	elapsed, err := runLoadDirectDownload(t, size, window, loadDirectOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return elapsed
+}
+
+func runLoadDirectDownload(t *testing.T, size, window int64, options loadDirectOptions) (elapsed time.Duration, result error) {
+	t.Helper()
 	netem := strings.HasPrefix(t.Name(), "TestHTTP2LoadNetem/")
 	if netem {
 		t.Log(`NETEM {"phase":"direct-handshake"}`)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
-	t.Cleanup(cancel)
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	root := os.Getenv("NETWORK_GATE_OUTPUT")
+	if root == "" {
+		root = t.TempDir()
 	}
-	t.Cleanup(func() { _ = listener.Close() })
-	ready := make(chan *loadHTTP2Peer, 1)
+	terminal := &loadDirectTerminal{root: root, receipt: loadDirectReceipt{Phase: "setup", ExpectedBytes: size, Outcome: "failed"}}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
+	var listener net.Listener
+	var originWorker sync.WaitGroup
+	defer func() {
+		terminal.fail(result)
+		if err := terminal.publish(); err != nil {
+			result = errors.Join(result, fmt.Errorf("write direct terminal sidecar: %w", err))
+		}
+		if options.beforeClose != nil {
+			options.beforeClose(terminal)
+		}
+		cleanup := func() {
+			cancel()
+			if listener != nil {
+				_ = listener.Close()
+			}
+			if terminal.client != nil {
+				terminal.client.closeConn()
+			}
+			originWorker.Wait()
+			if terminal.client != nil {
+				terminal.client.close()
+			}
+			if terminal.origin != nil {
+				terminal.origin.close()
+			}
+		}
+		if result == nil {
+			t.Cleanup(cleanup)
+		} else {
+			cleanup()
+		}
+	}()
+	var err error
+	if options.listen != nil {
+		listener, err = options.listen()
+	} else {
+		listener, err = net.Listen("tcp4", "127.0.0.1:0")
+	}
+	if err != nil {
+		return 0, err
+	}
+	terminal.receipt.Phase = "direct-handshake"
+	type originResult struct {
+		peer *loadHTTP2Peer
+		err  error
+	}
+	ready := make(chan originResult, 1)
 	chunk := make([]byte, 128<<10)
-	go func() {
+	originWorker.Go(func() {
 		conn, err := listener.Accept()
 		if err != nil {
+			terminal.fail(err)
+			ready <- originResult{err: err}
 			return
+		}
+		if options.originConn != nil {
+			conn = options.originConn(conn)
 		}
 		var peer *loadHTTP2Peer
 		initialized := make(chan struct{})
-		peer = newLoadHTTP2Peer(t, ctx, conn, false, func(id uint32, fields []hpack.HeaderField, _ bool) {
+		peer = makeLoadHTTP2Peer(ctx, conn, func(id uint32, fields []hpack.HeaderField, _ bool) {
 			<-initialized
 			bodySize := size
 			for _, field := range fields {
@@ -163,20 +225,58 @@ func loadDirectDownload(t *testing.T, size, window int64) time.Duration {
 				}
 			}
 			peer.workers.Go(func() {
+				if options.response != nil {
+					peer.recordFailure(options.response(peer, id, bodySize))
+					return
+				}
 				if peer.headers(id, []hpack.HeaderField{{Name: ":status", Value: "200"}, {Name: "content-length", Value: strconv.FormatInt(bodySize, 10)}}, false) == nil {
-					_ = peer.body(id, chunk, bodySize)
+					peer.recordFailure(peer.body(id, chunk, bodySize))
 				}
 			})
-		}, nil)
+		}, nil, true)
+		terminal.mu.Lock()
+		terminal.origin = peer
+		terminal.mu.Unlock()
+		err = peer.setup(false)
 		close(initialized)
-		ready <- peer
-	}()
+		terminal.fail(err)
+		ready <- originResult{peer: peer, err: err}
+	})
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp4", listener.Addr().String())
 	if err != nil {
-		t.Fatal(err)
+		return 0, err
 	}
-	client := newLoadHTTP2Peer(t, ctx, conn, true, nil, nil, window, window)
-	origin := await(t, ready)
+	if options.clientConn != nil {
+		conn = options.clientConn(conn)
+	}
+	client := makeLoadHTTP2Peer(ctx, conn, nil, nil, true)
+	terminal.client = client
+	clientReady := make(chan error, 1)
+	originWorker.Go(func() { clientReady <- client.setup(true, window, window) })
+	var origin *loadHTTP2Peer
+	clientStarted := false
+	for origin == nil || !clientStarted {
+		select {
+		case clientErr := <-clientReady:
+			if clientErr != nil {
+				terminal.fail(clientErr)
+				return 0, clientErr
+			}
+			clientStarted = true
+			clientReady = nil
+		case accepted := <-ready:
+			if accepted.err != nil {
+				return 0, accepted.err
+			}
+			origin = accepted.peer
+			ready = nil
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+	terminal.receipt.Phase = "direct-warmup"
+	terminal.receipt.ExpectedBytes = int64(len(chunk))
+	terminal.receipt.Stream = new(uint32(1))
 	if netem {
 		t.Log(`NETEM {"phase":"direct-warmup"}`)
 	}
@@ -184,38 +284,64 @@ func loadDirectDownload(t *testing.T, size, window int64) time.Duration {
 		return client.headers(id, []hpack.HeaderField{{Name: ":method", Value: "GET"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: listener.Addr().String()}, {Name: ":path", Value: path}}, true)
 	}
 	if err := request(1, "/warm"); err != nil {
-		t.Fatal(err)
+		return 0, err
 	}
-	if got := await(t, client.finished); got != 1 {
-		t.Fatalf("direct warmup stream = %d", got)
+	wait := layertest.Timeout
+	if options.wait > 0 {
+		wait = options.wait
 	}
+	got, ok, err := awaitLoadDirect(ctx, client, origin, wait)
+	if err != nil {
+		return 0, err
+	}
+	if !ok {
+		return 0, fmt.Errorf("direct warmup: %w", context.DeadlineExceeded)
+	}
+	if got != 1 {
+		return 0, fmt.Errorf("direct warmup stream = %d", got)
+	}
+	terminal.receipt.Phase = "direct-transfer"
+	terminal.receipt.ExpectedBytes = size
+	terminal.receipt.Stream = new(uint32(3))
 	started := time.Now()
 	if err := request(3, "/netem"); err != nil {
-		t.Fatal(err)
+		elapsed = time.Since(started)
+		terminal.receipt.ElapsedNS = new(elapsed.Nanoseconds())
+		return elapsed, err
 	}
-	var completed uint32
 	if netem {
 		t.Logf(`NETEM {"phase":"direct-transfer","leg":"direct","stream":3,"expected_bytes":%d,"window":%d}`, size, window)
-		var ok bool
-		completed, ok = awaitLoadNetem(t, client, origin, nil)
-		if !ok {
-			logLoadNetemTimeout(t, client, origin, `NETEM {"phase":"measured-transfer-timeout","outcome":"measured-transfer-timeout","leg":"direct","last_phase":"direct-transfer","stream":3,"expected_bytes":%d,"window":%d,"actual_bytes":"unavailable","direct_bytes":"unavailable","proxy_bytes":"unavailable","progress_bytes":%d,"elapsed_ns":%d,"direct_duration_ns":"unavailable","proxy_duration_ns":"unavailable","ratio":"unavailable"}`, size, window, client.bytes(3), time.Since(started).Nanoseconds())
-			t.Fatal("netem measured transfer did not complete")
+	}
+	completed, ok, err := awaitLoadDirect(ctx, client, origin, wait)
+	elapsed = time.Since(started)
+	terminal.receipt.ElapsedNS = new(elapsed.Nanoseconds())
+	if err != nil {
+		terminal.fail(err)
+		terminal.receipt.Outcome = "protocol-failure"
+		if netem {
+			t.Log(`NETEM {"phase":"measured-transfer","outcome":"protocol-failure"}`)
 		}
-	} else {
-		completed = await(t, client.finished)
+		return elapsed, fmt.Errorf("netem protocol failure: %w", err)
+	}
+	if !ok {
+		terminal.receipt.Outcome = "measured-transfer-timeout"
+		terminal.fail(context.DeadlineExceeded)
+		if netem {
+			logLoadNetemTimeout(t, client, origin, `NETEM {"phase":"measured-transfer-timeout","outcome":"measured-transfer-timeout","leg":"direct","last_phase":"direct-transfer","stream":3,"expected_bytes":%d,"window":%d,"actual_bytes":"unavailable","direct_bytes":"unavailable","proxy_bytes":"unavailable","progress_bytes":%d,"elapsed_ns":%d,"direct_duration_ns":"unavailable","proxy_duration_ns":"unavailable","ratio":"unavailable"}`, size, window, client.bytes(3), elapsed.Nanoseconds())
+		}
+		return elapsed, errors.New("netem measured transfer did not complete")
 	}
 	if completed != 3 {
-		t.Fatalf("direct completed stream = %d", completed)
+		return elapsed, fmt.Errorf("direct completed stream = %d", completed)
 	}
-	elapsed := time.Since(started)
 	if got := client.bytes(3); got != size {
-		t.Fatalf("direct bytes = %d, want %d", got, size)
+		return elapsed, fmt.Errorf("direct bytes = %d, want %d", got, size)
 	}
+	terminal.receipt.Outcome = "success"
 	if netem {
 		t.Logf(`NETEM {"phase":"direct-complete","bytes":%d,"duration_ns":%d}`, size, elapsed.Nanoseconds())
 	}
-	return elapsed
+	return elapsed, nil
 }
 
 func TestHTTP2LoadDirectPeer(t *testing.T) {

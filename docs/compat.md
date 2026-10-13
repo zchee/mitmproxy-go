@@ -153,17 +153,38 @@ before retry, and only a requested port zero permits reselection. Windows
 without querying or applying IPv4 exclusion tables. Non-Windows acquisition stays
 native. Windows product IPv6 selection remains native, not randomized.
 
-This is a fixture-level repair, not a Windows product-listener guarantee.
-Production standalone DNS, reverse DNS and reverse HTTPS use the Both binder;
-packet-only listeners retain their existing path
-(`internal/proxy/modeserver/both.go`, `internal/proxy/modeserver/packet.go`). Both
-still fails immediately on TCP bind errors; its Windows port-zero UDP retry
-predicate accepts only native WSAEADDRINUSE/10048 and WSAEACCES/10013.
-Cross-package resolver acceptance tests still start mode listeners through these
-production paths; their origins use the owned-pair helper. The planned production
-change will be the first product consumption of the helper's candidate-selection
-policy, not its paired-socket acquisition. This does not establish native
+Production standalone DNS, reverse DNS and reverse HTTPS use the Both binder,
+which now consumes freeport's candidate-selection policy, not `ListenPair`'s
+paired-socket acquisition. On Windows, requested port zero selects shared IPv4
+candidates only for an explicit IPv4 literal or empty-host wildcard, without an
+added DNS lookup. The same dynamic-range intersection, exclusion union and
+all-or-fallback discovery boundary described above apply. Selection is bounded
+by 64 distinct candidates and may exhaust; a selected number is not reserved and
+real binds may still fail. Modeserver owns the complete socket set, binds TCP
+first, closes partial sets before reselection, and activates factories only after
+acquisition succeeds.
+
+Both still fails immediately on TCP bind errors, including WSAEACCES; its Windows
+port-zero UDP retry predicate accepts only native WSAEADDRINUSE/10048 and
+WSAEACCES/10013, not Go's Windows `syscall.EADDRINUSE` or `ERROR_ACCESS_DENIED`.
+Fixed ports and non-Windows selection remain unchanged. For empty-host wildcard
+binding, tcp4 selects the number and tcp6 follows it under the existing fallback
+rules; the full TCP set must share a number before UDP acquisition. This does not
+apply IPv4 exclusion tables to IPv6. Every non-literal hostname, including one
+with only IPv4 DNS answers, and explicit IPv6 literals, including zone-bearing
+addresses, retain native port-zero selection. UDP-only modes also retain their
+native path without a TCP mate. These paths remain susceptible to native
+selection failures. Requested-port diagnostics still report zero rather than the
+candidate. None of this guarantees product bind success or establishes native
 local-mode acceptance.
+
+The native Windows evidence manifest preserves every existing row, including
+all DNS resolver tests, and appends one freeport candidate-contract row and one
+Both/Packet regression row, each at count 20. The unchanged producer collects
+all rows in one dispatch with `-cpu=1,2,8`, expecting 60 executions per selected
+top-level identity in each added row and checking full freeport inventory
+coverage. The rows specify collection, not completed native evidence or measured
+timing: the final native producer and Linux campaign have not run yet.
 
 ## flowio
 
@@ -440,6 +461,34 @@ heads without an original, and messages changed by an addon do not increment it;
 | Reverse-proxy Alt-Svc can be retained with `keep_alt_svc_header` (`mitmproxy/addons/update_alt_svc.py`). | UpdateAltSvc rewrites to the actual client listener port unless the keep option is true; real HTTP3 Handler cases exercise both. | Existing addon behavior consumes the listener's published Sockname port; no separate HTTP3 addon rewrite is needed. |
 | Regular proxy mode is TCP, not an HTTP3 UDP listener (`mitmproxy/proxy/mode_specs.py:186-191`). | HTTP3 is provided by reverse/QUIC-based paths, not by a new regular-mode UDP listener. Saved HTTP3 replay remains rejected as documented under addons/clientplayback. | Scoped reverse-mode integration; live proxying does not imply saved replay support. |
 | Synthetic StreamReset injection after the request FIN is observed by the layer (`py:test/mitmproxy/proxy/layers/http/test_http3.py:1011-1058`). | After quic-go fully reads the request FIN, its completed receive stream drops a later RESET_STREAM (quic-go v0.63.0 `receive_stream.go:137-155`), so that order is transport-owned; real-peer acceptance certifies RESET/STOP orders while the request is open and STOP_SENDING on the still-open response side after the request FIN. | The Go layer sits on a real QUIC implementation rather than upstream's synthetic event injection; the completed-request RESET boundary is pinned, not emulated. |
+
+HTTP/2 direct-load invocations write one terminal JSON sidecar under
+`NETWORK_GATE_OUTPUT` before cleanup on success or failure. It records phase,
+stream, expected bytes, actual received DATA payload, separately validated
+payload, last payload-progress offset, frozen measurement elapsed time, outcome
+and the original typed cause, plus race-safe client/origin failure, done,
+context, credit and progress snapshots. Uncreated or unmeasured fields are null.
+Actual bytes include partial DATA payload before a read error; validated bytes
+count complete frames accepted by the existing framer, not a new body validator.
+Raw wire bytes are separate. Accounting retains counters and a frame header,
+not response bodies. Cleanup cannot replace the first cause; protocol failure
+still takes precedence over timeout, and queued deadline completion still counts.
+
+The narrow failed-construction lifecycle exception prevents joining a reader
+that never started and closes each acquired connection once. Direct-origin setup
+errors are delivered to the owner before teardown, so the sidecar retains their
+original cause. Successful peer parsing, flow control and measured behavior, and
+non-direct callers' existing success/error reporting, remain unchanged.
+
+The existing first/retry artifact directories retain direct sidecars, with the
+first attempt uploaded before an eligible retry. `hack/netem-gate.sh` is unchanged
+and does not consume them: absent, present or malformed sidecars cannot change
+its verdict or authorize a retry. Separate terminal contracts reject missing,
+duplicate, malformed or contradictory receipts; classifier acceptance is not
+sidecar validation. The 256 MiB transfer, 16 MiB windows, 0.8 floor, 30-second
+measured wait, five-minute peer context, 600-second attempt and two-attempt limit
+remain unchanged. Diagnostics do not establish a cause or remediate throughput;
+20 retry-enabled successful runs would not be 20 first-pass successes.
 
 Each HTTP/3 load row publishes one terminal receipt before cleanup, on success
 or failure, with phase and stream, expected bytes, actual read bytes, separately

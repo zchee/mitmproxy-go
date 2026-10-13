@@ -16,7 +16,7 @@ require (
 	github.com/quic-go/quic-go v0.63.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	github.com/zchee/gows v0.0.0-20261007022926-36059bec13b6
+	github.com/zchee/gows v0.1.0
 	go.uber.org/goleak v1.3.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.design/x/clipboard v0.11.0

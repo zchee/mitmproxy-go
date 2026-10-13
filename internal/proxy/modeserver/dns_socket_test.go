@@ -46,6 +46,8 @@ func prepareDNSSockets(t *testing.T, instance *Instance) *dnsSocketPair {
 	address := net.JoinHostPort(instance.host, strconv.Itoa(instance.port))
 	pair := acquireDNSSockets(t, network, address)
 	pair.tcpRequest = address
+	// The fixture already chose the port, so product selection must not rewrite the request.
+	instance.portCandidates = nil
 	instance.listenTCP = pair.listenTCP
 	instance.listenUDP = pair.listenUDP
 	return pair

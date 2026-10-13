@@ -67,22 +67,23 @@ type Config struct {
 // they read immutable snapshots and never wait for network I/O or handlers.
 // Use New to create an instance; the zero value is not ready to serve.
 type Instance struct {
-	mode       modespec.Mode
-	handler    *proxy.Handler
-	confDir    string
-	redirector local.Redirector
-	limiter    *ClientLimiter
-	host       string
-	port       int
-	top        hookdata.LayerSpec
-	logger     *slog.Logger
-	mu         sync.Mutex
-	state      atomic.Pointer[instanceState]
-	stopCancel func() bool
-	listenTCP  func(context.Context, string, string) (net.Listener, error)
-	listenUDP  func(context.Context, string, string) (net.PacketConn, error)
-	openTun    func(string, *slog.Logger) (wgtun.Device, error)
-	factories  map[ListenerKey]ListenerFactory
+	mode           modespec.Mode
+	handler        *proxy.Handler
+	confDir        string
+	redirector     local.Redirector
+	limiter        *ClientLimiter
+	host           string
+	port           int
+	top            hookdata.LayerSpec
+	logger         *slog.Logger
+	mu             sync.Mutex
+	state          atomic.Pointer[instanceState]
+	stopCancel     func() bool
+	listenTCP      func(context.Context, string, string) (net.Listener, error)
+	listenUDP      func(context.Context, string, string) (net.PacketConn, error)
+	portCandidates func(context.Context) (portCandidateCursor, error)
+	openTun        func(string, *slog.Logger) (wgtun.Device, error)
+	factories      map[ListenerKey]ListenerFactory
 }
 
 type instanceState struct {
@@ -153,6 +154,7 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 	i.factories = registeredFactories(cfg.ListenerFactories)
 	i.listenTCP = new(net.ListenConfig).Listen
 	i.listenUDP = new(net.ListenConfig).ListenPacket
+	i.portCandidates = bothPortCandidates
 	i.openTun = tun.Open
 	i.state.Store(&instanceState{})
 	return i, nil
@@ -320,17 +322,21 @@ func (i *Instance) stopLocked() error {
 }
 
 func (i *Instance) listen(ctx context.Context) ([]net.Listener, error) {
+	return i.listenPort(ctx, i.port)
+}
+
+func (i *Instance) listenPort(ctx context.Context, candidate int) ([]net.Listener, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if i.host != "" {
-		listener, err := i.listenTCP(ctx, "tcp", net.JoinHostPort(i.host, strconv.Itoa(i.port)))
+		listener, err := i.listenTCP(ctx, "tcp", net.JoinHostPort(i.host, strconv.Itoa(candidate)))
 		if err != nil {
 			return nil, err
 		}
 		return []net.Listener{listener}, nil
 	}
-	ipv4, err := i.listenTCP(ctx, "tcp4", net.JoinHostPort("0.0.0.0", strconv.Itoa(i.port)))
+	ipv4, err := i.listenTCP(ctx, "tcp4", net.JoinHostPort("0.0.0.0", strconv.Itoa(candidate)))
 	if err != nil {
 		return nil, err
 	}

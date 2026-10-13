@@ -164,10 +164,16 @@ real binds may still fail. Modeserver owns the complete socket set, binds TCP
 first, closes partial sets before reselection, and activates factories only after
 acquisition succeeds.
 
-Both still fails immediately on TCP bind errors, including WSAEACCES; its Windows
-port-zero UDP retry predicate accepts only native WSAEADDRINUSE/10048 and
-WSAEACCES/10013, not Go's Windows `syscall.EADDRINUSE` or `ERROR_ACCESS_DENIED`.
-Fixed ports and non-Windows selection remain unchanged. For empty-host wildcard
+On the Windows candidate-selected path only, Both retries TCP bind failures
+matching native WSAEADDRINUSE/10048 or WSAEACCES/10013 through `errors.Is`,
+closing the partial socket set before selecting the next candidate within the
+same shared 64-attempt budget. All other TCP errors fail immediately with their
+original cause; fixed ports, non-Windows, non-literal hostnames, explicit IPv6
+literals and UDP-only modes retain a single TCP attempt where applicable. The
+Windows port-zero UDP retry predicate is unchanged: it accepts only those two
+native Winsock causes, not Go's Windows `syscall.EADDRINUSE` or
+`ERROR_ACCESS_DENIED`. Fixed ports and non-Windows selection remain unchanged.
+For empty-host wildcard
 binding, tcp4 selects the number and tcp6 follows it under the existing fallback
 rules; the full TCP set must share a number before UDP acquisition. This does not
 apply IPv4 exclusion tables to IPv6. Every non-literal hostname, including one

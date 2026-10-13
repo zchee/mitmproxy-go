@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"runtime"
 )
 
 const sharedPortAttempts = 64
@@ -59,6 +60,11 @@ func (i *Instance) listenBothSockets(ctx context.Context) ([]net.Listener, []net
 		acquisitions++
 		streams, err := binder.listenPort(ctx, candidate)
 		if err != nil {
+			// listenPort closes its partial wildcard set before returning an error.
+			if runtime.GOOS == "windows" && candidates != nil && isSharedUDPBindRetryable(err) {
+				lastErr = err
+				continue
+			}
 			return nil, nil, err
 		}
 		port := streams[0].Addr().(*net.TCPAddr).Port

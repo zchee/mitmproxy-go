@@ -65,23 +65,38 @@ jobs:
           go version | tee "${PACKET_GATE_OUTPUT}/transparent-go-version.txt"
           uname -a | tee "${PACKET_GATE_OUTPUT}/transparent-host.txt"
           go test -tags integration,transparentprivileged -c -o "${PACKET_GATE_OUTPUT}/modeserver-integration.test" ./internal/proxy/modeserver
+          date -u '+%Y-%m-%dT%H:%M:%SZ' | tee "${PACKET_GATE_OUTPUT}/transparent-build-end.txt"
+          date -u '+%Y-%m-%dT%H:%M:%SZ' | tee "${PACKET_GATE_OUTPUT}/transparent-inventory-start.txt"
           "${PACKET_GATE_OUTPUT}/modeserver-integration.test" -test.list '^TestTransparentRedirectAcceptance$' | tee "${PACKET_GATE_OUTPUT}/transparent-inventory.txt"
           diff -u <(printf '%s\n' TestTransparentRedirectAcceptance) "${PACKET_GATE_OUTPUT}/transparent-inventory.txt"
-          date -u '+%Y-%m-%dT%H:%M:%SZ' | tee "${PACKET_GATE_OUTPUT}/transparent-build-end.txt"
+          date -u '+%Y-%m-%dT%H:%M:%SZ' | tee "${PACKET_GATE_OUTPUT}/transparent-inventory-end.txt"
       - name: Run required IPv4 and IPv6 transparent acceptance
         env:
           PACKET_GATE_OUTPUT: ${{ github.workspace }}/_test/packet-modes
         run: |
           set -euo pipefail
           date -u '+%Y-%m-%dT%H:%M:%SZ' | tee "${PACKET_GATE_OUTPUT}/transparent-run-start.txt"
+          set +e
           timeout --signal=QUIT --kill-after=15s 20m sudo -n /usr/bin/env MITMPROXY_TEST_MITMDUMP="${PACKET_GATE_OUTPUT}/mitmdump" \
             "${PACKET_GATE_OUTPUT}/modeserver-integration.test" -test.run '^TestTransparentRedirectAcceptance$' -test.count=1 -test.timeout=15m -test.v \
             2>&1 | tee "${PACKET_GATE_OUTPUT}/transparent.log"
-          if grep -Eq '^[[:space:]]*--- SKIP:' "${PACKET_GATE_OUTPUT}/transparent.log"; then
+          statuses=("${PIPESTATUS[@]}")
+          set -e
+          printf 'test_exit=%s\ntee_exit=%s\n' "${statuses[@]}" | tee "${PACKET_GATE_OUTPUT}/transparent-exit.txt"
+          date -u '+%Y-%m-%dT%H:%M:%SZ' | tee "${PACKET_GATE_OUTPUT}/transparent-run-end.txt"
+          test "${statuses[0]}" = 0
+          test "${statuses[1]}" = 0
+          if grep -Eq '^[[:space:]]*--- (FAIL|SKIP):' "${PACKET_GATE_OUTPUT}/transparent.log"; then
             exit 1
           fi
-          grep -Eq '^--- PASS: TestTransparentRedirectAcceptance ' "${PACKET_GATE_OUTPUT}/transparent.log"
-          date -u '+%Y-%m-%dT%H:%M:%SZ' | tee "${PACKET_GATE_OUTPUT}/transparent-run-end.txt"
+          test "$(grep -Ec '^=== RUN[[:space:]]+TestTransparentRedirectAcceptance$' "${PACKET_GATE_OUTPUT}/transparent.log")" = 1
+          test "$(grep -Ec '^--- PASS: TestTransparentRedirectAcceptance ' "${PACKET_GATE_OUTPUT}/transparent.log")" = 1
+          for name in IPv4_HTTP IPv4_HTTPS IPv6_HTTP IPv6_HTTPS; do
+            test "$(grep -Ec "^=== RUN[[:space:]]+TestTransparentRedirectAcceptance/${name}$" "${PACKET_GATE_OUTPUT}/transparent.log")" = 1
+            test "$(grep -Ec "^[[:space:]]*--- PASS: TestTransparentRedirectAcceptance/${name} " "${PACKET_GATE_OUTPUT}/transparent.log")" = 1
+          done
+          test "$(grep -Ec '^=== RUN[[:space:]]+TestTransparentRedirectAcceptance' "${PACKET_GATE_OUTPUT}/transparent.log")" = 5
+          test "$(grep -Ec '^[[:space:]]*--- PASS: TestTransparentRedirectAcceptance(/| )' "${PACKET_GATE_OUTPUT}/transparent.log")" = 5
       - name: Upload packet logs and redirector stderr
         if: always()
         uses: actions/upload-artifact@v7

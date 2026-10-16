@@ -13,6 +13,10 @@ path here by prefix:
 | `mitmproxy/contentviews/css/` | `test/mitmproxy/contentviews/test_css_data/` in mitmproxy; the ten original/formatted CSS fixture pairs |
 | `mitmproxy/contentviews/javascript/` | `test/mitmproxy/contentviews/test_js_data/` in mitmproxy; the original/formatted JavaScript fixture pair |
 | `mitmproxy/contentviews/xml_html/` | `test/mitmproxy/contentviews/test_xml_html_data/` in mitmproxy; the five original/formatted XML and HTML fixture pairs |
+| `mitmproxy/contentviews/test_grpc_data/` | `test/mitmproxy/contentviews/test_grpc_data/` in mitmproxy; three binary gRPC payloads |
+| `mitmproxy/contentviews/test_protobuf_data/` | `test/mitmproxy/contentviews/test_protobuf_data/` in mitmproxy; protobuf inputs and historical decoded references, not current Rust-backed YAML expectations |
+| `mitmproxy/contentviews/test_wbxml_data/` | `test/mitmproxy/contentviews/test_wbxml_data/` in mitmproxy; WBXML input and formatted XML expectation |
+| `mitmproxy/contrib/wbxml/GlobalTokens.py` | `mitmproxy/contrib/wbxml/GlobalTokens.py` in mitmproxy; byte-exact global-token reference retaining David P. Shaw's complete MIT notice |
 | `mitmproxy-net/` | `test/mitmproxy/net/data/` in mitmproxy |
 | `wg-test-client/` | `test/wg-test-client/` in mitmproxy |
 | `mitmproxy-rs/contentviews/` | `mitmproxy-contentviews/testdata/` in mitmproxy_rs |
@@ -69,6 +73,43 @@ v0.1.6; their licence (MIT) is `wg-test-client/LICENSE`.
 | `wg-test-client/` | WireGuard test client binaries (`linux-x86_64`, `macos-aarch64`, `macos-x86_64`, `windows-x86_64.exe`) and the key pair `test.conf` they use for the WireGuard end-to-end test. |
 | `mitmproxy-rs/contentviews/protobuf/` | `.proto` definitions for the protobuf and gRPC contentviews. |
 | `mitmproxy-rs/network_tests.rs` | Upstream's Rust network-stack tests, kept as a text reference for the userspace TCP/UDP stack tests (mode 0755 as upstream). |
+
+## Contentview input references
+
+The six `test__view_*.py` modules below are byte-exact upstream references,
+not Python tests run by this repository. Their inline byte literals preserve
+all GraphQL, MQTT, Socket.IO and HTTP/3 input vectors and their source context.
+The ZIP module constructs its archives at runtime; no generated archive is
+represented as a copied upstream file. The WBXML module uses the imported
+`test_wbxml_data/` pair, originally from
+[PyWBXMLDecoder](https://github.com/davidpshaw/PyWBXMLDecoder/tree/master/wbxml_samples).
+David P. Shaw's 2014 MIT copyright and permission notice is retained verbatim
+in `mitmproxy/contrib/wbxml/GlobalTokens.py` for the WBXML token-table port.
+The generic mitmproxy notice alone does not replace that attribution.
+
+All rows below come from mitmproxy commit
+`3368a0a06ae6195aad817a1ece1aaeb6fe0353a1`, with Git mode `100644`.
+The prefix `mitmproxy/contentviews/` maps to upstream
+`test/mitmproxy/contentviews/` for these rows.
+
+| Path | Upstream Git blob |
+| --- | --- |
+| `mitmproxy/contentviews/test__view_graphql.py` | `665b2e096f2e5ad8c4a4c105fa845c556857f55b` |
+| `mitmproxy/contentviews/test__view_http3.py` | `7efc8dca665a19aef92849b844a3166dd7da9467` |
+| `mitmproxy/contentviews/test__view_mqtt.py` | `fcd62ef7ae1e9aea6bcf5efa1045cbe49e6d9c1f` |
+| `mitmproxy/contentviews/test__view_socketio.py` | `7381cb82a02e9306e211ea5992421d8aff83d51f` |
+| `mitmproxy/contentviews/test__view_wbxml.py` | `c72c6df2970a3d3b492292028e97fec0acb2f426` |
+| `mitmproxy/contentviews/test__view_zip.py` | `90278b24d0c57f82bc5544649bc7caef4ce2ced5` |
+| `mitmproxy/contentviews/test_grpc_data/msg1.bin` | `6a44fe1169f32bdbc867a4f66a5fafa678b5b31f` |
+| `mitmproxy/contentviews/test_grpc_data/msg2.bin` | `56678407ff981a7bc78045ee26e7e4b49d2aecdb` |
+| `mitmproxy/contentviews/test_grpc_data/msg3.bin` | `9a9c37c18ae7f0a4afae37cfcfc2a6ff3d56229f` |
+| `mitmproxy/contentviews/test_protobuf_data/protobuf01.bin` | `fbfdbff33c7ec7a2a1401be3d656e9d04fb2369c` |
+| `mitmproxy/contentviews/test_protobuf_data/protobuf02-decoded.bin` | `9be61e28e536b35f7275dba288de04bb057536c0` |
+| `mitmproxy/contentviews/test_protobuf_data/protobuf02.bin` | `a47c45d516ec40110b90106586029aa9796ee756` |
+| `mitmproxy/contentviews/test_protobuf_data/protobuf03-decoded.bin` | `3d3392e164fead5b2aa124ac9632dee3bcf3b228` |
+| `mitmproxy/contentviews/test_protobuf_data/protobuf03.bin` | `9fb230b3aa89a7b50f34b11cf7af45d40f415f14` |
+| `mitmproxy/contentviews/test_wbxml_data/data-formatted.wbxml` | `fed293bd112df8e16259a418cbf8ec96a6b08ee2` |
+| `mitmproxy/contentviews/test_wbxml_data/data.wbxml` | `7c7a2004f80aa1f5112bb5618365f8444d17b3fd` |
 
 ## Flow format versions
 

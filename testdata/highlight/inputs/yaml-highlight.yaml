@@ -1,0 +1,3 @@
+string: "value"
+bool: true
+number: !fixed32 42  # comment

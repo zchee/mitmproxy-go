@@ -36,12 +36,52 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes iproute2 curl wget jq
+      - name: Install transparent NAT tools
+        run: |
+          set -euo pipefail
+          mkdir -p _test/packet-modes
+          date -u '+%Y-%m-%dT%H:%M:%SZ' | tee _test/packet-modes/nat-tools-start.txt
+          sudo apt-get install --yes iptables
+          test -x /usr/sbin/iptables
+          test -x /usr/sbin/ip6tables
+          /usr/sbin/iptables --version
+          /usr/sbin/ip6tables --version
+          date -u '+%Y-%m-%dT%H:%M:%SZ' | tee _test/packet-modes/nat-tools-end.txt
       - name: Verify gate orchestration
         run: bash hack/packet-modes-gate_test.sh
       - name: Run required packet-source acceptance
         env:
           PACKET_GATE_OUTPUT: ${{ github.workspace }}/_test/packet-modes
         run: bash hack/packet-modes-gate.sh
+      - name: Build transparent acceptance as the runner user
+        env:
+          PACKET_GATE_OUTPUT: ${{ github.workspace }}/_test/packet-modes
+        run: |
+          set -euo pipefail
+          test "$(id -u)" != 0
+          test -x "${PACKET_GATE_OUTPUT}/mitmdump"
+          date -u '+%Y-%m-%dT%H:%M:%SZ' | tee "${PACKET_GATE_OUTPUT}/transparent-build-start.txt"
+          git rev-parse HEAD | tee "${PACKET_GATE_OUTPUT}/transparent-checkout.txt"
+          go version | tee "${PACKET_GATE_OUTPUT}/transparent-go-version.txt"
+          uname -a | tee "${PACKET_GATE_OUTPUT}/transparent-host.txt"
+          go test -tags integration,transparentprivileged -c -o "${PACKET_GATE_OUTPUT}/modeserver-integration.test" ./internal/proxy/modeserver
+          "${PACKET_GATE_OUTPUT}/modeserver-integration.test" -test.list '^TestTransparentRedirectAcceptance$' | tee "${PACKET_GATE_OUTPUT}/transparent-inventory.txt"
+          diff -u <(printf '%s\n' TestTransparentRedirectAcceptance) "${PACKET_GATE_OUTPUT}/transparent-inventory.txt"
+          date -u '+%Y-%m-%dT%H:%M:%SZ' | tee "${PACKET_GATE_OUTPUT}/transparent-build-end.txt"
+      - name: Run required IPv4 and IPv6 transparent acceptance
+        env:
+          PACKET_GATE_OUTPUT: ${{ github.workspace }}/_test/packet-modes
+        run: |
+          set -euo pipefail
+          date -u '+%Y-%m-%dT%H:%M:%SZ' | tee "${PACKET_GATE_OUTPUT}/transparent-run-start.txt"
+          timeout --signal=QUIT --kill-after=15s 20m sudo -n /usr/bin/env MITMPROXY_TEST_MITMDUMP="${PACKET_GATE_OUTPUT}/mitmdump" \
+            "${PACKET_GATE_OUTPUT}/modeserver-integration.test" -test.run '^TestTransparentRedirectAcceptance$' -test.count=1 -test.timeout=15m -test.v \
+            2>&1 | tee "${PACKET_GATE_OUTPUT}/transparent.log"
+          if grep -Eq '^[[:space:]]*--- SKIP:' "${PACKET_GATE_OUTPUT}/transparent.log"; then
+            exit 1
+          fi
+          grep -Eq '^--- PASS: TestTransparentRedirectAcceptance ' "${PACKET_GATE_OUTPUT}/transparent.log"
+          date -u '+%Y-%m-%dT%H:%M:%SZ' | tee "${PACKET_GATE_OUTPUT}/transparent-run-end.txt"
       - name: Upload packet logs and redirector stderr
         if: always()
         uses: actions/upload-artifact@v7

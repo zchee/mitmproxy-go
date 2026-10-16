@@ -34,6 +34,7 @@ type viewBudget struct {
 	nodes    int
 	bytes    int
 	expanded int
+	scalars  int
 }
 
 func (b *viewBudget) reserveNodes(count int, stage string) error {

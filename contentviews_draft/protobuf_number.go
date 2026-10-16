@@ -119,23 +119,36 @@ func protobufNumberBits(node *yaml.Node) (protowire.Type, uint64, error) {
 	case "!fixed64":
 		typ = protowire.Fixed64Type
 	case "!sint":
-		value, err := strconv.ParseInt(node.Value, 10, 64)
+		value, err := parseYAMLInteger(node.Value)
 		if err != nil {
 			return 0, 0, fmt.Errorf("!sint is not an integer")
 		}
 		return typ, protowire.EncodeZigZag(value), nil
 	}
-	if value, err := strconv.ParseUint(node.Value, 10, 64); err == nil {
+	text := strings.ReplaceAll(node.Value, "_", "")
+	unsignedText := strings.TrimPrefix(text, "+")
+	if value, err := strconv.ParseUint(unsignedText, 10, 64); err == nil {
 		return typ, value, nil
 	}
-	if value, err := strconv.ParseInt(node.Value, 10, 64); err == nil {
+	if value, err := strconv.ParseUint(unsignedText, 0, 64); err == nil {
+		return typ, value, nil
+	}
+	if value, err := parseYAMLInteger(text); err == nil {
 		return typ, uint64(value), nil
 	}
 	bits := 64
 	if typ == protowire.Fixed32Type {
 		bits = 32
 	}
-	value, err := strconv.ParseFloat(strings.TrimSuffix(node.Value, ".0"), bits)
+	switch strings.ToLower(text) {
+	case ".inf", "+.inf":
+		text = "+Inf"
+	case "-.inf":
+		text = "-Inf"
+	case ".nan":
+		text = "NaN"
+	}
+	value, err := strconv.ParseFloat(text, bits)
 	if err != nil {
 		return 0, 0, fmt.Errorf("protobuf value is not a number")
 	}

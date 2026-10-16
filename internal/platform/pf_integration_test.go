@@ -8,6 +8,7 @@ package platform
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -19,6 +20,30 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 )
+
+func teardownOwnedAnchor(ctx context.Context, pfctl func(context.Context, string, ...string) (string, error), anchor string) error {
+	var result error
+	// The rdr rule lives in the nat ruleset. Never use -F all or -F states:
+	// those flush the host's state table even when an anchor is specified.
+	for _, ruleset := range []string{"nat", "rules"} {
+		if out, err := pfctl(ctx, "", "-a", anchor, "-F", ruleset); err != nil {
+			result = errors.Join(result, fmt.Errorf("flush owned anchor %s %s: %w %s", anchor, ruleset, err, out))
+		}
+	}
+	for _, flag := range []string{"-sn", "-sr"} {
+		out, err := pfctl(ctx, "", "-a", anchor, flag)
+		if err != nil {
+			result = errors.Join(result, fmt.Errorf("read owned anchor %s %s: %w %s", anchor, flag, err, out))
+			continue
+		}
+		for line := range strings.SplitSeq(out, "\n") {
+			if strings.Contains(line, "rdr ") || strings.Contains(line, "nat ") || strings.Contains(line, "pass") || strings.Contains(line, "block") || strings.Contains(line, "match") {
+				result = errors.Join(result, fmt.Errorf("owned anchor %s %s has residual rule: %s", anchor, flag, line))
+			}
+		}
+	}
+	return result
+}
 
 func TestOriginalDestinationPFIntegration(t *testing.T) {
 	if os.Geteuid() != 0 {
@@ -83,14 +108,20 @@ func TestOriginalDestinationPFIntegration(t *testing.T) {
 	if token == "" {
 		t.Fatalf("PF enable reference did not return token: %s", enabled)
 	}
+	var acceptanceLog string
 	t.Cleanup(func() {
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 2*pfCommandTimeout)
 		defer cancel()
-		if out, err := pfctl(cleanup, "", "-a", anchor, "-F", "rules"); err != nil {
-			t.Errorf("owned anchor teardown: %v %s", err, out)
+		teardown := "verified-empty"
+		if err := teardownOwnedAnchor(cleanup, pfctl, anchor); err != nil {
+			teardown = "failed"
+			t.Errorf("owned anchor teardown: %v", err)
 		}
 		if out, err := pfctl(cleanup, "", "-X", token); err != nil {
 			t.Errorf("PF enable reference teardown: %v %s", err, out)
+		}
+		if acceptanceLog != "" {
+			t.Logf("%s teardown=%s", acceptanceLog, teardown)
 		}
 	})
 	originPort, proxyPort := origin.Addr().(*net.TCPAddr).Port, listener.Addr().(*net.TCPAddr).Port
@@ -166,5 +197,5 @@ func TestOriginalDestinationPFIntegration(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatal(diff)
 	}
-	t.Logf("header=xnu-12377.1.9 layout_size=%d ioctl=%#x peer=%s accepted=%s original=%s text=%s validated=%v owned_anchor=%s", darwinPFLayout.size, darwinPFLayout.ioctl, peer, local, native, text, resolver.validated, anchor)
+	acceptanceLog = fmt.Sprintf("header=xnu-12377.1.9 layout_size=%d ioctl=%#x peer=%s accepted=%s original=%s text=%s validated=%v owned_anchor=%s", darwinPFLayout.size, darwinPFLayout.ioctl, peer, local, native, text, resolver.validated, anchor)
 }

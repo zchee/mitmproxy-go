@@ -222,8 +222,20 @@ go test -tags integration -c -o "$work/platform-integration.test" ./internal/pla
 ```
 
 A nonroot privilege skip is only portability evidence. Manual root acceptance is
-**user-only and not done**; workers must not run this command. After checking the
-prepared host's anchor dispatch, the user runs the prebuilt binary manually:
+**user-only and not done**; workers must not run these commands. The origin needs
+an explicit `127.0.0.2` loopback alias on macOS. Before acceptance, the user adds
+it with the absolute `/sbin/ifconfig` path: a GNU inetutils `ifconfig` on PATH
+rejects the macOS arguments, including when invoked through sudo.
+
+```bash
+sudo /sbin/ifconfig lo0 alias 127.0.0.2 255.255.255.255
+sudo /sbin/pfctl -a com.apple -s Anchors | tee "$work/anchors-before.txt"
+```
+
+No `com.apple/mitmproxy-go-*` child may appear in the pre-run listing. Stop and
+resolve leftovers before proceeding; the top-level `pfctl -s Anchors` listing
+does not reveal these nested anchors. After checking the prepared host's anchor
+dispatch, the user runs the prebuilt binary manually:
 
 ```bash
 date -u '+%Y-%m-%dT%H:%M:%SZ' | tee "$work/root-start.txt"
@@ -233,6 +245,20 @@ sudo "$work/platform-integration.test" \
 date -u '+%Y-%m-%dT%H:%M:%SZ' | tee "$work/root-end.txt"
 ```
 
+After the test, retain the nested-anchor listing and inspect the exact
+`owned_anchor` from its log (replace `<pid>` below with the logged process ID):
+
+```bash
+sudo /sbin/pfctl -a com.apple -s Anchors | tee "$work/anchors-after.txt"
+sudo /sbin/pfctl -a 'com.apple/mitmproxy-go-<pid>' -sn \
+  | tee "$work/owned-anchor-nat-after.txt"
+sudo /sbin/ifconfig lo0 -alias 127.0.0.2
+```
+
+No `com.apple/mitmproxy-go-*` child may remain in the post-run listing, and the
+owned anchor's NAT rules must be empty. Remove the loopback alias after a failed
+run too. A receipt without the nested-anchor listing does not prove teardown.
+
 Use the project's serial gate lock and 15-minute outer watchdog for acceptance;
 interactive sudo is manual, never unattended password capture. Missing state,
 privilege failure or unmatched tuples under the prepared root setup blocks
@@ -240,9 +266,12 @@ acceptance. Parser success does not substitute for the native ioctl/self-check.
 Require both actual ioctl and exact PF-text tuples to equal the original origin,
 with `validated=true` and `disabled=false`. Retain the test's header revision,
 layout size/ioctl, peer, accepted local address, both recovered tuples,
-validation decision and owned anchor log. Cleanup closes all four sockets,
-flushes only that anchor's rules and releases only its PF enable-reference token;
-it does not flush global state or disable PF globally.
+validation decision, owned anchor log and `teardown=verified-empty` result.
+Cleanup closes all four sockets, flushes only that anchor's NAT and filter
+rulesets, verifies both are empty and releases only its PF enable-reference
+token. It does not flush global state or disable PF globally; `-F all` and
+`-F states` are forbidden because they flush the host's state table even with
+an anchor argument.
 
 ## Windows and other platforms
 

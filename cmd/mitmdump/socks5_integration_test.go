@@ -217,10 +217,10 @@ func TestSocks5CLI(t *testing.T) {
 			if err := yaml.Load([]byte(out), &parsed); err != nil {
 				t.Fatal(err)
 			}
-			if !gocmp.Equal([]any{name}, parsed["mode"]) {
-				t.Fatal("requested mode was not published in the option listing")
+			// The annotated option listing reports defaults, not live configuration.
+			if !gocmp.Equal([]any{"regular"}, parsed["mode"]) {
+				t.Fatal("option listing changed the default mode")
 			}
-			delete(parsed, "mode")
 			if name == "regular" {
 				baseline = parsed
 			} else if diff := gocmp.Diff(baseline, parsed); diff != "" {

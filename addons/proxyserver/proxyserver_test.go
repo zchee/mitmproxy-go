@@ -133,15 +133,24 @@ func TestOptions(t *testing.T) {
 }
 
 func TestUnsupportedModes(t *testing.T) {
-	tests := map[string]struct{}{
-		"transparent": {}, "socks5": {},
+	tests := map[string]struct{ supported bool }{
+		"transparent": {}, "socks5": {supported: true},
 	}
-	for spec := range tests {
+	for spec, tt := range tests {
 		t.Run(spec, func(t *testing.T) {
 			m, _, _, _ := fixture(t, false)
 			err := m.Do(t.Context(), func(ctx context.Context) error {
 				return m.Options.Update(ctx, map[string]any{"mode": []string{spec}, "server": false})
 			})
+			if tt.supported {
+				if err != nil {
+					t.Fatalf("configure admitted mode: %v", err)
+				}
+				if diff := gocmp.Diff([]string{spec}, m.Options.Seq("mode")); diff != "" {
+					t.Fatalf("published mode option (-want +got):\n%s", diff)
+				}
+				return
+			}
 			want := "Proxy mode " + spec + " is not supported by mitmproxy-go yet."
 			if _, ok := errors.AsType[*options.OptionsError](err); !ok || err.Error() != want {
 				t.Fatalf("configure = %v, want %q", err, want)

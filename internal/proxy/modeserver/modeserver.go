@@ -31,6 +31,7 @@ import (
 
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/dnslayer" // Register DNS before accepting protocol traffic.
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/modes"    // Register the top layers passed to Handler.
+	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/socks5"   // Register SOCKS5 before accepting its handshake.
 )
 
 // Config supplies an instance's handler and fallback listen settings.
@@ -97,7 +98,7 @@ type instanceState struct {
 }
 
 // New validates the mode and configuration without opening a listener.
-// Regular, upstream, reverse, DNS, WireGuard, TUN and local modes are admitted.
+// Regular, upstream, reverse, SOCKS5, DNS, WireGuard, TUN and local modes are admitted.
 // DNS and reverse HTTPS bind TCP and UDP on the same port. TUN and local modes
 // have no listen port; native availability is checked by Start, not validation.
 // QUIC and HTTP/3 require listener integrations.
@@ -117,6 +118,8 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 		kind = hookdata.LayerRegular
 	case modespec.UpstreamMode:
 		kind = hookdata.LayerUpstream
+	case modespec.Socks5Mode:
+		kind = "socks5"
 	case modespec.WireGuardMode:
 		kind = "wireguard"
 	case modespec.TunMode:

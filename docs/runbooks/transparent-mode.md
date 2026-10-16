@@ -232,9 +232,20 @@ sudo /sbin/ifconfig lo0 alias 127.0.0.2 255.255.255.255
 sudo /sbin/pfctl -a com.apple -s Anchors | tee "$work/anchors-before.txt"
 ```
 
-No `com.apple/mitmproxy-go-*` child may appear in the pre-run listing. Stop and
-resolve leftovers before proceeding; the top-level `pfctl -s Anchors` listing
-does not reveal these nested anchors. After checking the prepared host's anchor
+For every `com.apple/mitmproxy-go-*` child in the pre-run listing, read its NAT
+and filter rulesets back and require both to be empty:
+
+```bash
+sudo /sbin/pfctl -a 'com.apple/mitmproxy-go-<pid>' -sn
+sudo /sbin/pfctl -a 'com.apple/mitmproxy-go-<pid>' -sr
+```
+
+A child that still holds a rule is residue from an earlier run; flush it with
+`-F nat` and `-F rules` under its own anchor name (never `-F all` or
+`-F states`) before proceeding. An empty child is not residue: macOS keeps an
+empty anchor node listed after its rules are gone, and an empty ruleset commit
+does not remove it either. The top-level `pfctl -s Anchors` listing does not
+reveal these nested anchors at all. After checking the prepared host's anchor
 dispatch, the user runs the prebuilt binary manually:
 
 ```bash
@@ -252,12 +263,15 @@ After the test, retain the nested-anchor listing and inspect the exact
 sudo /sbin/pfctl -a com.apple -s Anchors | tee "$work/anchors-after.txt"
 sudo /sbin/pfctl -a 'com.apple/mitmproxy-go-<pid>' -sn \
   | tee "$work/owned-anchor-nat-after.txt"
+sudo /sbin/pfctl -a 'com.apple/mitmproxy-go-<pid>' -sr \
+  | tee "$work/owned-anchor-rules-after.txt"
 sudo /sbin/ifconfig lo0 -alias 127.0.0.2
 ```
 
-No `com.apple/mitmproxy-go-*` child may remain in the post-run listing, and the
-owned anchor's NAT rules must be empty. Remove the loopback alias after a failed
-run too. A receipt without the nested-anchor listing does not prove teardown.
+The owned anchor's NAT and filter read-backs must both be empty; the anchor
+node itself may stay listed, which is not residue. Remove the loopback alias
+after a failed run too. A receipt without the nested-anchor listing and both
+owned-anchor read-backs does not prove teardown.
 
 Use the project's serial gate lock and 15-minute outer watchdog for acceptance;
 interactive sudo is manual, never unattended password capture. Missing state,

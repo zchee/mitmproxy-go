@@ -66,6 +66,23 @@ func groupProcesses(records []processRecord, visible map[int32]struct{}) []Proce
 	return result
 }
 
+func readWindowPIDs(count int64, pidAt func(int64) (int32, error)) (map[int32]struct{}, error) {
+	if count < 0 {
+		return nil, fmt.Errorf("processinfo: invalid window count %d", count)
+	}
+	pids := make(map[int32]struct{})
+	for index := range count {
+		pid, err := pidAt(index)
+		if err != nil {
+			return nil, err
+		}
+		if pid > 0 {
+			pids[pid] = struct{}{}
+		}
+	}
+	return pids, nil
+}
+
 func systemProcess(platform, executable string, uid int32, uidKnown bool) bool {
 	switch platform {
 	case "darwin":

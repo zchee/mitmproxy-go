@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"runtime/pprof"
 	"testing"
@@ -41,7 +42,7 @@ func TestDTLSReverseHandlerTupleReuse(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			leaf, err := certs.DummyCert(key, ca, "example.test", []certs.GeneralName{certs.DNSName("example.test")}, "", "")
+			leaf, err := certs.DummyCert(key, ca, "example.test", []certs.GeneralName{certs.DNSName("example.test"), certs.IPAddress(netip.MustParseAddr("127.0.0.1"))}, "", "")
 			if err != nil {
 				t.Fatal(err)
 			}

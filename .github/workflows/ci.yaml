@@ -27,7 +27,10 @@ jobs:
         os:
           - ubuntu-26.04
           - xcode-27
-          - windows-2025
+          # Windows runs are paused on the maintainer's decision (2026-10-16);
+          # the leg returns with the deferred Windows work (transparent refusal
+          # identity, SOCKS5 refusal-reply drain).
+          # - windows-2025
         go:
           - stable
     runs-on: ${{ matrix.os }}

@@ -82,7 +82,10 @@ jobs:
       matrix:
         os:
           - ubuntu-26.04
-          - windows-2025
+          # Windows runs are paused on the maintainer's decision (2026-10-16);
+          # the leg returns with the deferred Windows work (transparent refusal
+          # identity, SOCKS5 refusal-reply drain).
+          # - windows-2025
         row: ${{ fromJSON(needs.plan.outputs.rows) }}
     runs-on: ${{ matrix.os }}
     # One 60-minute row budget plus toolchain setup and artifact upload.

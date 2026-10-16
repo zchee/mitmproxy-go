@@ -234,4 +234,5 @@ func TestQUICWireCloseBeforeContextPublication(t *testing.T) {
 			unblock()
 		})
 	}
+	t.Run("queued origin lifecycle", packetDialConformance)
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/internal/human"
 	"github.com/zchee/mitmproxy-go/internal/local"
+	"github.com/zchee/mitmproxy-go/internal/platform"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/proxy/modespec"
 	"github.com/zchee/mitmproxy-go/internal/tun"
@@ -68,23 +69,25 @@ type Config struct {
 // they read immutable snapshots and never wait for network I/O or handlers.
 // Use New to create an instance; the zero value is not ready to serve.
 type Instance struct {
-	mode           modespec.Mode
-	handler        *proxy.Handler
-	confDir        string
-	redirector     local.Redirector
-	limiter        *ClientLimiter
-	host           string
-	port           int
-	top            hookdata.LayerSpec
-	logger         *slog.Logger
-	mu             sync.Mutex
-	state          atomic.Pointer[instanceState]
-	stopCancel     func() bool
-	listenTCP      func(context.Context, string, string) (net.Listener, error)
-	listenUDP      func(context.Context, string, string) (net.PacketConn, error)
-	portCandidates func(context.Context) (portCandidateCursor, error)
-	openTun        func(string, *slog.Logger) (wgtun.Device, error)
-	factories      map[ListenerKey]ListenerFactory
+	mode             modespec.Mode
+	handler          *proxy.Handler
+	confDir          string
+	redirector       local.Redirector
+	limiter          *ClientLimiter
+	host             string
+	port             int
+	top              hookdata.LayerSpec
+	logger           *slog.Logger
+	mu               sync.Mutex
+	state            atomic.Pointer[instanceState]
+	stopCancel       func() bool
+	listenTCP        func(context.Context, string, string) (net.Listener, error)
+	listenUDP        func(context.Context, string, string) (net.PacketConn, error)
+	portCandidates   func(context.Context) (portCandidateCursor, error)
+	openTun          func(string, *slog.Logger) (wgtun.Device, error)
+	checkTransparent func(context.Context) error
+	originalAddr     func(context.Context, *net.TCPConn) (connection.Address, error)
+	factories        map[ListenerKey]ListenerFactory
 }
 
 type instanceState struct {
@@ -98,7 +101,8 @@ type instanceState struct {
 }
 
 // New validates the mode and configuration without opening a listener.
-// Regular, upstream, reverse, SOCKS5, DNS, WireGuard, TUN and local modes are admitted.
+// Regular, upstream, reverse, transparent, SOCKS5, DNS, WireGuard, TUN and local
+// modes are admitted.
 // DNS and reverse HTTPS bind TCP and UDP on the same port. TUN and local modes
 // have no listen port; native availability is checked by Start, not validation.
 // QUIC and HTTP/3 require listener integrations.
@@ -118,6 +122,8 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 		kind = hookdata.LayerRegular
 	case modespec.UpstreamMode:
 		kind = hookdata.LayerUpstream
+	case modespec.TransparentMode:
+		kind = "transparent"
 	case modespec.Socks5Mode:
 		kind = "socks5"
 	case modespec.WireGuardMode:
@@ -159,6 +165,8 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 	i.listenUDP = new(net.ListenConfig).ListenPacket
 	i.portCandidates = bothPortCandidates
 	i.openTun = tun.Open
+	i.checkTransparent = platform.CheckTransparent
+	i.originalAddr = platform.OriginalAddr
 	i.state.Store(&instanceState{})
 	return i, nil
 }
@@ -203,6 +211,12 @@ func (i *Instance) Start(ctx context.Context) error {
 	}
 	if _, ok := i.mode.(modespec.TunMode); ok {
 		return i.startTun(ctx)
+	}
+	if _, ok := i.mode.(modespec.TransparentMode); ok {
+		if err := i.checkTransparent(ctx); err != nil {
+			i.state.Store(&instanceState{err: err})
+			return err
+		}
 	}
 	transport := i.mode.TransportProtocol()
 	var listeners []net.Listener
@@ -376,6 +390,21 @@ func (i *Instance) accept(ctx context.Context, listener net.Listener) {
 		}
 		go func() {
 			defer i.limiter.release()
+			if _, transparent := i.mode.(modespec.TransparentMode); transparent {
+				raw, ok := client.(*net.TCPConn)
+				if !ok {
+					_ = client.Close()
+					i.logger.Error("Resolving transparent destination", "error", errors.New("accepted transparent client is not a TCP socket"))
+					return
+				}
+				destination, err := i.originalAddr(ctx, raw)
+				if err != nil {
+					_ = raw.Close()
+					i.logger.Error("Resolving transparent destination", "error", err)
+					return
+				}
+				client = &transparentConn{TCPConn: raw, endpoint: destination.String()}
+			}
 			if err := i.handler.Handle(ctx, client, i.mode.String(), i.top); err != nil {
 				i.logger.Error("Handling proxy connection", "error", err)
 			}

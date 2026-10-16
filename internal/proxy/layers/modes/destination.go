@@ -13,6 +13,7 @@ import (
 )
 
 func init() {
+	layer.Register("transparent", newDestinationMode)
 	layer.Register("wireguard", newDestinationMode)
 	layer.Register("tun", newDestinationMode)
 	layer.Register("local", newDestinationMode)

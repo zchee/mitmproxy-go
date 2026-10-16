@@ -212,9 +212,6 @@ func TestSOCKS5Handshake(t *testing.T) {
 			f := newFixture(t, "lazy", nil, false)
 			writeBytes(t, f.client, tt.input, tt.trickle)
 			readBytes(t, f.client, tt.want)
-			if err := f.client.CloseWrite(); err != nil {
-				t.Fatal(err)
-			}
 			_ = finish(t, f)
 			if tt.log != "" && !strings.Contains(f.logs.String(), strings.ReplaceAll(tt.log, "\\", "\\\\")) {
 				// Decode slog quoting by checking an unquoted JSON-independent

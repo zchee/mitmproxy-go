@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 
 	"github.com/zchee/mitmproxy-go/connection"
@@ -19,7 +20,10 @@ func packetSourceDestination(modeSpec string, conn interface{ LocalAddr() net.Ad
 		// Handler callers may supply their own layer and mode labels.
 		return nil, nil
 	}
+	transparent := false
 	switch mode.(type) {
+	case modespec.TransparentMode:
+		transparent = true
 	case modespec.WireGuardMode, modespec.TunMode, modespec.LocalMode:
 	default:
 		return nil, nil
@@ -38,8 +42,18 @@ func packetSourceDestination(modeSpec string, conn interface{ LocalAddr() net.Ad
 			if err != nil || host == "" || port < 1 || port > 65535 {
 				return nil, errors.New("invalid packet source remote endpoint address")
 			}
+			if transparent {
+				ip, err := netip.ParseAddr(host)
+				if err != nil || ip.IsUnspecified() || ip.IsMulticast() {
+					return nil, errors.New("invalid transparent original destination address")
+				}
+				host = ip.Unmap().String()
+			}
 			return &connection.Address{Host: host, Port: port}, nil
 		}
+	}
+	if transparent {
+		return nil, errors.New("transparent source has no original destination metadata")
 	}
 	destination := addressOf(conn.LocalAddr())
 	if destination == nil || destination.Host == "" || destination.Port < 1 || destination.Port > 65535 {

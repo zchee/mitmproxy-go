@@ -51,7 +51,7 @@ func TestMake(t *testing.T) {
 		"regular": {true}, "upstream:example.com": {true},
 		"reverse:http://example.com": {true}, "reverse:https://example.com": {true},
 		"reverse:tcp://example.com:1234": {true}, "reverse:tls://example.com:1234": {true},
-		"transparent": {}, "socks5": {true}, "wireguard": {true}, "local": {true}, "tun": {true}, "dns": {true},
+		"transparent": {true}, "socks5": {true}, "wireguard": {true}, "local": {true}, "tun": {true}, "dns": {true},
 		"reverse:udp://example.com:1234": {true}, "reverse:dtls://example.com:1234": {true},
 		"reverse:quic://example.com:1234": {true}, "reverse:http3://example.com": {true},
 		"reverse:dns://example.com": {true},

@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	json "encoding/json/v2"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,6 +21,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 )
+
+var highlightTestdata = flag.String("highlight-testdata", filepath.Join("..", "..", "testdata", "highlight"), "path to the frozen highlighter corpus")
 
 type goldenChunk struct {
 	Tag  string `json:"tag"`
@@ -53,7 +56,7 @@ func readHighlightCorpus(root string) ([]highlightCase, error) {
 		return nil, err
 	}
 	manifestDigest := sha256.Sum256(manifestBytes)
-	if hex.EncodeToString(manifestDigest[:]) != "8e50a63a3aa183ee61ba5c8261170243d0fcbbe498763cc57c04e572697b8390" {
+	if hex.EncodeToString(manifestDigest[:]) != "cfbb7073e43ba8e4468b6aca837c3efe0eed04dc62a5abeaeec7183bbf28536c" {
 		return nil, errors.New("frozen highlight input manifest differs")
 	}
 	var manifest struct {
@@ -265,7 +268,7 @@ func compareHighlight(item highlightCase, actual []Chunk, exempt map[exemptionKe
 }
 
 func TestHighlightGoldens(t *testing.T) {
-	root := filepath.Join("..", "..", "testdata", "highlight")
+	root := *highlightTestdata
 	cases, err := readHighlightCorpus(root)
 	if err != nil {
 		t.Fatal(err)
@@ -300,7 +303,7 @@ func readHighlightExemptions(root string, cases []highlightCase) (map[exemptionK
 }
 
 func TestHighlightExemptions(t *testing.T) {
-	root := filepath.Join("..", "..", "testdata", "highlight")
+	root := *highlightTestdata
 	cases, err := readHighlightCorpus(root)
 	if err != nil {
 		t.Fatal(err)

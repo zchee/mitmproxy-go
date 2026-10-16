@@ -33,6 +33,32 @@ func TestHighlightLanguagesTags(t *testing.T) {
 			}
 		})
 	}
+	t.Run("upstream/config", func(t *testing.T) {
+		tests := map[string]struct {
+			text string
+			tags []string
+		}{
+			"css":        {text: `p { color: "red"; width: 2px; }`, tags: []string{"name", "", "boolean", "", "string", "", "boolean", "", "number", ""}},
+			"javascript": {text: "let value = 2;", tags: []string{"name", "", "number", ""}},
+			"xml":        {text: `<x a="b"/>`, tags: []string{"name", "", "name"}},
+			"yaml":       {text: "key: true\n", tags: []string{"name", "", "boolean"}},
+		}
+		for language, test := range tests {
+			t.Run(language, func(t *testing.T) {
+				chunks, err := Highlight(test.text, language)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var tags []string
+				for _, chunk := range chunks {
+					tags = append(tags, chunk.Tag)
+				}
+				if diff := cmp.Diff(test.tags, tags); diff != "" {
+					t.Fatalf("capture tags differ (-want +got):\n%s", diff)
+				}
+			})
+		}
+	})
 }
 
 func TestHighlightChunks(t *testing.T) {

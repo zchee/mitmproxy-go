@@ -12,7 +12,12 @@ generated DIOCNATLOOK layouts; neither cross-building nor portable parser tests
 prove native execution. An exact same-peer pfctl tuple certifies the native path
 on first use. Native refusal or mismatch disables that path for the process and
 falls back to bounded text lookup. A missing text tuple is an error, not successful
-validation. Commands run outside dispatch with caller cancellation, a five-second
+validation. After a validated native path fails, this and all later text-only
+lookups additionally require the PF row's redirected/listener endpoint to equal
+the accepted local endpoint as normalized IP/port values; a peer-only or
+mismatching redirect row returns the unresolved-destination error. Initial
+pre-validation text fallback retains the upstream peer-only lookup. Commands run
+outside dispatch with caller cancellation, a five-second
 execution deadline and a four-MiB combined stdout/stderr bound.
 
 Darwin/FreeBSD DIOCNATLOOK is a raw syscall through x/sys, without cgo.

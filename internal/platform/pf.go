@@ -43,10 +43,17 @@ func pfEndpoint(s string) (netip.AddrPort, error) {
 }
 
 func pfStateLookup(peer netip.AddrPort, output []byte) (connection.Address, error) {
+	return pfStateLookupForLocal(peer, netip.AddrPort{}, output)
+}
+
+func pfStateLookupForLocal(peer, local netip.AddrPort, output []byte) (connection.Address, error) {
 	if len(output) > pfOutputLimit || !utf8.Valid(output) {
 		return connection.Address{}, ErrPFOutput
 	}
 	peer = netip.AddrPortFrom(peer.Addr().Unmap(), peer.Port())
+	if local.IsValid() {
+		local = netip.AddrPortFrom(local.Addr().Unmap(), local.Port())
+	}
 	var found netip.AddrPort
 	for line := range strings.SplitSeq(string(output), "\n") {
 		fields := strings.Fields(line)
@@ -68,18 +75,20 @@ func pfStateLookup(peer netip.AddrPort, output []byte) (connection.Address, erro
 			return connection.Address{}, ErrPFOutput
 		}
 		var client, destination string
+		redirected := false
 		switch {
 		case len(fields) == 6 && fields[3] == "->":
 			client, destination = fields[2], fields[4]
 		case len(fields) == 8 && fields[3] == "<-" && fields[5] == "<-":
-			client, destination = fields[6], fields[4]
+			client, destination, redirected = fields[6], fields[4], true
 		case len(fields) == 7 && strings.HasPrefix(fields[3], "(") && strings.HasSuffix(fields[3], ")") && fields[4] == "<-":
-			client, destination = fields[5], fields[3]
+			client, destination, redirected = fields[5], fields[3], true
 		default:
 			return connection.Address{}, ErrPFOutput
 		}
 		// Validate every endpoint, not just the candidate client, before accepting a row.
-		if _, err := pfEndpoint(fields[2]); err != nil {
+		redirect, err := pfEndpoint(fields[2])
+		if err != nil {
 			return connection.Address{}, err
 		}
 		c, err := pfEndpoint(client)
@@ -91,6 +100,9 @@ func pfStateLookup(peer netip.AddrPort, output []byte) (connection.Address, erro
 			return connection.Address{}, err
 		}
 		if left != "ESTABLISHED" || right != "ESTABLISHED" || c != peer {
+			continue
+		}
+		if local.IsValid() && (!redirected || redirect != local) {
 			continue
 		}
 		if found.IsValid() && found != d {
@@ -122,12 +134,13 @@ func (b *boundedPFOutput) Write(p []byte) (int, error) {
 }
 
 type pfResolver struct {
-	mu        sync.Mutex
-	checking  chan struct{}
-	validated bool
-	disabled  bool
-	native    func(context.Context, netip.AddrPort, netip.AddrPort) (connection.Address, error)
-	text      func(context.Context) ([]byte, error)
+	mu            sync.Mutex
+	checking      chan struct{}
+	validated     bool
+	disabled      bool
+	localRequired bool
+	native        func(context.Context, netip.AddrPort, netip.AddrPort) (connection.Address, error)
+	text          func(context.Context) ([]byte, error)
 }
 
 func (r *pfResolver) lookup(ctx context.Context, local, peer netip.AddrPort) (connection.Address, error) {
@@ -145,13 +158,17 @@ func (r *pfResolver) lookup(ctx context.Context, local, peer netip.AddrPort) (co
 			}
 			continue
 		}
-		validated, disabled := r.validated, r.disabled
+		validated, disabled, localRequired := r.validated, r.disabled, r.localRequired
 		if !validated && !disabled {
 			r.checking = make(chan struct{})
 		}
 		r.mu.Unlock()
+		textLocal := netip.AddrPort{}
+		if validated || localRequired {
+			textLocal = local
+		}
 		if disabled {
-			return r.textLookup(ctx, peer)
+			return r.textLookup(ctx, textLocal, peer)
 		}
 		native, nativeErr := r.native(ctx, local, peer)
 		if nativeErr == nil {
@@ -160,7 +177,7 @@ func (r *pfResolver) lookup(ctx context.Context, local, peer netip.AddrPort) (co
 		if validated && nativeErr == nil {
 			return native, nil
 		}
-		text, textErr := r.textLookup(ctx, peer)
+		text, textErr := r.textLookup(ctx, textLocal, peer)
 		r.mu.Lock()
 		if !validated {
 			// A cancelled first caller may retry; all other failures disable the
@@ -172,7 +189,9 @@ func (r *pfResolver) lookup(ctx context.Context, local, peer netip.AddrPort) (co
 			close(r.checking)
 			r.checking = nil
 		} else if nativeErr != nil && !errors.Is(nativeErr, context.Canceled) && !errors.Is(nativeErr, context.DeadlineExceeded) {
-			r.disabled, r.validated = true, false
+			// A failed validated native path must keep both accepted endpoints
+			// bound on this lookup and on subsequent text-only lookups.
+			r.disabled, r.validated, r.localRequired = true, false, true
 		}
 		r.mu.Unlock()
 		if textErr != nil {
@@ -182,7 +201,7 @@ func (r *pfResolver) lookup(ctx context.Context, local, peer netip.AddrPort) (co
 	}
 }
 
-func (r *pfResolver) textLookup(ctx context.Context, peer netip.AddrPort) (connection.Address, error) {
+func (r *pfResolver) textLookup(ctx context.Context, local, peer netip.AddrPort) (connection.Address, error) {
 	out, err := r.text(ctx)
 	if err != nil {
 		return connection.Address{}, err
@@ -190,5 +209,5 @@ func (r *pfResolver) textLookup(ctx context.Context, peer netip.AddrPort) (conne
 	if err := ctx.Err(); err != nil {
 		return connection.Address{}, err
 	}
-	return pfStateLookup(peer, out)
+	return pfStateLookupForLocal(peer, local, out)
 }

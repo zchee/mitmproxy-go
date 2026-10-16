@@ -281,6 +281,77 @@ func TestOriginalDestinationFailures(t *testing.T) {
 }
 
 func TestOriginalDestinationPFSelfCheck(t *testing.T) {
+	t.Run("post-validation fallback binds accepted local", func(t *testing.T) {
+		tests := map[string]struct {
+			local, peer, output, host string
+			port                      int
+			cause                     error
+		}{
+			"success: Darwin matching redirect": {
+				"127.0.0.1:8080", "192.168.1.111:40000", "ALL tcp 127.0.0.1:8080 <- 5.5.5.5:80 <- 192.168.1.111:40000 ESTABLISHED:ESTABLISHED\n", "5.5.5.5", 80, nil,
+			},
+			"error: mismatching redirected port": {
+				"127.0.0.1:8080", "192.168.1.111:40000", "ALL tcp 127.0.0.1:8081 <- 5.5.5.5:80 <- 192.168.1.111:40000 ESTABLISHED:ESTABLISHED\n", "", 0, ErrNotFound,
+			},
+			"error: mismatching redirected address": {
+				"127.0.0.1:8080", "192.168.1.111:40000", "ALL tcp 127.0.0.2:8080 <- 5.5.5.5:80 <- 192.168.1.111:40000 ESTABLISHED:ESTABLISHED\n", "", 0, ErrNotFound,
+			},
+			"error: peer-only forward row": {
+				"127.0.0.1:8080", "192.168.1.111:40000", "ALL tcp 192.168.1.111:40000 -> 5.5.5.5:80 ESTABLISHED:ESTABLISHED\n", "", 0, ErrNotFound,
+			},
+			"success: FreeBSD matching redirect": {
+				"127.0.0.1:8080", "192.168.1.111:40000", "all tcp 127.0.0.1:8080 (5.5.5.5:80) <- 192.168.1.111:40000 ESTABLISHED:ESTABLISHED\n", "5.5.5.5", 80, nil,
+			},
+			"error: FreeBSD mismatching redirect": {
+				"127.0.0.1:8080", "192.168.1.111:40000", "all tcp 127.0.0.1:8081 (5.5.5.5:80) <- 192.168.1.111:40000 ESTABLISHED:ESTABLISHED\n", "", 0, ErrNotFound,
+			},
+			"success: mapped accepted endpoints": {
+				"[::ffff:127.0.0.1]:8080", "[::ffff:192.168.1.111]:40000", "ALL tcp 127.0.0.1:8080 <- 5.5.5.5:80 <- 192.168.1.111:40000 ESTABLISHED:ESTABLISHED\n", "5.5.5.5", 80, nil,
+			},
+			"success: equivalent IPv6 notation": {
+				"[0:0:0:0:0:0:0:1]:8080", "[2001:db8::1]:40002", "ALL tcp ::1[8080] <- 2001:db8::2[443] <- 2001:db8::1[40002] ESTABLISHED:ESTABLISHED\n", "2001:db8::2", 443, nil,
+			},
+			"success: ignore colliding other listener": {
+				"127.0.0.1:8080", "192.168.1.111:40000", "ALL tcp 127.0.0.1:8081 <- 5.5.5.6:80 <- 192.168.1.111:40000 ESTABLISHED:ESTABLISHED\nALL tcp 127.0.0.1:8080 <- 5.5.5.5:80 <- 192.168.1.111:40000 ESTABLISHED:ESTABLISHED\n", "5.5.5.5", 80, nil,
+			},
+			"error: matching listener with wrong peer": {
+				"127.0.0.1:8080", "192.168.1.111:40000", "ALL tcp 127.0.0.1:8080 <- 5.5.5.5:80 <- 192.168.1.112:40000 ESTABLISHED:ESTABLISHED\n", "", 0, ErrNotFound,
+			},
+		}
+		for name, tt := range tests {
+			t.Run(name, func(t *testing.T) {
+				nativeCalls, textCalls := 0, 0
+				r := pfResolver{
+					validated: true,
+					native: func(context.Context, netip.AddrPort, netip.AddrPort) (connection.Address, error) {
+						nativeCalls++
+						return connection.Address{}, net.ErrClosed
+					},
+					text: func(context.Context) ([]byte, error) {
+						textCalls++
+						return []byte(tt.output), nil
+					},
+				}
+				// Exercise both the transition from native lookup and the next text-only lookup.
+				for range 2 {
+					got, err := r.lookup(t.Context(), netip.MustParseAddrPort(tt.local), netip.MustParseAddrPort(tt.peer))
+					if !errors.Is(err, tt.cause) {
+						t.Fatalf("lookup=%v error=%v want=%v", got, err, tt.cause)
+					}
+					want := connection.Address{}
+					if tt.cause == nil {
+						want = address(tt.host, tt.port)
+					}
+					if diff := cmp.Diff(want, got); diff != "" {
+						t.Fatalf("fallback destination (-want +got):\n%s", diff)
+					}
+				}
+				if !r.disabled || r.validated || nativeCalls != 1 || textCalls != 2 {
+					t.Fatalf("fallback state disabled=%v validated=%v native=%d text=%d", r.disabled, r.validated, nativeCalls, textCalls)
+				}
+			})
+		}
+	})
 	t.Run("success: generated ABI sizes and offsets", func(t *testing.T) {
 		tests := map[string]struct{ got, want pfLayout }{
 			"Darwin":  {darwinPFLayout, pfLayout{size: 84, alignment: 4, ioctl: 0xc0544417, source: 0, destination: 16, result: 48, sourcePort: 64, destinationPort: 68, resultPort: 76, family: 80, protocol: 81, direction: 83}},

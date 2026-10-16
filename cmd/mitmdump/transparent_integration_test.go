@@ -6,6 +6,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -23,6 +25,7 @@ import (
 
 	gocmp "github.com/google/go-cmp/cmp"
 
+	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/flowio"
 )
 
@@ -67,6 +70,7 @@ func TestTransparentCLI(t *testing.T) {
 			if err != nil && !errors.Is(err, syscall.ECONNRESET) {
 				t.Fatal(err)
 			}
+			var reply []byte
 			if client != nil {
 				defer func() { _ = client.Close() }()
 				deadline, _ := ctx.Deadline()
@@ -78,12 +82,10 @@ func TestTransparentCLI(t *testing.T) {
 				if writeErr != nil && !errors.Is(writeErr, syscall.EPIPE) && !errors.Is(writeErr, syscall.ECONNRESET) {
 					t.Fatalf("direct client write: %v", writeErr)
 				}
-				reply, readErr := io.ReadAll(client)
+				var readErr error
+				reply, readErr = io.ReadAll(client)
 				if readErr != nil && !errors.Is(readErr, syscall.ECONNRESET) {
 					t.Fatalf("direct client was not promptly refused: %v", readErr)
-				}
-				if len(reply) != 0 {
-					t.Fatalf("non-redirected client received %d application bytes", len(reply))
 				}
 			}
 			if err := proxy.Process.Signal(syscall.SIGTERM); err != nil {
@@ -101,13 +103,79 @@ func TestTransparentCLI(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer func() { _ = file.Close() }()
-			for _, err := range flowio.NewReader(file).All() {
+			var flows []*flow.HTTPFlow
+			for recorded, err := range flowio.NewReader(file).All() {
 				if err != nil {
 					t.Fatal(err)
 				}
-				t.Fatal("direct-client refusal published a flow without a usable original destination")
+				f, ok := recorded.(*flow.HTTPFlow)
+				if !ok {
+					t.Fatalf("unexpected refusal flow type %T", recorded)
+				}
+				flows = append(flows, f)
 			}
-			t.Logf("transparent startup succeeded; direct client refused; origin requests=0; emitted flows=0; mitmdump exit=0; CLI log:\n%s", seen)
+			const refusal = "Request destination unknown. Unable to figure out where this request should be forwarded to."
+			var lookupLine, denialLine string
+			for line := range strings.SplitSeq(seen, "\n") {
+				if strings.Contains(line, "Resolving transparent destination") {
+					lookupLine = line
+				}
+				if strings.Contains(line, refusal) {
+					denialLine = line
+				}
+			}
+			flowReason := ""
+			for _, f := range flows {
+				if f.Error != nil && strings.Contains(f.Error.Msg, refusal) {
+					flowReason = f.Error.Msg
+				}
+				if f.ServerConn != nil && f.ServerConn.Error != nil && strings.Contains(*f.ServerConn.Error, refusal) {
+					flowReason = *f.ServerConn.Error
+				}
+			}
+			addonDenied := denialLine != "" || flowReason != ""
+			if (lookupLine != "") == addonDenied {
+				t.Fatalf("want exactly lookup failure or addon denial, got CLI log:\n%s", seen)
+			}
+			if lookupLine != "" {
+				if len(flows) != 0 || len(reply) != 0 {
+					t.Fatalf("lookup refusal emitted flows=%d reply_bytes=%d", len(flows), len(reply))
+				}
+				t.Logf("observed=lookup-failure strategy=%s origin_requests=0 flows=0 reply_bytes=0 mitmdump_exit=0; %s", strategy, lookupLine)
+				return
+			}
+			if strategy == "eager" {
+				if denialLine == "" || len(flows) != 0 || len(reply) != 0 {
+					t.Fatalf("eager addon denial emitted flows=%d reply_bytes=%d before protocol creation", len(flows), len(reply))
+				}
+			} else {
+				if len(flows) != 1 {
+					t.Fatalf("lazy addon denial emitted %d flows, want one failed HTTP flow", len(flows))
+				}
+				f := flows[0]
+				if f.ServerConn == nil || f.ServerConn.Address == nil || f.ServerConn.Address.String() != address || f.ClientConn == nil || f.ClientConn.ProxyMode != "transparent" {
+					t.Fatal("failed flow lost the captured direct-listener destination or mode")
+				}
+				if f.Request == nil || f.Request.Path != "/direct" || f.Response != nil && f.Response.StatusCode != http.StatusBadGateway {
+					t.Fatal("saved direct-client exchange is not the failed request")
+				}
+				if flowReason == "" {
+					t.Fatal("saved failed flow does not carry the addon refusal")
+				}
+				response, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(reply)), nil)
+				if err != nil {
+					t.Fatalf("proxy-generated refusal response: %v", err)
+				}
+				body, readErr := io.ReadAll(response.Body)
+				closeErr := response.Body.Close()
+				if err := errors.Join(readErr, closeErr); err != nil {
+					t.Fatal(err)
+				}
+				if response.StatusCode != http.StatusBadGateway || !strings.Contains(string(body), refusal) {
+					t.Fatal("lazy direct-client response is not the proxy-generated addon refusal")
+				}
+			}
+			t.Logf("observed=addon-denial strategy=%s origin_requests=0 flows=%d reply_bytes=%d mitmdump_exit=0; log=%s flow_error=%s", strategy, len(flows), len(reply), denialLine, flowReason)
 		})
 	}
 }

@@ -6,11 +6,11 @@ TCP's original destination after operating-system redirection; it is not an
 explicit HTTP proxy and does not intercept UDP. A successful direct curl
 response without a recorded proxy flow is not interception evidence.
 
-The platform lookup, parser and manual PF test carrier are implemented.
-Transparent listener admission and the Linux REDIRECT executable row are not yet
-enabled in this checkout; the Linux commands below are prepared acceptance
-procedures, not a claim that they can already run. SOCKS5 listener admission is
-separate and available.
+The transparent listener, platform lookup, parser and manual PF test carrier
+are implemented. The Linux commands below require the separately tagged
+privileged REDIRECT acceptance carrier; its availability and filled receipts
+must be checked before treating the procedure as evidence. SOCKS5 listener
+admission is separate and available.
 
 Use a controlled origin and a disposable test topology. Install the test CA in
 the client trust configuration for HTTPS; do not use curl `-k`. Keep the origin,
@@ -252,6 +252,10 @@ exact pinned upstream warning text:
 > Transparent mode on Windows is unsupported, flaky, and deprecated.
 > Consider using local redirect mode or WireGuard mode instead.
 
+Native Windows CLI/refusal coverage is deferred. The sentence above records the
+source contract, not completed native execution; compilation and another OS's
+results do not substitute for Windows evidence.
+
 This refusal is a deliberate Go limitation: pinned Python upstream warns but
 still has legacy WinDivert code. The port does not acquire WinDivert for
 transparent mode. Consider `--mode local:curl` or WireGuard instead; these
@@ -281,7 +285,7 @@ result is filled and reviewed, it remains unrun or incomplete.
 | PF ioctl tuple, text tuple, exact peer and self-check decision | not run |
 | Ordinary PF parser / nonroot portability results | not run |
 | Manual macOS root ioctl/self-check acceptance | user-only; not done |
-| Native Windows Start refusal | not run |
+| Native Windows Start refusal | deferred; no native certification |
 | Process joins, owned rule/anchor/namespace cleanup and restoration | not run |
 | Evidence paths, complete logs and SHA-256 manifest | not run |
 

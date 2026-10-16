@@ -335,5 +335,72 @@ jobs:
           cache-dependency-glob: |
             **/testdata/*.py
             internal/difftest/difftest.go
+      - name: Verify highlight golden generator
+        run: |
+          set -euo pipefail
+          R="$GITHUB_WORKSPACE"
+          OUT="$R/_test/highlight-generator"
+          export PYTHONDONTWRITEBYTECODE=1
+          mkdir -p "$OUT"
+          trap 'status=$?; shopt -s nullglob; files=("$OUT"/*.log "$OUT"/*.receipt "$OUT"/*.xml "$OUT"/generated/*.json); sha256sum "${files[@]}" >| "$OUT/SHA256SUMS"; exit "$status"' EXIT
+          receipt() {
+            local name="$1"
+            shift
+            printf 'sha: %s\nhost: %s\nstart: %s\ncommand:' "$(git rev-parse HEAD)" "$(hostname)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/$name.receipt"
+            printf ' %q' "$@" >> "$OUT/$name.receipt"
+            printf '\n' >> "$OUT/$name.receipt"
+            set +e
+            "$@" >| "$OUT/$name.log" 2>| "$OUT/$name.stderr.log"
+            local result=$?
+            set -e
+            printf 'end: %s\nexit: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/$name.receipt"
+            return "$result"
+          }
+          receipt collection timeout --signal=QUIT --kill-after=15s 15m uv run --no-project --python 3.13 --with mitmproxy_rs==0.12.11 --with pytest==9.1.1 python -m pytest -q --collect-only "$R/hack/test_generate_highlight_goldens.py"
+          receipt tests timeout --signal=QUIT --kill-after=15s 15m uv run --no-project --python 3.13 --with mitmproxy_rs==0.12.11 --with pytest==9.1.1 python -m pytest -q "$R/hack/test_generate_highlight_goldens.py" -rA --junitxml="$OUT/highlight-generator.xml"
+          receipt generation timeout --signal=QUIT --kill-after=15s 30m uv run --no-project --python 3.13 --with mitmproxy_rs==0.12.11 python "$R/hack/generate-highlight-goldens.py" --inputs "$R/testdata/highlight/inputs" --output "$OUT/generated"
+          receipt frozen-comparison cmp "$R/testdata/highlight/goldens.json" "$OUT/generated/goldens.json"
+          receipt inventory-validation uv run --no-project --python 3.13 python - "$OUT" <<'PY'
+          from pathlib import Path
+          import sys
+          import xml.etree.ElementTree as ET
+
+          output = Path(sys.argv[1])
+          expected = {
+              "test_missing_input",
+              "test_extra_input",
+              "test_duplicate_identity",
+              "test_wrong_language",
+              "test_invalid_schema",
+              "test_source_span_mismatch",
+              "test_input_digest_mismatch",
+              "test_wheel_version_mismatch",
+              "test_wheel_digest_mismatch",
+              "test_source_pin_mismatch",
+              "test_lock_table_mismatch",
+              "test_chunk_reconstruction_mismatch",
+              "test_invalid_tag",
+              "test_invalid_sample_line_count",
+              "test_deterministic_generation",
+              "test_provenance_roundtrip",
+          }
+          collection = (output / "collection.log").read_text().splitlines()
+          identities = [line for line in collection if "::test_" in line]
+          wanted = {f"hack/test_generate_highlight_goldens.py::{name}" for name in expected}
+          assert len(identities) == 16 and set(identities) == wanted, identities
+          cases = ET.parse(output / "highlight-generator.xml").findall(".//testcase")
+          assert len(cases) == 16 and {case.attrib["name"] for case in cases} == expected
+          assert all(not list(case) for case in cases), "skips, failures or errors present"
+          log = (output / "tests.log").read_text().lower()
+          assert not any(word in log for word in ("xfailed", "xpassed", "deselected"))
+          sys.stdout.write("16 exact identities collected; 16 passed; zero skips/errors/failures/xfail/xpass/deselection.\n")
+          PY
+      - name: Upload highlight generator evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: highlight-generator-evidence
+          path: _test/highlight-generator
+          if-no-files-found: error
       - name: Differential tests against the pinned Python mitmproxy
         run: go test -tags difftest -count=1 ./...

@@ -30,9 +30,10 @@ func (e *LimitError) Error() string {
 
 // A budget belongs to one whole rendering operation, including failed guesses.
 type viewBudget struct {
-	view  string
-	nodes int
-	bytes int
+	view     string
+	nodes    int
+	bytes    int
+	expanded int
 }
 
 func (b *viewBudget) reserveNodes(count int, stage string) error {

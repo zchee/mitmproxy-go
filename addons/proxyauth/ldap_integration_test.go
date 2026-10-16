@@ -21,9 +21,15 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/zchee/mitmproxy-go/addon"
+	"github.com/zchee/mitmproxy-go/addon/hookdata"
 )
 
-func TestLDAPIntegration(t *testing.T) {
+func TestLDAPIntegration(t *testing.T) { testLDAPIntegration(t, false) }
+
+func TestSocks5LDAP(t *testing.T) { testLDAPIntegration(t, true) }
+
+func testLDAPIntegration(t *testing.T, socks bool) {
+	t.Helper()
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 	address := openLDAPAddress(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
@@ -85,6 +91,19 @@ func TestLDAPIntegration(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			f := requestWithAuth(tt.user, tt.password)
+			if socks {
+				data := &hookdata.Socks5Auth{Client: f.ClientConn, Username: tt.user, Password: tt.password}
+				if err := manager.Hook(t.Context(), addon.Socks5AuthHook{Data: data}); err != nil {
+					t.Fatal(err)
+				}
+				if data.Valid != tt.accepted {
+					t.Fatalf("SOCKS LDAP validity = %v, want %v", data.Valid, tt.accepted)
+				}
+				if !tt.accepted {
+					return
+				}
+				f.Request.Headers.Del("Proxy-Authorization")
+			}
 			if err := manager.Hook(t.Context(), addon.RequestHeadersHook{Flow: f}); err != nil {
 				t.Fatal(err)
 			}

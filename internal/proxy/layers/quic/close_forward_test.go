@@ -142,7 +142,7 @@ func TestQUICWireCloseBeforeContextPublication(t *testing.T) {
 			diagnostics := &closeFixtureDiagnostics{}
 			defer diagnostics.report(t)
 			gate.diagnostics = diagnostics
-			observer := &wireObserver{ended: make(chan *flow.TCPFlow, 1), closeDiagnostics: diagnostics}
+			observer := &wireObserver{ended: make(chan *flow.TCPFlow, 1), closeDiagnostics: diagnostics, queuedPackets: test.fromClient}
 			observer.modifyConfig = func(config *quicgo.Config) {
 				config.Tracer = func(ctx context.Context, isClient bool, _ quicgo.ConnectionID) qlogwriter.Trace {
 					if isClient == test.fromClient {
@@ -232,7 +232,14 @@ func TestQUICWireCloseBeforeContextPublication(t *testing.T) {
 				t.Fatalf("connection close=%v, want application close 42: closed", context.Cause(receiver.Context()))
 			}
 			unblock()
+			if session.queued != nil {
+				wireAwait(t, session.handlerReturned)
+				if session.handlerResult != nil || session.queued.originPacket.Context().Err() == nil || session.queued.accepted.Context().Err() == nil {
+					t.Fatalf("queued packets outlived Handler: result=%v origin=%v client=%v", session.handlerResult, context.Cause(session.queued.originPacket.Context()), context.Cause(session.queued.accepted.Context()))
+				}
+			}
 		})
 	}
 	t.Run("queued origin lifecycle", packetDialConformance)
+	t.Run("queued optimized packet methods", queuedWireAdapterConformance)
 }

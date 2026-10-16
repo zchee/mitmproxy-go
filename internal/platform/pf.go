@@ -9,21 +9,16 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 	"unicode/utf8"
 
 	"github.com/zchee/mitmproxy-go/connection"
 )
 
-const (
-	pfOutputLimit    = 4 << 20
-	pfCommandTimeout = 5 * time.Second
-)
+const pfOutputLimit = 4 << 20
 
 func pfEndpoint(s string) (netip.AddrPort, error) {
 	s = strings.Trim(s, "()")
@@ -124,29 +119,6 @@ func (b *boundedPFOutput) Write(p []byte) (int, error) {
 		return 0, ErrPFOutput
 	}
 	return b.Buffer.Write(p)
-}
-
-func readPFState(ctx context.Context) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, pfCommandTimeout)
-	defer cancel()
-	out := &boundedPFOutput{cancel: cancel}
-	cmd := exec.CommandContext(ctx, "sudo", "-n", "/sbin/pfctl", "-s", "state")
-	cmd.WaitDelay = time.Second
-	cmd.Stdout, cmd.Stderr = out, out
-	err := cmd.Run()
-	if out.full {
-		return nil, ErrPFOutput
-	}
-	if bytes.Contains(out.Bytes(), []byte("sudo: a password is required")) {
-		return nil, ErrPrivileges
-	}
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	if err != nil {
-		return nil, fmt.Errorf("Error getting pfctl state: %w", err)
-	}
-	return out.Bytes(), nil
 }
 
 type pfResolver struct {

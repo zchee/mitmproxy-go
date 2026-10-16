@@ -44,6 +44,10 @@ type Config struct {
 	// Dialer opens server transports. Nil means a TCP dialer that uses the
 	// server metadata's Sockname as the local address when it is set.
 	Dialer layer.Dialer
+	// PacketDialer acquires an origin outside dispatch using a private server
+	// snapshot. ctx bounds acquisition; lifetime owns a successful transport.
+	// Nil preserves the default UDP dialer and its source-address policy.
+	PacketDialer func(ctx, lifetime context.Context, server *connection.Server) (layer.PacketTransport, error)
 	// HTTPFidelity is this proxy instance's head-byte normalisation
 	// counter. Nil disables accounting.
 	HTTPFidelity *http1.FidelityCounter
@@ -60,6 +64,7 @@ type Handler struct {
 	options     *options.Manager
 	connections *Connections
 	dial        layer.Dialer
+	packetDial  func(context.Context, context.Context, *connection.Server) (layer.PacketTransport, error)
 	fidelity    *http1.FidelityCounter
 	logger      *slog.Logger
 	clock       watchdogClock
@@ -75,12 +80,18 @@ func NewHandler(cfg Config) (*Handler, error) {
 		options:     cfg.Options,
 		connections: cfg.Connections,
 		dial:        cfg.Dialer,
+		packetDial:  cfg.PacketDialer,
 		fidelity:    cfg.HTTPFidelity,
 		logger:      cfg.Logger,
 		clock:       wallClock{},
 	}
 	if h.dial == nil {
 		h.dial = NewDialer(net.Dialer{})
+	}
+	if h.packetDial == nil {
+		h.packetDial = func(ctx, lifetime context.Context, server *connection.Server) (layer.PacketTransport, error) {
+			return dialPacketServer(ctx, lifetime, server, net.Dialer{})
+		}
 	}
 	if h.logger == nil {
 		h.logger = slog.Default()
@@ -140,7 +151,7 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn, modeSpec string, to
 		return &activityConn{Conn: conn, watchdog: watchdog}, nil
 	}
 	pool := newServerPool(connCtx, client, dial, runner, h.manager.Do)
-	packets := &packetServers{ctx: connCtx, client: client, hooks: runner, do: h.manager.Do, watchdog: watchdog}
+	packets := &packetServers{ctx: connCtx, client: client, hooks: runner, do: h.manager.Do, watchdog: watchdog, dial: h.packetDial}
 	queue := newInjectionQueue()
 	c := &layer.Context{
 		Data:          &hookdata.Context{Client: client, Server: connection.NewServer(destination), Options: h.options},

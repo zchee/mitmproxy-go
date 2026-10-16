@@ -74,7 +74,7 @@ func (h *Handler) HandlePackets(ctx context.Context, conn layer.PacketTransport,
 		return &activityConn{Conn: conn, watchdog: watchdog}, nil
 	}
 	pool := newServerPool(connCtx, client, dial, runner, h.manager.Do)
-	servers := &packetServers{ctx: connCtx, client: client, hooks: runner, do: h.manager.Do, watchdog: watchdog}
+	servers := &packetServers{ctx: connCtx, client: client, hooks: runner, do: h.manager.Do, watchdog: watchdog, dial: h.packetDial}
 	queue := newInjectionQueue()
 	server := connection.NewServer(destination)
 	server.TransportProtocol = connection.UDP
@@ -129,6 +129,7 @@ type packetServers struct {
 	hooks    layer.Hooks
 	do       func(context.Context, func(context.Context) error) error
 	watchdog *watchdog
+	dial     func(context.Context, context.Context, *connection.Server) (layer.PacketTransport, error)
 	mu       sync.Mutex
 	workers  sync.WaitGroup
 	closed   bool
@@ -179,7 +180,7 @@ func (p *packetServers) open(ctx context.Context, server *connection.Server) (la
 		return failed(err)
 	}
 	// The socket lifetime follows the client, not the short-lived open call.
-	raw, err := dialPacketServer(openCtx, p.ctx, snapshot, net.Dialer{})
+	raw, err := p.dial(openCtx, p.ctx, snapshot)
 	if err != nil {
 		return failed(err)
 	}

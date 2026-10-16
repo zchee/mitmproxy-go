@@ -30,6 +30,7 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer/layertest"
+	"github.com/zchee/mitmproxy-go/internal/proxy/packettest"
 	"github.com/zchee/mitmproxy-go/internal/proxy/packettransport"
 	"github.com/zchee/mitmproxy-go/options"
 )
@@ -99,6 +100,11 @@ type session struct {
 
 func newSession(t *testing.T, udp bool, observed *observer) *session {
 	t.Helper()
+	return newSessionWithQueuedPackets(t, udp, observed, false)
+}
+
+func newSessionWithQueuedPackets(t *testing.T, udp bool, observed *observer, queued bool) *session {
+	t.Helper()
 	if observed == nil {
 		observed = &observer{}
 	}
@@ -113,7 +119,17 @@ func newSession(t *testing.T, udp bool, observed *observer) *session {
 		Hooks: &proxy.HookRunner{Manager: manager}, Do: manager.Do,
 		Logger: slog.New(slog.NewTextHandler(&s.logs, nil)), Record: proxy.Record,
 	}
-	if udp {
+	if udp && queued {
+		peer, tuple, err := packettest.NewPair(t.Context(), netip.MustParseAddrPort("127.0.0.1:41001"), netip.MustParseAddrPort("127.0.0.1:41002"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = peer.Close(); _ = tuple.Close() })
+		s.client = queuedDNSPeer{peer}
+		s.context.ClientPackets = proxy.RecordPackets(tuple)
+		s.context.Data.Client.TransportProtocol = connection.UDP
+		s.context.Data.Server.TransportProtocol = connection.UDP
+	} else if udp {
 		tcp, socket, err := freeport.ListenPair(t.Context(), "tcp4", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)

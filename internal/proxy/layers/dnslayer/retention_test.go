@@ -149,8 +149,9 @@ func TestDNSRetainedTransactionLimit(t *testing.T) {
 					return nil
 				},
 			}
-			s := newSession(t, tt.udp, a)
-			origin := newSession(t, tt.udp, nil)
+			queued := tt.udp && !tt.suppressResponses
+			s := newSessionWithQueuedPackets(t, tt.udp, a, queued)
+			origin := newSessionWithQueuedPackets(t, tt.udp, nil, queued)
 			diagnostics.attach(s, "client")
 			diagnostics.attach(origin, "origin")
 			s.context.Server, s.context.ServerPackets = origin.context.Client, origin.context.ClientPackets

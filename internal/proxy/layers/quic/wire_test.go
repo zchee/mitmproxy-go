@@ -73,6 +73,7 @@ type wireObserver struct {
 	originKeyLog        io.Writer
 	originPackets       func(net.PacketConn) net.PacketConn
 	closeDiagnostics    *closeFixtureDiagnostics
+	queuedPackets       bool
 }
 
 func (o *wireObserver) TLSClientHello(_ context.Context, d *hookdata.ClientHello) error {
@@ -203,6 +204,9 @@ type wireSession struct {
 	mode            *modeserver.Instance
 	workers         sync.WaitGroup
 	originReady     chan *quicgo.Conn
+	queued          *queuedWireFixture
+	handlerReturned chan struct{}
+	handlerResult   error
 }
 
 func newWireSession(t *testing.T, optsMap map[string]any, observe *wireObserver) *wireSession {
@@ -233,6 +237,9 @@ func newWireSession(t *testing.T, optsMap map[string]any, observe *wireObserver)
 			_ = s.originSocket.Close()
 		}
 		s.workers.Wait()
+		if s.handlerReturned != nil && s.handlerResult != nil {
+			t.Errorf("queued QUIC Handler result: %v", s.handlerResult)
+		}
 		if s.client != nil {
 			wireAwait(t, observe.disconnected)
 		}
@@ -240,6 +247,9 @@ func newWireSession(t *testing.T, optsMap map[string]any, observe *wireObserver)
 			s.manager.Close()
 		}
 	})
+	if observe.queuedPackets {
+		s.queued = newQueuedWireFixture(t, ctx, observe.closeDiagnostics)
+	}
 	originTLS, rootPEM := originCertificate(t)
 	originTLS.KeyLogWriter = observe.originKeyLog
 	if observe.preserveSettings {
@@ -254,9 +264,13 @@ func newWireSession(t *testing.T, optsMap map[string]any, observe *wireObserver)
 		observe.clientSettings = &hookdata.QUICTLSSettings{ALPNProtocols: []string{"raw-test"}, Certificate: leaf, CertificateChain: []*x509.Certificate{root}, CertificatePrivateKey: originTLS.Certificates[0].PrivateKey}
 	}
 	var err error
-	s.originSocket, err = net.ListenPacket("udp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	if s.queued != nil {
+		s.originSocket = s.queued.origin
+	} else {
+		s.originSocket, err = net.ListenPacket("udp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	if observe.originPackets != nil {
 		s.originSocket = observe.originPackets(s.originSocket)
@@ -319,7 +333,11 @@ func newWireSession(t *testing.T, optsMap map[string]any, observe *wireObserver)
 	if err := s.manager.Do(ctx, func(ctx context.Context) error { return opts.Update(ctx, settings) }); err != nil {
 		t.Fatal(err)
 	}
-	s.handler, err = proxy.NewHandler(proxy.Config{Manager: s.manager, Options: opts, Connections: &proxy.Connections{}, Logger: slog.New(slog.DiscardHandler)})
+	handlerConfig := proxy.Config{Manager: s.manager, Options: opts, Connections: &proxy.Connections{}, Logger: slog.New(slog.DiscardHandler)}
+	if s.queued != nil {
+		handlerConfig.PacketDialer = s.queued.dial
+	}
+	s.handler, err = proxy.NewHandler(handlerConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,12 +345,20 @@ func newWireSession(t *testing.T, optsMap map[string]any, observe *wireObserver)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.mode, err = modeserver.New(spec, modeserver.Config{Handler: s.handler, ListenHost: "127.0.0.1", ListenPort: new(0), Logger: slog.New(slog.DiscardHandler)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.mode.Start(ctx); err != nil {
-		t.Fatal(err)
+	if s.queued != nil {
+		s.handlerReturned = make(chan struct{})
+		s.workers.Go(func() {
+			s.handlerResult = s.handler.HandlePackets(ctx, s.queued.accepted, spec.String(), hookdata.LayerSpec{Kind: "reverse"})
+			close(s.handlerReturned)
+		})
+	} else {
+		s.mode, err = modeserver.New(spec, modeserver.Config{Handler: s.handler, ListenHost: "127.0.0.1", ListenPort: new(0), Logger: slog.New(slog.DiscardHandler)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.mode.Start(ctx); err != nil {
+			t.Fatal(err)
+		}
 	}
 	clientRoots := x509.NewCertPool()
 	caPEM, err := os.ReadFile(filepath.Join(confdir, "mitmproxy-ca-cert.pem"))
@@ -343,17 +369,25 @@ func newWireSession(t *testing.T, optsMap map[string]any, observe *wireObserver)
 	if _, ignored := optsMap["ignore_hosts"]; ignored || observe.hello != nil || observe.preserveSettings {
 		clientRoots.AppendCertsFromPEM(rootPEM)
 	}
-	socket, err := net.ListenPacket("udp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	var socket net.PacketConn
+	var peer *net.UDPAddr
+	if s.queued != nil {
+		socket = s.queued.client
+		peer = s.queued.client.RemoteAddr().(*net.UDPAddr)
+	} else {
+		socket, err = net.ListenPacket("udp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		addr := s.mode.ListenAddrs()[0]
+		peer, err = net.ResolveUDPAddr("udp", net.JoinHostPort(addr.Host, fmt.Sprint(addr.Port)))
+		if err != nil {
+			_ = socket.Close()
+			t.Fatal(err)
+		}
 	}
 	transport := &quicgo.Transport{Conn: socket}
 	t.Cleanup(func() { _ = transport.Close(); _ = socket.Close() })
-	addr := s.mode.ListenAddrs()[0]
-	peer, err := net.ResolveUDPAddr("udp", net.JoinHostPort(addr.Host, fmt.Sprint(addr.Port)))
-	if err != nil {
-		t.Fatal(err)
-	}
 	clientQUIC := transportConfig()
 	clientQUIC.KeepAlivePeriod = wireClientKeepAlivePeriod
 	if observe.clientIdleTimeout > 0 {

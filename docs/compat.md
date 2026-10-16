@@ -556,6 +556,90 @@ A closed injection also matches `net.ErrClosed`; `Handler.Inject` adds `ErrFlowN
 |---|---|---|
 | Reverse mode accepts `http3`, `quic`, and `dns` targets (`mitmproxy/proxy/layers/modes.py`, `mitmproxy/addons/next_layer.py`). | Registered reverse schemes select the DNS, raw QUIC and HTTP/3 owners. UDP reverse HTTPS always uses QUIC; an h3 Initial ALPN selects the HTTP/3 owner, otherwise it stays raw QUIC. | Default selector regression tests pin upstream routing. Protocol support no longer fails solely because these layers are absent. |
 
+## internal/platform
+
+Linux uses `SO_ORIGINAL_DST` in the accepted socket's IPv4/IPv6 family, as
+`mitmproxy/platform/linux.py` does. The Go resolver borrows the descriptor
+through `SyscallConn.Control`, normalizes mapped IPv4 before choosing the
+syscall family, and validates sockaddr length/family/port before publication.
+UDP transparent interception is not implemented. Invalid metadata must fail
+rather than become a connection to the redirected listener.
+
+Unlike upstream's PF-text-only lookup (`mitmproxy/platform/osx.py`, `pf.py`),
+macOS and FreeBSD use generated per-OS `pfioc_natlook` layouts from Apple
+`xnu-12377.1.9` and FreeBSD `release/14.3.0`, with pinned header digests and
+size/offset checks. The first usable connection must match the exact ioctl and
+PF-text tuples before ioctl results are trusted. Mismatch or layout refusal
+disables that unvalidated path and falls back to strict text matching. The
+raw-syscall path does not use a Darwin libSystem trampoline. After a validated
+native path fails, text lookup also requires its redirected/listener endpoint
+to match the accepted local IP/port; initial pre-validation fallback retains
+upstream's peer-only lookup. Capture has a five-second deadline and 4 MiB
+combined stdout/stderr cap; wrong-peer, malformed, truncated or oversized state
+is refused.
+
+Upstream's PF parser searches an established line for a peer substring
+(`mitmproxy/platform/pf.py`). The Go parser instead matches the complete peer
+address/port and established state, including mapped IPv4, IPv6 and FreeBSD
+parentheses: a substring can identify another connection. Missing state retains
+`Could not resolve original destination.`; privilege failure retains upstream's
+documented message. OpenBSD uses the accepted socket's local address, matching
+`mitmproxy/platform/openbsd.py`; this source-level contract does not certify
+native OpenBSD execution.
+
+Linux IPv4/IPv6 REDIRECT acceptance, ordinary macOS parser tests, mandatory
+manual macOS root ioctl/self-check, and native Windows refusal are separate
+evidence rows. FreeBSD cross-builds do not certify native FreeBSD lookup; no
+native FreeBSD/OpenBSD execution is claimed. See the
+[transparent-mode runbook](runbooks/transparent-mode.md) for privilege,
+own-flow exemptions, cleanup and unfilled result fields. This does not close
+the separate native local-mode requirements.
+
+## internal/proxy/layers/socks5
+
+SOCKS5 uses the existing dedicated layer, `socks5_auth` hook and proxyauth
+validators/cache; no duplicate authentication addon or option is installed.
+Accepted credentials authenticate the same client for later HTTP/HTTPS requests,
+so those requests do not receive another HTTP proxy-auth challenge. LDAP uses the
+same bounded real-directory path outside addon dispatch. Existing HTTP-only
+proxyauth behavior remains unchanged.
+
+Reproduced on purpose from `mitmproxy/proxy/layers/modes.py` at `3368a0a`:
+
+- A missing configured method sends the pinned ten-byte `05 ff 00 01 00 00 00 00
+  00 00` refusal, rather than only the two-byte SOCKS method-selection response.
+- RFC 1929 subnegotiation does not separately validate its version byte or reject
+  empty username/password fields before validator dispatch. Authentication still
+  depends on the configured validator; this is wire compatibility, not a claim
+  of stricter RFC validation. Credential bytes use UTF-8 decoding with backslash
+  replacement for invalid bytes; domain bytes use ASCII replacement.
+- CONNECT accepts IPv4, IPv6 and domain destinations; success uses upstream's
+  zero BND tuple. BIND and UDP ASSOCIATE remain refused with reply `07`; unknown
+  address types use `08`, and eager origin failure uses `04`. Lazy strategy can
+  acknowledge CONNECT before dialing, as upstream does.
+
+For premature handshake closure, upstream can log the complete buffered frame,
+including credentials (`mitmproxy/proxy/layers/modes.py:158–162`). Go instead
+reports `authentication stage, <count> bytes` after the normal handshake-close
+prefix during credential subnegotiation. No username, password or raw auth frame
+is emitted. This preserves failure location without disclosing credentials.
+
+Unsupported-request diagnostics keep upstream's message prefix and Python
+byte-repr style but include only the bounded consumed five-byte request prefix,
+not the rest of Python's delivered event. For the pinned BIND vector Go reports
+`Unsupported SOCKS5 request: b'\x05\x02\x00\x01\x7f'`.
+Reply bytes/status remain identical; no read-ahead is introduced to reconstruct
+Python event boundaries.
+
+The invalid-version HTTP-guess hint likewise examines the consumed two-byte
+greeting prefix rather than up to three bytes in Python's event. Go requires at
+least one ASCII uppercase letter and no ASCII lowercase letter in those two
+bytes, versus upstream's `self.buf[:3].isupper()`. Pinned GET/abcd cases match;
+for coalesced `GEt`, only Go emits the hint:
+`Probably not a SOCKS request but a regular HTTP request.` (followed by a space).
+Version-error text and no-reply behavior are unchanged. These consumed-prefix
+choices affect diagnostics only, not protocol handling.
+
 ## addons/errorcheck
 
 | Upstream | Go | Reason |
@@ -718,7 +802,7 @@ TLS and protocol layers:
 | `configure` accepts every parseable proxy mode; backends without an implementation fail later, at listen time (`mitmproxy/addons/proxyserver.py`). | `configure` rejects modes whose server backend is not implemented with `Proxy mode <spec> is not supported by mitmproxy-go yet.` | Failing at configure time names the unsupported mode instead of starting a server that cannot serve it. |
 | `server_connect` refuses a TCP destination on a listen port only for the four literal host strings `localhost`, `127.0.0.1`, `::1` and the listen host (`mitmproxy/addons/proxyserver.py`). | The TCP dialer's `Control` checks each resolved address actually dialled against the current listeners on the same port: any loopback or unspecified address, the bound address, and, for a wildcard listener, every local interface address. This covers every address spelling, including libc numeric forms, and names that resolve to the proxy, without resolving names twice. The pre-dial host check remains; both checks use upstream's refusal text. Custom dialers must delegate to `ProxyServer.Dialer()` to retain the dial-time guard. | Checking only a host string lets a DNS name or another numeric spelling loop one unauthenticated request into the proxy without end; checking the dialled address also prevents DNS rebinding from bypassing the guard. |
 | `inject.tcp`, `inject.websocket` and `inject.udp` only warn when an event cannot be delivered (`mitmproxy/addons/proxyserver.py`). | All three commands are registered. A full injection queue, an oversized message or a wrong message type is returned to the command caller as an error; nonmatching-flow and not-live warnings match upstream. `inject.websocket` defaults its optional `is_text` argument to true. | The bounded injection queue is a deliberate backpressure divergence, and its errors must reach the caller to be actionable. |
-| Transparent mode initialises platform redirection at configure time. | Transparent mode is rejected as unsupported. | Original-destination lookup is not implemented yet. |
+| Transparent mode initialises platform redirection at configure time (`mitmproxy/addons/proxyserver.py`). | Original-destination lookup and the manual PF test carrier are implemented, but transparent listener admission is not yet enabled. Configuration still rejects that mode as unsupported. The platform's Windows check refuses with the pinned warning quoted in the [transparent-mode runbook](runbooks/transparent-mode.md). | Platform lookup alone is not an admitted proxy listener. Windows refusal is a deliberate Go limitation: pinned Python warns but still implements a legacy WinDivert path. |
 | Local mode keeps the native daemon across frontend reconfiguration (`mitmproxy/proxy/mode_servers.py:420-470`). | The proxyserver addon constructs the platform controller lazily when local mode is configured, using the effective confdir. Launch occurs at frontend Start. Disabling local mode stops only the frontend; final addon shutdown closes the retained daemon outside the dispatch lock. Local and TUN frontends do not participate in listen-address collision accounting. | Preserve daemon reuse without waiting for process or flow joins under dispatch, or treating packet-source modes as socket listeners. `TestLocalAddonLazyOwnerFinalClose`, `TestLocalAddonLiveOwnerShutdown` and `TestLocalConfigureNoPort` cover the ownership and no-port paths. |
 
 ## addons/export

@@ -24,6 +24,7 @@ import (
 	textunicode "golang.org/x/text/encoding/unicode"
 
 	"github.com/zchee/mitmproxy-go/addon"
+	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/internal/htpasswd"
@@ -127,6 +128,40 @@ func (p *ProxyAuth) Configure(_ context.Context, updated map[string]struct{}) er
 		}
 	}
 	p.validate, p.ldap = validate, directory
+	return nil
+}
+
+// Socks5Auth validates SOCKS credentials and remembers the authenticated client.
+func (p *ProxyAuth) Socks5Auth(ctx context.Context, data *hookdata.Socks5Auth) error {
+	if p.validate == nil && p.ldap == nil {
+		return nil
+	}
+	user, password, client := data.Username, data.Password, data.Client
+	valid := false
+	if directory := p.ldap; directory != nil {
+		// Configure may replace the directory while dispatch is released.
+		var err error
+		ctx, err = addon.Concurrent(ctx, func(ctx context.Context) error {
+			var err error
+			valid, err = directory.check(ctx, user, password)
+			return err
+		})
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err != nil {
+			slog.WarnContext(ctx, "LDAP authentication failed", "error_type", fmt.Sprintf("%T", err))
+		}
+	} else {
+		valid = p.validate(user, password)
+	}
+	data.Valid = valid
+	if valid {
+		key := weak.Make(client)
+		if _, loaded := p.authenticated.Swap(key, [2]string{user, password}); !loaded {
+			runtime.AddCleanup(client, p.authenticated.Delete, any(key))
+		}
+	}
 	return nil
 }
 

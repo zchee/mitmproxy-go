@@ -132,12 +132,18 @@ func TestDNSRetainedTransactionLimit(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			arrivals := make(chan *flow.DNSFlow, 1)
+			diagnostics := &retentionDiagnostics{}
 			a := &observer{
-				request: func(_ context.Context, f *flow.DNSFlow) error { arrivals <- f; return nil },
+				request: func(_ context.Context, f *flow.DNSFlow) error {
+					diagnostics.record("owner request hook id=%d flow=%p", f.Request.ID, f)
+					arrivals <- f
+					return nil
+				},
 				response: func(_ context.Context, f *flow.DNSFlow) error {
 					if f.Request != nil {
 						t.Error("initial unsolicited response has a request")
 					}
+					diagnostics.record("owner response hook id=%d flow=%p", f.Response.ID, f)
 					f.Response = nil
 					arrivals <- f
 					return nil
@@ -145,39 +151,50 @@ func TestDNSRetainedTransactionLimit(t *testing.T) {
 			}
 			s := newSession(t, tt.udp, a)
 			origin := newSession(t, tt.udp, nil)
+			diagnostics.attach(s, "client")
+			diagnostics.attach(origin, "origin")
 			s.context.Server, s.context.ServerPackets = origin.context.Client, origin.context.ClientPackets
 			s.context.Data.Server.Address = &connection.Address{Host: "example.test", Port: 53}
 			s.start(t)
+			currentID, stage := -1, "fill"
+			defer diagnostics.report(t, s, &currentID, &stage)
 			retained := make([]*flow.DNSFlow, 0, 1024)
 			for id := range 1024 {
+				currentID, stage = id, "write retained input"
 				if tt.suppressResponses {
 					origin.write(t, query(id).Succeed(nil))
 				} else {
 					s.write(t, query(id))
 				}
+				stage = "await retained hook"
 				f := await(t, arrivals)
 				retained = append(retained, f)
 				if !tt.suppressResponses {
 					if f.Request.ID != id {
 						t.Fatalf("request hook ID = %d, want %d", f.Request.ID, id)
 					}
+					stage = "read forwarded retained input"
 					if got := origin.read(t); got.ID != id {
 						t.Fatalf("forwarded request ID = %d, want %d", got.ID, id)
 					}
 				}
 			}
+			currentID, stage = 0, "write at-bound retransmit"
 			s.write(t, query(0))
+			stage = "await at-bound hook"
 			if got := await(t, arrivals); got != retained[0] || got.Request.ID != 0 {
 				t.Fatalf("at-bound retransmit flow = %p, want %p with ID 0", got, retained[0])
 			}
 			if got := origin.read(t); got.ID != 0 {
 				t.Fatalf("forwarded retransmit ID = %d", got.ID)
 			}
+			currentID, stage = 1024, "write over-limit input"
 			if tt.newResponse {
 				origin.write(t, query(1024).Succeed(nil))
 			} else {
 				s.write(t, query(1024))
 			}
+			stage = "await owner termination"
 			select {
 			case err := <-s.done:
 				if err == nil || err.Error() != "dnslayer: retained DNS transaction limit exceeded (1024)" {

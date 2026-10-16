@@ -49,6 +49,7 @@ type closePublicationTrace struct {
 	sourceContext chan context.Context
 	unexpected    chan string
 	once          sync.Once
+	diagnostics   *closeFixtureDiagnostics
 }
 
 func (g *closePublicationTrace) AddProducer() qlogwriter.Recorder { return g }
@@ -62,15 +63,11 @@ func (g *closePublicationTrace) RecordEvent(event qlogwriter.Event) {
 	if !ok {
 		return
 	}
+	if g.diagnostics != nil {
+		g.diagnostics.record("source close %s", closeEventDescription(closed))
+	}
 	if closed.Initiator != qlog.InitiatorRemote || closed.ApplicationError == nil {
-		application, transport := "none", "none"
-		if closed.ApplicationError != nil {
-			application = fmt.Sprintf("%#x", uint64(*closed.ApplicationError))
-		}
-		if closed.ConnectionError != nil {
-			transport = fmt.Sprintf("%#x", uint64(*closed.ConnectionError))
-		}
-		diagnostic := fmt.Sprintf("initiator=%v application=%s transport=%s trigger=%v reason=%q", closed.Initiator, application, transport, closed.Trigger, closed.Reason[:min(len(closed.Reason), 256)])
+		diagnostic := closeEventDescription(closed)
 		select {
 		case g.unexpected <- diagnostic:
 		default:
@@ -79,8 +76,14 @@ func (g *closePublicationTrace) RecordEvent(event qlogwriter.Event) {
 	}
 	// quic-go closes its readers before this callback and cancels Conn.Context
 	// afterwards. Hold that publication without delaying the reader's error.
+	if g.diagnostics != nil {
+		g.diagnostics.record("source publication gate entered")
+	}
 	g.once.Do(func() { close(g.entered) })
 	<-g.release
+	if g.diagnostics != nil {
+		g.diagnostics.record("source publication gate released")
+	}
 }
 
 func TestQUICClosePublicationUnexpected(t *testing.T) {
@@ -136,11 +139,14 @@ func TestQUICWireCloseBeforeContextPublication(t *testing.T) {
 			}
 			unblock := sync.OnceFunc(func() { close(gate.release) })
 			defer unblock()
-			observer := &wireObserver{ended: make(chan *flow.TCPFlow, 1)}
+			diagnostics := &closeFixtureDiagnostics{}
+			defer diagnostics.report(t)
+			gate.diagnostics = diagnostics
+			observer := &wireObserver{ended: make(chan *flow.TCPFlow, 1), closeDiagnostics: diagnostics}
 			observer.modifyConfig = func(config *quicgo.Config) {
 				config.Tracer = func(ctx context.Context, isClient bool, _ quicgo.ConnectionID) qlogwriter.Trace {
 					if isClient == test.fromClient {
-						return nil
+						return &closeTargetTrace{diagnostics: diagnostics}
 					}
 					gate.sourceContext <- ctx
 					return gate
@@ -191,9 +197,14 @@ func TestQUICWireCloseBeforeContextPublication(t *testing.T) {
 			if !test.fromClient {
 				sender, receiver = receiver, sender
 			}
+			diagnostics.record("sender CloseWithError begin from_client=%t", test.fromClient)
 			if err := sender.CloseWithError(42, "closed"); err != nil {
 				t.Fatal(err)
 			}
+			diagnostics.record("sender CloseWithError complete cause=%T: %v", context.Cause(sender.Context()), context.Cause(sender.Context()))
+			defer func() {
+				diagnostics.record("terminal source=%T: %v receiver=%T: %v fixture=%v", context.Cause(sourceContext), context.Cause(sourceContext), context.Cause(receiver.Context()), context.Cause(receiver.Context()), context.Cause(session.ctx))
+			}()
 			select {
 			case <-gate.entered:
 			case diagnostic := <-gate.unexpected:
@@ -215,6 +226,7 @@ func TestQUICWireCloseBeforeContextPublication(t *testing.T) {
 				t.Fatal("proxy source connection context closed before the publication gate")
 			}
 			wireAwait(t, receiver.Context().Done())
+			diagnostics.record("receiver closed cause=%T: %v", context.Cause(receiver.Context()), context.Cause(receiver.Context()))
 			closed, ok := errors.AsType[*quicgo.ApplicationError](context.Cause(receiver.Context()))
 			if !ok || closed.ErrorCode != 42 || closed.ErrorMessage != "closed" {
 				t.Fatalf("connection close=%v, want application close 42: closed", context.Cause(receiver.Context()))

@@ -72,6 +72,7 @@ type wireObserver struct {
 	clientTLS           *hookdata.QUICTLS
 	originKeyLog        io.Writer
 	originPackets       func(net.PacketConn) net.PacketConn
+	closeDiagnostics    *closeFixtureDiagnostics
 }
 
 func (o *wireObserver) TLSClientHello(_ context.Context, d *hookdata.ClientHello) error {
@@ -282,6 +283,10 @@ func newWireSession(t *testing.T, optsMap map[string]any, observe *wireObserver)
 	if observe.modifyConfig != nil {
 		configFixtures.Store(opts, observe.modifyConfig)
 		t.Cleanup(func() { configFixtures.Delete(opts) })
+	}
+	if observe.closeDiagnostics != nil {
+		packetDiagnosticFixtures.Store(opts, observe.closeDiagnostics)
+		t.Cleanup(func() { packetDiagnosticFixtures.Delete(opts) })
 	}
 	if observe.consumer != nil {
 		consumerFixtures.Store(opts, observe.consumer)

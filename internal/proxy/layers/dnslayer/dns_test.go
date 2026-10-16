@@ -85,15 +85,16 @@ func (a *observer) DNSError(ctx context.Context, f *flow.DNSFlow) error {
 }
 
 type session struct {
-	client   net.Conn
-	context  *layer.Context
-	manager  *addon.Manager
-	observed *observer
-	logs     bytes.Buffer
-	cancel   context.CancelFunc
-	done     chan error
-	finished chan struct{}
-	udp      bool
+	client      net.Conn
+	context     *layer.Context
+	manager     *addon.Manager
+	observed    *observer
+	logs        bytes.Buffer
+	cancel      context.CancelFunc
+	done        chan error
+	finished    chan struct{}
+	udp         bool
+	diagnostics *retentionDiagnostics
 }
 
 func newSession(t *testing.T, udp bool, observed *observer) *session {
@@ -165,7 +166,14 @@ func (s *session) start(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	s.cancel, s.done, s.finished = cancel, make(chan error, 1), make(chan struct{})
 	t.Cleanup(func() { cancel(); await(t, s.finished) })
-	go func() { s.done <- selected.Run(ctx, s.context); close(s.finished) }()
+	go func() {
+		err := selected.Run(ctx, s.context)
+		if s.diagnostics != nil {
+			s.diagnostics.record("owner returned cause=%T: %v context=%v", err, err, context.Cause(ctx))
+		}
+		s.done <- err
+		close(s.finished)
+	}()
 }
 
 func (s *session) stop(t *testing.T) {

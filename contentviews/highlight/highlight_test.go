@@ -58,11 +58,42 @@ func TestHighlightChunks(t *testing.T) {
 		},
 		"css units and property": {
 			text: "p { width: 12px; }", language: "css",
-			want: []Chunk{{Tag: "name", Text: "p "}, {Text: "{ "}, {Tag: "boolean", Text: "width"}, {Text: ": "}, {Tag: "number", Text: "12px"}, {Text: "; }"}},
+			want: []Chunk{{Tag: "name", Text: "p"}, {Text: " { "}, {Tag: "boolean", Text: "width"}, {Text: ": "}, {Tag: "number", Text: "12px"}, {Text: "; }"}},
 		},
 		"javascript keyword whitespace": {
 			text: "let value = true;\r\n", language: "javascript",
 			want: []Chunk{{Tag: "name", Text: "let "}, {Text: "value = "}, {Tag: "boolean", Text: "true"}, {Text: ";\r\n"}},
+		},
+		"css captured selectors leave operator gaps": {
+			text: "a > b", language: "css",
+			want: []Chunk{{Tag: "name", Text: "a"}, {Text: " > "}, {Tag: "name", Text: "b"}},
+		},
+		"css custom property and color": {
+			text: "a { --accent: #0f0; }", language: "css",
+			want: []Chunk{{Tag: "name", Text: "a"}, {Text: " { "}, {Tag: "boolean", Text: "--accent"}, {Text: ": "}, {Tag: "string", Text: "#0f0"}, {Text: "; }"}},
+		},
+		"javascript eof comment": {
+			text: "// note", language: "javascript", want: []Chunk{{Tag: "comment", Text: "// note"}},
+		},
+		"javascript template capture resets outer style": {
+			text: "`tag${VALUE}tail`", language: "javascript",
+			want: []Chunk{{Tag: "string", Text: "`tag${"}, {Tag: "boolean", Text: "VALUE"}, {Text: "}tail`"}},
+		},
+		"javascript constants exclude properties": {
+			text: "this.VALUE + VALUE", language: "javascript",
+			want: []Chunk{{Text: "this.VALUE + "}, {Tag: "boolean", Text: "VALUE"}},
+		},
+		"javascript accessor name remains an identifier": {
+			text: "let get = 1", language: "javascript",
+			want: []Chunk{{Tag: "name", Text: "let "}, {Text: "get = "}, {Tag: "number", Text: "1"}},
+		},
+		"xml declaration attributes": {
+			text: "<?xml version='1.0'?>", language: "xml",
+			want: []Chunk{{Tag: "name", Text: "<?"}, {Text: "xml "}, {Tag: "name", Text: "version='"}, {Text: "1.0"}, {Tag: "name", Text: "'?>"}},
+		},
+		"yaml block scalar includes indicator": {
+			text: "key: |\n  text\n", language: "yaml",
+			want: []Chunk{{Tag: "name", Text: "key"}, {Text: ": "}, {Tag: "string", Text: "|\n  text\n"}},
 		},
 		"yaml local tag with string": {
 			text: "value: !custom-type 'text'\n", language: "yaml",

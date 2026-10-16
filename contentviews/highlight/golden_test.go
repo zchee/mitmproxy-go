@@ -123,7 +123,7 @@ func readHighlightCorpus(root string) ([]highlightCase, error) {
 			if chunk.Tag != "" && !slices.Contains(Tags(), chunk.Tag) {
 				return nil, fmt.Errorf("unknown golden tag %q for %q", chunk.Tag, input.ID)
 			}
-			item.Expected = append(item.Expected, Chunk{Tag: chunk.Tag, Text: chunk.Text})
+			item.Expected = append(item.Expected, Chunk(chunk))
 			reconstructed.WriteString(chunk.Text)
 		}
 		if reconstructed.String() != item.Text {

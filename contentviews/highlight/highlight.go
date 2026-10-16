@@ -40,7 +40,7 @@ func Highlight(text, language string) ([]Chunk, error) {
 	case "css", "javascript", "xml", "yaml":
 		return highlightSyntax(lossyUTF8(text), language)
 	default:
-		return nil, fmt.Errorf("Unsupported language: %s", language)
+		return nil, fmt.Errorf("Unsupported language: %s", language) //nolint:staticcheck // Preserve the upstream user-facing error.
 	}
 }
 

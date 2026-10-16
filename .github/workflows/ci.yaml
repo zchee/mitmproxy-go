@@ -62,6 +62,22 @@ jobs:
           printf 'go-test-producer=%s skip-reader=%s\n' "${statuses[0]}" "${statuses[1]}"
           (( statuses[1] == 0 )) || exit "${statuses[1]}"
           exit "${statuses[0]}"
+      - name: Verify native PF lookup contracts
+        if: matrix.os == 'xcode-27'
+        run: |
+          set -euo pipefail
+          names=(TestOriginalDestinationAddress TestPFStateLookup TestOriginalDestinationFailures TestOriginalDestinationPFSelfCheck)
+          pattern='^(TestOriginalDestinationAddress|TestPFStateLookup|TestOriginalDestinationFailures|TestOriginalDestinationPFSelfCheck)$'
+          mkdir -p _test/platform
+          go test -race -list "${pattern}" ./internal/platform | tee _test/platform/pf-inventory.txt
+          diff -u <(printf '%s\n' "${names[@]}" | sort) <(grep '^Test' _test/platform/pf-inventory.txt | sort)
+          go test -race -count=1 -v -run "${pattern}" ./internal/platform | tee _test/platform/pf.log
+          if grep -Eq '^[[:space:]]*--- SKIP:' _test/platform/pf.log; then
+            exit 1
+          fi
+          for name in "${names[@]}"; do
+            grep -Eq "^--- PASS: ${name} " _test/platform/pf.log
+          done
 
   proxy-integration:
     name: proxy integration (${{ matrix.os }}, go ${{ matrix.go }})
@@ -89,6 +105,21 @@ jobs:
       # The race-safe proxy tests already run in the test job above.
       - name: Proxy streaming integration tests
         run: go test -tags integration -count=1 ./internal/proxy/...
+      - name: Verify executable SOCKS and transparent acceptance
+        run: |
+          set -euo pipefail
+          names=(TestSocks5CLI TestTransparentCLI)
+          pattern='^(TestSocks5CLI|TestTransparentCLI)$'
+          mkdir -p _test/cli
+          go test -tags integration -timeout=10m -list "${pattern}" ./cmd/mitmdump | tee _test/cli/inventory.txt
+          diff -u <(printf '%s\n' "${names[@]}" | sort) <(grep '^Test' _test/cli/inventory.txt | sort)
+          go test -tags integration -count=5 -cpu=1 -timeout=60m -v -run "${pattern}" ./cmd/mitmdump | tee _test/cli/acceptance.log
+          if grep -Eq '^[[:space:]]*--- SKIP:' _test/cli/acceptance.log; then
+            exit 1
+          fi
+          for name in "${names[@]}"; do
+            test "$(grep -Ec "^--- PASS: ${name} " _test/cli/acceptance.log)" = 5
+          done
 
   ldap-integration:
     runs-on: ubuntu-26.04
@@ -112,6 +143,11 @@ jobs:
         with:
           go-version: ${{ steps.go.outputs.version }}
           cache-key-prefix: ldap-integration
+      - name: Verify SOCKS LDAP acceptance inventory
+        run: |
+          set -euo pipefail
+          listed="$(go test -race -tags integration -list '^TestSocks5LDAP$' ./addons/proxyauth)"
+          diff -u <(printf '%s\n' TestSocks5LDAP) <(grep '^Test' <<<"${listed}")
       - name: Authenticate against OpenLDAP
         env:
           MITMPROXY_TEST_LDAP_ADDRESS: 127.0.0.1:${{ job.services.openldap.ports['389'] }}
@@ -217,6 +253,7 @@ jobs:
           ./dns FuzzUnpack
           ./tlsparse FuzzQUICClientHello
           ./internal/h3 FuzzHeaders
+          ./internal/proxy/layers/socks5 FuzzSOCKS5Handshake
           TARGETS
       - name: Run every fuzz target for 30 seconds
         env:

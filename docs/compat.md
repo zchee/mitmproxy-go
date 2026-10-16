@@ -587,11 +587,12 @@ documented message. OpenBSD uses the accepted socket's local address, matching
 `mitmproxy/platform/openbsd.py`; this source-level contract does not certify
 native OpenBSD execution.
 
-Linux IPv4/IPv6 REDIRECT acceptance, ordinary macOS parser tests, mandatory
-manual macOS root ioctl/self-check, and native Windows refusal are separate
-evidence rows. FreeBSD cross-builds do not certify native FreeBSD lookup; no
-native FreeBSD/OpenBSD execution is claimed. See the
-[transparent-mode runbook](runbooks/transparent-mode.md) for privilege,
+Linux IPv4/IPv6 REDIRECT acceptance, ordinary macOS parser tests and mandatory
+manual macOS root ioctl/self-check are separate evidence rows. Native Windows
+CLI/refusal execution coverage is deferred; its source-level refusal and any
+cross-build checks are not runtime certification. FreeBSD cross-builds do not
+certify native FreeBSD lookup; no native FreeBSD/OpenBSD execution is claimed.
+See the [transparent-mode runbook](runbooks/transparent-mode.md) for privilege,
 own-flow exemptions, cleanup and unfilled result fields. This does not close
 the separate native local-mode requirements.
 
@@ -802,7 +803,7 @@ TLS and protocol layers:
 | `configure` accepts every parseable proxy mode; backends without an implementation fail later, at listen time (`mitmproxy/addons/proxyserver.py`). | `configure` rejects modes whose server backend is not implemented with `Proxy mode <spec> is not supported by mitmproxy-go yet.` | Failing at configure time names the unsupported mode instead of starting a server that cannot serve it. |
 | `server_connect` refuses a TCP destination on a listen port only for the four literal host strings `localhost`, `127.0.0.1`, `::1` and the listen host (`mitmproxy/addons/proxyserver.py`). | The TCP dialer's `Control` checks each resolved address actually dialled against the current listeners on the same port: any loopback or unspecified address, the bound address, and, for a wildcard listener, every local interface address. This covers every address spelling, including libc numeric forms, and names that resolve to the proxy, without resolving names twice. The pre-dial host check remains; both checks use upstream's refusal text. Custom dialers must delegate to `ProxyServer.Dialer()` to retain the dial-time guard. | Checking only a host string lets a DNS name or another numeric spelling loop one unauthenticated request into the proxy without end; checking the dialled address also prevents DNS rebinding from bypassing the guard. |
 | `inject.tcp`, `inject.websocket` and `inject.udp` only warn when an event cannot be delivered (`mitmproxy/addons/proxyserver.py`). | All three commands are registered. A full injection queue, an oversized message or a wrong message type is returned to the command caller as an error; nonmatching-flow and not-live warnings match upstream. `inject.websocket` defaults its optional `is_text` argument to true. | The bounded injection queue is a deliberate backpressure divergence, and its errors must reach the caller to be actionable. |
-| Transparent mode initialises platform redirection at configure time (`mitmproxy/addons/proxyserver.py`). | Original-destination lookup and the manual PF test carrier are implemented, but transparent listener admission is not yet enabled. Configuration still rejects that mode as unsupported. The platform's Windows check refuses with the pinned warning quoted in the [transparent-mode runbook](runbooks/transparent-mode.md). | Platform lookup alone is not an admitted proxy listener. Windows refusal is a deliberate Go limitation: pinned Python warns but still implements a legacy WinDivert path. |
+| Transparent mode initialises platform redirection at configure time (`mitmproxy/addons/proxyserver.py`). | Configuration admits transparent mode; Start checks platform availability before creating listeners. Each accepted TCP connection requires original-destination lookup and captured metadata before entering the Handler. Windows Start refuses with the pinned warning quoted in the [transparent-mode runbook](runbooks/transparent-mode.md). | Fail closed on lookup failure rather than treating an arbitrary HTTP Host header as the captured destination. Windows refusal is a deliberate Go limitation: pinned Python warns but still implements a legacy WinDivert path. |
 | Local mode keeps the native daemon across frontend reconfiguration (`mitmproxy/proxy/mode_servers.py:420-470`). | The proxyserver addon constructs the platform controller lazily when local mode is configured, using the effective confdir. Launch occurs at frontend Start. Disabling local mode stops only the frontend; final addon shutdown closes the retained daemon outside the dispatch lock. Local and TUN frontends do not participate in listen-address collision accounting. | Preserve daemon reuse without waiting for process or flow joins under dispatch, or treating packet-source modes as socket listeners. `TestLocalAddonLazyOwnerFinalClose`, `TestLocalAddonLiveOwnerShutdown` and `TestLocalConfigureNoPort` cover the ownership and no-port paths. |
 
 ## addons/export

@@ -1,0 +1,511 @@
+{
+  "configuration_only": [
+    {
+      "end_line": 55,
+      "function": "test_tags_ok",
+      "language": "css",
+      "path": "mitmproxy-highlight/src/css.rs",
+      "start_line": 53
+    },
+    {
+      "end_line": 57,
+      "function": "test_tags_ok",
+      "language": "javascript",
+      "path": "mitmproxy-highlight/src/javascript.rs",
+      "start_line": 55
+    },
+    {
+      "end_line": 53,
+      "function": "test_tags_ok",
+      "language": "xml",
+      "path": "mitmproxy-highlight/src/xml.rs",
+      "start_line": 51
+    },
+    {
+      "end_line": 43,
+      "function": "test_tags_ok",
+      "language": "yaml",
+      "path": "mitmproxy-highlight/src/yaml.rs",
+      "start_line": 41
+    }
+  ],
+  "input_manifest_sha256": "cfbb7073e43ba8e4468b6aca837c3efe0eed04dc62a5abeaeec7183bbf28536c",
+  "inputs": [
+    {
+      "id": "css_debug",
+      "kind": "rust_literal",
+      "language": "css",
+      "path": "css-debug.css",
+      "physical_lines": 1,
+      "sha256": "5176f0da5299f337c2884103ff71c06a58f699e48da394c68297eb256658aab5",
+      "source": {
+        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "end_line": 48,
+        "function": "debug",
+        "git_blob": "500829037ae1e5f1606e658ce5f33c4aeb24e039",
+        "path": "mitmproxy-highlight/src/css.rs",
+        "repository": "https://github.com/mitmproxy/mitmproxy-rs",
+        "sha256": "bfc26e479e69b696afd1e6c305b5bfd45fe422b4b99a59696f26081fe954ae66",
+        "snapshot": "sources/mitmproxy-rs/mitmproxy-highlight/src/css.rs",
+        "start_line": 48
+      }
+    },
+    {
+      "id": "css_highlight",
+      "kind": "rust_literal",
+      "language": "css",
+      "path": "css-highlight.css",
+      "physical_lines": 7,
+      "sha256": "ecb694f6e002c68e65ca30a0dbf586a231c4af84c61c878fee7b57e091fbc193",
+      "source": {
+        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "end_line": 67,
+        "function": "test_highlight",
+        "git_blob": "500829037ae1e5f1606e658ce5f33c4aeb24e039",
+        "path": "mitmproxy-highlight/src/css.rs",
+        "repository": "https://github.com/mitmproxy/mitmproxy-rs",
+        "sha256": "bfc26e479e69b696afd1e6c305b5bfd45fe422b4b99a59696f26081fe954ae66",
+        "snapshot": "sources/mitmproxy-rs/mitmproxy-highlight/src/css.rs",
+        "start_line": 59
+      }
+    },
+    {
+      "id": "javascript_debug",
+      "kind": "rust_literal",
+      "language": "javascript",
+      "path": "javascript-debug.js",
+      "physical_lines": 1,
+      "sha256": "75f19665acb1613443c5e178c53459898f1921ab60e2ce43b55436cfdb007ca5",
+      "source": {
+        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "end_line": 50,
+        "function": "debug",
+        "git_blob": "4704b8687384b867439533eb57a3e55f8923975c",
+        "path": "mitmproxy-highlight/src/javascript.rs",
+        "repository": "https://github.com/mitmproxy/mitmproxy-rs",
+        "sha256": "271d96a04b1197132cb48fa8cb512592e88f7ed6c6e151c465e2f760d2364de1",
+        "snapshot": "sources/mitmproxy-rs/mitmproxy-highlight/src/javascript.rs",
+        "start_line": 50
+      }
+    },
+    {
+      "id": "javascript_highlight",
+      "kind": "rust_literal",
+      "language": "javascript",
+      "path": "javascript-highlight.js",
+      "physical_lines": 3,
+      "sha256": "243b19babfa346f05cae6a02ec407e087b647d98021a444fb2102da7c6fb5064",
+      "source": {
+        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "end_line": 65,
+        "function": "test_highlight",
+        "git_blob": "4704b8687384b867439533eb57a3e55f8923975c",
+        "path": "mitmproxy-highlight/src/javascript.rs",
+        "repository": "https://github.com/mitmproxy/mitmproxy-rs",
+        "sha256": "271d96a04b1197132cb48fa8cb512592e88f7ed6c6e151c465e2f760d2364de1",
+        "snapshot": "sources/mitmproxy-rs/mitmproxy-highlight/src/javascript.rs",
+        "start_line": 61
+      }
+    },
+    {
+      "id": "xml_debug",
+      "kind": "rust_literal",
+      "language": "xml",
+      "path": "xml-debug.xml",
+      "physical_lines": 1,
+      "sha256": "dc7ce6159db0d24059731bc43c9e8ad665f5692acd6ac9d77de50b2b5d466674",
+      "source": {
+        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "end_line": 46,
+        "function": "debug",
+        "git_blob": "6566f058f142446e1b19fa78c317437138bf5145",
+        "path": "mitmproxy-highlight/src/xml.rs",
+        "repository": "https://github.com/mitmproxy/mitmproxy-rs",
+        "sha256": "822a335c30287a92c9cbeba5c39505c0136465725b407b66b7b360ca52444266",
+        "snapshot": "sources/mitmproxy-rs/mitmproxy-highlight/src/xml.rs",
+        "start_line": 46
+      }
+    },
+    {
+      "id": "xml_highlight",
+      "kind": "rust_literal",
+      "language": "xml",
+      "path": "xml-highlight.xml",
+      "physical_lines": 1,
+      "sha256": "dc7ce6159db0d24059731bc43c9e8ad665f5692acd6ac9d77de50b2b5d466674",
+      "source": {
+        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "end_line": 57,
+        "function": "test_highlight",
+        "git_blob": "6566f058f142446e1b19fa78c317437138bf5145",
+        "path": "mitmproxy-highlight/src/xml.rs",
+        "repository": "https://github.com/mitmproxy/mitmproxy-rs",
+        "sha256": "822a335c30287a92c9cbeba5c39505c0136465725b407b66b7b360ca52444266",
+        "snapshot": "sources/mitmproxy-rs/mitmproxy-highlight/src/xml.rs",
+        "start_line": 57
+      }
+    },
+    {
+      "id": "yaml_highlight",
+      "kind": "rust_literal",
+      "language": "yaml",
+      "path": "yaml-highlight.yaml",
+      "physical_lines": 3,
+      "sha256": "83d0551f0186eeb085e7a9a52227373764c7a4929c12eb1be3dae9dbf4682739",
+      "source": {
+        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "end_line": 51,
+        "function": "test_highlight",
+        "git_blob": "0952041447656f93168a0c430c367734162de687",
+        "path": "mitmproxy-highlight/src/yaml.rs",
+        "repository": "https://github.com/mitmproxy/mitmproxy-rs",
+        "sha256": "aba30272c2ddcb6e7a509d919e75408f2f483a7d6edd4c9671462705f7ff27c6",
+        "snapshot": "sources/mitmproxy-rs/mitmproxy-highlight/src/yaml.rs",
+        "start_line": 47
+      }
+    },
+    {
+      "id": "css_real_200",
+      "kind": "sample",
+      "language": "css",
+      "path": "css-real-200.css",
+      "physical_lines": 200,
+      "sha256": "37135c1cb2949e354f157f796a7eda3d1b2cd1e1aeeb34c98ccaba3a0ca6986b",
+      "source": {
+        "commit": "6e1f75f420f68e1d52733b8e407fc7c3766c9dba",
+        "end_line": 200,
+        "excerpt_sha256": "37135c1cb2949e354f157f796a7eda3d1b2cd1e1aeeb34c98ccaba3a0ca6986b",
+        "git_blob": "b7ab57f2adb13f01d8ebbb1c37f022494db7e0c0",
+        "license": "MIT",
+        "path": "dist/css/bootstrap.css",
+        "repository": "https://github.com/twbs/bootstrap",
+        "sha256": "18a105d7cb38e01e5ed0ca255c092992a2e211b39594a7fa57262bfc6fc4ea9c",
+        "start_line": 1,
+        "url": "https://github.com/twbs/bootstrap/blob/6e1f75f420f68e1d52733b8e407fc7c3766c9dba/dist/css/bootstrap.css"
+      }
+    },
+    {
+      "id": "javascript_real_200",
+      "kind": "sample",
+      "language": "javascript",
+      "path": "javascript-real-200.js",
+      "physical_lines": 200,
+      "sha256": "075ebdfc5a54e08441381f3b668a862930e7a4efbb0c38bdc362b27837ce5000",
+      "source": {
+        "commit": "6e1f75f420f68e1d52733b8e407fc7c3766c9dba",
+        "end_line": 200,
+        "excerpt_sha256": "075ebdfc5a54e08441381f3b668a862930e7a4efbb0c38bdc362b27837ce5000",
+        "git_blob": "dd61649ecce0e0752a1fded72942ef02003e9d4d",
+        "license": "MIT",
+        "path": "js/src/modal.js",
+        "repository": "https://github.com/twbs/bootstrap",
+        "sha256": "ca4c0a0d97a308723fc857285866b91996729a86a18170e8ad9a4a626cc1adc8",
+        "start_line": 1,
+        "url": "https://github.com/twbs/bootstrap/blob/6e1f75f420f68e1d52733b8e407fc7c3766c9dba/js/src/modal.js"
+      }
+    },
+    {
+      "id": "xml_real_200",
+      "kind": "sample",
+      "language": "xml",
+      "path": "xml-real-200.xml",
+      "physical_lines": 200,
+      "sha256": "750c784f2ed93a018c9bb63023a4364f969fa1d4f761deb9bb36405db1450fbc",
+      "source": {
+        "commit": "8e8579a9e76f7d015ee5ec7bfcdc97d260186937",
+        "end_line": 200,
+        "excerpt_sha256": "750c784f2ed93a018c9bb63023a4364f969fa1d4f761deb9bb36405db1450fbc",
+        "git_blob": "5b92ec717c0466f71b4d562c3782f36c8172b954",
+        "license": "Apache-2.0",
+        "path": "pom.xml",
+        "repository": "https://github.com/apache/maven",
+        "sha256": "d24ed68923df210d085bb5d386d4336d12ede5473392e159d5e6e64497af6f39",
+        "start_line": 1,
+        "url": "https://github.com/apache/maven/blob/8e8579a9e76f7d015ee5ec7bfcdc97d260186937/pom.xml"
+      }
+    },
+    {
+      "id": "yaml_real_200",
+      "kind": "sample",
+      "language": "yaml",
+      "path": "yaml-real-200.yaml",
+      "physical_lines": 200,
+      "sha256": "74ccfb90d0d4a571d2a551c91ea88f2c26ec54efb5a7740c345df64de10ebb62",
+      "source": {
+        "commit": "948afe5ca072329a73c8e79ed5938717a5cb3d21",
+        "end_line": 200,
+        "excerpt_sha256": "74ccfb90d0d4a571d2a551c91ea88f2c26ec54efb5a7740c345df64de10ebb62",
+        "git_blob": "7b5763e6b00500c21e3262a3e42c9e18065c261e",
+        "license": "Apache-2.0",
+        "path": "hack/golangci.yaml",
+        "repository": "https://github.com/kubernetes/kubernetes",
+        "sha256": "cbc7b8a8c3edd41fa96ea706e9a56695dc423d336afbac02a1f862c15ae209d1",
+        "start_line": 1,
+        "url": "https://github.com/kubernetes/kubernetes/blob/948afe5ca072329a73c8e79ed5938717a5cb3d21/hack/golangci.yaml"
+      }
+    }
+  ],
+  "licenses": [
+    {
+      "path": "licenses/bootstrap-LICENSE",
+      "sha256": "8c14611ae41ac6fd543c13349f22188eb12c69b3e59105c5eca3925a8e4eca3e"
+    },
+    {
+      "path": "licenses/maven-LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "licenses/maven-NOTICE",
+      "sha256": "05ae716d43260f68b3d231d32105c2f837439e03c62440ee9f38703c0406afa1"
+    },
+    {
+      "path": "licenses/kubernetes-LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "licenses/mitmproxy-rs-LICENSE",
+      "sha256": "fb21d4527ce8b8bb01ece568a4b446cb3b547ae61e24764adb2be9a3d18bb5c7"
+    }
+  ],
+  "lock_tables": {
+    "51fe2b7c5aa8439c162abb665db61c6669d146d6": {
+      "entries": [
+        {
+          "checksum": "83c567a8e18ae93f20982c90370b16fd24023aeaf52f6052b96957ab253a0fec",
+          "name": "tree-sitter",
+          "version": "0.26.12"
+        },
+        {
+          "checksum": "a5cbc5e18f29a2c6d6435891f42569525cf95435a3e01c2f1947abcde178686f",
+          "name": "tree-sitter-css",
+          "version": "0.25.0"
+        },
+        {
+          "checksum": "12bf7c298789885e63e7c1c9c86976875136064d23f541007bae3a02a23a74f9",
+          "name": "tree-sitter-highlight",
+          "version": "0.26.12"
+        },
+        {
+          "checksum": "68204f2abc0627a90bdf06e605f5c470aa26fdcb2081ea553a04bdad756693f5",
+          "name": "tree-sitter-javascript",
+          "version": "0.25.0"
+        },
+        {
+          "checksum": "009994f150cc0cd50ff54917d5bc8bffe8cad10ca10d81c34da2ec421ae61782",
+          "name": "tree-sitter-language",
+          "version": "0.1.7"
+        },
+        {
+          "checksum": "e670041f591d994f54d597ddcd8f4ebc930e282c4c76a42268743b71f0c8b6b3",
+          "name": "tree-sitter-xml",
+          "version": "0.7.0"
+        },
+        {
+          "checksum": "53c223db85f05e34794f065454843b0668ebc15d240ada63e2b5939f43ce7c97",
+          "name": "tree-sitter-yaml",
+          "version": "0.7.2"
+        }
+      ],
+      "sha256": "ec0460b0d03626382b9ee1e35ead876c859da1065841ea5409100419cd5460af",
+      "snapshot": "sources/mitmproxy-rs/lock-tables.json"
+    },
+    "v0.12.11": {
+      "entries": [
+        {
+          "checksum": "af1c71c1c4cc0920b20d6b0f6572e7682cd07a6a2faec71067a31fa394c586df",
+          "name": "tree-sitter",
+          "version": "0.26.11"
+        },
+        {
+          "checksum": "a5cbc5e18f29a2c6d6435891f42569525cf95435a3e01c2f1947abcde178686f",
+          "name": "tree-sitter-css",
+          "version": "0.25.0"
+        },
+        {
+          "checksum": "cd7a0c48d503cf4e0a57a2453424eaef2fce4b4269f13e3579e52f0d0c9e5cc8",
+          "name": "tree-sitter-highlight",
+          "version": "0.26.11"
+        },
+        {
+          "checksum": "68204f2abc0627a90bdf06e605f5c470aa26fdcb2081ea553a04bdad756693f5",
+          "name": "tree-sitter-javascript",
+          "version": "0.25.0"
+        },
+        {
+          "checksum": "009994f150cc0cd50ff54917d5bc8bffe8cad10ca10d81c34da2ec421ae61782",
+          "name": "tree-sitter-language",
+          "version": "0.1.7"
+        },
+        {
+          "checksum": "e670041f591d994f54d597ddcd8f4ebc930e282c4c76a42268743b71f0c8b6b3",
+          "name": "tree-sitter-xml",
+          "version": "0.7.0"
+        },
+        {
+          "checksum": "53c223db85f05e34794f065454843b0668ebc15d240ada63e2b5939f43ce7c97",
+          "name": "tree-sitter-yaml",
+          "version": "0.7.2"
+        }
+      ],
+      "sha256": "ec0460b0d03626382b9ee1e35ead876c859da1065841ea5409100419cd5460af",
+      "snapshot": "sources/mitmproxy-rs/lock-tables.json"
+    }
+  },
+  "oracle": {
+    "distribution": "mitmproxy_rs",
+    "filename": "mitmproxy_rs-0.12.11-cp312-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl",
+    "files": [
+      {
+        "path": "mitmproxy_rs-0.12.11.dist-info/INSTALLER",
+        "sha256": "e6184ce10e266134fdcfa401e8f1a95005bcd4f18d16b62b757323e2833fe9a9",
+        "size": 2
+      },
+      {
+        "path": "mitmproxy_rs-0.12.11.dist-info/METADATA",
+        "sha256": "83fd43fa157b1b14ab3f46373a5689127e75b004f3df41c01011defed0d5eb4e",
+        "size": 671
+      },
+      {
+        "path": "mitmproxy_rs-0.12.11.dist-info/RECORD",
+        "sha256": "260ca96d6e49f78bb8fab223d8cdfad397bd384c2192398ee0286e321f0524c1",
+        "size": 2208
+      },
+      {
+        "path": "mitmproxy_rs-0.12.11.dist-info/REQUESTED",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      {
+        "path": "mitmproxy_rs-0.12.11.dist-info/WHEEL",
+        "sha256": "77b3e85bd28f0de51dbb04c0e44743ada11d1c72b5f3dc5e95343d174712438a",
+        "size": 180
+      },
+      {
+        "path": "mitmproxy_rs-0.12.11.dist-info/entry_points.txt",
+        "sha256": "02d0d59c1210ca41c889b0b92afc9e1d92c2c9ad856035735d4a7435a949b8a8",
+        "size": 62
+      },
+      {
+        "path": "mitmproxy_rs-0.12.11.dist-info/sboms/mitmproxy_rs.cyclonedx.json",
+        "sha256": "dd3c87f06438fdeb20c5754f7df7611fd3eb566fcdec75a150dd47d025488e68",
+        "size": 323312
+      },
+      {
+        "path": "mitmproxy_rs/__init__.py",
+        "sha256": "d82754e419deb5e3fafecb298f27d67dfd335abb6bf8ee41c52dc1d84e8b1ee1",
+        "size": 346
+      },
+      {
+        "path": "mitmproxy_rs/__init__.pyi",
+        "sha256": "0c563b9dfb554f0294c0a24a0ff61026f8f21a72323f330b551a993de438b7f6",
+        "size": 1969
+      },
+      {
+        "path": "mitmproxy_rs/_pyinstaller/__init__.py",
+        "sha256": "1f80cd6c224b442e133173ba69d9b830b287a8e39698cc4a4573e631600d3a2a",
+        "size": 121
+      },
+      {
+        "path": "mitmproxy_rs/_pyinstaller/hook-mitmproxy_linux.py",
+        "sha256": "ebb1a3a5f6c2283aef231b6585ec455b14c2b817e61d3f602232080f4d45ba37",
+        "size": 133
+      },
+      {
+        "path": "mitmproxy_rs/_pyinstaller/hook-mitmproxy_macos.py",
+        "sha256": "db6dd0ab1eda6018725f60b7b8e1bab62c3f19a10a07b77536b45dda8c18e633",
+        "size": 102
+      },
+      {
+        "path": "mitmproxy_rs/_pyinstaller/hook-mitmproxy_rs.py",
+        "sha256": "17123d6fec63ecb0184e545dd627428dac4baecc929a8f4c3b181bd8e8d624d1",
+        "size": 364
+      },
+      {
+        "path": "mitmproxy_rs/_pyinstaller/hook-mitmproxy_windows.py",
+        "sha256": "0ca3d4c2562b2515f1bb2512c5093c6aee9b88daed8520e7b36eec19fcb84be8",
+        "size": 104
+      },
+      {
+        "path": "mitmproxy_rs/certs.pyi",
+        "sha256": "44258aa3de6c9a62dbb6c9c167097406f64e57df12c8a81caf09899dd3b29fb5",
+        "size": 153
+      },
+      {
+        "path": "mitmproxy_rs/contentviews.pyi",
+        "sha256": "86c2c660ff8db106ecaded2aae15fd9201771f86347ce863fa50d56b98c354ba",
+        "size": 819
+      },
+      {
+        "path": "mitmproxy_rs/dns.pyi",
+        "sha256": "7e3fe0e0465c5197d60df0cac2a602aca239ca3036bdc7356228c8c1903ef94f",
+        "size": 501
+      },
+      {
+        "path": "mitmproxy_rs/local.pyi",
+        "sha256": "0601d52e0c30445abd1710a1de16f4e412300e883504b9faad0824104bf685fb",
+        "size": 669
+      },
+      {
+        "path": "mitmproxy_rs/mitmproxy_rs.abi3.so",
+        "sha256": "8521fca6525ea772d85b2d2b8f3c0ce6d0046c6b4cec4ecaa9fd6d9810263188",
+        "size": 19333184
+      },
+      {
+        "path": "mitmproxy_rs/process_info.pyi",
+        "sha256": "afa35d6ab5c98cff3339523936e299fe825cc65ff3dc8f8fdf683bd8c8b747c1",
+        "size": 494
+      },
+      {
+        "path": "mitmproxy_rs/py.typed",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      {
+        "path": "mitmproxy_rs/syntax_highlight.pyi",
+        "sha256": "d496654194fe7b9c29a26fa9d7bec053f77b407d1a69cf02c27df816f560f2d1",
+        "size": 333
+      },
+      {
+        "path": "mitmproxy_rs/tun.pyi",
+        "sha256": "58dd05524c95876fac8944527980d4c4e8daf3c47588f9423414d1af50c1ad25",
+        "size": 643
+      },
+      {
+        "path": "mitmproxy_rs/udp.pyi",
+        "sha256": "1a811a4b23ee7791ad9d321b880a79d9d07ec8885273950f3a0d3ff055d5d503",
+        "size": 672
+      },
+      {
+        "path": "mitmproxy_rs/wireguard.pyi",
+        "sha256": "afc4e80915dba5a3fa927577f53f94fd85240194934baec23d70d5f2baea9a0d",
+        "size": 751
+      }
+    ],
+    "installed_sha256": "07693e0111c863f17980ae1e6a161e93202e2d412110c3433999ebdd79449d0b",
+    "version": "0.12.11",
+    "wheel_sha256": "93f86706e779dd4a798c2d53cb82886b8c1f20edac5dee05da35f5c644da3531"
+  },
+  "python_version": "3.13.14 (main, Jun 23 2026, 15:20:43) [Clang 22.1.3 ]",
+  "schema_version": 1,
+  "source_diff": {
+    "from": "v0.12.11",
+    "paths": [
+      "mitmproxy-highlight/src/css.rs",
+      "mitmproxy-highlight/src/javascript.rs",
+      "mitmproxy-highlight/src/xml.rs",
+      "mitmproxy-highlight/src/yaml.rs",
+      "mitmproxy-highlight/src/common.rs",
+      "mitmproxy-highlight/src/lib.rs",
+      "mitmproxy-rs/src/syntax_highlight.rs"
+    ],
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "snapshot": "sources/mitmproxy-rs/highlighter-source.diff",
+    "to": "51fe2b7c5aa8439c162abb665db61c6669d146d6"
+  },
+  "source_pins": {
+    "python": "3368a0a06ae6195aad817a1ece1aaeb6fe0353a1",
+    "rust": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+    "wheel_source": "40f1dfb5dca7b03ff7793d3c90f23b8bdf873889"
+  },
+  "uv_version": "uv 0.12.19 (136ef9733 2026-09-26 aarch64-apple-darwin)"
+}

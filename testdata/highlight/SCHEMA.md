@@ -64,8 +64,13 @@ at physical lines is solely an exemption-accounting operation.
 
 `provenance.json` accompanies the portable output. It records the input
 manifest SHA256, source pins, lock tables and their snapshot hashes, source
-diff metadata, complete input source records, the exact languages/tags,
-uv and Python versions, and installed `mitmproxy_rs` distribution version.
+diff metadata, complete input source records, uv and Python versions, and
+installed `mitmproxy_rs` distribution version. The language and tag inventories
+are stored in the portable golden file. `oracle.filename` and
+`oracle.wheel_sha256` identify the actual wheel archive: generation downloads
+the matching wheel from PyPI, checks its advertised SHA256, and compares its
+binary bytes with the installed extension. `oracle.files` and
+`oracle.installed_sha256` separately describe the installed distribution.
 
 The installed distribution digest is SHA256 of canonical UTF-8 JSON for a
 sorted list of `{path, sha256, size}` records covering every installed file

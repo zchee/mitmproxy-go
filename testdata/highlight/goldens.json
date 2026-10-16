@@ -1,0 +1,6972 @@
+{
+  "cases": [
+    {
+      "chunks": [
+        {
+          "tag": "name",
+          "text": "p"
+        },
+        {
+          "tag": "",
+          "text": " > "
+        },
+        {
+          "tag": "name",
+          "text": "span"
+        },
+        {
+          "tag": "",
+          "text": " { "
+        },
+        {
+          "tag": "boolean",
+          "text": "color"
+        },
+        {
+          "tag": "",
+          "text": ": red; "
+        },
+        {
+          "tag": "boolean",
+          "text": "font-size"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "42px"
+        },
+        {
+          "tag": "",
+          "text": "; "
+        },
+        {
+          "tag": "boolean",
+          "text": "content"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "\"foo\""
+        },
+        {
+          "tag": "",
+          "text": "; "
+        },
+        {
+          "tag": "boolean",
+          "text": "margin"
+        },
+        {
+          "tag": "",
+          "text": ": var(--foo) } "
+        },
+        {
+          "tag": "comment",
+          "text": "/* foo */"
+        }
+      ],
+      "id": "css_debug",
+      "input_sha256": "5176f0da5299f337c2884103ff71c06a58f699e48da394c68297eb256658aab5",
+      "language": "css",
+      "physical_lines": 1,
+      "reconstruction_equal": true
+    },
+    {
+      "chunks": [
+        {
+          "tag": "name",
+          "text": "p"
+        },
+        {
+          "tag": "",
+          "text": " > "
+        },
+        {
+          "tag": "name",
+          "text": "span"
+        },
+        {
+          "tag": "",
+          "text": " { \n"
+        },
+        {
+          "tag": "boolean",
+          "text": "color"
+        },
+        {
+          "tag": "",
+          "text": ": red;\n"
+        },
+        {
+          "tag": "boolean",
+          "text": "font-size"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "42px"
+        },
+        {
+          "tag": "",
+          "text": ";\n"
+        },
+        {
+          "tag": "boolean",
+          "text": "content"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "\"foo\""
+        },
+        {
+          "tag": "",
+          "text": ";\n"
+        },
+        {
+          "tag": "boolean",
+          "text": "margin"
+        },
+        {
+          "tag": "",
+          "text": ": var(--foo);\n}\n"
+        },
+        {
+          "tag": "comment",
+          "text": "/* foo */\n"
+        }
+      ],
+      "id": "css_highlight",
+      "input_sha256": "ecb694f6e002c68e65ca30a0dbf586a231c4af84c61c878fee7b57e091fbc193",
+      "language": "css",
+      "physical_lines": 7,
+      "reconstruction_equal": true
+    },
+    {
+      "chunks": [
+        {
+          "tag": "name",
+          "text": "function "
+        },
+        {
+          "tag": "",
+          "text": "foo() { "
+        },
+        {
+          "tag": "name",
+          "text": "let "
+        },
+        {
+          "tag": "",
+          "text": "bar = "
+        },
+        {
+          "tag": "boolean",
+          "text": "true"
+        },
+        {
+          "tag": "",
+          "text": " && "
+        },
+        {
+          "tag": "number",
+          "text": "42"
+        },
+        {
+          "tag": "",
+          "text": " && "
+        },
+        {
+          "tag": "string",
+          "text": "'qux'"
+        },
+        {
+          "tag": "",
+          "text": "; foo.bar = "
+        },
+        {
+          "tag": "number",
+          "text": "42"
+        },
+        {
+          "tag": "",
+          "text": "; }  "
+        },
+        {
+          "tag": "comment",
+          "text": "// comment"
+        }
+      ],
+      "id": "javascript_debug",
+      "input_sha256": "75f19665acb1613443c5e178c53459898f1921ab60e2ce43b55436cfdb007ca5",
+      "language": "javascript",
+      "physical_lines": 1,
+      "reconstruction_equal": true
+    },
+    {
+      "chunks": [
+        {
+          "tag": "name",
+          "text": "function "
+        },
+        {
+          "tag": "",
+          "text": "foo() {\n"
+        },
+        {
+          "tag": "name",
+          "text": "let "
+        },
+        {
+          "tag": "",
+          "text": "bar = "
+        },
+        {
+          "tag": "boolean",
+          "text": "true"
+        },
+        {
+          "tag": "",
+          "text": " && "
+        },
+        {
+          "tag": "number",
+          "text": "42"
+        },
+        {
+          "tag": "",
+          "text": " && "
+        },
+        {
+          "tag": "string",
+          "text": "'qux'"
+        },
+        {
+          "tag": "",
+          "text": ";\n}  "
+        },
+        {
+          "tag": "comment",
+          "text": "// comment\n"
+        }
+      ],
+      "id": "javascript_highlight",
+      "input_sha256": "243b19babfa346f05cae6a02ec407e087b647d98021a444fb2102da7c6fb5064",
+      "language": "javascript",
+      "physical_lines": 3,
+      "reconstruction_equal": true
+    },
+    {
+      "chunks": [
+        {
+          "tag": "name",
+          "text": "<div class=\""
+        },
+        {
+          "tag": "",
+          "text": "test"
+        },
+        {
+          "tag": "name",
+          "text": "\">"
+        },
+        {
+          "tag": "",
+          "text": "Hello"
+        },
+        {
+          "tag": "name",
+          "text": "</div>"
+        },
+        {
+          "tag": "comment",
+          "text": "<!-- comment -->"
+        }
+      ],
+      "id": "xml_debug",
+      "input_sha256": "dc7ce6159db0d24059731bc43c9e8ad665f5692acd6ac9d77de50b2b5d466674",
+      "language": "xml",
+      "physical_lines": 1,
+      "reconstruction_equal": true
+    },
+    {
+      "chunks": [
+        {
+          "tag": "name",
+          "text": "<div class=\""
+        },
+        {
+          "tag": "",
+          "text": "test"
+        },
+        {
+          "tag": "name",
+          "text": "\">"
+        },
+        {
+          "tag": "",
+          "text": "Hello"
+        },
+        {
+          "tag": "name",
+          "text": "</div>"
+        },
+        {
+          "tag": "comment",
+          "text": "<!-- comment -->"
+        }
+      ],
+      "id": "xml_highlight",
+      "input_sha256": "dc7ce6159db0d24059731bc43c9e8ad665f5692acd6ac9d77de50b2b5d466674",
+      "language": "xml",
+      "physical_lines": 1,
+      "reconstruction_equal": true
+    },
+    {
+      "chunks": [
+        {
+          "tag": "name",
+          "text": "string"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "\"value\"\n"
+        },
+        {
+          "tag": "name",
+          "text": "bool"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "boolean",
+          "text": "true\n"
+        },
+        {
+          "tag": "name",
+          "text": "number"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "name",
+          "text": "!fixed32 "
+        },
+        {
+          "tag": "number",
+          "text": "42  "
+        },
+        {
+          "tag": "comment",
+          "text": "# comment\n"
+        }
+      ],
+      "id": "yaml_highlight",
+      "input_sha256": "83d0551f0186eeb085e7a9a52227373764c7a4929c12eb1be3dae9dbf4682739",
+      "language": "yaml",
+      "physical_lines": 3,
+      "reconstruction_equal": true
+    },
+    {
+      "chunks": [
+        {
+          "tag": "",
+          "text": "@charset "
+        },
+        {
+          "tag": "string",
+          "text": "\"UTF-8\""
+        },
+        {
+          "tag": "",
+          "text": ";\n"
+        },
+        {
+          "tag": "comment",
+          "text": "/*!\n * Bootstrap  v5.3.3 (https://getbootstrap.com/)\n * Copyright 2011-2024 The Bootstrap Authors\n * Licensed under MIT (https://github.com/twbs/bootstrap/blob/main/LICENSE)\n */"
+        },
+        {
+          "tag": "",
+          "text": "\n:root,\n[data-bs-theme="
+        },
+        {
+          "tag": "string",
+          "text": "light"
+        },
+        {
+          "tag": "",
+          "text": "] {\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-blue"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#0d6efd"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-indigo"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#6610f2"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-purple"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#6f42c1"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-pink"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#d63384"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-red"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#dc3545"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-orange"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#fd7e14"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-yellow"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#ffc107"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-green"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#198754"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-teal"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#20c997"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-cyan"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#0dcaf0"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-black"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#000"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-white"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#fff"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-gray"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#6c757d"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-gray-dark"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#343a40"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-gray-100"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#f8f9fa"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-gray-200"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#e9ecef"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-gray-300"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#dee2e6"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-gray-400"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#ced4da"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-gray-500"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#adb5bd"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-gray-600"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#6c757d"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-gray-700"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#495057"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-gray-800"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#343a40"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-gray-900"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#212529"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-primary"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#0d6efd"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#6c757d"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-success"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#198754"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-info"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#0dcaf0"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-warning"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#ffc107"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-danger"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#dc3545"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-light"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#f8f9fa"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-dark"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#212529"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-primary-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "13"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "110"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "253"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "108"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "117"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "125"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-success-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "25"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "135"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "84"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-info-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "13"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "202"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "240"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-warning-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "193"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "7"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-danger-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "220"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "53"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "69"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-light-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "248"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "249"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "250"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-dark-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "33"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "37"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "41"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-primary-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#052c65"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#2b2f32"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-success-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#0a3622"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-info-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#055160"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-warning-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#664d03"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-danger-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#58151c"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-light-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#495057"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-dark-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#495057"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-primary-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#cfe2ff"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#e2e3e5"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-success-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#d1e7dd"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-info-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#cff4fc"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-warning-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#fff3cd"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-danger-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#f8d7da"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-light-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#fcfcfd"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-dark-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#ced4da"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-primary-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#9ec5fe"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#c4c8cb"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-success-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#a3cfbb"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-info-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#9eeaf9"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-warning-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#ffe69c"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-danger-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#f1aeb5"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-light-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#e9ecef"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-dark-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#adb5bd"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-white-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-black-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-font-sans-serif"
+        },
+        {
+          "tag": "",
+          "text": ": system-ui, -apple-system, "
+        },
+        {
+          "tag": "string",
+          "text": "\"Segoe UI\""
+        },
+        {
+          "tag": "",
+          "text": ", Roboto, "
+        },
+        {
+          "tag": "string",
+          "text": "\"Helvetica Neue\""
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "string",
+          "text": "\"Noto Sans\""
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "string",
+          "text": "\"Liberation Sans\""
+        },
+        {
+          "tag": "",
+          "text": ", Arial, sans-serif, "
+        },
+        {
+          "tag": "string",
+          "text": "\"Apple Color Emoji\""
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "string",
+          "text": "\"Segoe UI Emoji\""
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "string",
+          "text": "\"Segoe UI Symbol\""
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "string",
+          "text": "\"Noto Color Emoji\""
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-font-monospace"
+        },
+        {
+          "tag": "",
+          "text": ": SFMono-Regular, Menlo, Monaco, Consolas, "
+        },
+        {
+          "tag": "string",
+          "text": "\"Liberation Mono\""
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "string",
+          "text": "\"Courier New\""
+        },
+        {
+          "tag": "",
+          "text": ", monospace;\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-gradient"
+        },
+        {
+          "tag": "",
+          "text": ": linear-gradient("
+        },
+        {
+          "tag": "number",
+          "text": "180deg"
+        },
+        {
+          "tag": "",
+          "text": ", rgba("
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0.15"
+        },
+        {
+          "tag": "",
+          "text": "), rgba("
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": "));\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-body-font-family"
+        },
+        {
+          "tag": "",
+          "text": ": var(--bs-font-sans-serif);\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-body-font-size"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "1rem"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-body-font-weight"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "400"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-body-line-height"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "1.5"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-body-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#212529"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-body-color-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "33"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "37"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "41"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-body-bg"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#fff"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-body-bg-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-emphasis-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#000"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-emphasis-color-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-color"
+        },
+        {
+          "tag": "",
+          "text": ": rgba("
+        },
+        {
+          "tag": "number",
+          "text": "33"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "37"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "41"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0.75"
+        },
+        {
+          "tag": "",
+          "text": ");\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-color-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "33"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "37"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "41"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-bg"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#e9ecef"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-bg-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "233"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "236"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "239"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-tertiary-color"
+        },
+        {
+          "tag": "",
+          "text": ": rgba("
+        },
+        {
+          "tag": "number",
+          "text": "33"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "37"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "41"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0.5"
+        },
+        {
+          "tag": "",
+          "text": ");\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-tertiary-color-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "33"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "37"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "41"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-tertiary-bg"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#f8f9fa"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-tertiary-bg-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "248"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "249"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "250"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-heading-color"
+        },
+        {
+          "tag": "",
+          "text": ": inherit;\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-link-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#0d6efd"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-link-color-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "13"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "110"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "253"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-link-decoration"
+        },
+        {
+          "tag": "",
+          "text": ": underline;\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-link-hover-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#0a58ca"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-link-hover-color-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "10"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "88"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "202"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-code-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#d63384"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-highlight-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#212529"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-highlight-bg"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#fff3cd"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-border-width"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "1px"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-border-style"
+        },
+        {
+          "tag": "",
+          "text": ": solid;\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-border-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#dee2e6"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-border-color-translucent"
+        },
+        {
+          "tag": "",
+          "text": ": rgba("
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0.175"
+        },
+        {
+          "tag": "",
+          "text": ");\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-border-radius"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "0.375rem"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-border-radius-sm"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "0.25rem"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-border-radius-lg"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "0.5rem"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-border-radius-xl"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "1rem"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-border-radius-xxl"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "2rem"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-border-radius-2xl"
+        },
+        {
+          "tag": "",
+          "text": ": var(--bs-border-radius-xxl);\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-border-radius-pill"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "50rem"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-box-shadow"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "0 0.5rem 1rem "
+        },
+        {
+          "tag": "",
+          "text": "rgba("
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0.15"
+        },
+        {
+          "tag": "",
+          "text": ");\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-box-shadow-sm"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "0 0.125rem 0.25rem "
+        },
+        {
+          "tag": "",
+          "text": "rgba("
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0.075"
+        },
+        {
+          "tag": "",
+          "text": ");\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-box-shadow-lg"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "0 1rem 3rem "
+        },
+        {
+          "tag": "",
+          "text": "rgba("
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0.175"
+        },
+        {
+          "tag": "",
+          "text": ");\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-box-shadow-inset"
+        },
+        {
+          "tag": "",
+          "text": ": inset "
+        },
+        {
+          "tag": "number",
+          "text": "0 1px 2px "
+        },
+        {
+          "tag": "",
+          "text": "rgba("
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0.075"
+        },
+        {
+          "tag": "",
+          "text": ");\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-focus-ring-width"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "0.25rem"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-focus-ring-opacity"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "0.25"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-focus-ring-color"
+        },
+        {
+          "tag": "",
+          "text": ": rgba("
+        },
+        {
+          "tag": "number",
+          "text": "13"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "110"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "253"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0.25"
+        },
+        {
+          "tag": "",
+          "text": ");\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-form-valid-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#198754"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-form-valid-border-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#198754"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-form-invalid-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#dc3545"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-form-invalid-border-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#dc3545"
+        },
+        {
+          "tag": "",
+          "text": ";\n}\n\n[data-bs-theme="
+        },
+        {
+          "tag": "string",
+          "text": "dark"
+        },
+        {
+          "tag": "",
+          "text": "] {\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "color-scheme"
+        },
+        {
+          "tag": "",
+          "text": ": dark;\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-body-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#dee2e6"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-body-color-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "222"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "226"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "230"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-body-bg"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#212529"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-body-bg-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "33"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "37"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "41"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-emphasis-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#fff"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-emphasis-color-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-color"
+        },
+        {
+          "tag": "",
+          "text": ": rgba("
+        },
+        {
+          "tag": "number",
+          "text": "222"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "226"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "230"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0.75"
+        },
+        {
+          "tag": "",
+          "text": ");\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-color-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "222"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "226"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "230"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-bg"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#343a40"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-bg-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "52"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "58"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "64"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-tertiary-color"
+        },
+        {
+          "tag": "",
+          "text": ": rgba("
+        },
+        {
+          "tag": "number",
+          "text": "222"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "226"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "230"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0.5"
+        },
+        {
+          "tag": "",
+          "text": ");\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-tertiary-color-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "222"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "226"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "230"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-tertiary-bg"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#2b3035"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-tertiary-bg-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "43"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "48"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "53"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-primary-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#6ea8fe"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#a7acb1"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-success-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#75b798"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-info-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#6edff6"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-warning-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#ffda6a"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-danger-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#ea868f"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-light-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#f8f9fa"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-dark-text-emphasis"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#dee2e6"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-primary-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#031633"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#161719"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-success-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#051b11"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-info-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#032830"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-warning-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#332701"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-danger-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#2c0b0e"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-light-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#343a40"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-dark-bg-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#1a1d20"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-primary-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#084298"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-secondary-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#41464b"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-success-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#0f5132"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-info-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#087990"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-warning-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#997404"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-danger-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#842029"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-light-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#495057"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-dark-border-subtle"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#343a40"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-heading-color"
+        },
+        {
+          "tag": "",
+          "text": ": inherit;\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-link-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#6ea8fe"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-link-hover-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#8bb9fe"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-link-color-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "110"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "168"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "254"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-link-hover-color-rgb"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "139"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "185"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "254"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-code-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#e685b5"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-highlight-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#dee2e6"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-highlight-bg"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#664d03"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-border-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#495057"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-border-color-translucent"
+        },
+        {
+          "tag": "",
+          "text": ": rgba("
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "255"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "number",
+          "text": "0.15"
+        },
+        {
+          "tag": "",
+          "text": ");\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-form-valid-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#75b798"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-form-valid-border-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#75b798"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-form-invalid-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#ea868f"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "--bs-form-invalid-border-color"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "#ea868f"
+        },
+        {
+          "tag": "",
+          "text": ";\n}\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "*"
+        },
+        {
+          "tag": "",
+          "text": ",\n"
+        },
+        {
+          "tag": "name",
+          "text": "*"
+        },
+        {
+          "tag": "",
+          "text": "::before,\n"
+        },
+        {
+          "tag": "name",
+          "text": "*"
+        },
+        {
+          "tag": "",
+          "text": "::after {\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "box-sizing"
+        },
+        {
+          "tag": "",
+          "text": ": border-box;\n}\n\n@media ("
+        },
+        {
+          "tag": "boolean",
+          "text": "prefers-reduced-motion"
+        },
+        {
+          "tag": "",
+          "text": ": no-preference) {\n  :root {\n    "
+        },
+        {
+          "tag": "boolean",
+          "text": "scroll-behavior"
+        },
+        {
+          "tag": "",
+          "text": ": smooth;\n  }\n}\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "body"
+        },
+        {
+          "tag": "",
+          "text": " {\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "margin"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": ";\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "font-family"
+        },
+        {
+          "tag": "",
+          "text": ": var(--bs-body-font-family);\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "font-size"
+        },
+        {
+          "tag": "",
+          "text": ": var(--bs-body-font-size);\n  "
+        },
+        {
+          "tag": "boolean",
+          "text": "font-weight"
+        },
+        {
+          "tag": "",
+          "text": ": var(--bs-body-font-weight);\n"
+        }
+      ],
+      "id": "css_real_200",
+      "input_sha256": "37135c1cb2949e354f157f796a7eda3d1b2cd1e1aeeb34c98ccaba3a0ca6986b",
+      "language": "css",
+      "physical_lines": 200,
+      "reconstruction_equal": true
+    },
+    {
+      "chunks": [
+        {
+          "tag": "comment",
+          "text": "/**\n * --------------------------------------------------------------------------\n * Bootstrap modal.js\n * Licensed under MIT (https://github.com/twbs/bootstrap/blob/main/LICENSE)\n * --------------------------------------------------------------------------\n */\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "import"
+        },
+        {
+          "tag": "",
+          "text": " BaseComponent "
+        },
+        {
+          "tag": "name",
+          "text": "from "
+        },
+        {
+          "tag": "string",
+          "text": "'./base-component.js'\n"
+        },
+        {
+          "tag": "name",
+          "text": "import"
+        },
+        {
+          "tag": "",
+          "text": " EventHandler "
+        },
+        {
+          "tag": "name",
+          "text": "from "
+        },
+        {
+          "tag": "string",
+          "text": "'./dom/event-handler.js'\n"
+        },
+        {
+          "tag": "name",
+          "text": "import"
+        },
+        {
+          "tag": "",
+          "text": " SelectorEngine "
+        },
+        {
+          "tag": "name",
+          "text": "from "
+        },
+        {
+          "tag": "string",
+          "text": "'./dom/selector-engine.js'\n"
+        },
+        {
+          "tag": "name",
+          "text": "import"
+        },
+        {
+          "tag": "",
+          "text": " Backdrop "
+        },
+        {
+          "tag": "name",
+          "text": "from "
+        },
+        {
+          "tag": "string",
+          "text": "'./util/backdrop.js'\n"
+        },
+        {
+          "tag": "name",
+          "text": "import"
+        },
+        {
+          "tag": "",
+          "text": " { enableDismissTrigger } "
+        },
+        {
+          "tag": "name",
+          "text": "from "
+        },
+        {
+          "tag": "string",
+          "text": "'./util/component-functions.js'\n"
+        },
+        {
+          "tag": "name",
+          "text": "import"
+        },
+        {
+          "tag": "",
+          "text": " FocusTrap "
+        },
+        {
+          "tag": "name",
+          "text": "from "
+        },
+        {
+          "tag": "string",
+          "text": "'./util/focustrap.js'\n"
+        },
+        {
+          "tag": "name",
+          "text": "import"
+        },
+        {
+          "tag": "",
+          "text": " {\n  defineJQueryPlugin, isRTL, isVisible, reflow\n} "
+        },
+        {
+          "tag": "name",
+          "text": "from "
+        },
+        {
+          "tag": "string",
+          "text": "'./util/index.js'\n"
+        },
+        {
+          "tag": "name",
+          "text": "import"
+        },
+        {
+          "tag": "",
+          "text": " ScrollBarHelper "
+        },
+        {
+          "tag": "name",
+          "text": "from "
+        },
+        {
+          "tag": "string",
+          "text": "'./util/scrollbar.js'\n\n"
+        },
+        {
+          "tag": "comment",
+          "text": "/**\n * Constants\n */\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "NAME"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "'modal'\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "DATA_KEY"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "'bs.modal'\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_KEY"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "`.${"
+        },
+        {
+          "tag": "boolean",
+          "text": "DATA_KEY"
+        },
+        {
+          "tag": "",
+          "text": "}`\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "DATA_API_KEY"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "'.data-api'\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "ESCAPE_KEY"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "'Escape'\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_HIDE"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "`hide${"
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_KEY"
+        },
+        {
+          "tag": "",
+          "text": "}`\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_HIDE_PREVENTED"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "`hidePrevented${"
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_KEY"
+        },
+        {
+          "tag": "",
+          "text": "}`\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_HIDDEN"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "`hidden${"
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_KEY"
+        },
+        {
+          "tag": "",
+          "text": "}`\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_SHOW"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "`show${"
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_KEY"
+        },
+        {
+          "tag": "",
+          "text": "}`\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_SHOWN"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "`shown${"
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_KEY"
+        },
+        {
+          "tag": "",
+          "text": "}`\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_RESIZE"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "`resize${"
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_KEY"
+        },
+        {
+          "tag": "",
+          "text": "}`\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_CLICK_DISMISS"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "`click.dismiss${"
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_KEY"
+        },
+        {
+          "tag": "",
+          "text": "}`\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_MOUSEDOWN_DISMISS"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "`mousedown.dismiss${"
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_KEY"
+        },
+        {
+          "tag": "",
+          "text": "}`\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_KEYDOWN_DISMISS"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "`keydown.dismiss${"
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_KEY"
+        },
+        {
+          "tag": "",
+          "text": "}`\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_CLICK_DATA_API"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "`click${"
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_KEY"
+        },
+        {
+          "tag": "",
+          "text": "}${"
+        },
+        {
+          "tag": "boolean",
+          "text": "DATA_API_KEY"
+        },
+        {
+          "tag": "",
+          "text": "}`\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "CLASS_NAME_OPEN"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "'modal-open'\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "CLASS_NAME_FADE"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "'fade'\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "CLASS_NAME_SHOW"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "'show'\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "CLASS_NAME_STATIC"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "'modal-static'\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "OPEN_SELECTOR"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "'.modal.show'\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "SELECTOR_DIALOG"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "'.modal-dialog'\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "SELECTOR_MODAL_BODY"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "'.modal-body'\n"
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "boolean",
+          "text": "SELECTOR_DATA_TOGGLE"
+        },
+        {
+          "tag": "",
+          "text": " = "
+        },
+        {
+          "tag": "string",
+          "text": "'[data-bs-toggle=\"modal\"]'\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "const"
+        },
+        {
+          "tag": "",
+          "text": " Default = {\n  backdrop: "
+        },
+        {
+          "tag": "boolean",
+          "text": "true"
+        },
+        {
+          "tag": "",
+          "text": ",\n  focus: "
+        },
+        {
+          "tag": "boolean",
+          "text": "true"
+        },
+        {
+          "tag": "",
+          "text": ",\n  keyboard: "
+        },
+        {
+          "tag": "boolean",
+          "text": "true"
+        },
+        {
+          "tag": "",
+          "text": "\n}\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "const"
+        },
+        {
+          "tag": "",
+          "text": " DefaultType = {\n  backdrop: "
+        },
+        {
+          "tag": "string",
+          "text": "'(boolean|string)'"
+        },
+        {
+          "tag": "",
+          "text": ",\n  focus: "
+        },
+        {
+          "tag": "string",
+          "text": "'boolean'"
+        },
+        {
+          "tag": "",
+          "text": ",\n  keyboard: "
+        },
+        {
+          "tag": "string",
+          "text": "'boolean'"
+        },
+        {
+          "tag": "",
+          "text": "\n}\n\n"
+        },
+        {
+          "tag": "comment",
+          "text": "/**\n * Class definition\n */\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "class"
+        },
+        {
+          "tag": "",
+          "text": " Modal "
+        },
+        {
+          "tag": "name",
+          "text": "extends"
+        },
+        {
+          "tag": "",
+          "text": " BaseComponent {\n  constructor(element, config) {\n    super(element, config)\n\n    this._dialog = SelectorEngine.findOne("
+        },
+        {
+          "tag": "boolean",
+          "text": "SELECTOR_DIALOG"
+        },
+        {
+          "tag": "",
+          "text": ", this._element)\n    this._backdrop = this._initializeBackDrop()\n    this._focustrap = this._initializeFocusTrap()\n    this._isShown = "
+        },
+        {
+          "tag": "boolean",
+          "text": "false\n    "
+        },
+        {
+          "tag": "",
+          "text": "this._isTransitioning = "
+        },
+        {
+          "tag": "boolean",
+          "text": "false\n    "
+        },
+        {
+          "tag": "",
+          "text": "this._scrollBar = "
+        },
+        {
+          "tag": "name",
+          "text": "new"
+        },
+        {
+          "tag": "",
+          "text": " ScrollBarHelper()\n\n    this._addEventListeners()\n  }\n\n  "
+        },
+        {
+          "tag": "comment",
+          "text": "// Getters\n  "
+        },
+        {
+          "tag": "name",
+          "text": "static get "
+        },
+        {
+          "tag": "",
+          "text": "Default() {\n    "
+        },
+        {
+          "tag": "name",
+          "text": "return"
+        },
+        {
+          "tag": "",
+          "text": " Default\n  }\n\n  "
+        },
+        {
+          "tag": "name",
+          "text": "static get "
+        },
+        {
+          "tag": "",
+          "text": "DefaultType() {\n    "
+        },
+        {
+          "tag": "name",
+          "text": "return"
+        },
+        {
+          "tag": "",
+          "text": " DefaultType\n  }\n\n  "
+        },
+        {
+          "tag": "name",
+          "text": "static get "
+        },
+        {
+          "tag": "",
+          "text": "NAME() {\n    "
+        },
+        {
+          "tag": "name",
+          "text": "return "
+        },
+        {
+          "tag": "boolean",
+          "text": "NAME"
+        },
+        {
+          "tag": "",
+          "text": "\n  }\n\n  "
+        },
+        {
+          "tag": "comment",
+          "text": "// Public\n  "
+        },
+        {
+          "tag": "",
+          "text": "toggle(relatedTarget) {\n    "
+        },
+        {
+          "tag": "name",
+          "text": "return "
+        },
+        {
+          "tag": "",
+          "text": "this._isShown ? this.hide() : this.show(relatedTarget)\n  }\n\n  show(relatedTarget) {\n    "
+        },
+        {
+          "tag": "name",
+          "text": "if"
+        },
+        {
+          "tag": "",
+          "text": " (this._isShown || this._isTransitioning) {\n      "
+        },
+        {
+          "tag": "name",
+          "text": "return"
+        },
+        {
+          "tag": "",
+          "text": "\n    }\n\n    "
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "",
+          "text": "showEvent = EventHandler.trigger(this._element, "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_SHOW"
+        },
+        {
+          "tag": "",
+          "text": ", {\n      relatedTarget\n    })\n\n    "
+        },
+        {
+          "tag": "name",
+          "text": "if"
+        },
+        {
+          "tag": "",
+          "text": " (showEvent.defaultPrevented) {\n      "
+        },
+        {
+          "tag": "name",
+          "text": "return"
+        },
+        {
+          "tag": "",
+          "text": "\n    }\n\n    this._isShown = "
+        },
+        {
+          "tag": "boolean",
+          "text": "true\n    "
+        },
+        {
+          "tag": "",
+          "text": "this._isTransitioning = "
+        },
+        {
+          "tag": "boolean",
+          "text": "true\n\n    "
+        },
+        {
+          "tag": "",
+          "text": "this._scrollBar.hide()\n\n    document.body.classList.add("
+        },
+        {
+          "tag": "boolean",
+          "text": "CLASS_NAME_OPEN"
+        },
+        {
+          "tag": "",
+          "text": ")\n\n    this._adjustDialog()\n\n    this._backdrop.show(() => this._showElement(relatedTarget))\n  }\n\n  hide() {\n    "
+        },
+        {
+          "tag": "name",
+          "text": "if"
+        },
+        {
+          "tag": "",
+          "text": " (!this._isShown || this._isTransitioning) {\n      "
+        },
+        {
+          "tag": "name",
+          "text": "return"
+        },
+        {
+          "tag": "",
+          "text": "\n    }\n\n    "
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "",
+          "text": "hideEvent = EventHandler.trigger(this._element, "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_HIDE"
+        },
+        {
+          "tag": "",
+          "text": ")\n\n    "
+        },
+        {
+          "tag": "name",
+          "text": "if"
+        },
+        {
+          "tag": "",
+          "text": " (hideEvent.defaultPrevented) {\n      "
+        },
+        {
+          "tag": "name",
+          "text": "return"
+        },
+        {
+          "tag": "",
+          "text": "\n    }\n\n    this._isShown = "
+        },
+        {
+          "tag": "boolean",
+          "text": "false\n    "
+        },
+        {
+          "tag": "",
+          "text": "this._isTransitioning = "
+        },
+        {
+          "tag": "boolean",
+          "text": "true\n    "
+        },
+        {
+          "tag": "",
+          "text": "this._focustrap.deactivate()\n\n    this._element.classList.remove("
+        },
+        {
+          "tag": "boolean",
+          "text": "CLASS_NAME_SHOW"
+        },
+        {
+          "tag": "",
+          "text": ")\n\n    this._queueCallback(() => this._hideModal(), this._element, this._isAnimated())\n  }\n\n  dispose() {\n    EventHandler.off(window, "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_KEY"
+        },
+        {
+          "tag": "",
+          "text": ")\n    EventHandler.off(this._dialog, "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_KEY"
+        },
+        {
+          "tag": "",
+          "text": ")\n\n    this._backdrop.dispose()\n    this._focustrap.deactivate()\n\n    super.dispose()\n  }\n\n  handleUpdate() {\n    this._adjustDialog()\n  }\n\n  "
+        },
+        {
+          "tag": "comment",
+          "text": "// Private\n  "
+        },
+        {
+          "tag": "",
+          "text": "_initializeBackDrop() {\n    "
+        },
+        {
+          "tag": "name",
+          "text": "return new"
+        },
+        {
+          "tag": "",
+          "text": " Backdrop({\n      isVisible: Boolean(this._config.backdrop), "
+        },
+        {
+          "tag": "comment",
+          "text": "// 'static' option will be translated to true, and booleans will keep their value,\n      "
+        },
+        {
+          "tag": "",
+          "text": "isAnimated: this._isAnimated()\n    })\n  }\n\n  _initializeFocusTrap() {\n    "
+        },
+        {
+          "tag": "name",
+          "text": "return new"
+        },
+        {
+          "tag": "",
+          "text": " FocusTrap({\n      trapElement: this._element\n    })\n  }\n\n  _showElement(relatedTarget) {\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "// try to append dynamic modal\n    "
+        },
+        {
+          "tag": "name",
+          "text": "if"
+        },
+        {
+          "tag": "",
+          "text": " (!document.body.contains(this._element)) {\n      document.body.append(this._element)\n    }\n\n    this._element.style.display = "
+        },
+        {
+          "tag": "string",
+          "text": "'block'\n    "
+        },
+        {
+          "tag": "",
+          "text": "this._element.removeAttribute("
+        },
+        {
+          "tag": "string",
+          "text": "'aria-hidden'"
+        },
+        {
+          "tag": "",
+          "text": ")\n    this._element.setAttribute("
+        },
+        {
+          "tag": "string",
+          "text": "'aria-modal'"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "boolean",
+          "text": "true"
+        },
+        {
+          "tag": "",
+          "text": ")\n    this._element.setAttribute("
+        },
+        {
+          "tag": "string",
+          "text": "'role'"
+        },
+        {
+          "tag": "",
+          "text": ", "
+        },
+        {
+          "tag": "string",
+          "text": "'dialog'"
+        },
+        {
+          "tag": "",
+          "text": ")\n    this._element.scrollTop = "
+        },
+        {
+          "tag": "number",
+          "text": "0\n\n    "
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "",
+          "text": "modalBody = SelectorEngine.findOne("
+        },
+        {
+          "tag": "boolean",
+          "text": "SELECTOR_MODAL_BODY"
+        },
+        {
+          "tag": "",
+          "text": ", this._dialog)\n    "
+        },
+        {
+          "tag": "name",
+          "text": "if"
+        },
+        {
+          "tag": "",
+          "text": " (modalBody) {\n      modalBody.scrollTop = "
+        },
+        {
+          "tag": "number",
+          "text": "0"
+        },
+        {
+          "tag": "",
+          "text": "\n    }\n\n    reflow(this._element)\n\n    this._element.classList.add("
+        },
+        {
+          "tag": "boolean",
+          "text": "CLASS_NAME_SHOW"
+        },
+        {
+          "tag": "",
+          "text": ")\n\n    "
+        },
+        {
+          "tag": "name",
+          "text": "const "
+        },
+        {
+          "tag": "",
+          "text": "transitionComplete = () => {\n      "
+        },
+        {
+          "tag": "name",
+          "text": "if"
+        },
+        {
+          "tag": "",
+          "text": " (this._config.focus) {\n        this._focustrap.activate()\n      }\n\n      this._isTransitioning = "
+        },
+        {
+          "tag": "boolean",
+          "text": "false"
+        },
+        {
+          "tag": "",
+          "text": "\n      EventHandler.trigger(this._element, "
+        },
+        {
+          "tag": "boolean",
+          "text": "EVENT_SHOWN"
+        },
+        {
+          "tag": "",
+          "text": ", {\n        relatedTarget\n      })\n"
+        }
+      ],
+      "id": "javascript_real_200",
+      "input_sha256": "075ebdfc5a54e08441381f3b668a862930e7a4efbb0c38bdc362b27837ce5000",
+      "language": "javascript",
+      "physical_lines": 200,
+      "reconstruction_equal": true
+    },
+    {
+      "chunks": [
+        {
+          "tag": "name",
+          "text": "<?"
+        },
+        {
+          "tag": "",
+          "text": "xml "
+        },
+        {
+          "tag": "name",
+          "text": "version=\""
+        },
+        {
+          "tag": "",
+          "text": "1.0"
+        },
+        {
+          "tag": "name",
+          "text": "\" encoding=\""
+        },
+        {
+          "tag": "",
+          "text": "UTF-8"
+        },
+        {
+          "tag": "name",
+          "text": "\"?>\n"
+        },
+        {
+          "tag": "comment",
+          "text": "<!--\nLicensed to the Apache Software Foundation (ASF) under one\nor more contributor license agreements.  See the NOTICE file\ndistributed with this work for additional information\nregarding copyright ownership.  The ASF licenses this file\nto you under the Apache License, Version 2.0 (the\n\"License\"); you may not use this file except in compliance\nwith the License.  You may obtain a copy of the License at\n\n    http://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing,\nsoftware distributed under the License is distributed on an\n\"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY\nKIND, either express or implied.  See the License for the\nspecific language governing permissions and limitations\nunder the License.\n-->\n"
+        },
+        {
+          "tag": "name",
+          "text": "<project xmlns=\""
+        },
+        {
+          "tag": "",
+          "text": "http://maven.apache.org/POM/4.0.0"
+        },
+        {
+          "tag": "name",
+          "text": "\" xmlns:xsi=\""
+        },
+        {
+          "tag": "",
+          "text": "http://www.w3.org/2001/XMLSchema-instance"
+        },
+        {
+          "tag": "name",
+          "text": "\" xsi:schemaLocation=\""
+        },
+        {
+          "tag": "",
+          "text": "http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"
+        },
+        {
+          "tag": "name",
+          "text": "\">\n  <modelVersion>"
+        },
+        {
+          "tag": "",
+          "text": "4.0.0"
+        },
+        {
+          "tag": "name",
+          "text": "</modelVersion>\n\n  <parent>\n    <groupId>"
+        },
+        {
+          "tag": "",
+          "text": "org.apache.maven"
+        },
+        {
+          "tag": "name",
+          "text": "</groupId>\n    <artifactId>"
+        },
+        {
+          "tag": "",
+          "text": "maven-parent"
+        },
+        {
+          "tag": "name",
+          "text": "</artifactId>\n    <version>"
+        },
+        {
+          "tag": "",
+          "text": "43"
+        },
+        {
+          "tag": "name",
+          "text": "</version>\n    <relativePath />\n  </parent>\n\n  <artifactId>"
+        },
+        {
+          "tag": "",
+          "text": "maven"
+        },
+        {
+          "tag": "name",
+          "text": "</artifactId>\n  <version>"
+        },
+        {
+          "tag": "",
+          "text": "3.9.9"
+        },
+        {
+          "tag": "name",
+          "text": "</version>\n  <packaging>"
+        },
+        {
+          "tag": "",
+          "text": "pom"
+        },
+        {
+          "tag": "name",
+          "text": "</packaging>\n\n  <name>"
+        },
+        {
+          "tag": "",
+          "text": "Apache Maven"
+        },
+        {
+          "tag": "name",
+          "text": "</name>\n  <description>"
+        },
+        {
+          "tag": "",
+          "text": "Maven is a software build management and\n    comprehension tool. Based on the concept of a project object model:\n    builds, dependency management, documentation creation, site\n    publication, and distribution publication are all controlled from\n    the declarative file. Maven can be extended by plugins to utilise a\n    number of other development tools for reporting or the build\n    process."
+        },
+        {
+          "tag": "name",
+          "text": "</description>\n  <url>"
+        },
+        {
+          "tag": "",
+          "text": "https://maven.apache.org/ref/${project.version}/"
+        },
+        {
+          "tag": "name",
+          "text": "</url>\n  <inceptionYear>"
+        },
+        {
+          "tag": "",
+          "text": "2001"
+        },
+        {
+          "tag": "name",
+          "text": "</inceptionYear>\n\n  <contributors>\n    <contributor>\n      <name>"
+        },
+        {
+          "tag": "",
+          "text": "Stuart McCulloch"
+        },
+        {
+          "tag": "name",
+          "text": "</name>\n    </contributor>\n    <contributor>\n      <name>"
+        },
+        {
+          "tag": "",
+          "text": "Christian Schulte (MNG-2199)"
+        },
+        {
+          "tag": "name",
+          "text": "</name>\n    </contributor>\n    <contributor>\n      <name>"
+        },
+        {
+          "tag": "",
+          "text": "Christopher Tubbs (MNG-4226)"
+        },
+        {
+          "tag": "name",
+          "text": "</name>\n    </contributor>\n    <contributor>\n      <name>"
+        },
+        {
+          "tag": "",
+          "text": "Konstantin Perikov (MNG-4565)"
+        },
+        {
+          "tag": "name",
+          "text": "</name>\n    </contributor>\n    <contributor>\n      <name>"
+        },
+        {
+          "tag": "",
+          "text": "Sébastian Le Merdy (MNG-5613)"
+        },
+        {
+          "tag": "name",
+          "text": "</name>\n    </contributor>\n    <contributor>\n      <name>"
+        },
+        {
+          "tag": "",
+          "text": "Mark Ingram (MNG-5639)"
+        },
+        {
+          "tag": "name",
+          "text": "</name>\n    </contributor>\n    <contributor>\n      <name>"
+        },
+        {
+          "tag": "",
+          "text": "Phil Pratt-Szeliga (MNG-5645)"
+        },
+        {
+          "tag": "name",
+          "text": "</name>\n    </contributor>\n    <contributor>\n      <name>"
+        },
+        {
+          "tag": "",
+          "text": "Florencia Tarditti (PR 41)"
+        },
+        {
+          "tag": "name",
+          "text": "</name>\n    </contributor>\n    <contributor>\n      <name>"
+        },
+        {
+          "tag": "",
+          "text": "Anton Tanasenko"
+        },
+        {
+          "tag": "name",
+          "text": "</name>\n    </contributor>\n    <contributor>\n      <name>"
+        },
+        {
+          "tag": "",
+          "text": "Joseph Walton (MNG-5297)"
+        },
+        {
+          "tag": "name",
+          "text": "</name>\n    </contributor>\n    <contributor>\n      <name>"
+        },
+        {
+          "tag": "",
+          "text": "Fabiano Cipriano de Oliveira (MNG-6261)"
+        },
+        {
+          "tag": "name",
+          "text": "</name>\n    </contributor>\n    <contributor>\n      <name>"
+        },
+        {
+          "tag": "",
+          "text": "Mike Mol (MNG-6665)"
+        },
+        {
+          "tag": "name",
+          "text": "</name>\n    </contributor>\n    <contributor>\n      <name>"
+        },
+        {
+          "tag": "",
+          "text": "Martin Kanters (MNG-6665)"
+        },
+        {
+          "tag": "name",
+          "text": "</name>\n    </contributor>\n  </contributors>\n\n  <modules>\n    <module>"
+        },
+        {
+          "tag": "",
+          "text": "maven-plugin-api"
+        },
+        {
+          "tag": "name",
+          "text": "</module>\n    <module>"
+        },
+        {
+          "tag": "",
+          "text": "maven-builder-support"
+        },
+        {
+          "tag": "name",
+          "text": "</module>\n    <module>"
+        },
+        {
+          "tag": "",
+          "text": "maven-model"
+        },
+        {
+          "tag": "name",
+          "text": "</module>\n    <module>"
+        },
+        {
+          "tag": "",
+          "text": "maven-model-builder"
+        },
+        {
+          "tag": "name",
+          "text": "</module>\n    <module>"
+        },
+        {
+          "tag": "",
+          "text": "maven-core"
+        },
+        {
+          "tag": "name",
+          "text": "</module>\n    <module>"
+        },
+        {
+          "tag": "",
+          "text": "maven-settings"
+        },
+        {
+          "tag": "name",
+          "text": "</module>\n    <module>"
+        },
+        {
+          "tag": "",
+          "text": "maven-settings-builder"
+        },
+        {
+          "tag": "name",
+          "text": "</module>\n    <module>"
+        },
+        {
+          "tag": "",
+          "text": "maven-artifact"
+        },
+        {
+          "tag": "name",
+          "text": "</module>\n    <module>"
+        },
+        {
+          "tag": "",
+          "text": "maven-resolver-provider"
+        },
+        {
+          "tag": "name",
+          "text": "</module>\n    <module>"
+        },
+        {
+          "tag": "",
+          "text": "maven-repository-metadata"
+        },
+        {
+          "tag": "name",
+          "text": "</module>\n    <module>"
+        },
+        {
+          "tag": "",
+          "text": "maven-slf4j-provider"
+        },
+        {
+          "tag": "name",
+          "text": "</module>\n    <module>"
+        },
+        {
+          "tag": "",
+          "text": "maven-embedder"
+        },
+        {
+          "tag": "name",
+          "text": "</module>\n    <module>"
+        },
+        {
+          "tag": "",
+          "text": "maven-compat"
+        },
+        {
+          "tag": "name",
+          "text": "</module>\n    <module>"
+        },
+        {
+          "tag": "",
+          "text": "apache-maven"
+        },
+        {
+          "tag": "name",
+          "text": "</module>\n  </modules>\n\n  <scm>\n    <connection>"
+        },
+        {
+          "tag": "",
+          "text": "scm:git:https://gitbox.apache.org/repos/asf/maven.git"
+        },
+        {
+          "tag": "name",
+          "text": "</connection>\n    <developerConnection>"
+        },
+        {
+          "tag": "",
+          "text": "scm:git:https://gitbox.apache.org/repos/asf/maven.git"
+        },
+        {
+          "tag": "name",
+          "text": "</developerConnection>\n    <tag>"
+        },
+        {
+          "tag": "",
+          "text": "maven-3.9.9"
+        },
+        {
+          "tag": "name",
+          "text": "</tag>\n    <url>"
+        },
+        {
+          "tag": "",
+          "text": "https://github.com/apache/maven/tree/${project.scm.tag}"
+        },
+        {
+          "tag": "name",
+          "text": "</url>\n  </scm>\n  <issueManagement>\n    <system>"
+        },
+        {
+          "tag": "",
+          "text": "jira"
+        },
+        {
+          "tag": "name",
+          "text": "</system>\n    <url>"
+        },
+        {
+          "tag": "",
+          "text": "https://issues.apache.org/jira/browse/MNG"
+        },
+        {
+          "tag": "name",
+          "text": "</url>\n  </issueManagement>\n  <ciManagement>\n    <system>"
+        },
+        {
+          "tag": "",
+          "text": "Jenkins"
+        },
+        {
+          "tag": "name",
+          "text": "</system>\n    <url>"
+        },
+        {
+          "tag": "",
+          "text": "https://ci-maven.apache.org/job/Maven/job/maven-box/job/maven/"
+        },
+        {
+          "tag": "name",
+          "text": "</url>\n  </ciManagement>\n  <distributionManagement>\n    <site>\n      <id>"
+        },
+        {
+          "tag": "",
+          "text": "apache.website"
+        },
+        {
+          "tag": "name",
+          "text": "</id>\n      <url>"
+        },
+        {
+          "tag": "",
+          "text": "scm:svn:https://svn.apache.org/repos/asf/maven/website/components/${maven.site.path}"
+        },
+        {
+          "tag": "name",
+          "text": "</url>\n    </site>\n    <downloadUrl>"
+        },
+        {
+          "tag": "",
+          "text": "https://maven.apache.org/download.html"
+        },
+        {
+          "tag": "name",
+          "text": "</downloadUrl>\n  </distributionManagement>\n\n  <properties>\n    <javaVersion>"
+        },
+        {
+          "tag": "",
+          "text": "8"
+        },
+        {
+          "tag": "name",
+          "text": "</javaVersion>\n    <version.sisu-maven-plugin>"
+        },
+        {
+          "tag": "",
+          "text": "0.9.0.M3"
+        },
+        {
+          "tag": "name",
+          "text": "</version.sisu-maven-plugin>\n    <classWorldsVersion>"
+        },
+        {
+          "tag": "",
+          "text": "2.8.0"
+        },
+        {
+          "tag": "name",
+          "text": "</classWorldsVersion>\n    <commonsCliVersion>"
+        },
+        {
+          "tag": "",
+          "text": "1.8.0"
+        },
+        {
+          "tag": "name",
+          "text": "</commonsCliVersion>\n    <commonsIoVersion>"
+        },
+        {
+          "tag": "",
+          "text": "2.16.1"
+        },
+        {
+          "tag": "name",
+          "text": "</commonsIoVersion>\n    <junitVersion>"
+        },
+        {
+          "tag": "",
+          "text": "4.13.2"
+        },
+        {
+          "tag": "name",
+          "text": "</junitVersion>\n    <hamcrestVersion>"
+        },
+        {
+          "tag": "",
+          "text": "3.0"
+        },
+        {
+          "tag": "name",
+          "text": "</hamcrestVersion>\n    <mockitoVersion>"
+        },
+        {
+          "tag": "",
+          "text": "4.11.0"
+        },
+        {
+          "tag": "name",
+          "text": "</mockitoVersion>\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "<!-- plexus 2.1.1 is broken -->\n    "
+        },
+        {
+          "tag": "name",
+          "text": "<plexusVersion>"
+        },
+        {
+          "tag": "",
+          "text": "2.1.0"
+        },
+        {
+          "tag": "name",
+          "text": "</plexusVersion>\n    <plexusInterpolationVersion>"
+        },
+        {
+          "tag": "",
+          "text": "1.27"
+        },
+        {
+          "tag": "name",
+          "text": "</plexusInterpolationVersion>\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "<!-- Blocked by 3.4.0+ changes, see MNG-7710, downgrade from parent 4.0.1 -->\n    "
+        },
+        {
+          "tag": "name",
+          "text": "<version.plexus-utils>"
+        },
+        {
+          "tag": "",
+          "text": "3.5.1"
+        },
+        {
+          "tag": "name",
+          "text": "</version.plexus-utils>\n    <guiceVersion>"
+        },
+        {
+          "tag": "",
+          "text": "5.1.0"
+        },
+        {
+          "tag": "name",
+          "text": "</guiceVersion>\n    <guavaVersion>"
+        },
+        {
+          "tag": "",
+          "text": "33.2.1-jre"
+        },
+        {
+          "tag": "name",
+          "text": "</guavaVersion>\n    <guavafailureaccessVersion>"
+        },
+        {
+          "tag": "",
+          "text": "1.0.2"
+        },
+        {
+          "tag": "name",
+          "text": "</guavafailureaccessVersion>\n    <wagonVersion>"
+        },
+        {
+          "tag": "",
+          "text": "3.5.3"
+        },
+        {
+          "tag": "name",
+          "text": "</wagonVersion>\n    <securityDispatcherVersion>"
+        },
+        {
+          "tag": "",
+          "text": "2.0"
+        },
+        {
+          "tag": "name",
+          "text": "</securityDispatcherVersion>\n    <cipherVersion>"
+        },
+        {
+          "tag": "",
+          "text": "2.0"
+        },
+        {
+          "tag": "name",
+          "text": "</cipherVersion>\n    <jxpathVersion>"
+        },
+        {
+          "tag": "",
+          "text": "1.3"
+        },
+        {
+          "tag": "name",
+          "text": "</jxpathVersion>\n    <resolverVersion>"
+        },
+        {
+          "tag": "",
+          "text": "1.9.22"
+        },
+        {
+          "tag": "name",
+          "text": "</resolverVersion>\n    <slf4jVersion>"
+        },
+        {
+          "tag": "",
+          "text": "1.7.36"
+        },
+        {
+          "tag": "name",
+          "text": "</slf4jVersion>\n    <xmlunitVersion>"
+        },
+        {
+          "tag": "",
+          "text": "2.10.0"
+        },
+        {
+          "tag": "name",
+          "text": "</xmlunitVersion>\n    <powermockVersion>"
+        },
+        {
+          "tag": "",
+          "text": "2.0.9"
+        },
+        {
+          "tag": "name",
+          "text": "</powermockVersion>\n    <maven.test.redirectTestOutputToFile>"
+        },
+        {
+          "tag": "",
+          "text": "true"
+        },
+        {
+          "tag": "name",
+          "text": "</maven.test.redirectTestOutputToFile>\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "<!-- Control the name of the distribution and information output by mvn -->\n    "
+        },
+        {
+          "tag": "name",
+          "text": "<distributionId>"
+        },
+        {
+          "tag": "",
+          "text": "apache-maven"
+        },
+        {
+          "tag": "name",
+          "text": "</distributionId>\n    <distributionShortName>"
+        },
+        {
+          "tag": "",
+          "text": "Maven"
+        },
+        {
+          "tag": "name",
+          "text": "</distributionShortName>\n    <distributionName>"
+        },
+        {
+          "tag": "",
+          "text": "Apache Maven"
+        },
+        {
+          "tag": "name",
+          "text": "</distributionName>\n    <maven.site.path>"
+        },
+        {
+          "tag": "",
+          "text": "ref/3-LATEST"
+        },
+        {
+          "tag": "name",
+          "text": "</maven.site.path>\n    <checkstyle.violation.ignore>"
+        },
+        {
+          "tag": "",
+          "text": "None"
+        },
+        {
+          "tag": "name",
+          "text": "</checkstyle.violation.ignore>\n    <checkstyle.excludes>"
+        },
+        {
+          "tag": "",
+          "text": "**/package-info.java"
+        },
+        {
+          "tag": "name",
+          "text": "</checkstyle.excludes>\n    <project.build.outputTimestamp>"
+        },
+        {
+          "tag": "",
+          "text": "2024-08-14T08:48:47Z"
+        },
+        {
+          "tag": "name",
+          "text": "</project.build.outputTimestamp>\n  </properties>\n\n  "
+        },
+        {
+          "tag": "comment",
+          "text": "<!--bootstrap-start-comment-->\n  "
+        },
+        {
+          "tag": "name",
+          "text": "<dependencyManagement>\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "<!--bootstrap-end-comment-->\n    "
+        },
+        {
+          "tag": "name",
+          "text": "<dependencies>\n      "
+        },
+        {
+          "tag": "comment",
+          "text": "<!--  Maven Modules -->\n      <!--bootstrap-start-comment-->\n      "
+        },
+        {
+          "tag": "name",
+          "text": "<dependency>\n        <groupId>"
+        },
+        {
+          "tag": "",
+          "text": "org.apache.maven"
+        },
+        {
+          "tag": "name",
+          "text": "</groupId>\n        <artifactId>"
+        },
+        {
+          "tag": "",
+          "text": "maven-model"
+        },
+        {
+          "tag": "name",
+          "text": "</artifactId>\n        <version>"
+        },
+        {
+          "tag": "",
+          "text": "${project.version}"
+        },
+        {
+          "tag": "name",
+          "text": "</version>\n      </dependency>\n      <dependency>\n        <groupId>"
+        },
+        {
+          "tag": "",
+          "text": "org.apache.maven"
+        },
+        {
+          "tag": "name",
+          "text": "</groupId>\n        <artifactId>"
+        },
+        {
+          "tag": "",
+          "text": "maven-settings"
+        },
+        {
+          "tag": "name",
+          "text": "</artifactId>\n        <version>"
+        },
+        {
+          "tag": "",
+          "text": "${project.version}"
+        },
+        {
+          "tag": "name",
+          "text": "</version>\n      </dependency>\n      <dependency>\n        <groupId>"
+        },
+        {
+          "tag": "",
+          "text": "org.apache.maven"
+        },
+        {
+          "tag": "name",
+          "text": "</groupId>\n        <artifactId>"
+        },
+        {
+          "tag": "",
+          "text": "maven-settings-builder"
+        },
+        {
+          "tag": "name",
+          "text": "</artifactId>\n        <version>"
+        },
+        {
+          "tag": "",
+          "text": "${project.version}"
+        },
+        {
+          "tag": "name",
+          "text": "</version>\n      </dependency>\n      <dependency>\n        <groupId>"
+        },
+        {
+          "tag": "",
+          "text": "org.apache.maven"
+        },
+        {
+          "tag": "name",
+          "text": "</groupId>\n        <artifactId>"
+        },
+        {
+          "tag": "",
+          "text": "maven-plugin-api"
+        },
+        {
+          "tag": "name",
+          "text": "</artifactId>\n        <version>"
+        },
+        {
+          "tag": "",
+          "text": "${project.version}"
+        },
+        {
+          "tag": "name",
+          "text": "</version>\n      </dependency>\n      <dependency>\n        <groupId>"
+        },
+        {
+          "tag": "",
+          "text": "org.apache.maven"
+        },
+        {
+          "tag": "name",
+          "text": "</groupId>\n        <artifactId>"
+        },
+        {
+          "tag": "",
+          "text": "maven-embedder"
+        },
+        {
+          "tag": "name",
+          "text": "</artifactId>\n        <version>"
+        },
+        {
+          "tag": "",
+          "text": "${project.version}"
+        },
+        {
+          "tag": "name",
+          "text": "</version>\n      </dependency>\n      <dependency>\n        <groupId>"
+        },
+        {
+          "tag": "",
+          "text": "org.apache.maven"
+        },
+        {
+          "tag": "name",
+          "text": "</groupId>\n        <artifactId>"
+        },
+        {
+          "tag": "",
+          "text": "maven-core"
+        },
+        {
+          "tag": "name",
+          "text": "</artifactId>\n        <version>"
+        },
+        {
+          "tag": "",
+          "text": "${project.version}"
+        },
+        {
+          "tag": "name",
+          "text": "</version>\n      </dependency>\n      <dependency>\n        <groupId>"
+        },
+        {
+          "tag": "",
+          "text": "org.apache.maven"
+        },
+        {
+          "tag": "name",
+          "text": "</groupId>\n        <artifactId>"
+        },
+        {
+          "tag": "",
+          "text": "maven-model-builder"
+        },
+        {
+          "tag": "name",
+          "text": "</artifactId>\n"
+        }
+      ],
+      "id": "xml_real_200",
+      "input_sha256": "750c784f2ed93a018c9bb63023a4364f969fa1d4f761deb9bb36405db1450fbc",
+      "language": "xml",
+      "physical_lines": 200,
+      "reconstruction_equal": true
+    },
+    {
+      "chunks": [
+        {
+          "tag": "comment",
+          "text": "# golangci-lint is used in Kubernetes with different configurations that\n# enable an increasing amount of checks:\n# - golangci.yaml is the most permissive configuration. All existing code\n#   passed.\n# - golangci-strict.yaml adds checks that all new code in pull requests\n#   must pass.\n# - golangci-hints.yaml adds checks for code patterns where developer\n#   and reviewer may decide whether findings should get addressed before\n#   merging. Beware that the golangci-lint output includes also the\n#   issues that must be fixed and doesn't indicate how severe each issue\n#   is (https://gophers.slack.com/archives/CS0TBRKPC/p1685721815275349).\n#\n# All three flavors are generated from golangci.yaml.in with\n# hack/update-golangci-lint-config.sh.\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "run"
+        },
+        {
+          "tag": "",
+          "text": ":\n  "
+        },
+        {
+          "tag": "name",
+          "text": "timeout"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "30m\n  "
+        },
+        {
+          "tag": "name",
+          "text": "skip-files"
+        },
+        {
+          "tag": "",
+          "text": ":\n    - "
+        },
+        {
+          "tag": "string",
+          "text": "\"^zz_generated.*\"\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "output"
+        },
+        {
+          "tag": "",
+          "text": ":\n  "
+        },
+        {
+          "tag": "name",
+          "text": "sort-results"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "boolean",
+          "text": "true\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "issues"
+        },
+        {
+          "tag": "",
+          "text": ":\n  "
+        },
+        {
+          "tag": "name",
+          "text": "max-issues-per-linter"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "0\n  "
+        },
+        {
+          "tag": "name",
+          "text": "max-same-issues"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "number",
+          "text": "0\n\n  "
+        },
+        {
+          "tag": "comment",
+          "text": "# The default excludes disable the \"should have comment or be unexported\" check from revive.\n  # We want that to be enabled, therefore we have to disable all default excludes and\n  # add those back one-by-one that we want. See https://github.com/golangci/golangci-lint/issues/456#issuecomment-617470264\n  "
+        },
+        {
+          "tag": "name",
+          "text": "exclude-use-default"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "boolean",
+          "text": "false\n  "
+        },
+        {
+          "tag": "name",
+          "text": "exclude"
+        },
+        {
+          "tag": "",
+          "text": ":\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# staticcheck: Developers tend to write in C-style with an explicit 'break' in a 'switch', so it's ok to ignore"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "string",
+          "text": "ineffective break statement. Did you mean to break out of the outer loop\n\n  "
+        },
+        {
+          "tag": "comment",
+          "text": "# Excluding configuration per-path, per-linter, per-text and per-source\n  "
+        },
+        {
+          "tag": "name",
+          "text": "exclude-rules"
+        },
+        {
+          "tag": "",
+          "text": ":\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# exclude ineffassign linter for generated files for conversion"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "name",
+          "text": "path"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "conversion\\.go\n      "
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "ineffassign\n\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# SSA Extract calls are allowed in tests."
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "forbidigo\n      "
+        },
+        {
+          "tag": "name",
+          "text": "text"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "should not be used because managedFields was removed\n      "
+        },
+        {
+          "tag": "name",
+          "text": "path"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "_test.go$\n\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# TODO(oscr) Remove these excluded directories and fix findings. Due to large amount of findings in different components\n    # with different owners it's hard to fix everything in a single pr. This will therefore be done in multiple prs."
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "name",
+          "text": "path"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "(pkg/volume/*|test/*|azure/*|pkg/cmd/wait*|request/bearertoken/*|metrics/*|filters/*)\n      "
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "gocritic\n\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# The Kubernetes naming convention for conversion functions uses underscores\n    # and intentionally deviates from normal Go conventions to make those function\n    # names more readable. Same for SetDefaults_*.\n    #\n    # https://github.com/kubernetes/kubernetes/issues/117288#issuecomment-1507028627\n    # https://github.com/kubernetes/kubernetes/issues/117288#issuecomment-1514201592"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "stylecheck"
+        },
+        {
+          "tag": "",
+          "text": "\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "revive\n      "
+        },
+        {
+          "tag": "name",
+          "text": "text"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "\"(ST1003: should not use underscores in Go names; func (Convert_.*_To_.*|SetDefaults_)|exported: exported function (Convert|SetDefaults)_.* should be of the form)\"\n\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# This check currently has some false positives (https://github.com/nunnatsa/ginkgolinter/issues/91)."
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n       - "
+        },
+        {
+          "tag": "string",
+          "text": "ginkgolinter\n      "
+        },
+        {
+          "tag": "name",
+          "text": "text"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "use a function call in (Eventually|Consistently)\n\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# https://github.com/kubernetes/kubernetes/issues/117288#issuecomment-1507012435"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "gocritic\n      "
+        },
+        {
+          "tag": "name",
+          "text": "text"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "\"ifElseChain: rewrite if-else to switch statement\"\n\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# Only packages listed here opt into the strict \"exported symbols must be documented\".\n    #\n    # Exclude texts from https://github.com/golangci/golangci-lint/blob/ab3c3cd69e602ff53bb4c3e2c188f0caeb80305d/pkg/config/issues.go#L11-L103"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "golint"
+        },
+        {
+          "tag": "",
+          "text": "\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "revive"
+        },
+        {
+          "tag": "",
+          "text": "\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "stylecheck\n      "
+        },
+        {
+          "tag": "name",
+          "text": "text"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "comment on exported (method|function|type|const)|should have( a package)? comment|comment should be of the form|comment on exported (method|function|type|const)|should have( a package)? comment|comment should be of the form|exported (.+) should have comment( \\(or a comment on this block\\))? or be unexported|package comment should be of the form \"(.+)...|comment on exported (.+) should be of the form \"(.+)...|should have a package comment\n      "
+        },
+        {
+          "tag": "name",
+          "text": "path-except"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "cmd/kubeadm\n\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# The following issues were deemed \"might be worth fixing, needs to be\n    # decided on a case-by-case basis\".  This was initially decided by a\n    # majority of the developers who voted in\n    # https://github.com/kubernetes/kubernetes/issues/117288 and may evolve\n    # over time.\n\n    # https://github.com/kubernetes/kubernetes/issues/117288#issuecomment-1507008918"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "gocritic\n      "
+        },
+        {
+          "tag": "name",
+          "text": "text"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "\"assignOp:\"\n\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# https://github.com/kubernetes/kubernetes/issues/117288#issuecomment-1507016854"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "gosimple\n      "
+        },
+        {
+          "tag": "name",
+          "text": "text"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "\"S1002: should omit comparison to bool constant\"\n\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# https://github.com/kubernetes/kubernetes/issues/117288#issuecomment-1507023980"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "gosimple\n      "
+        },
+        {
+          "tag": "name",
+          "text": "text"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "\"S1016: should convert opts .* instead of using struct literal\"\n\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# https://github.com/kubernetes/kubernetes/issues/117288#issuecomment-1507026758"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "gosimple\n      "
+        },
+        {
+          "tag": "name",
+          "text": "text"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "\"S1033: unnecessary guard around call to delete\"\n\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# Didn't make it into https://github.com/kubernetes/kubernetes/issues/117288.\n    # Discussion on Slack concluded that \"it's hard to have a universal policy for all\n    # functions marked deprecated\" and thus this can only be a hint which must\n    # be considered on a case-by-case basis."
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "staticcheck\n      "
+        },
+        {
+          "tag": "name",
+          "text": "text"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "\"SA1019: .*is deprecated\"\n\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# https://github.com/kubernetes/kubernetes/issues/117288#issuecomment-1507030071"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "stylecheck\n      "
+        },
+        {
+          "tag": "name",
+          "text": "text"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "\"ST1012: error var .* should have name of the form ErrFoo\"\n\n    "
+        },
+        {
+          "tag": "comment",
+          "text": "# https://github.com/kubernetes/kubernetes/issues/117288#issuecomment-1507031224"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n        - "
+        },
+        {
+          "tag": "string",
+          "text": "stylecheck\n      "
+        },
+        {
+          "tag": "name",
+          "text": "text"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "\"ST1023: should omit type .* from declaration; it will be inferred from the right-hand side\"\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "linters"
+        },
+        {
+          "tag": "",
+          "text": ":\n  "
+        },
+        {
+          "tag": "name",
+          "text": "disable-all"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "boolean",
+          "text": "true\n  "
+        },
+        {
+          "tag": "name",
+          "text": "enable"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "comment",
+          "text": "# please keep this alphabetized"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "string",
+          "text": "forbidigo"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "string",
+          "text": "ginkgolinter"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "string",
+          "text": "gocritic"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "string",
+          "text": "govet"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "string",
+          "text": "ineffassign"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "string",
+          "text": "logcheck"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "string",
+          "text": "revive"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "string",
+          "text": "staticcheck"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "string",
+          "text": "stylecheck"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "string",
+          "text": "testifylint"
+        },
+        {
+          "tag": "",
+          "text": "\n    - "
+        },
+        {
+          "tag": "string",
+          "text": "unused\n\n"
+        },
+        {
+          "tag": "name",
+          "text": "linters-settings"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "comment",
+          "text": "# please keep this alphabetized\n  "
+        },
+        {
+          "tag": "name",
+          "text": "custom"
+        },
+        {
+          "tag": "",
+          "text": ":\n    "
+        },
+        {
+          "tag": "name",
+          "text": "logcheck"
+        },
+        {
+          "tag": "",
+          "text": ":\n      "
+        },
+        {
+          "tag": "comment",
+          "text": "# Installed there by hack/verify-golangci-lint.sh.\n      "
+        },
+        {
+          "tag": "name",
+          "text": "path"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "../_output/local/bin/logcheck.so\n      "
+        },
+        {
+          "tag": "name",
+          "text": "description"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "structured logging checker\n      "
+        },
+        {
+          "tag": "name",
+          "text": "original-url"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "k8s.io/logtools/logcheck\n      "
+        },
+        {
+          "tag": "name",
+          "text": "settings"
+        },
+        {
+          "tag": "",
+          "text": ":\n        "
+        },
+        {
+          "tag": "name",
+          "text": "config"
+        },
+        {
+          "tag": "",
+          "text": ": "
+        },
+        {
+          "tag": "string",
+          "text": "|\n          # hack/logcheck.conf contains regular expressions that are matched against <pkg>/<file>,\n          # for example k8s.io/cmd/kube-scheduler/app/config/config.go.\n          #\n          # By default, structured logging call parameters are checked, but usage of\n          # those calls is not required. That is changed on a per-file basis.\n          #\n          # Remember to clean the golangci-lint cache when changing the configuration and\n          # running the verify-golangci-lint.sh script multiple times, otherwise\n          # golangci-lint will report stale results:\n          #    _output/local/bin/golangci-lint cache clean\n          \n          # At this point we don't enforce the usage structured logging calls except in\n          # those packages that were migrated. This disables the check for other files.\n          -structured .*\n          \n          # Now enable it again for migrated packages.\n          structured k8s.io/kubernetes/cmd/kubelet/.*\n          structured k8s.io/kubernetes/pkg/kubelet/.*\n          structured k8s.io/kubernetes/pkg/proxy/.*\n          structured k8s.io/kms/.*\n          structured k8s.io/apiserver/pkg/storage/value/.*\n          structured k8s.io/apiserver/pkg/server/options/encryptionconfig/.*\n          \n          # The following packages have been migrated to contextual logging.\n          # Packages matched here do not have to be listed above because\n          # \"contextual\" implies \"structured\".\n          contextual k8s.io/api/.*\n          contextual k8s.io/apimachinery/pkg/util/runtime/.*\n          contextual k8s.io/client-go/metadata/.*\n          contextual k8s.io/client-go/tools/events/.*\n          contextual k8s.io/client-go/tools/record/.*\n          contextual k8s.io/component-helpers/.*\n          contextual k8s.io/cri-api/.*\n          contextual k8s.io/cri-client/.*\n          contextual k8s.io/dynamic-resource-allocation/.*\n          contextual k8s.io/endpointslice/.*\n          contextual k8s.io/kms/.*\n          contextual k8s.io/kube-controller-manager/.*\n          contextual k8s.io/kube-proxy/.*\n          contextual k8s.io/kube-scheduler/.*\n          contextual k8s.io/sample-apiserver/.*\n          contextual k8s.io/sample-cli-plugin/.*\n          contextual k8s.io/sample-controller/.*\n          contextual k8s.io/kubernetes/cmd/kube-proxy/.*\n          contextual k8s.io/kubernetes/cmd/kube-scheduler/.*\n          contextual k8s.io/kubernetes/pkg/controller/.*\n          contextual k8s.io/kubernetes/pkg/scheduler/.*\n"
+        }
+      ],
+      "id": "yaml_real_200",
+      "input_sha256": "74ccfb90d0d4a571d2a551c91ea88f2c26ec54efb5a7740c345df64de10ebb62",
+      "language": "yaml",
+      "physical_lines": 200,
+      "reconstruction_equal": true
+    }
+  ],
+  "languages": [
+    "css",
+    "javascript",
+    "xml",
+    "yaml",
+    "none",
+    "error"
+  ],
+  "oracle": {
+    "distribution": "mitmproxy_rs",
+    "version": "0.12.11"
+  },
+  "schema_version": 1,
+  "tags": [
+    "name",
+    "string",
+    "number",
+    "boolean",
+    "comment",
+    "error"
+  ]
+}

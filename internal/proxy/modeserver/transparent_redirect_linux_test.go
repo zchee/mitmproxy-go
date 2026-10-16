@@ -27,6 +27,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -218,6 +219,10 @@ func TestTransparentRedirectAcceptance(t *testing.T) {
 			if err := os.WriteFile(publicCA, ca, 0o644); err != nil {
 				t.Fatal(err)
 			}
+			clientCA := filepath.Join(private, name+"-proxy-ca-cert.pem")
+			if err := os.WriteFile(clientCA, ca, 0o644); err != nil {
+				t.Fatal(err)
+			}
 			nat, save := iptables, iptablesSave
 			if tt.network == "tcp6" {
 				nat, save = ip6tables, ip6tablesSave
@@ -229,7 +234,46 @@ func TestTransparentRedirectAcceptance(t *testing.T) {
 			if tt.tls {
 				scheme = "https"
 			}
-			curlOutput := runRedirectCommand(t, ctx, directory, "curl", ip, "netns", "exec", namespace, setpriv, "--reuid", strconv.Itoa(redirectClientUID), "--regid", strconv.Itoa(redirectClientUID), "--clear-groups", "--no-new-privs", curl, "--disable", "--noproxy", "*", "--fail", "--silent", "--show-error", "--http1.1", "--max-time", "30", "--cacert", publicCA, "--write-out", "\nCURL_METRICS %{local_ip} %{local_port} %{remote_ip} %{remote_port} %{http_code}\n", scheme+"://"+originAddress+"/redirected")
+			ancestorPaths := []string{directory}
+			for parent := filepath.Dir(directory); ; parent = filepath.Dir(parent) {
+				ancestorPaths = append(ancestorPaths, parent)
+				if parent == "/" {
+					break
+				}
+			}
+			slices.Reverse(ancestorPaths)
+			ancestorArgs := append([]string{"-ld"}, ancestorPaths...)
+			clientArgs := []string{"netns", "exec", namespace, setpriv, "--reuid", strconv.Itoa(redirectClientUID), "--regid", strconv.Itoa(redirectClientUID), "--clear-groups", "--no-new-privs"}
+			for label, arguments := range map[string][]string{
+				"client-ca-stat":  {"/usr/bin/stat", "-c", "%A %U:%G %n", publicCA, clientCA},
+				"client-ancestry": append([]string{"/bin/ls"}, ancestorArgs...),
+				"client-id":       {"/usr/bin/id"},
+				"client-apparmor": {"/bin/cat", "/proc/self/attr/apparmor/current"},
+			} {
+				if _, err := redirectCommand(ctx, directory, label, ip, slices.Concat(clientArgs, arguments)...); err != nil {
+					t.Logf("diagnostic %s: %v", label, err)
+				}
+			}
+			if _, err := redirectCommand(ctx, directory, "proxy-ca-stat", ip, "netns", "exec", namespace, setpriv, "--reuid", strconv.Itoa(redirectProxyUID), "--regid", strconv.Itoa(redirectProxyUID), "--clear-groups", "--no-new-privs", "/usr/bin/stat", "-c", "%A %U:%G %n", publicCA); err != nil {
+				t.Logf("diagnostic proxy-ca-stat: %v", err)
+			}
+			for label, arguments := range map[string][]string{
+				"root-umask":             {"/bin/sh", "-c", "umask"},
+				"root-ancestry":          append([]string{"/bin/ls"}, ancestorArgs...),
+				"root-protected-regular": {"/bin/cat", "/proc/sys/fs/protected_regular"},
+				"root-curl-apparmor":     {"/bin/grep", "-i", "curl", "/sys/kernel/security/apparmor/profiles"},
+			} {
+				if _, err := redirectCommand(ctx, directory, label, arguments[0], arguments[1:]...); err != nil {
+					t.Logf("diagnostic %s: %v", label, err)
+				}
+			}
+			curlOutput, curlErr := redirectCommand(ctx, directory, "curl", ip, "netns", "exec", namespace, setpriv, "--reuid", strconv.Itoa(redirectClientUID), "--regid", strconv.Itoa(redirectClientUID), "--clear-groups", "--no-new-privs", curl, "--disable", "--noproxy", "*", "--fail", "--silent", "--show-error", "--http1.1", "--max-time", "30", "--cacert", clientCA, "--write-out", "\nCURL_METRICS %{local_ip} %{local_port} %{remote_ip} %{remote_port} %{http_code}\n", scheme+"://"+originAddress+"/redirected")
+			if _, err := redirectCommand(context.WithoutCancel(ctx), directory, "root-audit", "/bin/sh", "-c", "dmesg | grep -iE 'apparmor|audit' | tail -n 50"); err != nil {
+				t.Logf("diagnostic root-audit: %v", err)
+			}
+			if curlErr != nil {
+				t.Fatalf("curl: %v", curlErr)
+			}
 			body, metrics, ok := strings.Cut(string(curlOutput), "\nCURL_METRICS ")
 			if !ok || body != redirectBody {
 				t.Fatalf("curl body/metrics = %q", curlOutput)

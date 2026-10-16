@@ -70,6 +70,18 @@ jobs:
           "${PACKET_GATE_OUTPUT}/modeserver-integration.test" -test.list '^TestTransparentRedirectAcceptance$' | tee "${PACKET_GATE_OUTPUT}/transparent-inventory.txt"
           diff -u <(printf '%s\n' TestTransparentRedirectAcceptance) "${PACKET_GATE_OUTPUT}/transparent-inventory.txt"
           date -u '+%Y-%m-%dT%H:%M:%SZ' | tee "${PACKET_GATE_OUTPUT}/transparent-inventory-end.txt"
+      - name: Capture transparent runner environment
+        env:
+          PACKET_GATE_OUTPUT: ${{ github.workspace }}/_test/packet-modes
+        run: |
+          {
+            umask
+            id
+            ls -ld /home /home/runner /home/runner/work "${PACKET_GATE_OUTPUT}"
+            sudo -n /bin/sh -c umask
+            sudo --version | head -n 1
+            aa-status --json 2>/dev/null || true
+          } >| "${PACKET_GATE_OUTPUT}/transparent-env.txt" 2>&1 || true
       - name: Run required IPv4 and IPv6 transparent acceptance
         env:
           PACKET_GATE_OUTPUT: ${{ github.workspace }}/_test/packet-modes

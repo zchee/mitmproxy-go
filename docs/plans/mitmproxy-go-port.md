@@ -710,6 +710,45 @@ Workflow changes are additive inside current jobs: privileged packet-modes Linux
 
 **Privileged-job budget is a pre-landing/pre-freeze gate owned by unit 4.** `.github/workflows/packet-modes.yaml:24` currently limits the ENTIRE `privileged packet modes (Linux)` job to 20 minutes; a per-command 20m outer/15m test watchdog is not an allocation within that job. Before landing its additive workflow candidate, record in this plan a receipt-backed budget using the LAST THREE GREEN runs of that same job: run ID/head/checkout, setup/tool installation, existing user builds/inventory, all five unchanged packet scenarios, teardown and always-upload durations, with raw receipt paths/digests. Add candidate receipts for extra unprivileged build/inventory and the complete v4/v6 REDIRECT row, counting any reused build only once. Compute a conservative aggregate from the largest recorded duration for each component plus an explicitly quantified cleanup/upload and scheduling reserve; show total and remaining headroom against 20 minutes. Do not invent durations or certify the budget from watchdog maxima alone. If the recorded projection does not fit, an orchestration-only `timeout-minutes` increase for THIS existing job is allowed ONLY after the full budget and proposed new total/reserve are recorded in the plan; preserve its context identity and every test count/cpu/watchdog/protocol/netem/acceptance value. No shorter coverage, empty inventory, skip or interrupted row may make the job fit. Missing three-run/candidate receipts or an unsized reserve blocks the workflow landing and final freeze. These are future execution receipts, not measurements collected during planning.
 
+**Recorded privileged-job budget (unit 4, receipt-backed; recorded before the workflow candidate lands).** Receipts: the last three green `privileged packet modes (Linux)` runs before the candidate are under `.omc/artifacts/p51-session/evidence/executable-docs-gates/budget/prepublish-20261016T104437Z/` (raw `gh run view` JSON and job logs; `SHA256SUMS` digest `063a4fa2…bc626`), and the candidate's first complete hosted run is under `.omc/artifacts/p51-session/evidence/executable-docs-gates/hosted-budget/ce5ec7a120363fbdaffa3af4b64b428e4dfda675/` (`run.json`, `job.log`, the always-uploaded artifact, the acceptance audit; 488-file `SHA256SUMS` digest `3e338646…ce9bd`). Job metadata gives step durations at one-second resolution; verbose test timings come from the uploaded logs.
+
+| Last three green runs | Event head | Actual checkout | Whole job (s) |
+|---|---|---|---:|
+| 38887750657 | `439ba09e` | `439ba09e` | 40.0 |
+| 38886691184 | `55c0eab1` | `ad7db003` | 45.0 |
+| 38886300258 | `c6b2a0e5` | `c6b2a0e5` | 38.0 |
+| Candidate run 38913984457 (head `ce5ec7a1`, checkout `79360899`, 4/4 REDIRECT leaves PASS) | | | 44.0 |
+
+| Component (seconds) | Historical maximum of the three | Candidate run | Conservative bound |
+|---|---:|---:|---:|
+| Set up job | 2 | 2 | 2 |
+| Run actions/checkout | 1 | 1 | 1 |
+| Read the Go version from go.mod | 1 | 0 | 1 |
+| Run setup-go | 12 | 12 | 12 |
+| Install packet gate tools | 10 | 6 | 10 |
+| Verify gate orchestration | 0 | 0 | 0 |
+| Existing builds + inventory + namespace setup (upper bound) | 4 | 4 | 4 |
+| TestWireGuardExecutable | 0.32 | 0.14 | 0.32 |
+| TestTunCreated | 0.22 | 0.10 | 0.22 |
+| TestTunPersistent | 0.27 | 0.22 | 0.27 |
+| TestLinuxLocalExecutable | 0.52 | 0.22 | 0.52 |
+| TestLinuxLocalSudoFailure | 0.23 | 0.27 | 0.27 |
+| Teardown (PASS to restored, upper bound) | 1 | 1 | 1 |
+| Upload packet logs and redirector stderr | 4 | 4 | 4 |
+| Post setup-go | 6 | 4 | 6 |
+| Post checkout | 1 | 1 | 1 |
+| Complete job | 0 | 0 | 0 |
+| Unassigned job gaps (upper bound) | 5 | 4 | 5 |
+| **Additive: install transparent NAT tools (iptables, ip6tables)** | — | 1 | 1 |
+| **Additive: unprivileged integration test build + inventory** (reuses the existing mitmdump build; counted once above) | — | 4 | 4 |
+| **Additive: runner environment capture** | — | 0 | 0 |
+| **Additive: complete IPv4/IPv6 REDIRECT row (4 leaves, namespaces, NAT rules, teardown)** | — | 1 | 1 |
+| Explicit cleanup/upload reserve (allocation, not measurement) | — | — | 60 |
+| Explicit scheduling reserve (allocation, not measurement) | — | — | 60 |
+| Time-quantization reserve (one second per recorded component, 22 components) | — | — | 22 |
+
+Conservative aggregate: original-component maxima 48.6 s + additive steps 6 s + reserves 142 s = **196.6 s**, leaving **1,003.4 s** of headroom against the unchanged 1,200 s `timeout-minutes: 20` of this job. No `timeout-minutes` increase is proposed; the 20m outer / 15m `-test.timeout` watchdogs of the carrier are not counted as runtime. Metadata zeros are not zero-cost claims; the quantization reserve covers them. The budget is certified only together with a complete 4/4 REDIRECT acceptance on the same run; a failed or incomplete row voids it even when the durations fit. Windows runtime evidence remains deferred and the manual macOS root PF acceptance remains user-only.
+
 #### A. Carried untouched-package fixture determinism
 
 Preserve `.omc/artifacts/p50-session/reviews/verify-p50.md` Gaps 1–3 and the triage's chronology. The failed invocation was `go test -tags integration -count=5 -timeout=60m -json ./internal/proxy/...`, not an explicit race/cpu campaign; gopls/vet were not concurrently executing under the held gate lock. QUIC reached the receiver's idle cause instead of application 42/closed, not its publication-gate timeout; DNS waited at request-hook arrival during the first 1024-ID fill, not at 1025th rejection. Original fail + isolated 15/15 are historical evidence, not reproducible-root-cause proof.

@@ -4,6 +4,7 @@
 package dumper
 
 import (
+	"errors"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -17,7 +18,13 @@ func (d *Dumper) echoContentview(text, language string) error {
 	if !d.outHasVT {
 		return d.echo(text, 4, vtcodes.Style{})
 	}
-	chunks, err := highlight.Highlight(strutil.EscapeControlCharacters(text, true), language)
+	escaped := strutil.EscapeControlCharacters(text, true)
+	chunks, err := highlight.Highlight(escaped, language)
+	if errors.Is(err, highlight.ErrInputTooLarge) || errors.Is(err, highlight.ErrTimeout) {
+		// Colouring is optional: input the highlighter refuses to lex, or lexes
+		// too slowly, is still shown in full, only without syntax styles.
+		chunks, err = highlight.Highlight(escaped, "none")
+	}
 	if err != nil {
 		return err
 	}

@@ -108,3 +108,34 @@ func TestContentviewHighlight(t *testing.T) {
 		}
 	})
 }
+
+func TestContentviewHighlightBounds(t *testing.T) {
+	tests := map[string]struct {
+		text string
+		want string
+	}{
+		"input above the syntax cap": {
+			text: strings.Repeat("a: 1\n", 60000),
+			want: strings.Repeat("    a: 1\n", 60000),
+		},
+		"lexer deadline": {
+			text: strings.Repeat("! ", 4000),
+			want: "    " + strings.TrimSpace(strings.Repeat("! ", 4000)) + "\n",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var output bytes.Buffer
+			dumper := Dumper{out: &output, outHasVT: true}
+			if err := dumper.echoContentview(tt.text, "yaml"); err != nil {
+				t.Fatalf("echoContentview returned %v, want the uncoloured text", err)
+			}
+			if strings.Contains(output.String(), "\x1b[") {
+				t.Fatal("bounded highlighting emitted terminal styles")
+			}
+			if diff := cmp.Diff(tt.want, output.String()); diff != "" {
+				t.Fatalf("uncoloured output differs (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

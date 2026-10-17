@@ -65,7 +65,7 @@ Anything not listed here is meant to behave as upstream does; a difference that 
 | Upstream behaviour | Go behaviour | Reason |
 |---|---|---|
 | DNS answers render through `ResourceRecord.__str__`: A/AAAA addresses, NS/CNAME/PTR domain names, TXT text, HTTPS record JSON, hexadecimal for other types (`mitmproxy/dns.py:74,153-169`). | Decodes all these display types, including the ordered Python dictionary representation of HTTPS parameters and numeric unknown keys. Invalid known data keeps the upstream hexadecimal diagnostic. HTTP/3 and mixed-version exchanges retain version labels and canonical response reason phrases. | Pinned Python measurements and dumper tests verify these outputs; shared string-escaping differences remain documented under internal/strutil. |
-| Message content chunks are coloured by syntax-highlight tag through `CONTENTVIEW_STYLES` (`mitmproxy/addons/dumper.py:38-45,130-140`). | Message content is printed uncoloured; request, status, header and trailer styles are emitted as upstream's are. | The syntax highlighter behind the tags is ported with the content-view highlighting work; on a pipe, where the differential runs, upstream emits no colour either, so the compared output is identical. |
+| Message content is always coloured by syntax-highlight tag through `CONTENTVIEW_STYLES`, whatever its size (`mitmproxy/addons/dumper.py:38-45,130-140`). | Content is coloured the same way. When the highlighter refuses the input as too large or runs past its deadline (see [contentviews/highlight](#contentviewshighlight)), the whole content is printed without syntax colours: nothing is dropped and no partly coloured prefix is shown. Any other highlighter error still fails the output. | Colouring is optional, but the content must always be shown. |
 
 ## addons/savehar
 
@@ -408,6 +408,13 @@ roots and built-in standard descriptors. It allows at most 1,024 source files,
 64. Imports cannot escape the configured roots; no network resolver or protoc
 process is used. Subsequent calls reload changed sources rather than using a
 permanent global schema cache.
+
+## contentviews/highlight
+
+| Upstream | Go | Reason |
+|---|---|---|
+| The CSS, JavaScript, XML and YAML highlighters lex any input to completion, with no size or time bound (`mitmproxy-rs/mitmproxy-highlight/src/lib.rs:22-37`). | Input above 256 KiB returns `ErrInputTooLarge` before lexing. Lexing that has not finished after 250 ms returns `ErrTimeout`, and the lexer stops at the next token. Callers match both errors with `errors.Is` and should show the whole text without syntax styling. Under the race detector only, the deadline is ten times longer (2.5 s). The `none` and `error` languages are unaffected. | The Go highlighter uses Chroma's regular-expression lexers, which take quadratic time on some inputs (measured: 0.18 s, 0.71 s and 2.8 s for 1,000, 2,000 and 4,000 repeated pairs), unlike the upstream Rust lexers. A body from the network must not stall rendering. Race-instrumented test builds lex ordinary inputs about thirty times slower, so only they get the longer deadline. |
+| The highlighters have no panic handling of their own (`mitmproxy-rs/mitmproxy-highlight/src/lib.rs`). | A panic inside a Chroma lexer is logged with the language and the panic value's type, without the input text, and then re-raised. | Lexer bugs can be diagnosed without copying a possibly sensitive body into the log; the panic is not swallowed. |
 
 ## tlsparse
 
@@ -1074,3 +1081,13 @@ Script addon loading (`-s`) is still unavailable.
 Native installed-app/system-extension capture on macOS, UAC/WinDivert process attribution on Windows, and
 sudo/TUN/eBPF capture/reinjection on Linux remain manual acceptance boundaries. Native Windows synthetic
 pipe/subprocess/ABI tests do not certify driver activation or real process-attribution capture.
+
+## internal/processinfo
+
+| Upstream | Go | Reason |
+|---|---|---|
+| On macOS an icon comes only from a running `NSRunningApplication` whose process executable matches the path; any other executable fails with `unable to extract icon` (`mitmproxy-rs/src/processes/macos_icons.rs:57-79`). | The running application whose `executableURL` path equals the requested path is used first. Otherwise `NSWorkspace iconForFile:` gives the icon for the existing, non-directory file, so a bundle-less executable such as a command-line tool or daemon gets the system icon for its file type. Missing paths, directories, and paths containing NUL or invalid UTF-8 return an error; no placeholder image is made up. | Every listed process can show an icon. Under `go test` the bundle-less test binary therefore gets the generic document icon, which is the expected native result. |
+| The macOS TIFF representation is decoded with the `image` crate, resized to fit 32×32 with a triangle filter and encoded as PNG (`mitmproxy-rs/src/processes/macos_icons.rs:46-55`). | The icon's CGImage is drawn into a Quartz bitmap in the device RGB colour space (premultiplied alpha, RGBA bytes), fitted within 32×32 with its aspect ratio kept, and encoded as PNG in Go. A source image larger than 4096 pixels on either side is rejected before a bitmap is allocated, and the PNG is capped at 1 MiB. No sRGB colour management is applied, and pixel values can differ from upstream's resize. | Bound native memory and output size; Quartz scales the image, so no TIFF decoder is needed. |
+| The icon cache maps every executable path and icon for the life of the process and is never cleared (`mitmproxy-rs/src/processes/mod.rs:36-38`, `macos_icons.rs:13-44`). | Icons are cached per path in a least-recently-used cache of at most 256 paths and 16 MiB of PNG data; identical PNGs are stored once. An evicted icon is fetched again. | Bound memory in a long-running proxy that sees many executables. |
+| The process-wide icon cache sits behind one mutex (`mitmproxy-rs/src/processes/mod.rs:36-38`). | All AppKit and Quartz calls run under one mutex on a locked OS thread inside an autorelease pool, so concurrent `ExecutableIcon` calls that miss the cache wait for each other; cache hits make no AppKit call. | NSImage may be used by only one thread at a time, and goroutines move between OS threads. |
+| Windows lists processes and their visibility with Win32 calls, including `IsWindowVisible`, `IsIconic` and the DWM cloak attribute, and reads icons with `ExtractAssociatedIconW` (`mitmproxy-rs/src/processes/windows_list.rs`, `windows_icons.rs`). | The Windows listing, icon and window-visibility code builds and passes `go vet` for windows/amd64 but has not run on Windows. No native Windows process list, icon, visibility or DWM-cloak result is claimed. A follow-up runs the shared and Windows-specific tests on a native Windows host or the `windows-2025` runner, decodes the real current-binary icon, records the desktop session type for the visibility check, and gets a scoped review of handle ownership and buffer bounds. | Native Windows CI is paused. This row changes only after that native evidence exists. |

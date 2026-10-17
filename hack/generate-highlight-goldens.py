@@ -20,9 +20,12 @@ import json
 import logging
 import os
 import re
+import ssl
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
 import urllib.request
 import zipfile
 from functools import cache
@@ -301,11 +304,33 @@ def _validate_manifest(
 
 
 def _download(url: str, limit: int) -> bytes:
-    with urllib.request.urlopen(url, timeout=60) as response:
-        data = response.read(limit + 1)
-    if len(data) > limit:
-        raise ValueError("oracle download exceeds size limit")
-    return data
+    """Fetch bounded oracle provenance bytes, retrying interrupted connections."""
+    attempt = 1
+    while True:
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                data = response.read(limit + 1)
+        except (
+            urllib.error.URLError,
+            ssl.SSLError,
+            TimeoutError,
+            ConnectionError,
+        ) as error:
+            reason = error.reason if isinstance(error, urllib.error.URLError) else error
+            transient = isinstance(
+                reason, (ssl.SSLEOFError, TimeoutError, ConnectionError)
+            )
+            if not transient or attempt == 3:
+                raise
+            LOGGER.warning(
+                "Oracle download interrupted; retrying attempt %d of 3", attempt + 1
+            )
+            time.sleep(attempt)
+            attempt += 1
+            continue
+        if len(data) > limit:
+            raise ValueError("oracle download exceeds size limit")
+        return data
 
 
 @cache

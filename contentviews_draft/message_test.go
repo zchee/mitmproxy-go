@@ -6,6 +6,7 @@ package contentviewsdraft
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -77,6 +78,44 @@ func TestContentviewMetadata(t *testing.T) {
 	if string(request.RawContent) != "request" || string(response.RawContent) != "response" {
 		t.Fatal("message content mutated")
 	}
+	t.Run("definitions_home", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+		absolute := filepath.Join(home, "absolute.proto")
+		tests := map[string]struct {
+			option *string
+			want   string
+		}{
+			"home file":    {new("~/schemas/service.proto"), filepath.Join(home, "schemas", "service.proto")},
+			"bare home":    {new("~"), home},
+			"home slash":   {new("~/"), home},
+			"home dot":     {new("~/./schemas"), filepath.Join(home, "schemas")},
+			"absolute":     {new(absolute), absolute},
+			"relative":     {new("schemas/service.proto"), "schemas/service.proto"},
+			"empty option": {new(""), ""},
+			"nil option":   {nil, ""},
+		}
+		for name, tt := range tests {
+			t.Run(name, func(t *testing.T) {
+				metadata := contentviews.Metadata{Flow: f}
+				if tt.option != nil {
+					metadata.ProtobufDefinitions = *tt.option
+				}
+				original := metadata.ProtobufDefinitions
+				got := PrettifyMessageWithMetadata(request, metadata, "Metadata", registry, 0)
+				if got.Err != nil {
+					t.Fatal(got.Err)
+				}
+				if diff := cmp.Diff(tt.want+"|application/grpc|http|true|true", got.Text); diff != "" {
+					t.Fatal(diff)
+				}
+				if metadata.ProtobufDefinitions != original {
+					t.Fatal("caller metadata was mutated by home expansion")
+				}
+			})
+		}
+	})
 }
 
 func TestMessagePreservation(t *testing.T) {

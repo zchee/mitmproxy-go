@@ -197,17 +197,22 @@ def test_wheel_digest_mismatch(
 ) -> None:
     """Absent, corrupt and internally consistent foreign wheel hashes fail."""
     manifest = _read(CORPUS / "inputs/manifest.json")
-    for key, value in (
-        ("installed_sha256", None),
-        ("installed_sha256", "0" * 64),
-        ("wheel_sha256", "0" * 64),
-    ):
-        provenance = copy.deepcopy(generated[2])
-        cast(dict[str, object], provenance["oracle"])[key] = value
-        with pytest.raises(ValueError, match="digest.*mismatch"):
-            generator._validate_provenance(
-                provenance, manifest, generator._installed_oracle()
-            )
+    for target in ("oracle", "companion"):
+        for key, value in (
+            ("installed_sha256", None),
+            ("installed_sha256", "0" * 64),
+            ("wheel_sha256", "0" * 64),
+            ("archive_verified_files", ["wrong"]),
+        ):
+            provenance = copy.deepcopy(generated[2])
+            record = cast(dict[str, object], provenance["oracle"])
+            if target == "companion":
+                record = cast(dict[str, object], record["companion"])
+            record[key] = value
+            with pytest.raises(ValueError, match="digest.*mismatch"):
+                generator._validate_provenance(
+                    provenance, manifest, generator._installed_oracle()
+                )
 
 
 def test_source_pin_mismatch(generator: ModuleType, corpus: Path) -> None:
@@ -327,10 +332,36 @@ def test_provenance_roundtrip(
     assert provenance["source_pins"] == generator.PINS
     assert len(cast(dict[str, object], provenance["lock_tables"])) == 2
     oracle = cast(dict[str, object], provenance["oracle"])
-    assert str(oracle["filename"]).endswith(".whl")
-    assert len(str(oracle["wheel_sha256"])) == 64
-    assert len(str(oracle["installed_sha256"])) == 64
-    assert oracle["files"]
+    companion = cast(dict[str, object], oracle["companion"])
+    for distribution in (oracle, companion):
+        assert str(distribution["filename"]).endswith(".whl")
+        assert len(str(distribution["wheel_sha256"])) == 64
+        assert distribution["installed_sha256"] == generator._sha256(
+            generator._json_bytes(distribution["files"])
+        )
+        assert distribution["files"]
+        archived = cast(list[str], distribution["archive_verified_files"])
+        assert archived == sorted(set(archived))
+        assert all(
+            len(parts := Path(path).parts) >= 3
+            and parts[0].endswith(".data")
+            and parts[1] in {"scripts", "data", "headers", "purelib", "platlib"}
+            for path in archived
+        )
+    if sys.platform == "linux":
+        assert companion["archive_verified_files"] == [
+            "mitmproxy_linux-0.12.11.data/scripts/mitmproxy-linux-redirector"
+        ]
+    assert companion["version"] == "0.12.11"
+    assert (
+        companion["distribution"]
+        == {
+            "darwin": "mitmproxy-macos",
+            "linux": "mitmproxy-linux",
+            "win32": "mitmproxy-windows",
+        }[sys.platform]
+    )
+    assert companion["wheel_sha256"] == generator.COMPANION_PINS[companion["filename"]]
     assert (output / "goldens.json").read_bytes() == generator._json_bytes(goldens)
     assert (output / "provenance.json").read_bytes() == generator._json_bytes(
         provenance

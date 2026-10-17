@@ -73,6 +73,13 @@ SOURCE_PATHS = [
 ] + ["mitmproxy-rs/src/syntax_highlight.rs"]
 MAX_SOURCE_BYTES = 2 * 1024 * 1024
 MAX_WHEEL_BYTES = 128 * 1024 * 1024
+# The native redirector pins are shared with docs/dependencies.md.
+COMPANION_PINS = {
+    "mitmproxy_macos-0.12.11-py3-none-any.whl": "63349d9b46514ca679547651f7c0548f9222892edfbcba087b82b3244fbae859",
+    "mitmproxy_windows-0.12.11-py3-none-any.whl": "59addc8864669a08f8cb48d8b29129efb1ca5f6cba9696e2d91f1f506b21a2d7",
+    "mitmproxy_linux-0.12.11-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl": "3de4f96c11565cca2d051655f8ca23f8f24f4b3220e9ca3b0ad81007f293e9da",
+    "mitmproxy_linux-0.12.11-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": "0e5670a6b82546ebc0f947d79adfcb3c001ba3136a10ce848a2f4e2f336611c4",
+}
 
 
 def _object(value: object, label: str) -> dict[str, object]:
@@ -302,19 +309,13 @@ def _download(url: str, limit: int) -> bytes:
 
 
 @cache
-def _installed_oracle() -> dict[str, object]:
-    distribution = metadata.distribution("mitmproxy_rs")
+def _installed_distribution(name: str) -> dict[str, object]:
+    distribution = metadata.distribution(name)
     if distribution.version != VERSION:
         raise ValueError("wheel version mismatch")
     files = distribution.files
     if not files:
         raise ValueError("missing installed distribution file manifest")
-    records = []
-    for path in sorted(files, key=str):
-        if path.suffix == ".pyc":
-            continue
-        data = _read(Path(str(distribution.locate_file(path))), MAX_WHEEL_BYTES)
-        records.append({"path": str(path), "size": len(data), "sha256": _sha256(data)})
     wheel_metadata = distribution.read_text("WHEEL")
     if wheel_metadata is None:
         raise ValueError("missing installed WHEEL metadata")
@@ -325,9 +326,7 @@ def _installed_oracle() -> dict[str, object]:
     ]
     release = _object(
         json.loads(
-            _download(
-                f"https://pypi.org/pypi/mitmproxy_rs/{VERSION}/json", MAX_SOURCE_BYTES
-            )
+            _download(f"https://pypi.org/pypi/{name}/{VERSION}/json", MAX_SOURCE_BYTES)
         ),
         "PyPI release",
     )
@@ -336,7 +335,7 @@ def _installed_oracle() -> dict[str, object]:
         item = _object(value, "PyPI file")
         filename = _string(item.get("filename"), "wheel filename")
         parts = filename.removesuffix(".whl").rsplit("-", 3)
-        if len(parts) != 4 or parts[0] != f"mitmproxy_rs-{VERSION}":
+        if len(parts) != 4 or parts[0] != f"{name.replace('-', '_')}-{VERSION}":
             continue
         artifact_tags = {
             f"{python_tag}-{abi_tag}-{platform_tag}"
@@ -359,30 +358,79 @@ def _installed_oracle() -> dict[str, object]:
     digest = _sha256(wheel)
     if _object(artifact.get("digests"), "wheel digests").get("sha256") != digest:
         raise ValueError("downloaded wheel digest mismatch")
+    if (
+        name != "mitmproxy_rs"
+        and COMPANION_PINS.get(str(artifact["filename"])) != digest
+    ):
+        raise ValueError("companion wheel digest differs from the native artifact pin")
     with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
-        binary_names = [
-            name
-            for name in archive.namelist()
-            if name.startswith("mitmproxy_rs/") and name.endswith((".so", ".pyd"))
+        data_prefix = f"{name.replace('-', '_')}-{VERSION}.data"
+        relocated = {
+            info.filename
+            for info in archive.infolist()
+            if len(relocation_parts := PurePosixPath(info.filename).parts) >= 3
+            and relocation_parts[0] == data_prefix
+            and relocation_parts[1]
+            in {"scripts", "data", "headers", "purelib", "platlib"}
+            and not info.is_dir()
+        }
+        installed = {str(path): path for path in files}
+        records = []
+        for path in sorted(files, key=str):
+            if path.suffix == ".pyc":
+                continue
+            # Installers may retain the archive path in RECORD after relocation.
+            data = (
+                archive.read(str(path))
+                if str(path) in relocated
+                else _read(Path(path.locate()), MAX_WHEEL_BYTES)
+            )
+            records.append(
+                {"path": str(path), "size": len(data), "sha256": _sha256(data)}
+            )
+        payloads = [
+            info
+            for info in archive.infolist()
+            if not info.is_dir() and ".dist-info/" not in info.filename
         ]
-        if not binary_names:
-            raise ValueError("wheel has no oracle binary")
-        for name in binary_names:
-            info = archive.getinfo(name)
-            if info.file_size > MAX_WHEEL_BYTES:
-                raise ValueError("wheel binary exceeds size limit")
-            if archive.read(name) != _read(
-                Path(str(distribution.locate_file(name))), MAX_WHEEL_BYTES
-            ):
-                raise ValueError("installed oracle binary differs from wheel artifact")
+        if not payloads:
+            raise ValueError("wheel has no payload")
+        expanded_size = 0
+        for info in payloads:
+            expanded_size += info.file_size
+            if expanded_size > MAX_WHEEL_BYTES:
+                raise ValueError("wheel payload exceeds size limit")
+            payload = archive.read(info)
+            if info.filename in relocated:
+                continue
+            installed_path = installed.get(info.filename)
+            if installed_path is None:
+                raise ValueError("wheel payload missing from installed file manifest")
+            if payload != _read(Path(installed_path.locate()), MAX_WHEEL_BYTES):
+                raise ValueError("installed payload differs from wheel artifact")
     return {
-        "distribution": "mitmproxy_rs",
+        "distribution": name,
         "version": distribution.version,
         "filename": artifact["filename"],
         "wheel_sha256": digest,
         "files": records,
+        "archive_verified_files": sorted(relocated),
         "installed_sha256": _sha256(_json_bytes(records)),
     }
+
+
+@cache
+def _installed_oracle() -> dict[str, object]:
+    companion = {
+        "darwin": "mitmproxy-macos",
+        "linux": "mitmproxy-linux",
+        "win32": "mitmproxy-windows",
+    }.get(sys.platform)
+    if companion is None:
+        raise ValueError("unsupported oracle platform")
+    oracle = _installed_distribution("mitmproxy_rs").copy()
+    oracle["companion"] = _installed_distribution(companion)
+    return oracle
 
 
 def _validate_provenance(
@@ -398,6 +446,14 @@ def _validate_provenance(
     records = _array(recorded.get("files"), "installed distribution files")
     if not records or recorded.get("installed_sha256") != _sha256(_json_bytes(records)):
         raise ValueError("installed distribution digest mismatch")
+    companion = _object(recorded.get("companion"), "companion provenance")
+    companion_records = _array(companion.get("files"), "companion distribution files")
+    if (
+        not companion_records
+        or companion.get("installed_sha256") != _sha256(_json_bytes(companion_records))
+        or companion != oracle.get("companion")
+    ):
+        raise ValueError("companion wheel digest or installed distribution mismatch")
     if recorded != oracle:
         raise ValueError("wheel digest or installed distribution mismatch")
     for key in (

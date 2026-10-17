@@ -29,8 +29,8 @@ import (
 // Dumper prints completed HTTP flows and individual protocol messages. Call its
 // hooks under the addon dispatch lock. Writes intentionally block under that
 // lock, as upstream blocks its event loop while writing terminal output.
-// Message content is uncoloured; request, response and header styles are emitted
-// only when the output supports virtual terminal codes.
+// Request, response, header and message-content styles are emitted only when the
+// output supports virtual terminal codes.
 type Dumper struct {
 	options  *options.Manager
 	out      io.Writer
@@ -127,7 +127,7 @@ func (d *Dumper) echoTrailers(headers httpmsg.Headers) error {
 }
 
 func (d *Dumper) echoMessage(message any, f flow.Flow) error {
-	pretty := contentviews.PrettifyMessage(message, f, d.options.Str("dumper_default_contentview"), nil, 0)
+	pretty := d.prettifyContentview(message, f, nil)
 	content := pretty.Text
 	if d.options.Int("flow_detail") == 3 {
 		content = strutil.CutAfterNLines(content, d.options.Int("content_view_lines_cutoff"))
@@ -138,7 +138,7 @@ func (d *Dumper) echoMessage(message any, f flow.Flow) error {
 		}
 		// The pinned upstream tests the cut text, but prints the full highlighted
 		// text. Preserve this behavior, including its subsequent cutoff notice.
-		if err := d.echo(pretty.Text, 4, vtcodes.Style{}); err != nil {
+		if err := d.echoContentview(pretty.Text, pretty.SyntaxHighlight); err != nil {
 			return err
 		}
 	}

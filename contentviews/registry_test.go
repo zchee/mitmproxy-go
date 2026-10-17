@@ -49,7 +49,7 @@ func (v exampleView) Prettify(data []byte, _ Metadata) (string, error) {
 func TestRegistry(t *testing.T) {
 	tests := map[string]struct{ run func(*testing.T) }{
 		"built_in_views": {func(t *testing.T) {
-			want := []string{"auto", "dns", "graphql", "grpc", "hex dump", "hex stream", "image", "javascript", "json", "mqtt", "msgpack", "multipart form", "protobuf", "query", "raw", "socket.io", "url-encoded", "viewcss", "wbxml", "xml/html"}
+			want := []string{"auto", "dns", "graphql", "grpc", "hex dump", "hex stream", "image", "javascript", "json", "mqtt", "msgpack", "multipart form", "protobuf", "query", "raw", "socket.io", "url-encoded", "viewcss", "wbxml", "xml/html", "zip archive"}
 			if diff := cmp.Diff(want, NewRegistry().AvailableViews()); diff != "" {
 				t.Fatal(diff)
 			}

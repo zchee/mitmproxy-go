@@ -57,6 +57,7 @@ func NewRegistry() *Registry {
 	r.Register(MQTT{})
 	r.Register(GraphQL{})
 	r.Register(WBXML{})
+	r.Register(ZIP{})
 	return r
 }
 

@@ -249,6 +249,11 @@ func protobufEncodeField(number protowire.Number, field protoreflect.FieldDescri
 		}
 		value := protobufValue{number: number, typ: protowire.BytesType, children: children, nested: true}
 		value.size = uint64(protowire.SizeTag(number)) + uint64(protowire.SizeVarint(size)) + size
+		if field != nil && field.Kind() == protoreflect.GroupKind {
+			// A group is framed by start and end tags instead of a length.
+			value.typ = protowire.StartGroupType
+			value.size = 2*uint64(protowire.SizeTag(number)) + size
+		}
 		return []protobufValue{value}, nil
 	case yaml.ScalarNode:
 	default:
@@ -413,6 +418,9 @@ func appendProtobufValues(dst []byte, values []protobufValue) []byte {
 			dst = protowire.AppendFixed32(dst, uint32(value.bits))
 		case protowire.Fixed64Type:
 			dst = protowire.AppendFixed64(dst, value.bits)
+		case protowire.StartGroupType:
+			dst = appendProtobufValues(dst, value.children)
+			dst = protowire.AppendTag(dst, value.number, protowire.EndGroupType)
 		case protowire.BytesType:
 			if value.nested {
 				var body uint64

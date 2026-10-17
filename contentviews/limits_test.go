@@ -6,6 +6,8 @@ package contentviews
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -324,6 +326,37 @@ func TestContentviewLimits(t *testing.T) {
 			}
 			if budget.materialized != 0 {
 				t.Fatalf("reserved %d materialized bytes for a truncated field", budget.materialized)
+			}
+		})
+
+		t.Run("schema group depth", func(t *testing.T) {
+			// A declared group is parsed through the same bounded group
+			// walker; the refusal is not retried without the definition.
+			path := filepath.Join(t.TempDir(), "groups.proto")
+			const schema = "syntax = \"proto2\";\nmessage Outer {\n  optional group Item = 1 {\n    optional group Inner = 2 {\n      optional int32 id = 3;\n    }\n  }\n}\n"
+			if err := os.WriteFile(path, []byte(schema), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := loadProtobufSchema(t.Context(), []string{path}, schemaLimits{}, newViewBudget("Protobuf"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			descriptor, err := loaded.messageDescriptor("", true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data := []byte{0x0b, 0x13, 0x18, 0x01, 0x14, 0x0c}
+			if _, err := prettifyProtobuf(data, descriptor, newViewBudget("Protobuf")); err != nil {
+				t.Fatalf("rendering within the default limits: %v", err)
+			}
+			budget := limitedBudget("Protobuf", func(l *viewLimits) { l.Depth = 1 })
+			_, err = prettifyProtobuf(data, descriptor, budget)
+			limit, ok := errors.AsType[*LimitError](err)
+			if !ok {
+				t.Fatalf("error %v is not a *LimitError", err)
+			}
+			if diff := cmp.Diff([]string{"Protobuf", "Protobuf wire", "nesting depth"}, []string{limit.View, limit.Stage, limit.Resource}); diff != "" {
+				t.Fatalf("refusal (-want +got):\n%s", diff)
 			}
 		})
 

@@ -40,6 +40,14 @@ type protobufWireField struct {
 // number in ascending order, keeping the occurrence order within a number.
 // Groups are skipped, as the Rust view's runtime discards them.
 func parseProtobufWire(data []byte, budget *viewBudget, depth int) ([]protobufWireField, error) {
+	return parseProtobufFields(data, false, budget, depth)
+}
+
+// parseProtobufFields is parseProtobufWire that, with keepGroups, also
+// returns each group as a StartGroupType field whose data is the group body
+// without its end tag. A schema that declares a group needs those bodies;
+// the schema-less rendering keeps discarding them.
+func parseProtobufFields(data []byte, keepGroups bool, budget *viewBudget, depth int) ([]protobufWireField, error) {
 	if err := budget.checkInput(protobufWireStage, uint64(len(data))); err != nil {
 		return nil, err
 	}
@@ -70,12 +78,15 @@ func parseProtobufWire(data []byte, budget *viewBudget, depth int) ([]protobufWi
 		case protowire.BytesType:
 			field.data, n = protowire.ConsumeBytes(data)
 		case protowire.StartGroupType:
-			skipped, err := skipProtobufGroup(data, budget, depth+1)
+			skipped, body, err := skipProtobufGroup(data, budget, depth+1)
 			if err != nil {
 				return nil, err
 			}
-			data = data[skipped:]
-			continue
+			if !keepGroups {
+				data = data[skipped:]
+				continue
+			}
+			field.data, n = data[:body], skipped
 		case protowire.EndGroupType:
 			return nil, errProtobufEndGroup
 		default:
@@ -94,44 +105,46 @@ func parseProtobufWire(data []byte, budget *viewBudget, depth int) ([]protobufWi
 	return fields, nil
 }
 
-// skipProtobufGroup consumes a group body. Its end tag need not repeat the
-// opening field number, matching the pinned runtime; the traversal still
-// spends work for every tag it reads.
-func skipProtobufGroup(data []byte, budget *viewBudget, depth int) (int, error) {
+// skipProtobufGroup consumes a group body and its end tag, returning the
+// bytes consumed and the length of the body alone. The end tag need not
+// repeat the opening field number, matching the pinned runtime; the
+// traversal still spends work for every tag it reads.
+func skipProtobufGroup(data []byte, budget *viewBudget, depth int) (int, int, error) {
 	if err := budget.checkDepth(protobufWireStage, depth); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	remaining := data
 	open := 1
 	for len(remaining) != 0 {
 		number, typ, n := protowire.ConsumeTag(remaining)
 		if n < 0 {
-			return 0, fmt.Errorf("invalid protobuf group tag: %w", protowire.ParseError(n))
+			return 0, 0, fmt.Errorf("invalid protobuf group tag: %w", protowire.ParseError(n))
 		}
 		if err := budget.chargeNodes(protobufWireStage, 1); err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 		remaining = remaining[n:]
 		switch typ {
 		case protowire.StartGroupType:
 			open++
 			if err := budget.checkDepth(protobufWireStage, depth+open-1); err != nil {
-				return 0, err
+				return 0, 0, err
 			}
 		case protowire.EndGroupType:
 			open--
 			if open == 0 {
-				return len(data) - len(remaining), nil
+				consumed := len(data) - len(remaining)
+				return consumed, consumed - n, nil
 			}
 		default:
 			n = protowire.ConsumeFieldValue(number, typ, remaining)
 			if n < 0 {
-				return 0, fmt.Errorf("invalid protobuf group value: %w", protowire.ParseError(n))
+				return 0, 0, fmt.Errorf("invalid protobuf group value: %w", protowire.ParseError(n))
 			}
 			remaining = remaining[n:]
 		}
 	}
-	return 0, errors.New("unterminated protobuf group")
+	return 0, 0, errors.New("unterminated protobuf group")
 }
 
 // protobufUnknownNode renders a message with no known fields: numeric keys in

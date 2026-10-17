@@ -210,6 +210,8 @@ func TestContentviewLimits(t *testing.T) {
 			}
 		})
 	})
+	t.Run("grpc", testGRPCLimits)
+
 	t.Run("protobuf", func(t *testing.T) {
 		prettify := func(data []byte) func(*viewBudget) error {
 			return func(b *viewBudget) error { _, err := prettifyProtobuf(data, nil, b); return err }

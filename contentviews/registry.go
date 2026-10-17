@@ -52,6 +52,7 @@ func NewRegistry() *Registry {
 	r.Register(DNS{})
 	r.Register(MsgPack{})
 	r.Register(Protobuf{})
+	r.Register(GRPC{})
 	return r
 }
 

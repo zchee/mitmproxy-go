@@ -352,6 +352,65 @@
     }
   },
   "oracle": {
+    "companion": {
+      "distribution": "mitmproxy-macos",
+      "filename": "mitmproxy_macos-0.12.11-py3-none-any.whl",
+      "files": [
+        {
+          "path": "mitmproxy_macos-0.12.11.dist-info/INSTALLER",
+          "sha256": "e6184ce10e266134fdcfa401e8f1a95005bcd4f18d16b62b757323e2833fe9a9",
+          "size": 2
+        },
+        {
+          "path": "mitmproxy_macos-0.12.11.dist-info/METADATA",
+          "sha256": "29b317c5310474625898dcb09b9b9a2843767b83d0f7ad12e8f41260bf10f24d",
+          "size": 1179
+        },
+        {
+          "path": "mitmproxy_macos-0.12.11.dist-info/RECORD",
+          "sha256": "0a85fddd8af1ba1261e6c37652405ef89789781b7f24e873060f89986d070020",
+          "size": 948
+        },
+        {
+          "path": "mitmproxy_macos-0.12.11.dist-info/REQUESTED",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        {
+          "path": "mitmproxy_macos-0.12.11.dist-info/WHEEL",
+          "sha256": "942926c567d0b1273d09f20295879abd37507845f6b683eab9f87d808df91100",
+          "size": 87
+        },
+        {
+          "path": "mitmproxy_macos/Mitmproxy Redirector.app.tar",
+          "sha256": "b8ea49940489560bb76b231a064aa823cf3d3e8a0787eac4a456611f26c96a7f",
+          "size": 5823488
+        },
+        {
+          "path": "mitmproxy_macos/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        {
+          "path": "mitmproxy_macos/macos-certificate-truster.app/Contents/Info.plist",
+          "sha256": "c4cb78bfd7ef5e6bbae8212555b90fbc21ddea76348d3d1959509199df60f230",
+          "size": 957
+        },
+        {
+          "path": "mitmproxy_macos/macos-certificate-truster.app/Contents/Resources/mitmproxy.icns",
+          "sha256": "139ad2228ab7a6b5c53a4826b75182d7d68bc37e8d5a390867849f3821bf22c8",
+          "size": 154566
+        },
+        {
+          "path": "version-info.toml",
+          "sha256": "389dafd07ec9737530c54bd0a9dd2ef1eacbdedc312ccab381be3e4c7f4608bf",
+          "size": 3263
+        }
+      ],
+      "installed_sha256": "4647f71838b5ef514953b3abca72cec8fb15fecb0fbfbd2d77c6ec54b5e72167",
+      "version": "0.12.11",
+      "wheel_sha256": "63349d9b46514ca679547651f7c0548f9222892edfbcba087b82b3244fbae859"
+    },
     "distribution": "mitmproxy_rs",
     "filename": "mitmproxy_rs-0.12.11-cp312-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl",
     "files": [

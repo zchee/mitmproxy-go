@@ -8,10 +8,30 @@ package processinfo
 import (
 	"errors"
 	"fmt"
+	"runtime"
+	"structs"
 	"sync"
+	"unsafe"
 
 	"github.com/ebitengine/purego"
+	"github.com/ebitengine/purego/objc"
 )
+
+type cgPoint struct {
+	_    structs.HostLayout
+	x, y float64
+}
+
+type cgSize struct {
+	_             structs.HostLayout
+	width, height float64
+}
+
+type cgRect struct {
+	_      structs.HostLayout
+	origin cgPoint
+	size   cgSize
+}
 
 type darwinNative struct {
 	handles          []uintptr
@@ -25,9 +45,38 @@ type darwinNative struct {
 	numberValue      func(uintptr, int64, *int32) uint8
 	stringCreate     func(uintptr, string, uint32) uintptr
 	cfRelease        func(uintptr)
+	imageWidth       func(uintptr) uintptr
+	imageHeight      func(uintptr) uintptr
+	colorSpaceCreate func() uintptr
+	colorSpaceFree   func(uintptr)
+	contextCreate    func(unsafe.Pointer, uintptr, uintptr, uintptr, uintptr, uintptr, uint32) uintptr
+	contextDraw      func(uintptr, cgRect, uintptr)
+	contextData      func(uintptr) unsafe.Pointer
+	contextFree      func(uintptr)
+	sendVoid         func(objc.ID, objc.SEL)
+	poolClass        objc.Class
+	workspaceClass   objc.Class
+	stringClass      objc.Class
+	alloc            objc.SEL
+	init             objc.SEL
+	drain            objc.SEL
+	sharedWorkspace  objc.SEL
+	runningApps      objc.SEL
+	count            objc.SEL
+	objectAtIndex    objc.SEL
+	executableURL    objc.SEL
+	path             objc.SEL
+	utf8String       objc.SEL
+	stringWithUTF8   objc.SEL
+	icon             objc.SEL
+	iconForFile      objc.SEL
+	cgImage          objc.SEL
 }
 
-var darwinAPI = sync.OnceValues(loadDarwinNative)
+var (
+	darwinAPI = sync.OnceValues(loadDarwinNative)
+	darwinMu  sync.Mutex
+)
 
 func loadDarwinNative() (api *darwinNative, err error) {
 	api = &darwinNative{}
@@ -41,6 +90,8 @@ func loadDarwinNative() (api *darwinNative, err error) {
 	for _, path := range []string{
 		"/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation",
 		"/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics",
+		"/System/Library/Frameworks/AppKit.framework/AppKit",
+		"/usr/lib/libobjc.A.dylib",
 	} {
 		handle, err := purego.Dlopen(path, purego.RTLD_NOW|purego.RTLD_LOCAL)
 		if err != nil {
@@ -48,7 +99,7 @@ func loadDarwinNative() (api *darwinNative, err error) {
 		}
 		api.handles = append(api.handles, handle)
 	}
-	coreFoundation, coreGraphics := api.handles[0], api.handles[1]
+	coreFoundation, coreGraphics, objectiveC := api.handles[0], api.handles[1], api.handles[3]
 	bindings := []struct {
 		handle uintptr
 		name   string
@@ -64,6 +115,15 @@ func loadDarwinNative() (api *darwinNative, err error) {
 		{coreFoundation, "CFNumberGetValue", &api.numberValue},
 		{coreFoundation, "CFStringCreateWithCString", &api.stringCreate},
 		{coreFoundation, "CFRelease", &api.cfRelease},
+		{coreGraphics, "CGImageGetWidth", &api.imageWidth},
+		{coreGraphics, "CGImageGetHeight", &api.imageHeight},
+		{coreGraphics, "CGColorSpaceCreateDeviceRGB", &api.colorSpaceCreate},
+		{coreGraphics, "CGColorSpaceRelease", &api.colorSpaceFree},
+		{coreGraphics, "CGBitmapContextCreate", &api.contextCreate},
+		{coreGraphics, "CGContextDrawImage", &api.contextDraw},
+		{coreGraphics, "CGBitmapContextGetData", &api.contextData},
+		{coreGraphics, "CGContextRelease", &api.contextFree},
+		{objectiveC, "objc_msgSend", &api.sendVoid},
 	}
 	for _, binding := range bindings {
 		symbol, err := purego.Dlsym(binding.handle, binding.name)
@@ -72,7 +132,42 @@ func loadDarwinNative() (api *darwinNative, err error) {
 		}
 		purego.RegisterFunc(binding.target, symbol)
 	}
+	api.poolClass = objc.GetClass("NSAutoreleasePool")
+	api.workspaceClass = objc.GetClass("NSWorkspace")
+	api.stringClass = objc.GetClass("NSString")
+	if api.poolClass == 0 || api.workspaceClass == 0 || api.stringClass == 0 {
+		return api, errors.New("processinfo: required AppKit class unavailable")
+	}
+	api.alloc, api.init, api.drain = objc.RegisterName("alloc"), objc.RegisterName("init"), objc.RegisterName("drain")
+	api.sharedWorkspace = objc.RegisterName("sharedWorkspace")
+	api.runningApps = objc.RegisterName("runningApplications")
+	api.count, api.objectAtIndex = objc.RegisterName("count"), objc.RegisterName("objectAtIndex:")
+	api.executableURL, api.path = objc.RegisterName("executableURL"), objc.RegisterName("path")
+	api.utf8String, api.stringWithUTF8 = objc.RegisterName("UTF8String"), objc.RegisterName("stringWithUTF8String:")
+	api.icon, api.iconForFile = objc.RegisterName("icon"), objc.RegisterName("iconForFile:")
+	api.cgImage = objc.RegisterName("CGImageForProposedRect:context:hints:")
 	return api, nil
+}
+
+// Workspace icons may share NSImage instances, which must not be used concurrently.
+func withDarwinPool(operation func(*darwinNative) error) error {
+	api, err := darwinAPI()
+	if err != nil {
+		return err
+	}
+	darwinMu.Lock()
+	defer darwinMu.Unlock()
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	pool := objc.ID(api.poolClass).Send(api.alloc)
+	if pool != 0 {
+		pool = pool.Send(api.init)
+	}
+	if pool == 0 {
+		return errors.New("processinfo: create autorelease pool")
+	}
+	defer api.sendVoid(pool, api.drain)
+	return operation(api)
 }
 
 func visibleProcessIDs() (map[int32]struct{}, error) {

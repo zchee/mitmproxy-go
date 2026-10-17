@@ -7,6 +7,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
+	"os/user"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/zchee/mitmproxy-go/flow"
@@ -30,13 +34,22 @@ var ErrUnsupportedMessage = errors.New("unsupported contentview message")
 // ErrUnsupportedMessage for unsupported message types. The input and its flow
 // must not be mutated concurrently while this function runs.
 func PrettifyMessage(message any, f flow.Flow, viewName string, registry *Registry, lineCutoff int) Result {
+	return PrettifyMessageWithMetadata(message, Metadata{Flow: f}, viewName, registry, lineCutoff)
+}
+
+// PrettifyMessageWithMetadata renders a message using the same options and
+// fallback behavior as PrettifyMessage. It retains the supplied flow and expands
+// the protobuf definitions home path, deriving other metadata from the message.
+// It does not mutate the supplied metadata. The message and its flow must not be
+// mutated concurrently while this function runs.
+func PrettifyMessageWithMetadata(message any, metadata Metadata, viewName string, registry *Registry, lineCutoff int) Result {
 	if registry == nil {
 		registry = DefaultRegistry
 	}
 	if viewName == "" {
 		viewName = "auto"
 	}
-	data, metadata, description, err := messageData(message, f)
+	data, metadata, description, err := messageData(message, metadata)
 	if err != nil {
 		return Result{Text: err.Error(), SyntaxHighlight: "error", Err: err}
 	}
@@ -82,8 +95,69 @@ func prettify(view View, data []byte, metadata Metadata) (text string, err error
 	return view.Prettify(data, metadata)
 }
 
-func messageData(message any, f flow.Flow) ([]byte, Metadata, string, error) {
-	metadata := Metadata{Flow: f}
+func expandProtobufDefinitions(path string) (string, error) {
+	if !strings.HasPrefix(path, "~") {
+		return path, nil
+	}
+	separators := "/"
+	if runtime.GOOS == "windows" {
+		separators = `/\`
+	}
+	end := strings.IndexAny(path, separators)
+	if end < 0 {
+		end = len(path)
+	}
+	name := path[1:end]
+	home, err := os.UserHomeDir()
+	if runtime.GOOS == "windows" {
+		if err != nil {
+			if suffix, found := os.LookupEnv("HOMEPATH"); found {
+				home = os.Getenv("HOMEDRIVE") + suffix
+			}
+		}
+		if name != "" && name != os.Getenv("USERNAME") {
+			if filepath.Base(home) != os.Getenv("USERNAME") {
+				return "", fmt.Errorf("cannot resolve protobuf definitions home")
+			}
+			home = filepath.Join(filepath.Dir(home), name)
+		}
+	} else if name != "" {
+		account, lookupErr := user.Lookup(name)
+		if lookupErr != nil {
+			return "", fmt.Errorf("cannot resolve protobuf definitions home")
+		}
+		home = account.HomeDir
+	} else if err != nil {
+		account, lookupErr := user.Current()
+		if lookupErr != nil {
+			return "", fmt.Errorf("cannot resolve protobuf definitions home")
+		}
+		home = account.HomeDir
+	}
+	if home == "" {
+		return "", fmt.Errorf("cannot resolve protobuf definitions home")
+	}
+	var expanded strings.Builder
+	expanded.WriteString(strings.TrimRight(home, separators))
+	for part := range strings.FieldsFuncSeq(path[end:], func(r rune) bool { return strings.ContainsRune(separators, r) }) {
+		if part != "." {
+			expanded.WriteByte(filepath.Separator)
+			expanded.WriteString(part)
+		}
+	}
+	if expanded.Len() == 0 {
+		expanded.WriteByte(filepath.Separator)
+	}
+	return expanded.String(), nil
+}
+
+func messageData(message any, supplied Metadata) ([]byte, Metadata, string, error) {
+	metadata := Metadata{Flow: supplied.Flow, ProtobufDefinitions: supplied.ProtobufDefinitions}
+	definitions, err := expandProtobufDefinitions(metadata.ProtobufDefinitions)
+	if err != nil {
+		return nil, metadata, "", err
+	}
+	metadata.ProtobufDefinitions = definitions
 	switch m := message.(type) {
 	case *httpmsg.Request:
 		if m != nil {
@@ -96,6 +170,9 @@ func messageData(message any, f flow.Flow) ([]byte, Metadata, string, error) {
 		}
 	case *httpmsg.Message:
 		metadata.HTTPMessage = m
+		if f, ok := metadata.Flow.(*flow.HTTPFlow); ok && f != nil && f.Request != nil && m == &f.Request.Message {
+			metadata.HTTPRequest = f.Request
+		}
 	case *tcp.Message:
 		metadata.TCPMessage = m
 		metadata.Protocol = "tcp"

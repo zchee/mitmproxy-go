@@ -1,0 +1,1 @@
+function foo() { let bar = true && 42 && 'qux'; foo.bar = 42; }  // comment

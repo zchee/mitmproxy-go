@@ -1,0 +1,7 @@
+p > span { 
+color: red;
+font-size: 42px;
+content: "foo";
+margin: var(--foo);
+}
+/* foo */

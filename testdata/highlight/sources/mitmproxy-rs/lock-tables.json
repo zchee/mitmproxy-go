@@ -1,0 +1,20 @@
+{
+  "51fe2b7c5aa8439c162abb665db61c6669d146d6": [
+    {"name": "tree-sitter", "version": "0.26.12", "checksum": "83c567a8e18ae93f20982c90370b16fd24023aeaf52f6052b96957ab253a0fec"},
+    {"name": "tree-sitter-css", "version": "0.25.0", "checksum": "a5cbc5e18f29a2c6d6435891f42569525cf95435a3e01c2f1947abcde178686f"},
+    {"name": "tree-sitter-highlight", "version": "0.26.12", "checksum": "12bf7c298789885e63e7c1c9c86976875136064d23f541007bae3a02a23a74f9"},
+    {"name": "tree-sitter-javascript", "version": "0.25.0", "checksum": "68204f2abc0627a90bdf06e605f5c470aa26fdcb2081ea553a04bdad756693f5"},
+    {"name": "tree-sitter-language", "version": "0.1.7", "checksum": "009994f150cc0cd50ff54917d5bc8bffe8cad10ca10d81c34da2ec421ae61782"},
+    {"name": "tree-sitter-xml", "version": "0.7.0", "checksum": "e670041f591d994f54d597ddcd8f4ebc930e282c4c76a42268743b71f0c8b6b3"},
+    {"name": "tree-sitter-yaml", "version": "0.7.2", "checksum": "53c223db85f05e34794f065454843b0668ebc15d240ada63e2b5939f43ce7c97"}
+  ],
+  "v0.12.11": [
+    {"name": "tree-sitter", "version": "0.26.11", "checksum": "af1c71c1c4cc0920b20d6b0f6572e7682cd07a6a2faec71067a31fa394c586df"},
+    {"name": "tree-sitter-css", "version": "0.25.0", "checksum": "a5cbc5e18f29a2c6d6435891f42569525cf95435a3e01c2f1947abcde178686f"},
+    {"name": "tree-sitter-highlight", "version": "0.26.11", "checksum": "cd7a0c48d503cf4e0a57a2453424eaef2fce4b4269f13e3579e52f0d0c9e5cc8"},
+    {"name": "tree-sitter-javascript", "version": "0.25.0", "checksum": "68204f2abc0627a90bdf06e605f5c470aa26fdcb2081ea553a04bdad756693f5"},
+    {"name": "tree-sitter-language", "version": "0.1.7", "checksum": "009994f150cc0cd50ff54917d5bc8bffe8cad10ca10d81c34da2ec421ae61782"},
+    {"name": "tree-sitter-xml", "version": "0.7.0", "checksum": "e670041f591d994f54d597ddcd8f4ebc930e282c4c76a42268743b71f0c8b6b3"},
+    {"name": "tree-sitter-yaml", "version": "0.7.2", "checksum": "53c223db85f05e34794f065454843b0668ebc15d240ada63e2b5939f43ce7c97"}
+  ]
+}

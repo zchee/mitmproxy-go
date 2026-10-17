@@ -50,6 +50,7 @@ func NewRegistry() *Registry {
 	r.Register(CSS{})
 	r.Register(JavaScript{})
 	r.Register(DNS{})
+	r.Register(MsgPack{})
 	return r
 }
 

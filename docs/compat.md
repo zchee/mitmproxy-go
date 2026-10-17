@@ -387,6 +387,28 @@ integer syntax, including Unicode digits, signs, whitespace and single underscor
 | A query value `a` + U+0085 (NEL) + `b` is emitted as a single-quoted scalar with a literal NEL and two indentation spaces; upstream's own `yaml_loads` reads it back as `a b` (`mitmproxy/contentviews/_view_query.py`, `_utils.py`, pinned ruamel.yaml probe). An image-metadata value with the character behaves the same way. | Emits the double-quoted scalar `"a\Nb"`, which reads back with the original NEL, in query and image metadata alike. | Deliberate correctness difference: preserve the query's character rather than reproduce ruamel's lossy roundtrip. Differential tests assert equality with the original query strings and output equality outside affected scalars. |
 | A zTXt chunk's text is decompressed without a size limit (`mitmproxy/contentviews/_view_image/image_parser.py`, `mitmproxy/contrib/kaitaistruct/png.py`, `zlib.decompress`). | Decompressing beyond 64 MiB fails the image view. | A small chunk must not expand without bound while rendering an untrusted body. |
 
+The shared adapters for new binary/YAML contentviews use per-call budgets:
+64 MiB encoded input, output and retained materialization; 1,000,000 logical
+nodes or effective alias work; and nesting depth 64. The decompression budget
+is also 64 MiB per call; multi-frame and fallback consumers must keep the same
+budget. These limits are independent of the existing process-wide
+`content_decode_limit` option; they do not change that option or the existing
+views' behavior. The adapters alone do not register new views.
+
+YAML is scanned by the same native parser before a loader is constructed.
+Mapping keys and values, document/container/scalar nodes and alias expansion
+work count against the shared budget. Anchor metadata is limited to 65,536
+distinct entries per document in addition to its byte budget. Over-budget
+input returns a typed `LimitError`, and failed attempts do not restore spent
+work. Output goes through a bounded writer; partial output is discarded.
+
+The local protobuf schema adapter accepts only explicitly configured source
+roots and built-in standard descriptors. It allows at most 1,024 source files,
+16 MiB per source file, 64 MiB total source bytes, and directory/import depth
+64. Imports cannot escape the configured roots; no network resolver or protoc
+process is used. Subsequent calls reload changed sources rather than using a
+permanent global schema cache.
+
 ## tlsparse
 
 | Upstream | Go | Reason |

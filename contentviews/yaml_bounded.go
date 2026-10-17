@@ -97,6 +97,8 @@ func (b *viewBudget) checkDepth(stage string, depth int) error {
 	return nil
 }
 
+const yamlAnchorEntryLimit = 65_536
+
 type yamlAnchorWeight struct {
 	weight uint64
 	height int
@@ -118,10 +120,17 @@ func preflightYAML(data []byte, budget *viewBudget) error {
 	anchors := make(map[string]*yamlAnchorWeight)
 	var frames []yamlWeightFrame
 	var nativeDepthError error
-	depthOption := yaml.WithPlugin(limit.New(limit.DepthFunc(func(depth int, _ *yaml.DepthContext) error {
+	var nativeDepthContext string
+	depthOption := yaml.WithPlugin(limit.New(limit.DepthFunc(func(depth int, context *yaml.DepthContext) error {
 		err := budget.checkDepth(stage, depth)
 		if err != nil {
 			nativeDepthError = err
+			switch context.Kind {
+			case yaml.DepthKindFlow:
+				nativeDepthContext = "while increasing flow level"
+			case yaml.DepthKindBlock:
+				nativeDepthContext = "while increasing indent level"
+			}
 		}
 		return err
 	})))
@@ -188,6 +197,9 @@ func preflightYAML(data []byte, budget *viewBudget) error {
 		}
 		var anchor *yamlAnchorWeight
 		if len(event.Anchor) != 0 {
+			if _, exists := anchors[string(event.Anchor)]; !exists && len(anchors) >= yamlAnchorEntryLimit {
+				return budget.refusal(stage, "anchor entries", uint64(len(anchors)), 1, yamlAnchorEntryLimit)
+			}
 			if err := budget.chargeMaterialization(stage, uint64(len(event.Anchor))); err != nil {
 				return err
 			}
@@ -207,12 +219,18 @@ func preflightYAML(data []byte, budget *viewBudget) error {
 		frames = append(frames, yamlWeightFrame{kind: event.Kind, weight: 1, height: 1, anchor: anchor})
 		return nil
 	}, depthOption)
-	if nativeDepthError != nil {
-		if loadError, ok := errors.AsType[*yaml.LoadError](err); ok && loadError.Stage == yaml.ScannerStage {
-			return nativeDepthError
-		}
+	if matchesYAMLDepthError(err, nativeDepthError, nativeDepthContext) {
+		return nativeDepthError
 	}
 	return err
+}
+
+func matchesYAMLDepthError(err, cause error, context string) bool {
+	if cause == nil || context == "" {
+		return false
+	}
+	loadError, ok := errors.AsType[*yaml.LoadError](err)
+	return ok && loadError.Stage == yaml.ScannerStage && loadError.Message == cause.Error() && loadError.ContextMsg == context
 }
 
 func parseBoundedYAML(data []byte, budget *viewBudget) ([]*yaml.Node, error) {

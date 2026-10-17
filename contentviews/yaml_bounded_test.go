@@ -6,6 +6,7 @@ package contentviews
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"strings"
@@ -192,6 +193,73 @@ func TestViewBudgetReservations(t *testing.T) {
 			t.Fatal("overflow mutated spent counter")
 		}
 	})
+}
+
+func TestBoundedYAMLAnchorEntries(t *testing.T) {
+	tests := map[string]struct {
+		count     int
+		documents int
+		reuse     bool
+		refused   bool
+	}{
+		"boundary":       {count: yamlAnchorEntryLimit, documents: 1},
+		"over_limit":     {count: yamlAnchorEntryLimit + 1, documents: 1, refused: true},
+		"document_reset": {count: yamlAnchorEntryLimit, documents: 2},
+		"overwrite":      {count: yamlAnchorEntryLimit + 1, documents: 1, reuse: true},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			var input strings.Builder
+			for range test.documents {
+				input.WriteString("---\n")
+				for index := range test.count {
+					if test.reuse {
+						index = 0
+					}
+					fmt.Fprintf(&input, "- &a%d x\n", index)
+				}
+			}
+			budget := newViewBudget("test")
+			err := preflightYAML([]byte(input.String()), budget)
+			if !test.refused {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			limitError, ok := errors.AsType[*LimitError](err)
+			if !ok || limitError.Resource != "anchor entries" || limitError.Limit != yamlAnchorEntryLimit || limitError.Attempted != yamlAnchorEntryLimit+1 {
+				t.Fatalf("anchor limit: %v", err)
+			}
+		})
+	}
+}
+
+func TestBoundedYAMLDepthErrorIdentity(t *testing.T) {
+	cause := &LimitError{View: "test", Stage: "YAML preflight", Resource: "nesting depth", Limit: 64, Attempted: 65}
+	tests := map[string]struct {
+		stage           yaml.Stage
+		message         string
+		context         string
+		expectedContext string
+		cause           error
+		matches         bool
+	}{
+		"flow":              {yaml.ScannerStage, cause.Error(), "while increasing flow level", "while increasing flow level", cause, true},
+		"block":             {yaml.ScannerStage, cause.Error(), "while increasing indent level", "while increasing indent level", cause, true},
+		"other_stage":       {yaml.ParserStage, cause.Error(), "while increasing flow level", "while increasing flow level", cause, false},
+		"other_message":     {yaml.ScannerStage, "unrelated scanner error", "while increasing flow level", "while increasing flow level", cause, false},
+		"other_context":     {yaml.ScannerStage, cause.Error(), "while parsing a tag", "while increasing flow level", cause, false},
+		"no_callback_error": {yaml.ScannerStage, cause.Error(), "while increasing flow level", "while increasing flow level", nil, false},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := fmt.Errorf("wrapped: %w", &yaml.LoadError{Stage: test.stage, Message: test.message, ContextMsg: test.context})
+			if got := matchesYAMLDepthError(err, test.cause, test.expectedContext); got != test.matches {
+				t.Fatalf("classification = %v; want %v", got, test.matches)
+			}
+		})
+	}
 }
 
 func TestBoundedYAMLWriter(t *testing.T) {

@@ -71,6 +71,22 @@ func loadProtobufSchema(ctx context.Context, roots []string, limits schemaLimits
 	}()
 	var inputs []string
 	seenInputs, seenDirectories := map[string]bool{}, map[string]bool{}
+	addInput := func(directory schemaSourceRoot, name string) error {
+		canonical, err := directory.canonical(name)
+		if err != nil {
+			return err
+		}
+		resolved := filepath.Join(directory.path, filepath.FromSlash(canonical))
+		if seenInputs[resolved] {
+			return nil
+		}
+		if len(inputs) == limits.Files {
+			return budget.refusal(stage, "files", uint64(len(inputs)), 1, uint64(limits.Files))
+		}
+		seenInputs[resolved] = true
+		inputs = append(inputs, canonical)
+		return nil
+	}
 	var walk func(schemaSourceRoot, string, int) error
 	walk = func(directory schemaSourceRoot, name string, depth int) error {
 		if err := ctx.Err(); err != nil {
@@ -136,12 +152,10 @@ func loadProtobufSchema(ctx context.Context, roots []string, limits schemaLimits
 				if err := walk(directory, relative, depth+1); err != nil {
 					return err
 				}
-			} else if strings.HasSuffix(child, ".proto") && !seenInputs[relative] {
-				if len(inputs) == limits.Files {
-					return budget.refusal(stage, "files", uint64(len(inputs)), 1, uint64(limits.Files))
+			} else if strings.HasSuffix(child, ".proto") {
+				if err := addInput(directory, relative); err != nil {
+					return err
 				}
-				seenInputs[relative] = true
-				inputs = append(inputs, relative)
 			}
 		}
 		return nil
@@ -176,9 +190,8 @@ func loadProtobufSchema(ctx context.Context, roots []string, limits schemaLimits
 			if err := walk(directory, ".", 1); err != nil {
 				return nil, err
 			}
-		} else if !seenInputs[name] {
-			seenInputs[name] = true
-			inputs = append(inputs, name)
+		} else if err := addInput(directory, name); err != nil {
+			return nil, err
 		}
 	}
 	if len(inputs) == 0 {

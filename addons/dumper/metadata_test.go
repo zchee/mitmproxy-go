@@ -26,9 +26,6 @@ func (definitionMetadataView) Prettify(_ []byte, metadata contentviews.Metadata)
 }
 
 func TestContentviewDefinitions(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
 	fixture, err := filepath.Abs(filepath.Join("..", "..", "testdata", "mitmproxy-rs", "contentviews", "protobuf", "simple.proto"))
 	if err != nil {
 		t.Fatal(err)
@@ -42,14 +39,14 @@ func TestContentviewDefinitions(t *testing.T) {
 		after  *string
 		want   string
 	}{
-		"unset":                   {},
-		"empty":                   {value: new("")},
-		"relative":                {value: new("schema.proto"), want: "schema.proto"},
-		"existing fixture":        {value: new(fixture), want: fixture},
-		"home":                    {value: new("~"), want: home},
-		"home child":              {value: new("~" + string(os.PathSeparator) + "schema.proto"), want: filepath.Join(home, "schema.proto")},
-		"changed between renders": {value: new(fixture), change: true, after: new("next.proto"), want: "next.proto"},
-		"cleared between renders": {value: new(fixture), change: true},
+		"unset":                      {},
+		"empty":                      {value: new("")},
+		"relative":                   {value: new("schema.proto"), want: "schema.proto"},
+		"existing fixture":           {value: new(fixture), want: fixture},
+		"home stays unchanged":       {value: new("~"), want: "~"},
+		"home child stays unchanged": {value: new("~" + string(os.PathSeparator) + "schema.proto"), want: "~" + string(os.PathSeparator) + "schema.proto"},
+		"changed between renders":    {value: new(fixture), change: true, after: new("next.proto"), want: "next.proto"},
+		"cleared between renders":    {value: new(fixture), change: true},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -60,17 +57,12 @@ func TestContentviewDefinitions(t *testing.T) {
 			f := testflow.TFlow(testflow.WithResponse)
 			f.Response.SetContent([]byte("body"))
 			if tt.change {
-				if _, err := d.contentviewMetadata(f); err != nil {
-					t.Fatal(err)
-				}
+				_ = d.contentviewMetadata(f)
 				if err := configure(t, manager, map[string]any{"protobuf_definitions": tt.after}); err != nil {
 					t.Fatal(err)
 				}
 			}
-			got, err := d.contentviewMetadata(f)
-			if err != nil {
-				t.Fatal(err)
-			}
+			got := d.contentviewMetadata(f)
 			if got.Flow != f {
 				t.Fatal("metadata lost the flow identity")
 			}

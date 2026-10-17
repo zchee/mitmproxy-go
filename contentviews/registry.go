@@ -53,6 +53,7 @@ func NewRegistry() *Registry {
 	r.Register(MsgPack{})
 	r.Register(Protobuf{})
 	r.Register(GRPC{})
+	r.Register(SocketIO{})
 	return r
 }
 

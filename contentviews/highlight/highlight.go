@@ -29,6 +29,8 @@ func Tags() []string {
 // Highlight returns caller-owned chunks for text in language.
 // It replaces malformed UTF-8 with replacement characters and returns an error
 // for an unsupported language or a lexer that does not preserve the source.
+// Syntax input above 256 KiB or tokenization exceeding 250 ms returns an error;
+// callers should display the original text without syntax styling in that case.
 func Highlight(text, language string) ([]Chunk, error) {
 	switch language {
 	case "none":
@@ -36,6 +38,9 @@ func Highlight(text, language string) ([]Chunk, error) {
 	case "error":
 		return []Chunk{{Tag: "error", Text: lossyUTF8(text)}}, nil
 	case "css", "javascript", "xml", "yaml":
+		if len(text) > maxHighlightBytes {
+			return nil, ErrInputTooLarge
+		}
 		return highlightSyntax(lossyUTF8(text), language)
 	default:
 		return nil, fmt.Errorf("Unsupported language: %s", language) //nolint:staticcheck // Preserve the upstream user-facing error.

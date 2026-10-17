@@ -276,7 +276,13 @@ func TestMsgPack(t *testing.T) {
 			// Rust reads every !!binary value as a string.
 			"binary tag":         {text: "!!binary AQID", want: "c403010203"},
 			"wrapped binary tag": {text: "!!binary |\n  AQ\n  ID\n", want: "c403010203"},
+			"folded binary tag":  {text: "!!binary >\n  AQ\n  ID\n", want: "c403010203"},
 			"invalid base64":     {text: "!!binary '@@'", wantErr: "Invalid YAML: invalid base64 in !!binary value"},
+			// Whitespace is unwrapped only in block scalars; quoted text keeps
+			// its bytes rather than encoding as empty binary.
+			"quoted newline": {text: `!!binary "\n"`, wantErr: "Invalid YAML: invalid base64 in !!binary value"},
+			"quoted space":   {text: `!!binary " "`, wantErr: "Invalid YAML: invalid base64 in !!binary value"},
+			"quoted tab":     {text: `!!binary "\t"`, wantErr: "Invalid YAML: invalid base64 in !!binary value"},
 		}
 		for name, tt := range encodeTests {
 			t.Run(name, func(t *testing.T) {

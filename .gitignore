@@ -51,6 +51,9 @@ _cgo_export.*
 # test generated
 _testmain.go
 
+# Python bytecode left by the highlight golden generator's tests
+hack/__pycache__/
+
 # benchmark
 old.txt
 new.txt

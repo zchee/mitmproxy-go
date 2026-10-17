@@ -54,6 +54,7 @@ func NewRegistry() *Registry {
 	r.Register(Protobuf{})
 	r.Register(GRPC{})
 	r.Register(SocketIO{})
+	r.Register(MQTT{})
 	return r
 }
 

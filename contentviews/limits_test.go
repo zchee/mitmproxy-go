@@ -14,8 +14,8 @@ import (
 
 // limitedBudget returns the default per-call budget with some limits lowered,
 // so refusals are reached with small inputs.
-func limitedBudget(change func(*viewLimits)) *viewBudget {
-	budget := newViewBudget("MsgPack")
+func limitedBudget(view string, change func(*viewLimits)) *viewBudget {
+	budget := newViewBudget(view)
 	change(&budget.limits)
 	return budget
 }
@@ -141,7 +141,7 @@ func TestContentviewLimits(t *testing.T) {
 		}
 		for name, tt := range tests {
 			t.Run(name, func(t *testing.T) {
-				budget := limitedBudget(tt.limits)
+				budget := limitedBudget("MsgPack", tt.limits)
 				err := tt.run(budget)
 				limit, ok := errors.AsType[*LimitError](err)
 				if !ok {
@@ -205,6 +205,152 @@ func TestContentviewLimits(t *testing.T) {
 			_, err = MsgPack{}.Prettify(append([]byte{0x91}, input...), Metadata{})
 			if _, ok := errors.AsType[*LimitError](err); !ok {
 				t.Fatalf("one level deeper than the limit: %v, want a *LimitError", err)
+			}
+		})
+	})
+	t.Run("protobuf", func(t *testing.T) {
+		prettify := func(data []byte) func(*viewBudget) error {
+			return func(b *viewBudget) error { _, err := prettifyProtobuf(data, nil, b); return err }
+		}
+		reencode := func(text string) func(*viewBudget) error {
+			return func(b *viewBudget) error { _, err := reencodeProtobuf(text, nil, b); return err }
+		}
+		nested := func(levels int) []byte {
+			data := []byte{0x08, 0x01}
+			for range levels {
+				data = append([]byte{0x2a, byte(len(data))}, data...)
+			}
+			return data
+		}
+		tests := map[string]struct {
+			run          func(*viewBudget) error
+			limits       func(*viewLimits)
+			spent        func(*viewBudget)
+			stage        string
+			resource     string
+			materialized int64
+		}{
+			"input bytes": {
+				run:      prettify(make([]byte, 9)),
+				limits:   func(l *viewLimits) { l.InputBytes = 8 },
+				stage:    "Protobuf wire",
+				resource: "input bytes",
+			},
+			"wire fields": {
+				run:          prettify([]byte{8, 1, 8, 2, 8, 3, 8, 4, 8, 5}),
+				limits:       func(l *viewLimits) { l.Nodes = 3 },
+				stage:        "Protobuf wire",
+				resource:     "logical nodes",
+				materialized: -1,
+			},
+			"nested message depth": {
+				run:          prettify(nested(3)),
+				limits:       func(l *viewLimits) { l.Depth = 2 },
+				stage:        "Protobuf wire",
+				resource:     "nesting depth",
+				materialized: -1,
+			},
+			"group depth": {
+				run:      prettify([]byte{0x0b, 0x0b, 0x0b, 0x0c, 0x0c, 0x0c}),
+				limits:   func(l *viewLimits) { l.Depth = 2 },
+				stage:    "Protobuf wire",
+				resource: "nesting depth",
+			},
+			"binary text before encoding": {
+				// Forty unreadable bytes fit as a wire field; their eighty
+				// hexadecimal characters do not.
+				run:          prettify(append([]byte{0x0a, 40}, bytes.Repeat([]byte{0xff}, 40)...)),
+				limits:       func(l *viewLimits) { l.OutputBytes = 100 },
+				stage:        "Protobuf YAML",
+				resource:     "materialized bytes",
+				materialized: 100,
+			},
+			"rendered output after earlier work": {
+				// The comment-spacing writer checks the shared output counter
+				// before buffering.
+				run:          prettify(protobufRoundTrips["varint"].proto),
+				limits:       func(*viewLimits) {},
+				spent:        func(b *viewBudget) { b.output = b.limits.OutputBytes - 5 },
+				stage:        "YAML comment spacing",
+				resource:     "output bytes",
+				materialized: -1,
+			},
+			"reencode logical nodes": {
+				run:      reencode("1: 1\n2: 2\n3: 3\n4: 4\n"),
+				limits:   func(l *viewLimits) { l.Nodes = 4 },
+				stage:    "YAML preflight",
+				resource: "logical nodes",
+			},
+			"reencode nesting depth": {
+				run:      reencode("1: {1: {1: {1: 1}}}"),
+				limits:   func(l *viewLimits) { l.Depth = 2 },
+				stage:    "YAML preflight",
+				resource: "nesting depth",
+			},
+			"reencode output after earlier work": {
+				run:          reencode("1: 150"),
+				limits:       func(*viewLimits) {},
+				spent:        func(b *viewBudget) { b.output = b.limits.OutputBytes - 2 },
+				stage:        "Protobuf encoding",
+				resource:     "output bytes",
+				materialized: -1,
+			},
+		}
+		for name, tt := range tests {
+			t.Run(name, func(t *testing.T) {
+				budget := limitedBudget("Protobuf", tt.limits)
+				if tt.spent != nil {
+					tt.spent(budget)
+				}
+				err := tt.run(budget)
+				limit, ok := errors.AsType[*LimitError](err)
+				if !ok {
+					t.Fatalf("error %v is not a *LimitError", err)
+				}
+				if diff := cmp.Diff([]string{"Protobuf", tt.stage, tt.resource}, []string{limit.View, limit.Stage, limit.Resource}); diff != "" {
+					t.Fatalf("refusal (-want +got):\n%s", diff)
+				}
+				if tt.materialized >= 0 && budget.materialized > uint64(tt.materialized) {
+					t.Fatalf("reserved %d materialized bytes before the refusal, want at most %d", budget.materialized, tt.materialized)
+				}
+			})
+		}
+
+		t.Run("declared length beyond input", func(t *testing.T) {
+			// Field 1 announces 2^28 bytes of payload and carries one.
+			budget := newViewBudget("Protobuf")
+			if _, err := prettifyProtobuf([]byte{0x0a, 0x80, 0x80, 0x80, 0x80, 0x01, 0x00}, nil, budget); err == nil {
+				t.Fatal("truncated length-delimited field was accepted")
+			}
+			if budget.materialized != 0 {
+				t.Fatalf("reserved %d materialized bytes for a truncated field", budget.materialized)
+			}
+		})
+
+		t.Run("fallback keeps spent work", func(t *testing.T) {
+			schema, err := loadProtobufSchema(t.Context(), []string{protobufFixture("simple.proto")}, schemaLimits{}, newViewBudget("Protobuf"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			descriptor, err := schema.messageDescriptor("", true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data := protobufRoundTrips["string"].proto
+			schemaless := newViewBudget("Protobuf")
+			if _, err := prettifyProtobuf(data, nil, schemaless); err != nil {
+				t.Fatal(err)
+			}
+			retried := newViewBudget("Protobuf")
+			text, err := prettifyProtobuf(data, descriptor, retried)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if text != protobufRoundTrips["string"].yaml {
+				t.Fatalf("fallback rendering = %q", text)
+			}
+			if retried.nodes <= schemaless.nodes {
+				t.Fatalf("retry spent %d nodes, schema-less alone %d; the failed attempt was refunded", retried.nodes, schemaless.nodes)
 			}
 		})
 	})

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -160,7 +161,7 @@ func TestMsgPack(t *testing.T) {
 		for _, view := range registry.views {
 			names = append(names, view.name)
 		}
-		if len(names) < 2 || names[len(names)-2] != "dns" || names[len(names)-1] != "msgpack" {
+		if i := slices.Index(names, "msgpack"); i < 1 || names[i-1] != "dns" {
 			t.Fatalf("registry order %v does not append msgpack after dns", names)
 		}
 		request := &httpmsg.Request{RawContent: testMsgPack}
@@ -276,7 +277,13 @@ func TestMsgPack(t *testing.T) {
 			// Rust reads every !!binary value as a string.
 			"binary tag":         {text: "!!binary AQID", want: "c403010203"},
 			"wrapped binary tag": {text: "!!binary |\n  AQ\n  ID\n", want: "c403010203"},
+			"folded binary tag":  {text: "!!binary >\n  AQ\n  ID\n", want: "c403010203"},
 			"invalid base64":     {text: "!!binary '@@'", wantErr: "Invalid YAML: invalid base64 in !!binary value"},
+			// Whitespace is unwrapped only in block scalars; quoted text keeps
+			// its bytes rather than encoding as empty binary.
+			"quoted newline": {text: `!!binary "\n"`, wantErr: "Invalid YAML: invalid base64 in !!binary value"},
+			"quoted space":   {text: `!!binary " "`, wantErr: "Invalid YAML: invalid base64 in !!binary value"},
+			"quoted tab":     {text: `!!binary "\t"`, wantErr: "Invalid YAML: invalid base64 in !!binary value"},
 		}
 		for name, tt := range encodeTests {
 			t.Run(name, func(t *testing.T) {

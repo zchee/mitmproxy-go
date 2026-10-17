@@ -1,0 +1,43 @@
+// Schema for the protobuf view oracle tests: one field of every scalar kind,
+// an enum, a nested message, repeated fields and a map.
+syntax = "proto3";
+
+package oracle;
+
+service Service {
+  rpc Method(All) returns (All) {}
+}
+
+enum Color {
+  RED = 0;
+  GREEN = 1;
+}
+
+message Inner {
+  int32 a = 1;
+  string s = 2;
+}
+
+message All {
+  int32 i32 = 1;
+  int64 i64 = 2;
+  uint32 u32 = 3;
+  uint64 u64 = 4;
+  sint32 s32 = 5;
+  sint64 s64 = 6;
+  fixed32 f32 = 7;
+  fixed64 f64 = 8;
+  sfixed32 sf32 = 9;
+  sfixed64 sf64 = 10;
+  float fl = 11;
+  double db = 12;
+  bool b = 13;
+  string str = 14;
+  bytes by = 15;
+  Color color = 16;
+  Inner inner = 17;
+  repeated int32 ri = 18;
+  repeated Inner rinner = 19;
+  map<string, int32> m = 20;
+  repeated string rs = 21;
+}

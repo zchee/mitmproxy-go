@@ -316,7 +316,7 @@ func msgpackYAMLNode(value msgpackValue, budget *viewBudget, depth int) (*yaml.N
 		node.Value = strconv.FormatBool(scalar)
 	case string:
 		node.Value = scalar
-		node.Style = msgpackStringStyle(scalar)
+		node.Style = yamlStringStyle(scalar)
 	case []byte:
 		size := uint64(base64.StdEncoding.EncodedLen(len(scalar)))
 		if err := budget.chargeMaterialization(msgpackYAMLStage, size); err != nil {
@@ -342,12 +342,12 @@ func msgpackYAMLNode(value msgpackValue, budget *viewBudget, depth int) (*yaml.N
 	return node, nil
 }
 
-// msgpackStringStyle picks the presentation the Rust view's YAML emitter
+// yamlStringStyle picks the presentation the Rust view's YAML emitter
 // uses: block literal for multi-line text, single quotes when the plain form
 // would read back as null, a boolean or a number, or as an octal number under
 // YAML 1.1 (a leading zero followed by digits), and otherwise the plainest
 // style the emitter allows.
-func msgpackStringStyle(text string) yaml.Style {
+func yamlStringStyle(text string) yaml.Style {
 	switch {
 	case strings.Contains(text, "\n"):
 		return yaml.LiteralStyle
@@ -767,7 +767,7 @@ func yamlMsgpackScalar(node *yaml.Node, budget *viewBudget) (msgpackValue, error
 		case "!!float":
 			kind = yamlCoreFloat
 		case "!!binary":
-			return yamlMsgpackBinary(text, budget)
+			return yamlMsgpackBinary(text, node.Style, budget)
 		}
 	} else if plain {
 		kind = yamlCoreScalarKind(text)
@@ -810,13 +810,23 @@ func yamlMsgpackScalar(node *yaml.Node, budget *viewBudget) (msgpackValue, error
 	return msgpackValue{Code: def.Str32, Scalar: text}, nil
 }
 
-func yamlMsgpackBinary(text string, budget *viewBudget) (msgpackValue, error) {
-	compact := strings.Map(func(r rune) rune {
-		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
-			return -1
-		}
-		return r
-	}, text)
+// yamlMsgpackBinary decodes standard base64. Only a literal or folded block
+// scalar, whose lines the emitter wraps, has its whitespace removed first; a
+// quoted or plain scalar keeps its bytes, so whitespace there is invalid.
+// The decoder itself skips line breaks, so they are refused here.
+func yamlMsgpackBinary(text string, style yaml.Style, budget *viewBudget) (msgpackValue, error) {
+	compact := text
+	if style&(yaml.LiteralStyle|yaml.FoldedStyle) == 0 && strings.ContainsAny(text, "\r\n") {
+		return msgpackValue{}, errors.New("invalid base64 in !!binary value")
+	}
+	if style&(yaml.LiteralStyle|yaml.FoldedStyle) != 0 {
+		compact = strings.Map(func(r rune) rune {
+			if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+				return -1
+			}
+			return r
+		}, text)
+	}
 	if err := budget.chargeMaterialization(msgpackYAMLStage, uint64(base64.StdEncoding.DecodedLen(len(compact)))); err != nil {
 		return msgpackValue{}, err
 	}

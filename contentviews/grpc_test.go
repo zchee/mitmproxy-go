@@ -5,9 +5,11 @@ package contentviews
 
 import (
 	"bytes"
+	"compress/flate"
 	"compress/gzip"
 	"encoding/hex"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -165,6 +167,42 @@ func TestGRPC(t *testing.T) {
 				}
 			})
 		}
+		// A truncated stream fails the copy, and the decompressor's Close
+		// returns the same sticky error; it is reported once.
+		t.Run("truncated stream reports one error", func(t *testing.T) {
+			payload := bytes.Repeat([]byte{8, 150, 1}, 64)
+			var deflated bytes.Buffer
+			deflater, err := flate.NewWriter(&deflated, flate.BestCompression)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var gzipped bytes.Buffer
+			gzipper := gzip.NewWriter(&gzipped)
+			for _, w := range []io.WriteCloser{deflater, gzipper} {
+				if _, err := w.Write(payload); err != nil {
+					t.Fatal(err)
+				}
+				if err := w.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			tests := map[string]struct {
+				data     []byte
+				encoding string
+			}{
+				"deflate": {data: deflated.Bytes()[:deflated.Len()/2], encoding: "deflate"},
+				"gzip":    {data: gzipped.Bytes()[:gzipped.Len()-4], encoding: "gzip"},
+			}
+			for name, tt := range tests {
+				t.Run(name, func(t *testing.T) {
+					got, err := GRPC{}.Prettify(frame(1, tt.data), grpcMetadata(tt.encoding))
+					const want = "invalid gRPC compressed data: unexpected EOF"
+					if err == nil || got != "" || err.Error() != want {
+						t.Fatalf("Prettify = %q, %v; want error %q and no partial output", got, err, want)
+					}
+				})
+			}
+		})
 		t.Run("identity compression", func(t *testing.T) {
 			prettify(t, frame(1, []byte{8, 150, 1}), grpcMetadata("identity"), "1: 150  # !sint: 75\n")
 		})

@@ -305,9 +305,13 @@ jobs:
           # GPL and LGPL are "restricted", AGPL is "forbidden" and MPL is
           # "reciprocal" in go-licenses. Each GOOS is checked because some
           # dependencies are imported on one platform only.
+          # Chroma is MIT; its combined notice also covers an OFL font in
+          # formatters/svg, which is not imported. Retire this classifier
+          # exception when Chroma separates the font notice or go-licenses
+          # correctly handles the combined notices.
           for goos in linux darwin windows; do
             echo "::group::GOOS=${goos}"
-            GOOS="${goos}" go-licenses check ./... --disallowed_types=forbidden,restricted,reciprocal,unknown
+            GOOS="${goos}" go-licenses check ./... --ignore github.com/alecthomas/chroma/v2 --disallowed_types=forbidden,restricted,reciprocal,unknown
             echo "::endgroup::"
           done
 

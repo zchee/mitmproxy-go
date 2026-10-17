@@ -55,6 +55,7 @@ func NewRegistry() *Registry {
 	r.Register(GRPC{})
 	r.Register(SocketIO{})
 	r.Register(MQTT{})
+	r.Register(GraphQL{})
 	return r
 }
 

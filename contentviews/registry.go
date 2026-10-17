@@ -58,6 +58,7 @@ func NewRegistry() *Registry {
 	r.Register(GraphQL{})
 	r.Register(WBXML{})
 	r.Register(ZIP{})
+	r.Register(HTTP3Frames{})
 	return r
 }
 

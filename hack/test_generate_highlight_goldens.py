@@ -8,11 +8,16 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import io
 import json
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
+import urllib.error
+from email.message import Message
+from functools import partial
 from pathlib import Path
 from types import ModuleType
 from typing import cast
@@ -193,9 +198,11 @@ def test_wheel_version_mismatch(
 
 
 def test_wheel_digest_mismatch(
-    generator: ModuleType, generated: tuple[Path, dict[str, object], dict[str, object]]
+    generator: ModuleType,
+    generated: tuple[Path, dict[str, object], dict[str, object]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Absent, corrupt and internally consistent foreign wheel hashes fail."""
+    """Validate wheel hashes and bounded retries without relaxing failures."""
     manifest = _read(CORPUS / "inputs/manifest.json")
     for target in ("oracle", "companion"):
         for key, value in (
@@ -213,6 +220,64 @@ def test_wheel_digest_mismatch(
                 generator._validate_provenance(
                     provenance, manifest, generator._installed_oracle()
                 )
+
+    url = "https://files.pythonhosted.org/test.whl"
+    eof = urllib.error.URLError(ssl.SSLEOFError(8, "unexpected EOF"))
+    certificate = urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate"))
+    cases: list[tuple[str, tuple[Exception, ...], type[Exception] | None, int, int]] = [
+        ("wrapped_eof", (eof,), None, 2, 16),
+        ("direct_eof", (ssl.SSLEOFError(8, "unexpected EOF"),), None, 2, 16),
+        ("timeout", (TimeoutError("timed out"),), None, 2, 16),
+        ("reset", (urllib.error.URLError(ConnectionResetError()),), None, 2, 16),
+        ("exhausted", (eof, eof, eof), urllib.error.URLError, 3, 16),
+        ("certificate", (certificate,), urllib.error.URLError, 1, 16),
+        (
+            "http",
+            (urllib.error.HTTPError(url, 404, "missing", Message(), None),),
+            urllib.error.HTTPError,
+            1,
+            16,
+        ),
+        (
+            "permanent",
+            (urllib.error.URLError("unknown scheme"),),
+            urllib.error.URLError,
+            1,
+            16,
+        ),
+        ("protocol", (ssl.SSLError(1, "protocol error"),), ssl.SSLError, 1, 16),
+        ("oversized", (), ValueError, 1, 4),
+    ]
+
+    def open_attempt(
+        failures: tuple[Exception, ...],
+        calls: list[int],
+        actual_url: str,
+        timeout: int,
+    ) -> io.BytesIO:
+        assert actual_url == url
+        calls.append(timeout)
+        if len(calls) <= len(failures):
+            raise failures[len(calls) - 1]
+        return io.BytesIO(b"wheel")
+
+    for name, failures, expected_error, expected_calls, limit in cases:
+        calls: list[int] = []
+        delays: list[int] = []
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                generator.urllib.request,
+                "urlopen",
+                partial(open_attempt, failures, calls),
+            )
+            patch.setattr(generator.time, "sleep", delays.append)
+            if expected_error is None:
+                assert generator._download(url, limit) == b"wheel", name
+            else:
+                with pytest.raises(expected_error):
+                    generator._download(url, limit)
+        assert calls == [60] * expected_calls, name
+        assert delays == list(range(1, expected_calls)), name
 
 
 def test_source_pin_mismatch(generator: ModuleType, corpus: Path) -> None:

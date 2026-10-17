@@ -171,6 +171,75 @@ func TestProtobufSchemaRefreshAndCancellation(t *testing.T) {
 	}
 }
 
+func TestProtobufSchemaUniqueFiles(t *testing.T) {
+	tests := map[string]struct {
+		fileFirst       bool
+		repeatDirectory bool
+		alias           bool
+		extraFile       bool
+	}{
+		"directory_then_file": {},
+		"file_then_directory": {fileFirst: true},
+		"directory_repeated":  {repeatDirectory: true},
+		"file_alias":          {alias: true},
+		"distinct_file_limit": {extraFile: true},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.Mkdir(filepath.Join(root, "nested"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			file := filepath.Join(root, "nested", "a.proto")
+			if err := os.WriteFile(file, []byte(`syntax="proto3"; message A {}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "b.proto"), []byte(`syntax="proto3"; message B {}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if test.alias {
+				if err := os.Symlink("nested/a.proto", filepath.Join(root, "alias.proto")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if test.extraFile {
+				if err := os.WriteFile(filepath.Join(root, "c.proto"), []byte(`syntax="proto3"; message C {}`), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			roots := []string{root, file}
+			if test.fileFirst {
+				roots = []string{file, root}
+			}
+			if test.repeatDirectory {
+				roots = []string{root, root}
+			}
+			limits := schemaLimits{Files: 2, FileBytes: 1024, TotalBytes: 2048, Depth: 4}
+			schema, err := loadProtobufSchema(t.Context(), roots, limits, newViewBudget("test"))
+			if test.extraFile {
+				limit, ok := errors.AsType[*LimitError](err)
+				if !ok || limit.Resource != "files" || schema != nil {
+					t.Fatalf("distinct file cap: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(schema.files) != 2 {
+				t.Fatalf("resolved %d files; want two unique files", len(schema.files))
+			}
+			got := map[string]bool{}
+			for _, descriptor := range schema.files {
+				got[string(descriptor.Messages().Get(0).Name())] = true
+			}
+			if diff := gocmp.Diff(map[string]bool{"A": true, "B": true}, got); diff != "" {
+				t.Fatalf("unique definitions (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestProtobufSchemaSymlinks(t *testing.T) {
 	root, outside := t.TempDir(), t.TempDir()
 	if err := os.WriteFile(filepath.Join(outside, "outside.proto"), []byte(`syntax="proto3"; message Outside {}`), 0o600); err != nil {

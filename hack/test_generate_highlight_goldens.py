@@ -202,6 +202,7 @@ def test_wheel_digest_mismatch(
             ("installed_sha256", None),
             ("installed_sha256", "0" * 64),
             ("wheel_sha256", "0" * 64),
+            ("archive_verified_files", ["wrong"]),
         ):
             provenance = copy.deepcopy(generated[2])
             record = cast(dict[str, object], provenance["oracle"])
@@ -339,6 +340,18 @@ def test_provenance_roundtrip(
             generator._json_bytes(distribution["files"])
         )
         assert distribution["files"]
+        archived = cast(list[str], distribution["archive_verified_files"])
+        assert archived == sorted(set(archived))
+        assert all(
+            len(parts := Path(path).parts) >= 3
+            and parts[0].endswith(".data")
+            and parts[1] in {"scripts", "data", "headers", "purelib", "platlib"}
+            for path in archived
+        )
+    if sys.platform == "linux":
+        assert companion["archive_verified_files"] == [
+            "mitmproxy_linux-0.12.11.data/scripts/mitmproxy-linux-redirector"
+        ]
     assert companion["version"] == "0.12.11"
     assert (
         companion["distribution"]

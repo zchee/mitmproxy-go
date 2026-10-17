@@ -352,7 +352,9 @@
     }
   },
   "oracle": {
+    "archive_verified_files": [],
     "companion": {
+      "archive_verified_files": [],
       "distribution": "mitmproxy-macos",
       "filename": "mitmproxy_macos-0.12.11-py3-none-any.whl",
       "files": [

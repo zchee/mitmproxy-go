@@ -316,12 +316,6 @@ def _installed_distribution(name: str) -> dict[str, object]:
     files = distribution.files
     if not files:
         raise ValueError("missing installed distribution file manifest")
-    records = []
-    for path in sorted(files, key=str):
-        if path.suffix == ".pyc":
-            continue
-        data = _read(Path(str(distribution.locate_file(path))), MAX_WHEEL_BYTES)
-        records.append({"path": str(path), "size": len(data), "sha256": _sha256(data)})
     wheel_metadata = distribution.read_text("WHEEL")
     if wheel_metadata is None:
         raise ValueError("missing installed WHEEL metadata")
@@ -370,6 +364,30 @@ def _installed_distribution(name: str) -> dict[str, object]:
     ):
         raise ValueError("companion wheel digest differs from the native artifact pin")
     with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
+        data_prefix = f"{name.replace('-', '_')}-{VERSION}.data"
+        relocated = {
+            info.filename
+            for info in archive.infolist()
+            if len(relocation_parts := PurePosixPath(info.filename).parts) >= 3
+            and relocation_parts[0] == data_prefix
+            and relocation_parts[1]
+            in {"scripts", "data", "headers", "purelib", "platlib"}
+            and not info.is_dir()
+        }
+        installed = {str(path): path for path in files}
+        records = []
+        for path in sorted(files, key=str):
+            if path.suffix == ".pyc":
+                continue
+            # Installers may retain the archive path in RECORD after relocation.
+            data = (
+                archive.read(str(path))
+                if str(path) in relocated
+                else _read(Path(path.locate()), MAX_WHEEL_BYTES)
+            )
+            records.append(
+                {"path": str(path), "size": len(data), "sha256": _sha256(data)}
+            )
         payloads = [
             info
             for info in archive.infolist()
@@ -382,9 +400,13 @@ def _installed_distribution(name: str) -> dict[str, object]:
             expanded_size += info.file_size
             if expanded_size > MAX_WHEEL_BYTES:
                 raise ValueError("wheel payload exceeds size limit")
-            if archive.read(info) != _read(
-                Path(str(distribution.locate_file(info.filename))), MAX_WHEEL_BYTES
-            ):
+            payload = archive.read(info)
+            if info.filename in relocated:
+                continue
+            installed_path = installed.get(info.filename)
+            if installed_path is None:
+                raise ValueError("wheel payload missing from installed file manifest")
+            if payload != _read(Path(installed_path.locate()), MAX_WHEEL_BYTES):
                 raise ValueError("installed payload differs from wheel artifact")
     return {
         "distribution": name,
@@ -392,6 +414,7 @@ def _installed_distribution(name: str) -> dict[str, object]:
         "filename": artifact["filename"],
         "wheel_sha256": digest,
         "files": records,
+        "archive_verified_files": sorted(relocated),
         "installed_sha256": _sha256(_json_bytes(records)),
     }
 

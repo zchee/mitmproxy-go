@@ -131,7 +131,7 @@ func parseGraphQLJSON(data []byte, budget *viewBudget) (*graphJSON, error) {
 		return nil, err
 	}
 	decoder := jsontext.NewDecoder(bytes.NewReader(data), jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
-	root, err := readGraphJSON(decoder, constants, budget, 0)
+	root, err := readGraphJSON(decoder, constants, budget, 0, false)
 	if err != nil {
 		return nil, err
 	}
@@ -141,12 +141,16 @@ func parseGraphQLJSON(data []byte, budget *viewBudget) (*graphJSON, error) {
 	return root, nil
 }
 
-func readGraphJSON(decoder *jsontext.Decoder, constants map[int64]string, budget *viewBudget, depth int) (*graphJSON, error) {
+// readGraphJSON reads one value. charged reports that the caller has already
+// charged the value's node, as an object member does together with its key.
+func readGraphJSON(decoder *jsontext.Decoder, constants map[int64]string, budget *viewBudget, depth int, charged bool) (*graphJSON, error) {
 	if err := budget.checkDepth("GraphQL JSON", depth); err != nil {
 		return nil, err
 	}
-	if err := budget.chargeNodes("JSON", 1); err != nil {
-		return nil, err
+	if !charged {
+		if err := budget.chargeNodes("JSON", 1); err != nil {
+			return nil, err
+		}
 	}
 	kind := byte(decoder.PeekKind())
 	node := &graphJSON{kind: kind}
@@ -157,7 +161,9 @@ func readGraphJSON(decoder *jsontext.Decoder, constants map[int64]string, budget
 		if kind == '{' {
 			positions := make(map[string]int)
 			for decoder.PeekKind() != '}' {
-				if err := budget.chargeNodes("JSON key", 1); err != nil {
+				// The key and its value are charged together, so a member
+				// the budget cannot hold is refused before its key is read.
+				if err := budget.chargeNodes("JSON key", 2); err != nil {
 					return nil, err
 				}
 				raw, err := decoder.ReadValue()
@@ -165,7 +171,7 @@ func readGraphJSON(decoder *jsontext.Decoder, constants map[int64]string, budget
 					return nil, err
 				}
 				key := graphUnquote(raw)
-				value, err := readGraphJSON(decoder, constants, budget, depth+1)
+				value, err := readGraphJSON(decoder, constants, budget, depth+1, true)
 				if err != nil {
 					return nil, err
 				}
@@ -178,7 +184,7 @@ func readGraphJSON(decoder *jsontext.Decoder, constants map[int64]string, budget
 			}
 		} else {
 			for decoder.PeekKind() != ']' {
-				child, err := readGraphJSON(decoder, constants, budget, depth+1)
+				child, err := readGraphJSON(decoder, constants, budget, depth+1, false)
 				if err != nil {
 					return nil, err
 				}

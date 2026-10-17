@@ -108,6 +108,50 @@ func TestGraphQLAdditional(t *testing.T) {
 	} else if _, ok := errors.AsType[*LimitError](err); !ok {
 		t.Fatalf("expected typed output limit, got %v", err)
 	}
+	// An object member costs two nodes, its key and its value, charged
+	// together before the key is read: a member the node budget cannot hold
+	// is refused at the key, with the counter left where the last whole
+	// member ended, so its key is never decoded.
+	t.Run("node budget refuses a member before its key is read", func(t *testing.T) {
+		tests := map[string]struct {
+			data      string
+			nodes     uint64
+			wantNodes uint64
+		}{
+			"error: second member does not fit": {
+				data:      `{"query":"q","b":1}`,
+				nodes:     4,
+				wantNodes: 3,
+			},
+			"error: many keys stop at the last whole member": {
+				data:      "{" + strings.Repeat(`"k":0,`, 999) + `"k":0}`,
+				nodes:     1000,
+				wantNodes: 999,
+			},
+		}
+		for name, tt := range tests {
+			t.Run(name, func(t *testing.T) {
+				budget := newViewBudget("GraphQL")
+				budget.limits.Nodes = tt.nodes
+				_, err := parseGraphQLJSON([]byte(tt.data), budget)
+				limit, ok := errors.AsType[*LimitError](err)
+				if !ok {
+					t.Fatalf("error %v is not a *LimitError", err)
+				}
+				if diff := cmp.Diff([]string{"JSON key", "logical nodes"}, []string{limit.Stage, limit.Resource}); diff != "" {
+					t.Fatalf("refusal (-want +got):\n%s", diff)
+				}
+				if budget.nodes != tt.wantNodes {
+					t.Fatalf("node counter = %d, want %d", budget.nodes, tt.wantNodes)
+				}
+			})
+		}
+		exact := newViewBudget("GraphQL")
+		exact.limits.Nodes = 5
+		if _, err := parseGraphQLJSON([]byte(`{"query":"q","b":1}`), exact); err != nil {
+			t.Fatalf("an object that fits the node budget exactly: %v", err)
+		}
+	})
 	depth := newViewBudget("GraphQL").limits.Depth
 	deep := strings.Repeat("[", depth+1) + "0" + strings.Repeat("]", depth+1)
 	if _, err := parseGraphQLJSON([]byte(deep), newViewBudget("GraphQL")); err == nil {

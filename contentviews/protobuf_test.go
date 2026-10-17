@@ -6,6 +6,7 @@ package contentviews
 import (
 	"bytes"
 	"encoding/hex"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -161,6 +162,123 @@ func TestProtobufDefinitions(t *testing.T) {
 				t.Run(name, test)
 			}
 		})
+	})
+
+	// A proto2 group is framed by start and end group tags on the wire, not
+	// by a length, so a schema that declares one must parse the group body.
+	t.Run("groups", func(t *testing.T) {
+		const schema = `syntax = "proto2";
+
+message Outer {
+  optional group Item = 1 {
+    optional int32 id = 2;
+    optional group Inner = 6 {
+      optional string label = 7;
+    }
+  }
+  repeated group Entry = 3 {
+    optional string name = 4;
+  }
+  optional int32 tail = 5;
+}
+`
+		path := filepath.Join(t.TempDir(), "groups.proto")
+		if err := os.WriteFile(path, []byte(schema), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		metadata := Metadata{ProtobufDefinitions: path}
+		// item {id: 7, inner {label: "x"}}, entry {name: "a"}, entry {name: "b"}, tail: 9.
+		full := []byte("\x0b\x10\x07\x33\x3a\x01x\x34\x0c\x1b\x22\x01a\x1c\x1b\x22\x01b\x1c\x28\x09")
+		tests := map[string]struct {
+			proto   []byte
+			want    string
+			wantErr string
+		}{
+			"success: singular, nested and repeated groups render by name": {
+				proto: full,
+				want:  "item:\n  id: 7\n  inner:\n    label: x\nentry:\n- name: a\n- name: b\ntail: 9\n",
+			},
+			"success: an empty group renders as an empty mapping": {
+				proto: []byte("\x0b\x0c\x28\x09"),
+				want:  "item: {}\ntail: 9\n",
+			},
+			"success: a group field sent length-delimited falls back to the schema-less rendering": {
+				proto: []byte("\x0a\x02\x10\x07"),
+				want:  "1:\n  2: 7  # !sint: -4\n",
+			},
+			"error: an unterminated group": {
+				proto:   []byte("\x0b\x10\x07"),
+				wantErr: "Error parsing protobuf: unterminated protobuf group",
+			},
+			"error: a group truncated inside a field value": {
+				proto:   []byte("\x0b\x10"),
+				wantErr: "Error parsing protobuf: invalid protobuf group value: unexpected EOF",
+			},
+		}
+		for name, tt := range tests {
+			t.Run(name, func(t *testing.T) {
+				got, err := Protobuf{}.Prettify(tt.proto, metadata)
+				if tt.wantErr != "" {
+					if err == nil || err.Error() != tt.wantErr {
+						t.Fatalf("Prettify error = %v, want %q (text %q)", err, tt.wantErr, got)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff := cmp.Diff(tt.want, got); diff != "" {
+					t.Fatalf("Prettify (-want +got):\n%s", diff)
+				}
+			})
+		}
+
+		reencodes := map[string]struct {
+			yaml    string
+			want    []byte
+			wantErr string
+		}{
+			"success: nested singular groups round-trip": {
+				yaml: "item:\n  id: 7\n  inner:\n    label: x\ntail: 9\n",
+				want: []byte("\x0b\x10\x07\x33\x3a\x01x\x34\x0c\x28\x09"),
+			},
+			"success: an empty group keeps its start and end tags": {
+				yaml: "item: {}\n",
+				want: []byte("\x0b\x0c"),
+			},
+			// Elements of a repeated message field are encoded without
+			// their definition, as the Rust view does, so field names
+			// inside them do not resolve.
+			"error: repeated group elements are encoded without the definition": {
+				yaml:    "entry:\n- name: a\n",
+				wantErr: "unknown protobuf field key",
+			},
+		}
+		for name, tt := range reencodes {
+			t.Run(name, func(t *testing.T) {
+				got, err := Protobuf{}.Reencode(tt.yaml, metadata)
+				if tt.wantErr != "" {
+					if err == nil || err.Error() != tt.wantErr {
+						t.Fatalf("Reencode error = %v, want %q", err, tt.wantErr)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff := cmp.Diff(hex.EncodeToString(tt.want), hex.EncodeToString(got)); diff != "" {
+					t.Fatalf("Reencode (-want +got):\n%s", diff)
+				}
+				// The encoding renders back to the same text.
+				text, err := Protobuf{}.Prettify(got, metadata)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff := cmp.Diff(tt.yaml, text); diff != "" {
+					t.Fatalf("Prettify(Reencode) (-want +got):\n%s", diff)
+				}
+			})
+		}
 	})
 
 	t.Run("fixtures", func(t *testing.T) {

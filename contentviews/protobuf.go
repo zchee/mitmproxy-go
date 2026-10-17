@@ -155,7 +155,7 @@ func protobufMessageYAML(data []byte, descriptor protoreflect.MessageDescriptor,
 // preflightProtobufSchema walks the wire data against the descriptor before
 // any dynamic message is allocated, spending the same budget.
 func preflightProtobufSchema(data []byte, descriptor protoreflect.MessageDescriptor, budget *viewBudget, depth int) error {
-	fields, err := parseProtobufWire(data, budget, depth)
+	fields, err := parseProtobufFields(data, true, budget, depth)
 	if err != nil {
 		return err
 	}
@@ -165,7 +165,7 @@ func preflightProtobufSchema(data []byte, descriptor protoreflect.MessageDescrip
 			continue
 		}
 		expected := protobufKindWireType(field.Kind())
-		if wire.typ == protowire.BytesType && field.IsList() && expected != protowire.BytesType {
+		if wire.typ == protowire.BytesType && field.IsList() && expected != protowire.BytesType && expected != protowire.StartGroupType {
 			for packed := wire.data; len(packed) != 0; {
 				if err := budget.chargeNodes(protobufWireStage, 1); err != nil {
 					return err
@@ -196,7 +196,9 @@ func protobufKindWireType(kind protoreflect.Kind) protowire.Type {
 		return protowire.Fixed32Type
 	case protoreflect.Fixed64Kind, protoreflect.Sfixed64Kind, protoreflect.DoubleKind:
 		return protowire.Fixed64Type
-	case protoreflect.StringKind, protoreflect.BytesKind, protoreflect.MessageKind, protoreflect.GroupKind:
+	case protoreflect.GroupKind:
+		return protowire.StartGroupType
+	case protoreflect.StringKind, protoreflect.BytesKind, protoreflect.MessageKind:
 		return protowire.BytesType
 	default:
 		return protowire.VarintType
@@ -216,7 +218,7 @@ func protobufKnownMessage(message protoreflect.Message, data []byte, haveData bo
 	}
 	var occurrences map[protowire.Number][][]byte
 	if haveData {
-		wire, err := parseProtobufWire(data, budget, depth)
+		wire, err := parseProtobufFields(data, true, budget, depth)
 		if err != nil {
 			return nil, err
 		}

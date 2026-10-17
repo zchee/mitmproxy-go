@@ -19,8 +19,9 @@ import (
 // fixtureYAML uses the real YAML library for finite literals only. It is not
 // the bounded production frontend and does not certify native-event preflight.
 type fixtureYAML struct {
-	budgets []*viewBudget
-	nodes   []*yaml.Node
+	budgets        []*viewBudget
+	nodes          []*yaml.Node
+	spacedComments bool
 }
 
 func (f *fixtureYAML) Load(text string, budget *viewBudget) ([]*yaml.Node, error) {
@@ -49,10 +50,47 @@ func (f *fixtureYAML) Dump(node *yaml.Node, budget *viewBudget) (string, error) 
 	if err != nil {
 		return "", err
 	}
+	if f.spacedComments {
+		data, err = fixtureCommentGap(data)
+		if err != nil {
+			return "", err
+		}
+	}
 	if err := budget.reserveBytes(len(data), "fixture output"); err != nil {
 		return "", err
 	}
 	return string(data), nil
+}
+
+// The finite-fixture emitter locates real comments with the native parser;
+// quoted or block-scalar contents are never treated as comment delimiters.
+func fixtureCommentGap(data []byte) ([]byte, error) {
+	var parsed yaml.Node
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(data), "\n")
+	padded := make(map[int]bool)
+	pending := []*yaml.Node{&parsed}
+	for len(pending) != 0 {
+		node := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		pending = append(pending, node.Content...)
+		line := node.Line - 1
+		if node.LineComment == "" || line < 0 || line >= len(lines) || padded[line] {
+			continue
+		}
+		comment := node.LineComment
+		if !strings.HasPrefix(comment, "#") {
+			comment = "# " + comment
+		}
+		column := strings.LastIndex(lines[line], comment)
+		if column > 0 {
+			lines[line] = lines[line][:column] + " " + lines[line][column:]
+			padded[line] = true
+		}
+	}
+	return []byte(strings.Join(lines, "\n")), nil
 }
 
 type fixtureSchema struct {

@@ -97,8 +97,18 @@ func parseWire(data []byte, budget *viewBudget, depth int) ([]wireField, error) 
 			field.bits, n = protowire.ConsumeFixed64(data)
 		case protowire.BytesType:
 			field.data, n = protowire.ConsumeBytes(data)
-		case protowire.StartGroupType, protowire.EndGroupType:
-			return nil, fmt.Errorf("protobuf groups are not supported")
+		case protowire.StartGroupType:
+			if err := budget.reserveNodes(1, "wire group"); err != nil {
+				return nil, err
+			}
+			n, err := skipWireGroup(data, budget, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			data = data[n:]
+			continue
+		case protowire.EndGroupType:
+			return nil, fmt.Errorf("unexpected protobuf end group")
 		default:
 			return nil, fmt.Errorf("invalid protobuf wire type")
 		}
@@ -114,6 +124,45 @@ func parseWire(data []byte, budget *viewBudget, depth int) ([]wireField, error) 
 	// Stable sorting preserves duplicate occurrence order while grouping numbers.
 	slices.SortStableFunc(fields, func(a, b wireField) int { return int(a.number - b.number) })
 	return fields, nil
+}
+
+// Groups are discarded by the pinned runtime. Its terminator need not carry
+// the opening field number, but the traversal still consumes bounded work.
+func skipWireGroup(data []byte, budget *viewBudget, depth int) (int, error) {
+	remaining := data
+	groups := 1
+	if err := budget.checkDepth(depth, "wire group"); err != nil {
+		return 0, err
+	}
+	for len(remaining) != 0 {
+		number, typ, n := protowire.ConsumeTag(remaining)
+		if n < 0 || !number.IsValid() {
+			return 0, fmt.Errorf("invalid protobuf group tag")
+		}
+		if err := budget.reserveNodes(1, "wire group"); err != nil {
+			return 0, err
+		}
+		remaining = remaining[n:]
+		switch typ {
+		case protowire.StartGroupType:
+			groups++
+			if err := budget.checkDepth(depth+groups-1, "wire group"); err != nil {
+				return 0, err
+			}
+		case protowire.EndGroupType:
+			groups--
+			if groups == 0 {
+				return len(data) - len(remaining), nil
+			}
+		default:
+			n = protowire.ConsumeFieldValue(number, typ, remaining)
+			if n < 0 {
+				return 0, fmt.Errorf("invalid protobuf group value: %w", protowire.ParseError(n))
+			}
+			remaining = remaining[n:]
+		}
+	}
+	return 0, fmt.Errorf("unterminated protobuf group")
 }
 
 func appendWire(dst []byte, field wireField, budget *viewBudget) ([]byte, error) {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"unicode/utf8"
 
 	yaml "go.yaml.in/yaml/v4"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -29,9 +30,6 @@ func protobufFieldsNode(fields []wireField, budget *viewBudget, depth int) (*yam
 	for start := 0; start < len(fields); {
 		end := start + 1
 		for end < len(fields) && fields[end].number == fields[start].number {
-			if fields[end].typ != fields[start].typ {
-				return nil, fmt.Errorf("varying types in protobuf")
-			}
 			end++
 		}
 		group := fields[start:end]
@@ -51,7 +49,7 @@ func protobufFieldsNode(fields []wireField, budget *viewBudget, depth int) (*yam
 		}
 		key := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: strconv.Itoa(int(group[0].number))}
 		value := values[0]
-		if len(values) > 1 {
+		if len(group) > 1 {
 			if err := budget.reserveNodes(1, "YAML sequence"); err != nil {
 				return nil, err
 			}
@@ -64,20 +62,30 @@ func protobufFieldsNode(fields []wireField, budget *viewBudget, depth int) (*yam
 }
 
 func protobufFieldNodes(fields []wireField, budget *viewBudget, depth int) ([]*yaml.Node, error) {
+	// UnknownValues in the pinned runtime prefers fixed32, fixed64, varint,
+	// then length-delimited values when inferring the field's descriptor.
+	typ := protowire.BytesType
+	for _, field := range fields {
+		switch field.typ {
+		case protowire.Fixed32Type:
+			typ = protowire.Fixed32Type
+		case protowire.Fixed64Type:
+			if typ != protowire.Fixed32Type {
+				typ = protowire.Fixed64Type
+			}
+		case protowire.VarintType:
+			if typ == protowire.BytesType {
+				typ = protowire.VarintType
+			}
+		}
+	}
+	if typ != protowire.BytesType {
+		return protobufNumericNodes(fields, typ, len(fields) > 1, budget)
+	}
 	if err := budget.reserveNodes(len(fields), "YAML values"); err != nil {
 		return nil, err
 	}
 	values := make([]*yaml.Node, len(fields))
-	if fields[0].typ != protowire.BytesType {
-		for i, field := range fields {
-			node, err := protobufNumber(field)
-			if err != nil {
-				return nil, err
-			}
-			values[i] = node
-		}
-		return values, nil
-	}
 	readable := true
 	for _, field := range fields {
 		for _, b := range field.data {
@@ -96,21 +104,32 @@ func protobufFieldNodes(fields []wireField, budget *viewBudget, depth int) ([]*y
 		}
 		return values, nil
 	}
-	// Failed nested guesses still consume the same operation's work budget.
-	nested := true
-	for i, field := range fields {
-		value, err := protobufNodes(field.data, budget, depth+1)
-		if err != nil {
-			if _, limited := errors.AsType[*LimitError](err); limited {
-				return nil, err
-			}
-			nested = false
-			break
-		}
-		values[i] = value
+	// The first occurrence defines nested fields for every later occurrence.
+	// Failed guesses still consume this operation's remaining work budget.
+	first, err := protobufNodes(fields[0].data, budget, depth+1)
+	nested := err == nil
+	if _, limited := errors.AsType[*LimitError](err); limited {
+		return nil, err
 	}
 	if nested {
-		return values, nil
+		values[0] = first
+		for i, field := range fields[1:] {
+			parsed, err := parseWire(field.data, budget, depth+1)
+			if err != nil {
+				if _, limited := errors.AsType[*LimitError](err); limited {
+					return nil, err
+				}
+				nested = false
+				break
+			}
+			values[i+1], err = protobufFieldsWithShape(parsed, first, budget, depth+1)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if nested {
+			return values, nil
+		}
 	}
 	for i, field := range fields {
 		if len(field.data) > maxViewBytes/2 {
@@ -122,6 +141,162 @@ func protobufFieldNodes(fields []wireField, budget *viewBudget, depth int) ([]*y
 		values[i] = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!binary", Value: hex.EncodeToString(field.data), Style: yaml.TaggedStyle}
 	}
 	return values, nil
+}
+
+func protobufNumericNodes(fields []wireField, typ protowire.Type, repeated bool, budget *viewBudget) ([]*yaml.Node, error) {
+	var values []*yaml.Node
+	appendNumber := func(bits uint64) error {
+		if err := budget.reserveNodes(1, "YAML numeric value"); err != nil {
+			return err
+		}
+		node, err := protobufNumber(wireField{typ: typ, bits: bits})
+		if err != nil {
+			return err
+		}
+		values = append(values, node)
+		return nil
+	}
+	for _, field := range fields {
+		if field.typ == typ {
+			if err := appendNumber(field.bits); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if field.typ != protowire.BytesType || !repeated {
+			return nil, fmt.Errorf("varying types in protobuf")
+		}
+		for packed := field.data; len(packed) != 0; {
+			var bits uint64
+			var n int
+			switch typ {
+			case protowire.Fixed32Type:
+				var value uint32
+				value, n = protowire.ConsumeFixed32(packed)
+				bits = uint64(value)
+			case protowire.Fixed64Type:
+				bits, n = protowire.ConsumeFixed64(packed)
+			default:
+				bits, n = protowire.ConsumeVarint(packed)
+			}
+			if n < 0 {
+				return nil, fmt.Errorf("invalid packed protobuf value: %w", protowire.ParseError(n))
+			}
+			if err := appendNumber(bits); err != nil {
+				return nil, err
+			}
+			packed = packed[n:]
+		}
+	}
+	return values, nil
+}
+
+func protobufFieldsWithShape(fields []wireField, shape *yaml.Node, budget *viewBudget, depth int) (*yaml.Node, error) {
+	if err := budget.checkDepth(depth, "nested protobuf"); err != nil {
+		return nil, err
+	}
+	if err := budget.reserveNodes(1, "nested YAML mapping"); err != nil {
+		return nil, err
+	}
+	root := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	position := 0
+	for i := 0; i < len(shape.Content); i += 2 {
+		key, sample := shape.Content[i], shape.Content[i+1]
+		number, err := strconv.Atoi(key.Value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid inferred protobuf field")
+		}
+		for position < len(fields) && fields[position].number < protowire.Number(number) {
+			position++
+		}
+		start := position
+		for position < len(fields) && fields[position].number == protowire.Number(number) {
+			position++
+		}
+		group := fields[start:position]
+		if len(group) == 0 {
+			continue
+		}
+		repeated := sample.Kind == yaml.SequenceNode
+		valueDepth := depth
+		if repeated {
+			sample = sample.Content[0]
+			valueDepth++
+			if err := budget.checkDepth(valueDepth, "nested YAML sequence"); err != nil {
+				return nil, err
+			}
+		} else {
+			group = group[len(group)-1:]
+		}
+		var values []*yaml.Node
+		switch sample.Tag {
+		case "!!int", "!fixed32", "!fixed64":
+			typ := protowire.VarintType
+			switch sample.Tag {
+			case "!fixed32":
+				typ = protowire.Fixed32Type
+			case "!fixed64":
+				typ = protowire.Fixed64Type
+			}
+			values, err = protobufNumericNodes(group, typ, repeated, budget)
+		default:
+			for _, field := range group {
+				if field.typ != protowire.BytesType {
+					return nil, fmt.Errorf("varying types in nested protobuf")
+				}
+				var value *yaml.Node
+				if sample.Kind == yaml.MappingNode {
+					var parsed []wireField
+					parsed, err = parseWire(field.data, budget, valueDepth+1)
+					if err == nil {
+						value, err = protobufFieldsWithShape(parsed, sample, budget, valueDepth+1)
+					}
+				} else {
+					if err = budget.reserveNodes(1, "nested YAML value"); err != nil {
+						return nil, err
+					}
+					if sample.Tag == "!!str" {
+						if !utf8.Valid(field.data) {
+							return nil, fmt.Errorf("invalid nested protobuf string")
+						}
+						if err = budget.reserveScalar(len(field.data)); err == nil {
+							value = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: string(field.data)}
+						}
+					} else {
+						if len(field.data) > maxViewBytes/2 {
+							return nil, &LimitError{View: budget.view, Stage: "binary", Bound: "output bytes"}
+						}
+						if err = budget.reserveScalar(2 * len(field.data)); err == nil {
+							value = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!binary", Value: hex.EncodeToString(field.data), Style: yaml.TaggedStyle}
+						}
+					}
+				}
+				if err != nil {
+					return nil, err
+				}
+				values = append(values, value)
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
+		if len(values) == 0 {
+			continue
+		}
+		value := values[0]
+		if repeated {
+			if err := budget.reserveNodes(1, "nested YAML sequence"); err != nil {
+				return nil, err
+			}
+			value = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: values}
+		}
+		if err := budget.reserveNodes(1, "nested YAML key"); err != nil {
+			return nil, err
+		}
+		keyCopy := *key
+		root.Content = append(root.Content, &keyCopy, value)
+	}
+	return root, nil
 }
 
 func (b *viewBudget) reserveScalar(count int) error {

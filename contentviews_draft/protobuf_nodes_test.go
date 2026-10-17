@@ -89,7 +89,7 @@ func TestProtobufNodeLimits(t *testing.T) {
 }
 
 func TestProtobufNodeMixedTypes(t *testing.T) {
-	if _, err := protobufNodes([]byte{8, 1, 10, 1, 'a'}, &viewBudget{view: "Protobuf"}, 0); err == nil {
+	if _, err := protobufNodes([]byte{8, 1, 13, 1, 0, 0, 0}, &viewBudget{view: "Protobuf"}, 0); err == nil {
 		t.Fatal("mixed wire types must not be silently coerced")
 	}
 }

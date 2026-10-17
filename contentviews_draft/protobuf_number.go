@@ -100,6 +100,12 @@ func protobufNumberLiteral(field wireField) (string, error) {
 }
 
 func protobufFloat(value float64, bits int) string {
+	if math.IsInf(value, 1) {
+		return "inf.0"
+	}
+	if math.IsInf(value, -1) {
+		return "-inf.0"
+	}
 	// Rust's Display prints decimal notation even where Go's 'g' uses exponents.
 	text := strconv.FormatFloat(value, 'f', -1, bits)
 	if !strings.ContainsRune(text, '.') {

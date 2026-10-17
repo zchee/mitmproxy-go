@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -160,7 +161,7 @@ func TestMsgPack(t *testing.T) {
 		for _, view := range registry.views {
 			names = append(names, view.name)
 		}
-		if len(names) < 2 || names[len(names)-2] != "dns" || names[len(names)-1] != "msgpack" {
+		if i := slices.Index(names, "msgpack"); i < 1 || names[i-1] != "dns" {
 			t.Fatalf("registry order %v does not append msgpack after dns", names)
 		}
 		request := &httpmsg.Request{RawContent: testMsgPack}

@@ -316,7 +316,7 @@ func msgpackYAMLNode(value msgpackValue, budget *viewBudget, depth int) (*yaml.N
 		node.Value = strconv.FormatBool(scalar)
 	case string:
 		node.Value = scalar
-		node.Style = msgpackStringStyle(scalar)
+		node.Style = yamlStringStyle(scalar)
 	case []byte:
 		size := uint64(base64.StdEncoding.EncodedLen(len(scalar)))
 		if err := budget.chargeMaterialization(msgpackYAMLStage, size); err != nil {
@@ -342,12 +342,12 @@ func msgpackYAMLNode(value msgpackValue, budget *viewBudget, depth int) (*yaml.N
 	return node, nil
 }
 
-// msgpackStringStyle picks the presentation the Rust view's YAML emitter
+// yamlStringStyle picks the presentation the Rust view's YAML emitter
 // uses: block literal for multi-line text, single quotes when the plain form
 // would read back as null, a boolean or a number, or as an octal number under
 // YAML 1.1 (a leading zero followed by digits), and otherwise the plainest
 // style the emitter allows.
-func msgpackStringStyle(text string) yaml.Style {
+func yamlStringStyle(text string) yaml.Style {
 	switch {
 	case strings.Contains(text, "\n"):
 		return yaml.LiteralStyle

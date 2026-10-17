@@ -29,8 +29,9 @@ func Tags() []string {
 // Highlight returns caller-owned chunks for text in language.
 // It replaces malformed UTF-8 with replacement characters and returns an error
 // for an unsupported language or a lexer that does not preserve the source.
-// Syntax input above 256 KiB or tokenization exceeding 250 ms returns an error;
-// callers should display the original text without syntax styling in that case.
+// Syntax input above 256 KiB or tokenization exceeding 250 ms (2.5 s under the
+// race detector) returns an error; callers should display the original text
+// without syntax styling in that case.
 func Highlight(text, language string) ([]Chunk, error) {
 	switch language {
 	case "none":

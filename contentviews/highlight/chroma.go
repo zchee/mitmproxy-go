@@ -18,20 +18,25 @@ import (
 
 const (
 	maxHighlightBytes = 256 << 10
-	highlightTimeout  = 250 * time.Millisecond
+	lexerDeadlineBase = 250 * time.Millisecond
 )
+
+// lexerDeadline bounds the wait for tokenization. It is lexerDeadlineBase in
+// production builds and raceMultiplier times longer under the race detector,
+// whose instrumentation slows the lexers far beyond the production budget.
+var lexerDeadline = lexerDeadlineBase * raceMultiplier
 
 // ErrInputTooLarge indicates that syntax highlighting would exceed its input cap.
 var ErrInputTooLarge = errors.New("syntax highlighting input exceeds 256 KiB")
 
 // ErrTimeout indicates that syntax highlighting exceeded its time budget.
-var ErrTimeout = errors.New("syntax highlighting exceeded 250 ms")
+var ErrTimeout = errors.New("syntax highlighting exceeded its deadline")
 
 func tokenizeChroma(text, language string) ([]chroma.Token, error) {
 	if len(text) > maxHighlightBytes {
 		return nil, ErrInputTooLarge
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), highlightTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), lexerDeadline)
 	defer cancel()
 	type result struct {
 		tokens []chroma.Token

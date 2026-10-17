@@ -48,8 +48,8 @@ func TestHighlightLexerDeadline(t *testing.T) {
 			start := time.Now()
 			chunks, err := Highlight(text, "yaml")
 			elapsed := time.Since(start)
-			if elapsed > 2*time.Second {
-				t.Fatalf("Highlight returned after %s, want bounded deadline", elapsed)
+			if elapsed > 2*lexerDeadline {
+				t.Fatalf("Highlight returned after %s, want at most %s", elapsed, 2*lexerDeadline)
 			}
 			if tt.repeats >= 4000 || err != nil {
 				if !errors.Is(err, ErrTimeout) || chunks != nil {

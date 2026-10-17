@@ -160,19 +160,31 @@ func expandGRPC(data []byte, encoding string, budget *viewBudget) ([]byte, error
 		return nil, errors.New("unsupported gRPC compression")
 	}
 	writer := grpcExpansionWriter{budget: budget}
-	_, err := io.Copy(&writer, decoder)
-	// flate's Close returns the reader's sticky error again, so a Close
-	// error is reported only when the copy itself succeeded.
-	if closeErr := decoder.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
+	_, copyErr := io.Copy(&writer, decoder)
+	if err := grpcDecompressionError(copyErr, decoder.Close()); err != nil {
 		if _, limited := errors.AsType[*LimitError](err); limited {
 			return nil, err
 		}
 		return nil, fmt.Errorf("invalid gRPC compressed data: %w", err)
 	}
 	return writer.buffer.Bytes(), nil
+}
+
+// grpcDecompressionError combines the copy and Close errors of a
+// decompressor. flate's Close returns the reader's sticky error again, so a
+// Close error that matches the copy error is reported once; a different one,
+// such as a stream error left behind when the copy stopped at an output
+// limit, is kept beside the copy error.
+func grpcDecompressionError(copyErr, closeErr error) error {
+	switch {
+	case closeErr == nil:
+		return copyErr
+	case copyErr == nil:
+		return closeErr
+	case errors.Is(closeErr, copyErr):
+		return copyErr
+	}
+	return errors.Join(copyErr, closeErr)
 }
 
 type grpcExpansionWriter struct {

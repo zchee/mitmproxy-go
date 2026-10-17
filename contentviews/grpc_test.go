@@ -9,6 +9,7 @@ import (
 	"compress/gzip"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -201,6 +202,55 @@ func TestGRPC(t *testing.T) {
 						t.Fatalf("Prettify = %q, %v; want error %q and no partial output", got, err, want)
 					}
 				})
+			}
+		})
+		// gzip reports a bad checksum from Read and its Close then returns
+		// nil, so the checksum error is reported once.
+		t.Run("bad gzip checksum reports one error", func(t *testing.T) {
+			got, err := GRPC{}.Prettify(frame(1, corrupt), grpcMetadata("gzip"))
+			const want = "invalid gRPC compressed data: gzip: invalid checksum"
+			if err == nil || got != "" || err.Error() != want {
+				t.Fatalf("Prettify = %q, %v; want error %q and no partial output", got, err, want)
+			}
+		})
+		t.Run("decompression error combination", func(t *testing.T) {
+			copyErr := errors.New("copy failed")
+			closeErr := errors.New("close failed")
+			limit := &LimitError{View: "gRPC", Stage: "gRPC decompression", Resource: "decompressed bytes"}
+			tests := map[string]struct {
+				copyErr, closeErr error
+				want              []error
+				wantText          string
+			}{
+				"success: no errors":                          {},
+				"error: copy only":                            {copyErr: copyErr, want: []error{copyErr}, wantText: "copy failed"},
+				"error: close only":                           {closeErr: closeErr, want: []error{closeErr}, wantText: "close failed"},
+				"error: close repeats the copy error":         {copyErr: io.ErrUnexpectedEOF, closeErr: io.ErrUnexpectedEOF, want: []error{io.ErrUnexpectedEOF}, wantText: "unexpected EOF"},
+				"error: close wraps the copy error":           {copyErr: io.ErrUnexpectedEOF, closeErr: fmt.Errorf("flate: %w", io.ErrUnexpectedEOF), want: []error{io.ErrUnexpectedEOF}, wantText: "unexpected EOF"},
+				"error: different close error is kept":        {copyErr: copyErr, closeErr: closeErr, want: []error{copyErr, closeErr}, wantText: "copy failed\nclose failed"},
+				"error: limit refusal keeps the stream error": {copyErr: limit, closeErr: closeErr, want: []error{limit, closeErr}},
+			}
+			for name, tt := range tests {
+				t.Run(name, func(t *testing.T) {
+					err := grpcDecompressionError(tt.copyErr, tt.closeErr)
+					if len(tt.want) == 0 {
+						if err != nil {
+							t.Fatalf("grpcDecompressionError = %v, want nil", err)
+						}
+						return
+					}
+					for _, want := range tt.want {
+						if !errors.Is(err, want) {
+							t.Fatalf("grpcDecompressionError = %v, does not match %v", err, want)
+						}
+					}
+					if tt.wantText != "" && err.Error() != tt.wantText {
+						t.Fatalf("grpcDecompressionError text = %q, want %q", err.Error(), tt.wantText)
+					}
+				})
+			}
+			if _, limited := errors.AsType[*LimitError](grpcDecompressionError(limit, closeErr)); !limited {
+				t.Fatal("a joined limit refusal is no longer a *LimitError")
 			}
 		})
 		t.Run("identity compression", func(t *testing.T) {

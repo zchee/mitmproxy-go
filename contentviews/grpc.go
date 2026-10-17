@@ -160,8 +160,13 @@ func expandGRPC(data []byte, encoding string, budget *viewBudget) ([]byte, error
 		return nil, errors.New("unsupported gRPC compression")
 	}
 	writer := grpcExpansionWriter{budget: budget}
-	_, copyErr := io.Copy(&writer, decoder)
-	if err := errors.Join(copyErr, decoder.Close()); err != nil {
+	_, err := io.Copy(&writer, decoder)
+	// flate's Close returns the reader's sticky error again, so a Close
+	// error is reported only when the copy itself succeeded.
+	if closeErr := decoder.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
 		if _, limited := errors.AsType[*LimitError](err); limited {
 			return nil, err
 		}

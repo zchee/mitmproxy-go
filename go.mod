@@ -10,7 +10,7 @@ require (
 	github.com/andybalholm/brotli v1.2.6
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/dlclark/regexp2 v1.12.0
-	github.com/ebitengine/purego v0.11.1
+	github.com/ebitengine/purego v0.11.2
 	github.com/go-ldap/ldap/v3 v3.4.15
 	github.com/google/btree v1.1.3
 	github.com/google/go-cmp v0.7.0

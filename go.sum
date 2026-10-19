@@ -94,8 +94,8 @@ github.com/yusufpapurcu/wmi v1.2.4 h1:zFUKzehAFReQwLys1b/iSMl+JQGSCSjtVqQn9bBrPo
 github.com/yusufpapurcu/wmi v1.2.4/go.mod h1:SBZ9tNy3G9/m5Oi98Zks0QjeHVDvuK0qfxQmPyzfmi0=
 github.com/zchee/gows v0.1.0 h1:Io5iS4baoxqbVkITRWeGmWbaFdhi0/bjnBRXfw/fxZE=
 github.com/zchee/gows v0.1.0/go.mod h1:f/0jC7oW5N7QtdvGiP9RhUhirCiNSNLPioinw27r4J8=
-github.com/zchee/yaml-go-yaml/v4 v4.0.0-rc.6.0.20261016233620-a680f1e2da2f h1:1v59DBX6YSqV5sai4Fvegry6R4m70eE7hVgQPteu1D0=
-github.com/zchee/yaml-go-yaml/v4 v4.0.0-rc.6.0.20261016233620-a680f1e2da2f/go.mod h1:aZqd9kCMsGL7AuUv/m/PvWLdg5sjJsZ4oHDEnfPPfY0=
+github.com/zchee/yaml-go-yaml/v4 v4.0.0-rc.6.0.20261016233001-98da9bfb2950 h1:xXgx1GAVSNTRu2cGIRq197sVb5XcPlq9nuQXgBQ455o=
+github.com/zchee/yaml-go-yaml/v4 v4.0.0-rc.6.0.20261016233001-98da9bfb2950/go.mod h1:aZqd9kCMsGL7AuUv/m/PvWLdg5sjJsZ4oHDEnfPPfY0=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 go.uber.org/mock v0.5.2 h1:LbtPTcP8A5k9WPXj54PPPbjcI4Y6lhyOZXn+VS7wNko=

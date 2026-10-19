@@ -68,7 +68,7 @@ func parsePasswordHash(encoded string) (*passwordHash, error) {
 	decoded := make([][]byte, 2)
 	for i, field := range fields[4:] {
 		for _, c := range field {
-			if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '+' || c == '/') {
+			if (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '+' && c != '/' {
 				return nil, invalid
 			}
 		}

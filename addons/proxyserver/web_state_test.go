@@ -66,7 +66,7 @@ func testWebStateReconcile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer occupied.Close()
+	defer func() { _ = occupied.Close() }()
 	spec := "regular@" + occupied.Addr().String()
 	update(t, m, map[string]any{"mode": []string{spec}})
 	if err := ps.reconcile(t.Context()); err != nil {

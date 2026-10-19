@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/jsontext"
-	"encoding/json/v2"
+	json "encoding/json/v2"
 	"maps"
 )
 

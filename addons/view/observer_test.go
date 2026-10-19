@@ -4,7 +4,7 @@
 package view
 
 import (
-	"encoding/json/v2"
+	json "encoding/json/v2"
 	"slices"
 	"testing"
 

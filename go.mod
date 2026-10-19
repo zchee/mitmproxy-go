@@ -10,7 +10,7 @@ require (
 	github.com/andybalholm/brotli v1.2.6
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/dlclark/regexp2 v1.12.0
-	github.com/ebitengine/purego v0.11.1
+	github.com/ebitengine/purego v0.11.2
 	github.com/go-ldap/ldap/v3 v3.4.15
 	github.com/google/btree v1.1.3
 	github.com/google/go-cmp v0.7.0
@@ -18,7 +18,7 @@ require (
 	github.com/klauspost/compress v1.20.3
 	github.com/pion/dtls/v3 v3.1.14
 	github.com/quic-go/qpack v0.6.0
-	github.com/quic-go/quic-go v0.64.0
+	github.com/quic-go/quic-go v0.64.1
 	github.com/shamaton/msgpack/v3 v3.2.4
 	github.com/shirou/gopsutil/v4 v4.26.9
 	github.com/spf13/cobra v1.10.2
@@ -34,7 +34,7 @@ require (
 	golang.org/x/text v0.43.0
 	golang.zx2c4.com/wireguard v0.0.0-20261006164505-2631ce99a06f
 	google.golang.org/protobuf v1.36.12
-	gvisor.dev/gvisor v0.0.0-20261016181511-762aa1ad6e34
+	gvisor.dev/gvisor v0.0.0-20261019180230-45aa8aedf6f1
 	software.sslmate.com/src/go-pkcs12 v0.7.4
 )
 

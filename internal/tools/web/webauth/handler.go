@@ -134,12 +134,16 @@ func prepareArguments(w http.ResponseWriter, r *http.Request) bool {
 	if r.Body != nil {
 		r.Body = http.MaxBytesReader(w, r.Body, 4<<30)
 	}
+	// Tornado parses form bodies on every method, unlike net/http's ParseForm.
+	parser := r.Clone(r.Context())
+	parser.Method = http.MethodPost
 	var err error
 	if mediaType == "multipart/form-data" {
-		err = r.ParseMultipartForm(32 << 20)
+		err = parser.ParseMultipartForm(32 << 20)
 	} else {
-		err = r.ParseForm()
+		err = parser.ParseForm()
 	}
+	r.Form, r.PostForm, r.MultipartForm = parser.Form, parser.PostForm, parser.MultipartForm
 	if err != nil {
 		writePolicyError(w, http.StatusBadRequest)
 		return false

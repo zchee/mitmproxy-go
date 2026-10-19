@@ -21,8 +21,10 @@ import (
 	"github.com/zchee/mitmproxy-go/options"
 )
 
-const argon2idVector = "$argon2id$v=19$m=8,t=1,p=1$c2FsdHNhbHQ$ieVgG5ysTJFx4k/KvmC9aQ"
-const argon2iVector = "$argon2i$v=19$m=8,t=1,p=1$c2FsdHNhbHQ$+mVW+bJM8rrFo4whr0C9Kg"
+const (
+	argon2idVector = "$argon2id$v=19$m=8,t=1,p=1$c2FsdHNhbHQ$ieVgG5ysTJFx4k/KvmC9aQ"
+	argon2iVector  = "$argon2i$v=19$m=8,t=1,p=1$c2FsdHNhbHQ$+mVW+bJM8rrFo4whr0C9Kg"
+)
 
 func authRegistry(t *testing.T) (*webauth.WebAuth, *addon.Manager, *options.Manager) {
 	t.Helper()

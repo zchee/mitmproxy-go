@@ -265,7 +265,7 @@ func TestWebLogin(t *testing.T) {
 			if !session.HttpOnly || session.SameSite != http.SameSiteStrictMode || session.Path != "/" || session.Secure {
 				t.Fatalf("session flags = %#v", session)
 			}
-			if duration := session.Expires.Sub(time.Now()); duration < 399*24*time.Hour || duration > 401*24*time.Hour {
+			if duration := time.Until(session.Expires); duration < 399*24*time.Hour || duration > 401*24*time.Hour {
 				t.Fatalf("session expiry offset = %v", duration)
 			}
 			status, _, cookies = request(t, client, "GET", server.URL+"/api", "", map[string]string{"Authorization": "Bearer wrong"})

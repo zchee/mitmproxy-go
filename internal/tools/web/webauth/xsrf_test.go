@@ -5,8 +5,11 @@ package webauth
 
 import (
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -186,7 +189,24 @@ func FuzzWebAuthTokens(f *testing.F) {
 			return
 		}
 		secret := []byte("nonsecret-fuzz-cookie-key")
-		_ = validCookie(secret, "mitmproxy-auth-8081", value, time.Unix(1700000000, 0))
+		at := time.Unix(1700000000, 0)
+		validSession := validCookie(secret, "mitmproxy-auth-8081", value, at)
+		if validSession && validCookie(secret, "mitmproxy-auth-8082", value, at) {
+			t.Fatal("signed cookie accepted for another port")
+		}
+		auth := &WebAuth{clock: func() time.Time { return at }}
+		copy(auth.secret[:], secret)
+		config := &configuration{password: "test", port: 8081}
+		r := httptest.NewRequest(http.MethodGet, "/api?token=test", nil)
+		r.Header.Set("Authorization", value)
+		r.Header.Set("Cookie", "mitmproxy-auth-8081="+value)
+		cookie, cookieErr := r.Cookie("mitmproxy-auth-8081")
+		validSession = cookieErr == nil && validCookie(auth.secret[:], "mitmproxy-auth-8081", cookie.Value, at)
+		scheme, params, _ := strings.Cut(value, " ")
+		want := validSession || scheme != "Bearer" || params == "" || params == "test"
+		if got := auth.authenticate(httptest.NewRecorder(), r, config, nil); got != want {
+			t.Fatalf("cookie/Bearer/query precedence: got %v, want %v", got, want)
+		}
 		token, timestamp, valid := decodeXSRF(value)
 		if valid && len(token) > 0 {
 			masked, err := maskXSRF(token, timestamp)
@@ -199,8 +219,10 @@ func FuzzWebAuthTokens(f *testing.F) {
 			}
 		}
 		request := &http.Request{URL: &url.URL{RawQuery: "token=" + url.QueryEscape(value)}}
-		_, _ = argument(request, "token")
-		_, _, _ = strings.Cut(value, " ")
+		argumentValue, argumentErr := argument(request, "token")
+		if argumentErr == nil && (strings.HasPrefix(argumentValue, " ") || strings.HasSuffix(argumentValue, " ")) {
+			t.Fatal("request argument retained surrounding spaces")
+		}
 	})
 }
 
@@ -215,6 +237,14 @@ func FuzzWebPasswordHash(f *testing.F) {
 		}
 		if hash.memory < 8*uint32(hash.parallelism) || hash.memory > maxMemoryKiB || hash.time < 1 || hash.time > 10 || hash.parallelism < 1 || hash.parallelism > 16 || len(hash.salt) < 8 || len(hash.salt) > 64 || len(hash.digest) < 16 || len(hash.digest) > 64 || len(value) > 1024 {
 			t.Fatal("accepted PHC outside fixed bounds")
+		}
+		canonical := fmt.Sprintf("$%s$v=19$m=%d,t=%d,p=%d$%s$%s", hash.variant, hash.memory, hash.time, hash.parallelism, base64.RawStdEncoding.EncodeToString(hash.salt), base64.RawStdEncoding.EncodeToString(hash.digest))
+		roundTrip, err := parsePasswordHash(canonical)
+		if err != nil {
+			t.Fatal("canonical PHC rejected", err)
+		}
+		if diff := gocmp.Diff(hash, roundTrip, gocmp.AllowUnexported(passwordHash{})); diff != "" {
+			t.Fatal(diff)
 		}
 	})
 }

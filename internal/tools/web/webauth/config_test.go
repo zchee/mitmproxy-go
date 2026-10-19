@@ -181,6 +181,10 @@ func TestWebAuthConfiguration(t *testing.T) {
 				"uint32 overflow": {"m=8", "m=4294967296"}, "uint64 overflow": {"m=8", "m=18446744073709551616"},
 				"negative": {"m=8", "m=-8"}, "signed positive": {"m=8", "m=+8"},
 				"duplicate": {"m=8", "m=8,m=8"}, "unknown": {"m=8", "q=8"},
+				"duplicate time": {"t=1", "t=1,t=1"}, "duplicate parallelism": {"p=1", "p=1,p=1"},
+				"empty parameter": {"m=8", "m="}, "empty field": {"m=8", "m=8,"},
+				"extra separator": {"v=19", "v=19$"}, "trailing field": {"ieVgG5ysTJFx4k/KvmC9aQ", "ieVgG5ysTJFx4k/KvmC9aQ$"},
+				"whitespace number": {"m=8", "m= 8"}, "unicode number": {"m=8", "m=８"},
 				"missing parameter": {"m=8,", ""}, "missing version": {"v=19$", ""},
 				"old version": {"v=19", "v=16"}, "argon2d": {"argon2id", "argon2d"},
 				"salt short": {"c2FsdHNhbHQ", "c2FsdA"}, "salt long": {"c2FsdHNhbHQ", base64.RawStdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 65))},
@@ -217,25 +221,4 @@ func TestWebAuthConfiguration(t *testing.T) {
 			}
 		})
 	})
-}
-
-// checkWebThemeOption accepts the fully composed registry constructor so that
-// theme ownership stays with the web addon rather than the password addon.
-func checkWebThemeOption(t *testing.T, compose func(*testing.T) (*addon.Manager, *options.Manager)) {
-	t.Helper()
-	manager, opts := compose(t)
-	option, ok := opts.Lookup("web_theme")
-	if !ok {
-		t.Fatal("composed web registry lacks web_theme")
-	}
-	if diff := gocmp.Diff("system", opts.Str("web_theme")); diff != "" {
-		t.Fatal(diff)
-	}
-	if diff := gocmp.Diff([]string{"system", "dark", "light"}, option.Choices()); diff != "" {
-		t.Fatal(diff)
-	}
-	configured(t, manager, opts, map[string]any{"web_theme": "dark"})
-	if diff := gocmp.Diff("dark", opts.Str("web_theme")); diff != "" {
-		t.Fatal(diff)
-	}
 }

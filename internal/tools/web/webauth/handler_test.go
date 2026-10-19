@@ -12,6 +12,8 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"runtime"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"testing"
@@ -288,9 +290,12 @@ func TestWebLogin(t *testing.T) {
 		if status != 503 {
 			t.Errorf("concurrency exhaustion status=%d", status)
 		}
-		updateAuth(t, manager, opts, map[string]any{"web_password": testHash})
-		if _, err := auth.IsValidPassword(t.Context(), "test"); !errors.Is(err, ErrVerifierBusy) {
-			t.Errorf("reconfigure reset reservations: %v", err)
+		updateAuth(t, manager, opts, map[string]any{"web_password": "$argon2i$v=19$m=8,t=1,p=1$c2FsdHNhbHQ$+mVW+bJM8rrFo4whr0C9Kg"})
+		other, _, _ := newAuth(t, testHash)
+		for _, instance := range []*WebAuth{auth, other} {
+			if _, err := instance.IsValidPassword(t.Context(), "test"); !errors.Is(err, ErrVerifierBusy) {
+				t.Errorf("configuration or instance reset shared reservations: %v", err)
+			}
 		}
 		releaseVerifier(8)
 		releaseVerifier(8)
@@ -307,15 +312,80 @@ func TestWebLogin(t *testing.T) {
 			t.Errorf("canceled acquisition = %v", err)
 		}
 		releaseVerifier(maxMemoryKiB)
+		if _, err := auth.IsValidPassword(canceled, "test"); !errors.Is(err, context.Canceled) {
+			t.Errorf("canceled verification with free budget = %v", err)
+		}
+		workingHash, err := parsePasswordHash(strings.Replace(testHash, "m=8,t=1", "m=32768,t=10", 1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		derivationContext, cancelDerivation := context.WithCancel(t.Context())
+		result := make(chan error, 1)
+		finished := make(chan struct{})
+		defer func() { cancelDerivation(); <-finished }()
+		go func() {
+			defer close(finished)
+			_, err := workingHash.check(derivationContext, "test")
+			result <- err
+		}()
+		watchdog := time.NewTimer(10 * time.Second)
+		defer watchdog.Stop()
+		for {
+			verifierBudget.Lock()
+			reserved := verifierBudget.active == 1 && verifierBudget.memory == workingHash.memory
+			if reserved {
+				cancelDerivation()
+				// Cancellation cannot free a reservation while Argon2 still owns it.
+				if verifierBudget.active != 1 || verifierBudget.memory != workingHash.memory {
+					t.Error("cancellation released an active derivation")
+				}
+			}
+			verifierBudget.Unlock()
+			if reserved {
+				break
+			}
+			select {
+			case err := <-result:
+				t.Fatalf("derivation finished before cancellation observation: %v", err)
+			case <-watchdog.C:
+				var stacks strings.Builder
+				_ = pprof.Lookup("goroutine").WriteTo(&stacks, 2)
+				t.Fatalf("derivation did not reserve its budget\n%s", stacks.String())
+			default:
+				runtime.Gosched()
+			}
+		}
+		select {
+		case err := <-result:
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("canceled active derivation = %v", err)
+			}
+		case <-watchdog.C:
+			var stacks strings.Builder
+			_ = pprof.Lookup("goroutine").WriteTo(&stacks, 2)
+			t.Fatalf("canceled derivation did not finish\n%s", stacks.String())
+		}
 		var wg sync.WaitGroup
 		for range 2 {
 			wg.Go(func() {
-				valid, err := auth.IsValidPassword(t.Context(), "test")
-				if err != nil || !valid {
-					t.Errorf("concurrent verification=%v,%v", valid, err)
+				for range 20 {
+					valid, err := auth.IsValidPassword(t.Context(), "test")
+					if err != nil || !valid {
+						t.Errorf("concurrent verification=%v,%v", valid, err)
+					}
 				}
 			})
 		}
+		wg.Go(func() {
+			for range 20 {
+				err := manager.Do(t.Context(), func(ctx context.Context) error {
+					return opts.Update(ctx, map[string]any{"web_password": testHash})
+				})
+				if err != nil {
+					t.Errorf("concurrent reconfiguration: %v", err)
+				}
+			}
+		})
 		wg.Wait()
 		verifierBudget.Lock()
 		active, memory := verifierBudget.active, verifierBudget.memory

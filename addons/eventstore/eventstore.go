@@ -27,6 +27,8 @@ type EventStore struct {
 	start          int
 	subscribers    map[uint64]chan Event
 	nextSubscriber uint64
+	observers      map[uint64]func(Event)
+	nextObserver   uint64
 }
 
 // New constructs an EventStore with capacity 10000 by default. An optional size
@@ -101,6 +103,24 @@ func (s *EventStore) Subscribe(capacity int) (<-chan Event, func()) {
 	}
 }
 
+// Observe registers a synchronous observer under addon dispatch. The callback
+// may only copy/serialize and enqueue nonblocking data; it must not perform I/O,
+// mutate the store or wait for another dispatch. Registration and idempotent
+// unsubscribe require dispatch. A nil callback is ignored; Done removes all
+// observers. Observe starts no goroutines.
+func (s *EventStore) Observe(fn func(Event)) func() {
+	if fn == nil {
+		return func() {}
+	}
+	if s.observers == nil {
+		s.observers = make(map[uint64]func(Event))
+	}
+	s.nextObserver++
+	id := s.nextObserver
+	s.observers[id] = fn
+	return func() { delete(s.observers, id) }
+}
+
 func (s *EventStore) emit(event Event) {
 	for id, ch := range s.subscribers {
 		select {
@@ -110,10 +130,14 @@ func (s *EventStore) emit(event Event) {
 			delete(s.subscribers, id)
 		}
 	}
+	for _, observer := range s.observers {
+		observer(event)
+	}
 }
 
 // Done releases every subscription; existing entries remain accessible.
 func (s *EventStore) Done(context.Context) error {
+	clear(s.observers)
 	for id, ch := range s.subscribers {
 		close(ch)
 		delete(s.subscribers, id)

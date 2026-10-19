@@ -62,6 +62,10 @@ type Config struct {
 	// remain unavailable at Start until their protocol handler integrations
 	// are installed.
 	ListenerFactories map[ListenerKey]ListenerFactory
+	// PresentationChanged receives nonblocking invalidations after state
+	// publication. It must remain open for the lifetime of every instance.
+	// Nil disables presentation notifications without starting any work.
+	PresentationChanged chan<- struct{}
 }
 
 // Instance owns a mode's TCP or UDP listeners. Start and Stop serialize lifecycle work
@@ -69,25 +73,26 @@ type Config struct {
 // they read immutable snapshots and never wait for network I/O or handlers.
 // Use New to create an instance; the zero value is not ready to serve.
 type Instance struct {
-	mode             modespec.Mode
-	handler          *proxy.Handler
-	confDir          string
-	redirector       local.Redirector
-	limiter          *ClientLimiter
-	host             string
-	port             int
-	top              hookdata.LayerSpec
-	logger           *slog.Logger
-	mu               sync.Mutex
-	state            atomic.Pointer[instanceState]
-	stopCancel       func() bool
-	listenTCP        func(context.Context, string, string) (net.Listener, error)
-	listenUDP        func(context.Context, string, string) (net.PacketConn, error)
-	portCandidates   func(context.Context) (portCandidateCursor, error)
-	openTun          func(string, *slog.Logger) (wgtun.Device, error)
-	checkTransparent func(context.Context) error
-	originalAddr     func(context.Context, *net.TCPConn) (connection.Address, error)
-	factories        map[ListenerKey]ListenerFactory
+	mode                modespec.Mode
+	handler             *proxy.Handler
+	confDir             string
+	redirector          local.Redirector
+	limiter             *ClientLimiter
+	host                string
+	port                int
+	top                 hookdata.LayerSpec
+	logger              *slog.Logger
+	mu                  sync.Mutex
+	state               atomic.Pointer[instanceState]
+	stopCancel          func() bool
+	listenTCP           func(context.Context, string, string) (net.Listener, error)
+	listenUDP           func(context.Context, string, string) (net.PacketConn, error)
+	portCandidates      func(context.Context) (portCandidateCursor, error)
+	openTun             func(string, *slog.Logger) (wgtun.Device, error)
+	checkTransparent    func(context.Context) error
+	originalAddr        func(context.Context, *net.TCPConn) (connection.Address, error)
+	factories           map[ListenerKey]ListenerFactory
+	presentationChanged chan<- struct{}
 }
 
 type instanceState struct {
@@ -98,6 +103,8 @@ type instanceState struct {
 	packetListeners []io.Closer
 	addrs           []connection.Address
 	err             error
+	wireguardConf   string
+	tunName         string
 }
 
 // New validates the mode and configuration without opening a listener.
@@ -160,6 +167,7 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 		confDir = "~/.mitmproxy"
 	}
 	i := &Instance{mode: mode, handler: cfg.Handler, confDir: confDir, redirector: cfg.LocalRedirector, limiter: cfg.ClientLimiter, host: host, port: port, top: hookdata.LayerSpec{Kind: kind}, logger: logger}
+	i.presentationChanged = cfg.PresentationChanged
 	i.factories = registeredFactories(cfg.ListenerFactories)
 	i.listenTCP = new(net.ListenConfig).Listen
 	i.listenUDP = new(net.ListenConfig).ListenPacket
@@ -199,7 +207,10 @@ func (i *Instance) ListenAddrs() []connection.Address { return slices.Clone(i.st
 // A canceled context closes the listeners and cancels the connection handlers.
 func (i *Instance) Start(ctx context.Context) error {
 	i.mu.Lock()
-	defer i.mu.Unlock()
+	defer func() {
+		i.mu.Unlock()
+		i.signalPresentation()
+	}()
 	if _, ok := i.mode.(modespec.LocalMode); ok {
 		return i.startLocal(ctx)
 	}
@@ -267,7 +278,10 @@ func (i *Instance) Start(ctx context.Context) error {
 	i.state.Store(state)
 	i.stopCancel = context.AfterFunc(ctx, func() {
 		i.mu.Lock()
-		defer i.mu.Unlock()
+		defer func() {
+			i.mu.Unlock()
+			i.signalPresentation()
+		}()
 		if i.state.Load() == state {
 			_ = i.stopLocked()
 		}
@@ -286,7 +300,10 @@ func (i *Instance) Start(ctx context.Context) error {
 // Call outside dispatch; cancellation of the Start context ends all clients.
 func (i *Instance) Stop() error {
 	i.mu.Lock()
-	defer i.mu.Unlock()
+	defer func() {
+		i.mu.Unlock()
+		i.signalPresentation()
+	}()
 	return i.stopLocked()
 }
 

@@ -102,6 +102,9 @@ func (i *Instance) startWireGuard(ctx context.Context) error {
 	}
 	source := &wireguardSource{ctx: lifetime, cancel: cancel, server: server, stack: stack, done: make(chan struct{}), monitorDone: make(chan struct{})}
 	state := &instanceState{wireguard: source, addrs: []connection.Address{{Host: addr.IP.String(), Port: addr.Port}}}
+	if len(clientConfigurations) != 0 {
+		state.wireguardConf = clientConfigurations[0]
+	}
 	i.state.Store(state)
 	go i.serveWireGuard(source)
 	go func() {
@@ -112,7 +115,9 @@ func (i *Instance) startWireGuard(ctx context.Context) error {
 		if unexpected {
 			err = errors.Join(err, errors.New("WireGuard server stopped unexpectedly"))
 		}
-		i.state.CompareAndSwap(state, &instanceState{err: err})
+		if i.state.CompareAndSwap(state, &instanceState{err: err}) {
+			i.signalPresentation()
+		}
 	}()
 	i.logger.Info(i.mode.Description() + " listening at " + formatAddrs(state.addrs) + ".")
 	for _, clientConfiguration := range clientConfigurations {

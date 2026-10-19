@@ -60,6 +60,8 @@ type View struct {
 	sequence       uint64
 	subscribers    map[uint64]chan Event
 	nextSubscriber uint64
+	observers      map[uint64]func(Event)
+	nextObserver   uint64
 }
 
 // New constructs a View. A nil manager permits standalone store use; commands
@@ -98,6 +100,30 @@ func (v *View) Subscribe(capacity int) (<-chan Event, func()) {
 			close(existing)
 		}
 	}
+}
+
+// Observe registers a synchronous observer of the existing event sequence.
+// Registration, notification and the idempotent unsubscribe require addon
+// dispatch. The callback may only copy/serialize and enqueue nonblocking data;
+// it must not retain Flow pointers, mutate the view, perform I/O or wait for
+// another dispatch. A nil callback is ignored. Observe starts no goroutines.
+func (v *View) Observe(fn func(Event)) func() {
+	if fn == nil {
+		return func() {}
+	}
+	if v.observers == nil {
+		v.observers = make(map[uint64]func(Event))
+	}
+	v.nextObserver++
+	id := v.nextObserver
+	v.observers[id] = fn
+	return func() { delete(v.observers, id) }
+}
+
+// Done releases synchronous observers without changing the bounded Subscribe API.
+func (v *View) Done(context.Context) error {
+	clear(v.observers)
+	return nil
 }
 
 func (v *View) emit(e Event) {
@@ -143,6 +169,9 @@ func (v *View) emit(e Event) {
 			close(ch)
 			delete(v.subscribers, id)
 		}
+	}
+	for _, observer := range v.observers {
+		observer(e)
 	}
 }
 

@@ -152,7 +152,7 @@ func (b *Buffer) Complete(result contract.Completion, forward bool) {
 			prefix = strings.TrimSuffix(prefix, string(quote))
 		}
 		end := b.cursor
-		if parts := command.Lex(string(runes[start:])); len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
+		if parts := command.Lex(strings.ReplaceAll(string(runes[start:]), "\t", " ")); len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
 			end = min(len(runes), start+utf8.RuneCountInString(parts[0]))
 		}
 		choices := make([]string, 0, len(result.Choices))

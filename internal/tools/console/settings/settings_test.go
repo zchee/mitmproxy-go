@@ -396,6 +396,25 @@ func TestConsoleKeybindings(t *testing.T) {
 				if !gocmp.Equal(focused, all[1]) || window.Binding != focused.Key+"@"+strings.Join(focused.Contexts, ",") {
 					t.Fatalf("queued binding identity was lost: focused=%+v control=%+v", focused, window)
 				}
+				refreshed := f.snapshot(t)
+				slices.Reverse(refreshed.Bindings)
+				b.SetSnapshot(refreshed)
+				retained, ok := b.Focused()
+				if !ok || !gocmp.Equal(retained, focused) {
+					t.Fatalf("reordering retargeted the binding: %+v", retained)
+				}
+				refreshed.Bindings = slices.DeleteFunc(refreshed.Bindings, func(binding contract.Binding) bool {
+					return binding.Key == focused.Key && gocmp.Equal(binding.Contexts, focused.Contexts)
+				})
+				b.SetSnapshot(refreshed)
+				if _, ok := b.Focused(); ok || b.Error() == nil {
+					t.Fatal("missing identity silently selected another binding")
+				}
+				b.SetSnapshot(contract.Snapshot{})
+				if _, ok := b.Focused(); ok {
+					t.Fatal("empty snapshot retained a binding")
+				}
+				_ = b.View()
 			},
 		}
 		for name, test := range tests {

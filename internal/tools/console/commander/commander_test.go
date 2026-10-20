@@ -293,6 +293,7 @@ func TestConsoleCommander(t *testing.T) {
 	t.Run("contracts", func(t *testing.T) {
 		tests := map[string]func(*testing.T){
 			"completion_types": func(t *testing.T) {
+				testCompletionOrdering(t)
 				f := newFixture(t, "pick b")
 				if err := f.master.Commands.Register("available", func(context.Context) []string { return []string{"beta", "bravo", "alpha"} }); err != nil {
 					t.Fatal(err)
@@ -333,7 +334,7 @@ func TestConsoleCommander(t *testing.T) {
 					cursor, start int
 					choices       []string
 					want          string
-				}{"open_quote": {"pick 'be", 8, 5, []string{"beta value"}, "pick 'beta value'"}, "middle": {"pick 'be old' tail", 8, 5, []string{"beta value"}, "pick 'beta value' tail"}, "space": {"pick be tail", 7, 5, []string{"beta value"}, "pick \"beta value\" tail"}}
+				}{"open_quote": {"pick 'be", 8, 5, []string{"beta value"}, "pick 'beta value'"}, "middle": {"pick 'be old' tail", 8, 5, []string{"beta value"}, "pick 'beta value' tail"}, "space": {"pick be tail", 7, 5, []string{"beta value"}, "pick \"beta value\" tail"}, "tab_suffix": {"pick 'be\told' tail", 8, 5, []string{"beta value"}, "pick 'beta value' tail"}}
 				for name, tt := range tests {
 					b := commander.NewBuffer(tt.text)
 					b.SetCursor(tt.cursor)
@@ -404,6 +405,29 @@ func TestConsoleCommander(t *testing.T) {
 			t.Run(name, test)
 		}
 	})
+}
+
+func testCompletionOrdering(t *testing.T) {
+	t.Helper()
+	f := newFixture(t, "zz")
+	if err := f.master.Commands.Register("zzpick", func(context.Context) {}); err != nil {
+		t.Fatal(err)
+	}
+	cmd, _ := f.model.Update(key("tab"))
+	f.model.Update(key("tab"))
+	f.model.Update(tea.PasteMsg{Content: "x"})
+	if failures := settle(t, f.model, cmd); len(failures) > 0 {
+		t.Fatal(failures)
+	}
+	textEqual(t, f.model, "zzpickx")
+	f.model.SetSnapshot(contract.Snapshot{Control: contract.State{Prompt: "command", Text: "zz", Cursor: 2}})
+	cmd, _ = f.model.Update(key("tab"))
+	f.model.SetSnapshot(contract.Snapshot{Control: contract.State{Prompt: "command", Text: "new", Cursor: 3}})
+	f.model.Update(tea.PasteMsg{Content: "!"})
+	if failures := settle(t, f.model, cmd); len(failures) > 0 {
+		t.Fatal(failures)
+	}
+	textEqual(t, f.model, "new!")
 }
 
 func testHistoryTrace(t *testing.T) {

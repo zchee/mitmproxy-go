@@ -137,11 +137,12 @@ func (m *Model) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 				}
 			}
 		}
-		if len(m.pending) > 0 {
+		for len(m.pending) > 0 {
 			next := m.pending[0]
 			m.pending = m.pending[1:]
-			cmd, _ := m.Update(next)
-			return cmd, true
+			if cmd, _ := m.Update(next); cmd != nil {
+				return cmd, true
+			}
 		}
 		return nil, true
 	}

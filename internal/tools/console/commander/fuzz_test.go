@@ -15,7 +15,7 @@ import (
 )
 
 func FuzzConsoleCommander(f *testing.F) {
-	for _, seed := range []string{"", "set view_filter '~bq test'", "echo é👩‍💻", "pick \"unfinished", "\x1b]52;c;payload\a"} {
+	for _, seed := range []string{"", "console.\xff", "console.vi", "console.command flow.comment @focus \"two words\"", "view.flows.load \"two words", "console.command ", "flow.comment @focus 日本語", "set view_filter '~bq test'", "echo é👩‍💻", "pick \"unfinished", "\x1b]52;c;payload\a"} {
 		f.Add(seed, seed, 0)
 	}
 	f.Fuzz(func(t *testing.T, text, insertion string, cursor int) {
@@ -37,7 +37,7 @@ func FuzzConsoleCommander(f *testing.F) {
 }
 
 func FuzzConsoleFilterInput(f *testing.F) {
-	for _, seed := range []string{"", "~bq test", "~d example.com & ~m GET", "'unterminated", "日本", "\x00\x1b"} {
+	for _, seed := range []string{"", "(~m POST | ~m GET) & ~b text", "~u [", "~u \xff", "~m GET", "(~m GET", "~u 日本語", "~u example.com", "~bq test", "~d example.com & ~m GET", "'unterminated", "日本", "\x00\x1b"} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, fragment string) {

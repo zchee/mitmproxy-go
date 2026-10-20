@@ -9,7 +9,7 @@ path here by prefix:
 
 | Here | Upstream path |
 | --- | --- |
-| `mitmproxy/` | `test/mitmproxy/data/` in mitmproxy, except the contentview and mitmweb references below |
+| `mitmproxy/` | `test/mitmproxy/data/` in mitmproxy, except the contentview, console and mitmweb references below |
 | `mitmproxy/contentviews/css/` | `test/mitmproxy/contentviews/test_css_data/` in mitmproxy; the ten original/formatted CSS fixture pairs |
 | `mitmproxy/contentviews/javascript/` | `test/mitmproxy/contentviews/test_js_data/` in mitmproxy; the original/formatted JavaScript fixture pair |
 | `mitmproxy/contentviews/xml_html/` | `test/mitmproxy/contentviews/test_xml_html_data/` in mitmproxy; the five original/formatted XML and HTML fixture pairs |

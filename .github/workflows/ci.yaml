@@ -120,6 +120,194 @@ jobs:
           for name in "${names[@]}"; do
             test "$(grep -Ec "^--- PASS: ${name} " _test/cli/acceptance.log)" = 5
           done
+      - name: Provision frozen sandboxed Chrome for mitmweb
+        if: matrix.os == 'ubuntu-26.04'
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/web/provision"
+          mkdir -p "$OUT" "$GITHUB_WORKSPACE/_test/web/browser" "$GITHUB_WORKSPACE/_test/web/state" "$GITHUB_WORKSPACE/_test/web/storm"
+          printf 'checkout=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/provision.receipt"
+          finish() {
+            local result=$1
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/provision.receipt"
+            exit "$result"
+          }
+          trap 'finish "$?"' EXIT
+          test "$(uname -m)" = x86_64
+          test "$(id -u)" != 0
+          uname -a >| "$OUT/kernel.txt"
+          id -u >| "$OUT/effective-uid.txt"
+          timeout --signal=QUIT --kill-after=15s 8m sudo apt-get update >| "$OUT/apt-update.log" 2>&1
+          timeout --signal=QUIT --kill-after=15s 8m sudo apt-get install --no-install-recommends -y libnspr4 libnss3 >| "$OUT/apt-install.log" 2>&1
+          dpkg-query --show --showformat='${Package}\t${Version}\n' libnspr4 libnss3 >| "$OUT/installed-libraries.txt"
+          DOWNLOAD="$(mktemp -d "$RUNNER_TEMP/mitmweb-chrome-download.XXXXXXXX")"
+          RUNTIME="$(mktemp -d "$RUNNER_TEMP/mitmweb-chrome-runtime.XXXXXXXX")"
+          URL=https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.84/linux64/chrome-linux64.zip
+          curl --fail --silent --show-error --proto '=https' --connect-timeout 30 --max-time 120 --max-filesize 1048576 --output "$DOWNLOAD/version.json" https://googlechromelabs.github.io/chrome-for-testing/155.0.8059.84.json
+          cp "$DOWNLOAD/version.json" "$OUT/version-metadata.json"
+          jq -e --arg url "$URL" '.version == "155.0.8059.84" and ([.downloads.chrome[] | select(.platform == "linux64") | .url] == [$url])' "$OUT/version-metadata.json"
+          curl --fail --silent --show-error --proto '=https' --connect-timeout 30 --max-time 600 --max-filesize 536870912 --output "$DOWNLOAD/chrome.zip" "$URL"
+          printf '%s  %s\n' cf0f049892dea22e6a6db26d47ed0d7776b7158edcbec4634086633df8bafcbc "$DOWNLOAD/chrome.zip" | sha256sum --check
+          printf '%s\n' "$URL" >| "$OUT/download-url.txt"
+          sha256sum "$DOWNLOAD/chrome.zip" >| "$OUT/archive.sha256"
+          python3 -I - "$DOWNLOAD/chrome.zip" "$RUNTIME" "$OUT/archive-members.txt" <<'PY'
+          import pathlib
+          import stat
+          import sys
+          import zipfile
+
+          destination = pathlib.Path(sys.argv[2])
+          names = set()
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              entries = archive.infolist()
+              assert len(entries) == 309
+              assert sum(entry.file_size for entry in entries) == 417963103
+              for entry in entries:
+                  path = pathlib.PurePosixPath(entry.filename)
+                  mode = entry.external_attr >> 16
+                  assert not path.is_absolute() and ".." not in path.parts
+                  assert path.parts[0] == "chrome-linux64"
+                  assert "\\" not in entry.filename
+                  assert path.as_posix() == entry.filename.rstrip("/")
+                  assert path not in names
+                  assert stat.S_IFMT(mode) in (0, stat.S_IFREG, stat.S_IFDIR)
+                  assert mode & 0o7000 == 0
+                  assert entry.file_size <= 314572800
+                  names.add(path)
+              assert archive.testzip() is None
+              archive.extractall(destination)
+              for entry in entries:
+                  if not entry.is_dir():
+                      (destination / entry.filename).chmod(
+                          (entry.external_attr >> 16) & 0o777 or 0o644
+                      )
+          pathlib.Path(sys.argv[3]).write_text(
+              "".join(f"{name.as_posix()}\n" for name in sorted(names))
+          )
+          PY
+          CHROME="$RUNTIME/chrome-linux64/chrome"
+          DIGEST=b866a2964538c825538c454de4867973b926650da57ec12dc3328807d768247b
+          printf '%s  %s\n' "$DIGEST" "$CHROME" | sha256sum --check
+          sha256sum "$CHROME" >| "$OUT/executable.sha256"
+          ldd "$CHROME" >| "$OUT/ldd.txt" 2>&1
+          set +e
+          grep -F 'not found' "$OUT/ldd.txt" >| "$OUT/missing-libraries.txt"
+          result=$?
+          set -e
+          (( result == 1 )) || exit 1
+          timeout --signal=QUIT --kill-after=15s 1m "$CHROME" --version >| "$OUT/chrome-version.txt" 2>| "$OUT/chrome-version.stderr"
+          grep -Eq '^Google Chrome for Testing 155\.0\.8059\.84[[:space:]]*$' "$OUT/chrome-version.txt"
+          mkdir -m 0700 "$RUNTIME/profile"
+          timeout --signal=QUIT --kill-after=15s 1m "$CHROME" --headless --disable-gpu --no-first-run --no-default-browser-check --user-data-dir="$RUNTIME/profile" --dump-dom about:blank >| "$OUT/sandbox-dom.html" 2>| "$OUT/sandbox.stderr"
+          grep -F '<html>' "$OUT/sandbox-dom.html"
+          printf 'MITMPROXY_TEST_CHROME=%s\nMITMPROXY_TEST_CHROME_SHA256=%s\n' "$CHROME" "$DIGEST" >> "$GITHUB_ENV"
+          finish 0
+      - name: Verify embedded mitmweb browser acceptance
+        if: matrix.os == 'ubuntu-26.04'
+        env:
+          MITMPROXY_TEST_WEB_ARTIFACTS: ${{ github.workspace }}/_test/web/browser
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/web/browser"
+          MITMPROXY_TEST_WEB_HEAD="$(git rev-parse HEAD)"
+          export MITMPROXY_TEST_WEB_HEAD
+          printf 'sha=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/browser.receipt"
+          finish() {
+            local result=$?
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/browser.receipt"
+            exit "$result"
+          }
+          trap finish EXIT
+          timeout --signal=QUIT --kill-after=15s 15m go test -tags browser -timeout=10m -list '^TestMitmwebBrowser$' ./internal/tools/web/acceptance >| "$OUT/inventory.txt"
+          diff -u <(printf '%s\n' TestMitmwebBrowser) <(grep '^Test' "$OUT/inventory.txt")
+          timeout --signal=QUIT --kill-after=15s 30m go test -tags browser -count=1 -cpu=1 -timeout=20m -json -run '^TestMitmwebBrowser$' ./internal/tools/web/acceptance >| "$OUT/browser.jsonl" 2>| "$OUT/browser.stderr.log"
+      - name: Verify exact mitmweb browser identities
+        if: matrix.os == 'ubuntu-26.04'
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/web/browser"
+          printf 'checkout=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/identity-reader.receipt"
+          finish() {
+            local result=$1
+            trap - EXIT
+            printf 'end=%s\nreader_exit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/identity-reader.receipt"
+            exit "$result"
+          }
+          trap 'finish "$?"' EXIT
+          jq -se --arg package github.com/zchee/mitmproxy-go/internal/tools/web/acceptance --arg parent TestMitmwebBrowser --argjson expected '["TestMitmwebBrowser","TestMitmwebBrowser/edit_and_replay"]' '
+            . as $rows
+            | [ $rows[]
+                | select(.Package == $package and .Test? != null)
+                | select(.Test == $parent or (.Test | startswith($parent + "/")))
+                | select(.Action == "run" or .Action == "pass" or .Action == "fail" or .Action == "skip")
+              ] as $events
+            | reduce $events[] as $event
+                ({}; .[$event.Test][$event.Action] = ((.[$event.Test][$event.Action] // 0) + 1)) as $counts
+            | if (($counts | keys | sort) == ($expected | sort))
+                 and all($counts[]; .run == 1 and .pass == 1 and (.fail // 0) == 0 and (.skip // 0) == 0)
+                 and ([ $rows[] | select(.Package == $package and .Test? == null and .Action == "pass") ] | length) == 1
+                 and ([ $rows[] | select(.Package == $package and .Test? == null and .Action == "fail") ] | length) == 0
+              then {package: $package, expected: $expected, counts: $counts, verdict: "pass"}
+              else error("mitmweb browser identity/count mismatch: \($counts)")
+              end
+          ' "$OUT/browser.jsonl" >| "$OUT/identity-tallies.json"
+          finish 0
+      - name: Verify mitmweb effective-uid state
+        if: matrix.os == 'ubuntu-26.04'
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/web/state"
+          printf 'sha=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/state.receipt"
+          finish() {
+            local result=$?
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/state.receipt"
+            exit "$result"
+          }
+          trap finish EXIT
+          timeout --signal=QUIT --kill-after=15s 15m go build -o "$OUT/mitmweb" ./cmd/mitmweb
+          timeout --signal=QUIT --kill-after=15s 15m go test -tags webprivileged -c -o "$OUT/web-state.test" ./internal/tools/web/acceptance
+          timeout --signal=QUIT --kill-after=15s 15m "$OUT/web-state.test" -test.list '^TestMitmwebLocalModeUnavailable$' >| "$OUT/inventory.txt"
+          diff -u <(printf '%s\n' TestMitmwebLocalModeUnavailable) <(grep '^Test' "$OUT/inventory.txt")
+          test "$(id -u)" != 0
+          timeout --signal=QUIT --kill-after=15s 15m /usr/bin/env MITMPROXY_TEST_MITMWEB="$OUT/mitmweb" MITMPROXY_TEST_WEB_ROLE=nonroot "$OUT/web-state.test" -test.run '^TestMitmwebLocalModeUnavailable$' -test.count=1 -test.timeout=10m -test.v >| "$OUT/nonroot.log" 2>| "$OUT/nonroot.stderr.log"
+          timeout --signal=QUIT --kill-after=15s 15m sudo -n /usr/bin/env MITMPROXY_TEST_MITMWEB="$OUT/mitmweb" MITMPROXY_TEST_WEB_ROLE=root "$OUT/web-state.test" -test.run '^TestMitmwebLocalModeUnavailable$' -test.count=1 -test.timeout=10m -test.v >| "$OUT/root.log" 2>| "$OUT/root.stderr.log"
+          for role in nonroot root; do
+            grep -Eq '^--- PASS: TestMitmwebLocalModeUnavailable ' "$OUT/$role.log"
+            set +e
+            grep -Eq -- '--- (SKIP|FAIL):' "$OUT/$role.log"
+            reader=$?
+            set -e
+            (( reader != 0 )) || exit 1
+            (( reader == 1 )) || exit "$reader"
+            grep -F "role=$role source=os.Geteuid" "$OUT/$role.log"
+          done
+      - name: Verify isolated mitmweb update storm
+        if: matrix.os == 'ubuntu-26.04'
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/web/storm"
+          printf 'sha=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/storm.receipt"
+          finish() {
+            local result=$?
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/storm.receipt"
+            exit "$result"
+          }
+          trap finish EXIT
+          timeout --signal=QUIT --kill-after=15s 15m go test -tags webstorm -timeout=10m -list '^TestWebUpdateStorm$' ./internal/tools/web/updates >| "$OUT/inventory.txt"
+          diff -u <(printf '%s\n' TestWebUpdateStorm) <(grep '^Test' "$OUT/inventory.txt")
+          timeout --signal=QUIT --kill-after=15s 15m go test -tags webstorm -count=5 -cpu=1 -timeout=10m -json -run '^TestWebUpdateStorm$' ./internal/tools/web/updates >| "$OUT/storm.jsonl" 2>| "$OUT/storm.stderr.log"
+          jq -se '([.[] | select(.Test == "TestWebUpdateStorm/nonreader_peer_close" and .Action == "run")] | length) == 5 and ([.[] | select(.Test == "TestWebUpdateStorm/nonreader_peer_close" and .Action == "pass")] | length) == 5 and ([.[] | select(.Action == "fail" or .Action == "skip")] | length) == 0' "$OUT/storm.jsonl"
+      - name: Upload mitmweb browser state and storm evidence
+        if: always() && matrix.os == 'ubuntu-26.04'
+        uses: actions/upload-artifact@v7
+        with:
+          name: mitmweb-linux-evidence
+          path: _test/web
+          if-no-files-found: error
 
   ldap-integration:
     runs-on: ubuntu-26.04
@@ -254,6 +442,25 @@ jobs:
           ./tlsparse FuzzQUICClientHello
           ./internal/h3 FuzzHeaders
           ./internal/proxy/layers/socks5 FuzzSOCKS5Handshake
+          TARGETS
+      - name: Verify required mitmweb fuzz targets
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          while read -r pkg target; do
+            listed="$(timeout --signal=QUIT --kill-after=15s 15m go test -timeout=10m -list "^${target}$" "$pkg")"
+            printf '%s\n' "$listed"
+            grep -Fx -- "$target" <<< "$listed" || {
+              printf 'required fuzz target %s %s is absent\n' "$pkg" "$target" >&2
+              exit 1
+            }
+          done <<'TARGETS'
+          ./internal/tools/web/webauth FuzzWebAuthTokens
+          ./internal/tools/web/webauth FuzzWebPasswordHash
+          ./internal/tools/web/updates FuzzWebUpdateMessage
+          ./internal/tools/web/updates FuzzWebUpdateFilter
+          ./internal/tools/web FuzzWebJSON
+          ./internal/tools/web FuzzWebUpload
           TARGETS
       - name: Run every fuzz target for 30 seconds
         env:
@@ -406,5 +613,80 @@ jobs:
           name: highlight-generator-evidence
           path: _test/highlight-generator
           if-no-files-found: error
+      - name: Verify live mitmweb differential inventory
+        run: |
+          set -euo pipefail
+          mkdir -p _test/web-differential
+          timeout --signal=QUIT --kill-after=15s 15m go test -tags difftest -timeout=10m -list '^TestMitmwebDifferential$' ./internal/tools/web/acceptance >| _test/web-differential/inventory.txt
+          diff -u <(printf '%s\n' TestMitmwebDifferential) <(grep '^Test' _test/web-differential/inventory.txt)
       - name: Differential tests against the pinned Python mitmproxy
-        run: go test -tags difftest -count=1 ./...
+        env:
+          MITMPROXY_TEST_WEB_ARTIFACTS: ${{ github.workspace }}/_test/web-differential/processes
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/web-differential"
+          mkdir -p "$OUT"
+          printf 'checkout=%s\nstart=%s\ncommand=go test -json -tags difftest -count=1 ./...\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/all-tagged.receipt"
+          finish() {
+            local result=$1
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/all-tagged.receipt"
+            exit "$result"
+          }
+          trap 'finish "$?"' EXIT
+          set +e
+          go test -json -tags difftest -count=1 ./... 2>| "$OUT/all-tagged.stderr.log" | tee "$OUT/all-tagged.jsonl"
+          statuses=("${PIPESTATUS[@]}")
+          set -e
+          printf 'producer_exit=%s\ntee_exit=%s\n' "${statuses[0]}" "${statuses[1]}" >> "$OUT/all-tagged.receipt"
+          if (( statuses[0] != 0 )); then
+            finish "${statuses[0]}"
+          fi
+          finish "${statuses[1]}"
+      - name: Verify complete mitmweb differential evidence
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/web-differential"
+          printf 'checkout=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/identity-reader.receipt"
+          finish() {
+            local result=$1
+            trap - EXIT
+            printf 'end=%s\nreader_exit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/identity-reader.receipt"
+            exit "$result"
+          }
+          trap 'finish "$?"' EXIT
+          jq -se --arg package github.com/zchee/mitmproxy-go/internal/tools/web/acceptance --arg parent TestMitmwebDifferential --argjson expected '[
+            "TestMitmwebDifferential",
+            "TestMitmwebDifferential/fixtures/corrupted_gzip_body.mitm",
+            "TestMitmwebDifferential/fixtures/diff_data.mitm",
+            "TestMitmwebDifferential/fixtures/error_log.mitm",
+            "TestMitmwebDifferential/fixtures/event_stream.mitm",
+            "TestMitmwebDifferential/fixtures/incomplete_log.mitm",
+            "TestMitmwebDifferential/fixtures/successful_log.mitm",
+            "TestMitmwebDifferential/fixtures/websocket.mitm",
+            "TestMitmwebDifferential/live_flows_add"
+          ]' '
+            . as $rows
+            | [ $rows[]
+                | select(.Package == $package and .Test? != null)
+                | select(.Test == $parent or (.Test | startswith($parent + "/")))
+                | select(.Action == "run" or .Action == "pass" or .Action == "fail" or .Action == "skip")
+              ] as $events
+            | reduce $events[] as $event
+                ({}; .[$event.Test][$event.Action] = ((.[$event.Test][$event.Action] // 0) + 1)) as $counts
+            | if (($counts | keys | sort) == ($expected | sort))
+                 and all($counts[]; .run == 1 and .pass == 1 and (.fail // 0) == 0 and (.skip // 0) == 0)
+                 and ([ $rows[] | select(.Package == $package and .Test? == null and .Action == "pass") ] | length) == 1
+                 and ([ $rows[] | select(.Package == $package and .Test? == null and .Action == "fail") ] | length) == 0
+              then {package: $package, expected: $expected, counts: $counts, verdict: "pass"}
+              else error("mitmweb differential identity/count mismatch: \($counts)")
+              end
+          ' "$OUT/all-tagged.jsonl" >| "$OUT/identity-tallies.json"
+          finish 0
+      - name: Upload live mitmweb differential evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mitmweb-differential-evidence
+          path: _test/web-differential
+          if-no-files-found: error

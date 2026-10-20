@@ -26,6 +26,7 @@ require (
 	github.com/pion/dtls/v3 v3.1.14
 	github.com/quic-go/qpack v0.6.0
 	github.com/quic-go/quic-go v0.64.1
+	github.com/rivo/uniseg v0.4.7
 	github.com/shamaton/msgpack/v3 v3.2.4
 	github.com/shirou/gopsutil/v4 v4.26.9
 	github.com/spf13/cobra v1.10.2
@@ -70,7 +71,6 @@ require (
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/transport/v5 v5.1.1 // indirect
 	github.com/power-devops/perfstat v0.0.0-20260805114148-88456608a4f6 // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/xo/terminfo v1.0.0 // indirect

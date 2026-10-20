@@ -199,7 +199,25 @@ func reduce(state contract.State, a contract.Action) (contract.State, error) {
 			return state, errors.New("invalid console selection")
 		}
 		current.Index, current.Column = a.Index, a.Column
+	case "nav":
+		switch a.Value {
+		case "start", "end", "next", "select", "up", "down", "pageup", "pagedown", "left", "right":
+		default:
+			return state, errors.New("invalid console navigation")
+		}
+	case "grid":
+		if current.Context != "grideditor" {
+			return state, errors.New("Not in a grideditor.") //nolint:staticcheck // Preserve upstream's command error text.
+		}
+		switch a.Value {
+		case "add", "insert", "delete", "load", "load_escaped", "save", "editor", "commit":
+		default:
+			return state, errors.New("invalid grid operation")
+		}
 	case "prompt":
+		if a.Value != "command" && a.Value != "choice" && a.Value != "confirm" {
+			return state, errors.New("invalid prompt kind")
+		}
 		next.Prompt, next.Text = a.Value, a.Text
 		next.Cursor = min(max(a.Index, 0), utf8.RuneCountInString(a.Text))
 		next.Recipe = a.Recipe

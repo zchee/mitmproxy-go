@@ -47,7 +47,7 @@ func validate(contexts []string) error {
 	}
 	for _, ctx := range contexts {
 		if !slices.Contains(Contexts(), ctx) {
-			return fmt.Errorf("Unsupported context: %s", ctx)
+			return fmt.Errorf("unsupported context: %s", ctx)
 		}
 	}
 	return nil

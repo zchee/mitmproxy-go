@@ -233,7 +233,7 @@ func (s State) Current(keyContext string, overlays bool) (Window, bool) {
 
 // Action requests a validated control transition. Kind is push, pop, pane,
 // layout, overlay, dismiss, tab, mode, option, binding, editor, selection,
-// prompt or prompt_done. Window and Choices are copied on admission.
+// nav, grid, prompt or prompt_done. Window and Choices are copied on admission.
 type Action struct {
 	Kind, Value, Text string
 	Window            Window
@@ -318,6 +318,12 @@ type Widget interface {
 	Resize(width, height int)
 	Update(tea.Msg) (tea.Cmd, bool)
 	View() string
+}
+
+// ErrorMsg reports asynchronous widget failures without acknowledging a snapshot.
+type ErrorMsg struct {
+	Source string
+	Err    error
 }
 
 // SnapshotMsg delivers an admitted snapshot after dispatch has been released.

@@ -210,6 +210,11 @@ func (b *Bridge) Dispatch(ctx context.Context, a contract.Action) error {
 				}
 			}
 		}
+		if a.Kind == "binding" && a.Value != "" {
+			if _, err := b.binding(a.Value); err != nil {
+				return err
+			}
+		}
 		var notify func(context.Context) error
 		if a.Kind == "mode" {
 			if !slices.Contains(b.cfg.Registry.AvailableViews(), strings.ToLower(a.Value)) {
@@ -237,6 +242,19 @@ func (b *Bridge) Dispatch(ctx context.Context, a contract.Action) error {
 		}
 		return nil
 	})
+}
+
+// binding resolves a complete identity against the current dispatch-owned keymap.
+func (b *Bridge) binding(identity string) (contract.Binding, error) {
+	if b.cfg.Bindings != nil {
+		for _, binding := range b.cfg.Bindings() {
+			if binding.Key+"@"+strings.Join(binding.Contexts, ",") == identity {
+				binding.Contexts = slices.Clone(binding.Contexts)
+				return binding, nil
+			}
+		}
+	}
+	return contract.Binding{}, errors.New("key binding conflict: binding changed or was removed")
 }
 
 // Complete obtains parse hints and dynamic completions within one fresh hold.

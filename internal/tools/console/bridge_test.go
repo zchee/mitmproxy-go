@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -207,6 +208,9 @@ func TestConsoleBridge(t *testing.T) {
 					if len(installer.Install(batch)) != 0 {
 						t.Fatal("duplicate batch installed")
 					}
+					if name == "sequence_installation" {
+						verifyAmendedContract(t)
+					}
 				case "same_do_read_after_write":
 					mustConsole(t, b.Do(t.Context(), func(ctx context.Context) error {
 						mustConsole(t, b.Dispatch(ctx, contract.Action{Kind: "push", Window: contract.Window{Name: "options", Context: "options", Option: "showhost"}}))
@@ -255,6 +259,89 @@ func TestConsoleBridge(t *testing.T) {
 			})
 		}
 	})
+}
+
+type actionRecorder struct {
+	actions   []contract.Action
+	responses int
+}
+
+type widgetResponse struct{}
+
+func (w *actionRecorder) SetSnapshot(contract.Snapshot) {}
+func (w *actionRecorder) Resize(int, int)               {}
+func (w *actionRecorder) View() string                  { return "prompt" }
+func (w *actionRecorder) Update(message tea.Msg) (tea.Cmd, bool) {
+	switch message := message.(type) {
+	case contract.Action:
+		w.actions = append(w.actions, message)
+		return nil, true
+	case widgetResponse:
+		w.responses++
+		return nil, true
+	case tea.KeyPressMsg:
+		w.responses++
+		return nil, true
+	}
+	return nil, false
+}
+
+func verifyAmendedContract(t *testing.T) {
+	t.Helper()
+	b, _ := testBridge(t)
+	widget, prompt := new(actionRecorder), new(actionRecorder)
+	m := NewModel(b, map[string]WidgetFactory{
+		"sequence":  func(contract.Host) contract.Widget { return widget },
+		"commander": func(contract.Host) contract.Widget { return prompt },
+	})
+	ctx, finish := BeginInvocation(t.Context())
+	request := contract.GridRequest{Title: "values", Option: "ignore_hosts", Rows: [][]string{{"before"}}}
+	mustConsole(t, b.OpenGrid(ctx, request))
+	request.Rows[0][0] = "after"
+	for _, direction := range []string{"start", "end", "next", "select", "up", "down", "pageup", "pagedown", "left", "right"} {
+		mustConsole(t, b.Dispatch(ctx, contract.Action{Kind: "nav", Value: direction}))
+	}
+	for _, operation := range []string{"add", "insert", "delete", "load", "load_escaped", "save", "editor", "commit"} {
+		mustConsole(t, b.Dispatch(ctx, contract.Action{Kind: "grid", Value: operation, Text: "operator.csv"}))
+	}
+	batch := finish()
+	m.install(contract.EffectsMsg{batch[len(batch)-1]})
+	if len(widget.actions) != 0 {
+		t.Fatal("noncontiguous effect delivered")
+	}
+	m.install(batch)
+	if len(widget.actions) != len(batch) || widget.actions[0].Grid.Rows[0][0] != "before" {
+		t.Fatal("effect order or grid ownership lost")
+	}
+	m.install(batch)
+	if len(widget.actions) != len(batch) {
+		t.Fatal("effect delivered twice")
+	}
+	for _, action := range []contract.Action{{Kind: "nav", Value: "invalid"}, {Kind: "grid", Value: "invalid"}} {
+		if b.Dispatch(t.Context(), action) == nil {
+			t.Fatal("invalid action accepted")
+		}
+	}
+	ctx, finish = BeginInvocation(t.Context())
+	mustConsole(t, b.Dispatch(ctx, contract.Action{Kind: "push", Window: contract.Window{Name: "keybindings", Context: "keybindings"}}))
+	binding := b.Keys.Snapshot()[0]
+	identity := binding.Key + "@" + strings.Join(binding.Contexts, ",")
+	mustConsole(t, b.Dispatch(ctx, contract.Action{Kind: "binding", Value: identity}))
+	mustConsole(t, b.Do(ctx, func(context.Context) error { return b.Keys.Remove(binding.Key, binding.Contexts) }))
+	if b.Dispatch(ctx, contract.Action{Kind: "binding", Value: identity}) == nil {
+		t.Fatal("stale binding identity accepted")
+	}
+	mustConsole(t, b.Dispatch(ctx, contract.Action{Kind: "binding", Value: ""}))
+	mustConsole(t, b.Dispatch(ctx, contract.Action{Kind: "prompt", Value: "command", Text: "set x ''", Index: 7}))
+	m.install(finish())
+	if m.state.Prompt != "command" || m.state.Text != "set x ''" || m.state.Cursor != 7 {
+		t.Fatal("prompt constructor contract changed")
+	}
+	m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	m.Update(widgetResponse{})
+	if prompt.responses != 2 {
+		t.Fatal("prompt input or private response not delivered")
+	}
 }
 
 func TestConsoleSnapshots(t *testing.T) {

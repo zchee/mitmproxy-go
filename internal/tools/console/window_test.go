@@ -5,6 +5,7 @@ package console
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -186,6 +187,12 @@ func TestConsoleStatusBar(t *testing.T) {
 				refresh()
 				switch name {
 				case "test_statusbar":
+					<-b.installed
+					m.Update(contract.ErrorMsg{Source: "widget", Err: errors.New("bad\x1b]52;c;payload\a")})
+					if len(b.installed) != 0 || m.snapshot.Generation == 0 || strings.ContainsAny(strings.Join(m.footer(), "\n"), "\x1b\a") {
+						t.Fatal("widget failure acknowledged a snapshot or leaked terminal controls")
+					}
+					m.message = ""
 					m.snapshot.Status = contract.Status{Reverse: true, Marked: true, Indicators: "[Headers][cplayback:42][splayback:42][i:~q]", Listeners: []string{"127.0.0.1:8080"}}
 					line := m.footer()[0]
 					for _, want := range []string{"⇧", "M", "[Headers]", "42", "127.0.0.1:8080"} {

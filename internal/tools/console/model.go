@@ -32,6 +32,7 @@ type Model struct {
 	state         contract.State
 	message       string
 	input         textinput.Model
+	prompt        contract.Widget
 }
 
 type resultMsg struct {
@@ -98,8 +99,19 @@ func (m *Model) widget(pane int) contract.Widget {
 	return w
 }
 
+func (m *Model) promptWidget() contract.Widget {
+	if m.prompt == nil && m.factories["commander"] != nil {
+		m.prompt = m.factories["commander"](m.bridge)
+	}
+	return m.prompt
+}
+
 func (m *Model) refreshWidgets() {
 	m.snapshot.Control = m.state.Clone()
+	if w := m.promptWidget(); w != nil {
+		w.Resize(m.width, max(1, m.height/2))
+		w.SetSnapshot(m.snapshot.Clone())
+	}
 	for i, r := range Layout(m.state, m.width, m.height, len(m.footer())) {
 		if w := m.widget(i); w != nil {
 			w.Resize(r.Width, r.Height)
@@ -137,7 +149,7 @@ func (m *Model) install(effects contract.EffectsMsg) []tea.Cmd {
 		}
 		m.refreshWidgets()
 		if w := m.widget(m.state.Pane); w != nil {
-			cmd, _ := w.Update(effect)
+			cmd, _ := w.Update(effect.Action.Clone())
 			if cmd != nil {
 				commands = append(commands, cmd)
 			}
@@ -181,6 +193,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.bridge != nil {
 			m.bridge.RequestViewport(contract.Viewport{Width: m.width, Height: max(0, m.height-len(m.footer()))})
 		}
+	case contract.ErrorMsg:
+		if msg.Err != nil {
+			m.message = msg.Err.Error()
+		}
 	case contract.SnapshotMsg:
 		if msg.Err != nil {
 			m.message = msg.Err.Error()
@@ -215,11 +231,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd, _ := w.Update(msg)
 			return m, cmd
 		}
+	case tea.PasteMsg:
+		if w := m.promptWidget(); w != nil && m.state.Prompt != "" {
+			cmd, _ := w.Update(msg)
+			return m, cmd
+		}
 	case tea.KeyPressMsg:
 		if m.state.Prompt != "" {
+			if w := m.promptWidget(); w != nil {
+				cmd, _ := w.Update(msg)
+				return m, cmd
+			}
 			switch msg.String() {
 			case "esc":
 				return m, m.transition(contract.Action{Kind: "prompt_done"})
+			case "n":
+				if m.state.Prompt == "confirm" {
+					return m, m.transition(contract.Action{Kind: "prompt_done"})
+				}
+				m.input, _ = m.input.Update(msg)
+				return m, nil
 			case "enter":
 				if m.bridge == nil {
 					return m, nil
@@ -270,6 +301,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+	default:
+		// Private widget responses return to their owner even after its view closes.
+		if w := m.promptWidget(); w != nil {
+			if cmd, consumed := w.Update(msg); consumed {
+				return m, cmd
+			}
+		}
+		for _, widgets := range m.widgets {
+			for _, w := range widgets {
+				if cmd, consumed := w.Update(msg); consumed {
+					return m, cmd
+				}
+			}
+		}
 	}
 	return m, nil
 }
@@ -277,7 +322,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) footer() []string {
 	footer := []string{StatusLine(m.snapshot, m.width)}
 	if m.state.Prompt != "" {
-		return append(footer, style.Fit(style.Escape(m.state.Prompt)+": "+m.input.View(), m.width), strings.Repeat(" ", m.width))
+		if w := m.promptWidget(); w != nil {
+			return append(footer, strings.Split(w.View(), "\n")...)
+		}
+		if m.state.Prompt == "choice" || m.state.Prompt == "confirm" {
+			return append(footer, style.Fit(style.Escape(m.state.Text), m.width), strings.Repeat(" ", m.width))
+		}
+		return append(footer, style.Fit(": "+m.input.View(), m.width), strings.Repeat(" ", m.width))
 	}
 	if m.message != "" {
 		return append(footer, style.Fit(ShortenMessage(m.message, m.width), m.width), strings.Repeat(" ", m.width))

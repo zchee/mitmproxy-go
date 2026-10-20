@@ -7,9 +7,11 @@ package style
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/rivo/uniseg"
 
 	"github.com/zchee/mitmproxy-go/internal/strutil"
 )
@@ -25,6 +27,37 @@ func Escape(text string) string {
 		}
 		return r
 	}, text)
+}
+
+// PreviousGrapheme returns the preceding grapheme boundary as a rune index.
+// Out-of-range cursors are clamped; a cursor inside a cluster moves to its start.
+func PreviousGrapheme(text string, cursor int) int {
+	cursor = min(max(cursor, 0), utf8.RuneCountInString(text))
+	previous, position := 0, 0
+	clusters := uniseg.NewGraphemes(text)
+	for clusters.Next() {
+		position += utf8.RuneCountInString(clusters.Str())
+		if position >= cursor {
+			return previous
+		}
+		previous = position
+	}
+	return previous
+}
+
+// NextGrapheme returns the next grapheme boundary as a rune index.
+// Out-of-range cursors are clamped; a cursor inside a cluster moves to its end.
+func NextGrapheme(text string, cursor int) int {
+	cursor = min(max(cursor, 0), utf8.RuneCountInString(text))
+	position := 0
+	clusters := uniseg.NewGraphemes(text)
+	for clusters.Next() {
+		position += utf8.RuneCountInString(clusters.Str())
+		if position > cursor {
+			return position
+		}
+	}
+	return position
 }
 
 // Width returns the display-cell width, ignoring trusted ANSI styling.

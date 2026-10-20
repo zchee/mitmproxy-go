@@ -202,6 +202,14 @@ jobs:
           test -f "$SANDBOX" && test ! -L "$SANDBOX"
           ls -l "$SANDBOX" >| "$OUT/sandbox-helper.before.txt"
           sha256sum "$SANDBOX" >| "$OUT/sandbox-helper.sha256"
+          findmnt -T "$SANDBOX" -o TARGET,SOURCE,FSTYPE,OPTIONS >| "$OUT/sandbox-helper.mount.txt"
+          MOUNT_OPTIONS="$(findmnt -T "$SANDBOX" -n -o OPTIONS)"
+          case ",$MOUNT_OPTIONS," in
+            *,nosuid,*)
+              printf 'Chrome setuid sandbox helper is on a nosuid mount: %s\n' "$SANDBOX" >&2
+              exit 1
+              ;;
+          esac
           sudo -n chown root:root -- "$SANDBOX"
           sudo -n chmod 4755 -- "$SANDBOX"
           ls -l "$SANDBOX" >| "$OUT/sandbox-helper.after.txt"

@@ -31,6 +31,7 @@ const (
 type client struct {
 	hub             *Hub
 	ws              *gows.Conn
+	pending         net.Conn // Owned until the HTTP upgrade attaches ws.
 	queue           chan []byte
 	wake            chan struct{}
 	terminalReady   chan struct{}
@@ -54,8 +55,8 @@ type client struct {
 	filterNames     []string
 }
 
-func newClient(h *Hub, ws *gows.Conn) *client {
-	return &client{hub: h, ws: ws, queue: make(chan []byte, queueCapacity), wake: make(chan struct{}, 1), terminalReady: make(chan struct{}), done: make(chan struct{}), readStopped: make(chan struct{}), filters: make(map[string]filter.Expr)}
+func newClient(h *Hub) *client {
+	return &client{hub: h, queue: make(chan []byte, queueCapacity), wake: make(chan struct{}, 1), terminalReady: make(chan struct{}), done: make(chan struct{}), readStopped: make(chan struct{}), filters: make(map[string]filter.Expr)}
 }
 
 func (c *client) signalLocked() {
@@ -104,12 +105,20 @@ func (c *client) abort() {
 		c.outcome = "transport-aborted"
 	}
 	c.signalLocked()
+	ws, pending := c.ws, c.pending
+	c.pending = nil
 	c.mu.Unlock()
+	if ws == nil {
+		if pending != nil {
+			_ = pending.Close()
+		}
+		return
+	}
 	// Interrupt a blocked reader without releasing its borrowed buffers, then
 	// wait for the application's copy before Abort returns them to the pool.
-	_ = c.ws.SetReadDeadline(time.Now())
+	_ = ws.SetReadDeadline(time.Now())
 	c.readMu.Lock()
-	_ = c.ws.Abort()
+	_ = ws.Abort()
 	c.readMu.Unlock()
 }
 

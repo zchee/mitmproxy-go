@@ -165,12 +165,18 @@ func TestWebHandshakeHeaders(t *testing.T) {
 
 func testPendingHeader(t *testing.T, name, value string) {
 	t.Helper()
+	returned := make(chan struct{}, 1)
 	f := newFixture(t, func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Header().Set(name, value); next.ServeHTTP(w, r) })
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set(name, value)
+			next.ServeHTTP(w, r)
+			returned <- struct{}{}
+		})
 	})
 	if _, status := f.open(t, nil, nil); status != 500 {
 		t.Fatalf("invalid pending header status=%d", status)
 	}
+	await(t, returned)
 	do(t, f, func(_ context.Context) error {
 		if len(f.h.clients) != 0 {
 			t.Fatal("failed upgrade registered client")

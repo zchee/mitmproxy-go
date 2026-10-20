@@ -89,6 +89,7 @@ func testLiveWebFlows(t *testing.T, binary string) {
 
 func captureLiveWebFlows(t *testing.T, process *webProcess, tuple webInputTuple, dump []byte, origin <-chan webOriginRequest) webLiveResult {
 	t.Helper()
+	trace := newWebLiveTrace(t, process.logPath)
 	defer func() {
 		process.stop(t)
 		verifyWebPortsReleased(t, tuple)
@@ -134,6 +135,7 @@ func captureLiveWebFlows(t *testing.T, process *webProcess, tuple webInputTuple,
 	if err != nil {
 		t.Fatal(err)
 	}
+	trace.record(webLiveTraceEvent{Event: "handshake_complete"})
 	if handshake.Compressed {
 		_ = transport.Close()
 		t.Fatal("updates must not negotiate compression")
@@ -149,13 +151,15 @@ func captureLiveWebFlows(t *testing.T, process *webProcess, tuple webInputTuple,
 	}()
 	delivery, cancelDelivery := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelDelivery()
+	trace.record(webLiveTraceEvent{Event: "http_sent", Method: http.MethodPost, Path: "/flows/dump"})
 	status, _, _, err := requestWeb(delivery, client, tuple, http.MethodPost, "/flows/dump", dump)
+	trace.record(webLiveTraceEvent{Event: "http_response", Method: http.MethodPost, Path: "/flows/dump", Status: new(status)})
 	if err != nil || status != http.StatusOK {
 		t.Fatalf("controlled upload: status=%d error=%v", status, err)
 	}
 	normalizer := new(webBijections)
 	deadline, _ := delivery.Deadline()
-	result := webLiveResult{Added: collectWebFlowEvents(t, socket, normalizer, deadline, "")}
+	result := webLiveResult{Added: collectWebFlowEvents(t, socket, normalizer, deadline, "", trace)}
 	flowsReply := captureWebReply(t, client, tuple, "/flows")
 	var inventory []struct {
 		ID string `json:"id"`
@@ -163,7 +167,9 @@ func captureLiveWebFlows(t *testing.T, process *webProcess, tuple webInputTuple,
 	if flowsReply.Status != http.StatusOK || json.Unmarshal(flowsReply.Body, &inventory) != nil || len(inventory) != 1 {
 		t.Fatal("controlled upload did not produce exactly one flow")
 	}
+	trace.record(webLiveTraceEvent{Event: "http_sent", Method: http.MethodPost, Path: "/flows/" + url.PathEscape(inventory[0].ID) + "/replay"})
 	status, _, _, err = requestWeb(ctx, client, tuple, http.MethodPost, "/flows/"+url.PathEscape(inventory[0].ID)+"/replay", []byte{})
+	trace.record(webLiveTraceEvent{Event: "http_response", Method: http.MethodPost, Path: "/flows/" + url.PathEscape(inventory[0].ID) + "/replay", Status: new(status)})
 	if err != nil || status != http.StatusOK {
 		t.Fatalf("controlled replay: status=%d error=%v", status, err)
 	}
@@ -182,11 +188,13 @@ func captureLiveWebFlows(t *testing.T, process *webProcess, tuple webInputTuple,
 	if err != nil {
 		t.Fatal(err)
 	}
+	trace.record(webLiveTraceEvent{Event: "http_sent", Method: http.MethodPut, Path: "/flows/" + url.PathEscape(replayed)})
 	status, _, _, err = requestWeb(ctx, client, tuple, http.MethodPut, "/flows/"+url.PathEscape(replayed), body, "application/json")
+	trace.record(webLiveTraceEvent{Event: "http_response", Method: http.MethodPut, Path: "/flows/" + url.PathEscape(replayed), Status: new(status)})
 	if err != nil || status != http.StatusOK {
 		t.Fatalf("ordered update marker: status=%d error=%v", status, err)
 	}
-	result.Added = append(result.Added, collectWebFlowEvents(t, socket, normalizer, time.Now().Add(5*time.Second), marker)...)
+	result.Added = append(result.Added, collectWebFlowEvents(t, socket, normalizer, time.Now().Add(5*time.Second), marker, trace)...)
 	return result
 }
 
@@ -221,8 +229,13 @@ func waitWebReplayComplete(t *testing.T, ctx context.Context, client *http.Clien
 	}
 }
 
-func collectWebFlowEvents(t *testing.T, socket *gows.Conn, normalizer *webBijections, deadline time.Time, marker string) []any {
+func collectWebFlowEvents(t *testing.T, socket *gows.Conn, normalizer *webBijections, deadline time.Time, marker string, trace *webLiveTrace) []any {
 	t.Helper()
+	phase := "initial_flows_add"
+	if marker != "" {
+		phase = "comment_marker"
+	}
+	trace.record(webLiveTraceEvent{Event: "wait_start", Phase: phase, DeadlineNS: new(deadline.Sub(trace.started).Nanoseconds())})
 	if err := socket.SetReadDeadline(deadline); err != nil {
 		t.Fatal(err)
 	}
@@ -230,8 +243,10 @@ func collectWebFlowEvents(t *testing.T, socket *gows.Conn, normalizer *webBiject
 	for range 4096 {
 		opcode, raw, err := socket.ReadMessage()
 		if err != nil {
+			trace.record(webLiveTraceEvent{Event: "read_error", Phase: phase, ErrorType: fmt.Sprintf("%T", err)})
 			t.Fatalf("updates delivery: %v", err)
 		}
+		trace.frame(phase, opcode, raw)
 		if opcode != gows.OpcodeText {
 			t.Fatal("updates must use text messages")
 		}
@@ -267,6 +282,7 @@ func collectWebFlowEvents(t *testing.T, socket *gows.Conn, normalizer *webBiject
 			payload["flow"] = normalized
 			added = append(added, envelope)
 			if marker == "" {
+				trace.record(webLiveTraceEvent{Event: "wait_complete", Phase: phase})
 				return added
 			}
 		} else if message.Type == "flows/update" && marker != "" {
@@ -274,6 +290,7 @@ func collectWebFlowEvents(t *testing.T, socket *gows.Conn, normalizer *webBiject
 				Comment string `json:"comment"`
 			}
 			if err := json.Unmarshal(fields["flow"], &value); err == nil && value.Comment == marker {
+				trace.record(webLiveTraceEvent{Event: "wait_complete", Phase: phase})
 				return added
 			}
 		}

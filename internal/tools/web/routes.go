@@ -13,18 +13,24 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"path"
 	"regexp"
+	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/zchee/mitmproxy-go/addons/eventstore"
+	"github.com/zchee/mitmproxy-go/addons/proxyserver"
 	"github.com/zchee/mitmproxy-go/addons/view"
 	"github.com/zchee/mitmproxy-go/command"
+	"github.com/zchee/mitmproxy-go/contentviews"
 	"github.com/zchee/mitmproxy-go/filter"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/flowio"
 	"github.com/zchee/mitmproxy-go/flowio/flowjson"
+	"github.com/zchee/mitmproxy-go/internal/local"
 	"github.com/zchee/mitmproxy-go/internal/processinfo"
 	"github.com/zchee/mitmproxy-go/internal/version"
 	"github.com/zchee/mitmproxy-go/master"
@@ -32,11 +38,12 @@ import (
 )
 
 type application struct {
-	master    *master.Master
-	view      *view.View
-	events    *eventstore.EventStore
-	protect   func(http.Handler, bool) http.Handler
-	firstFile func(*http.Request) (*multipart.FileHeader, bool)
+	master      *master.Master
+	view        *view.View
+	events      *eventstore.EventStore
+	proxyserver *proxyserver.ProxyServer
+	protect     func(http.Handler, bool) http.Handler
+	firstFile   func(*http.Request) (*multipart.FileHeader, bool)
 }
 
 type webRoute struct {
@@ -66,6 +73,7 @@ var webRoutes = []webRoute{
 	{"clear", regexp.MustCompile(`^/clear$`), "POST"},
 	{"options", regexp.MustCompile(`^/options(?:\.json)?$`), "GET PUT"},
 	{"options_save", regexp.MustCompile(`^/options/save$`), "POST"},
+	{"state", regexp.MustCompile(`^/state(?:\.json)?$`), "GET"},
 	{"processes", regexp.MustCompile(`^/processes$`), "GET"},
 	{"executable_icon", regexp.MustCompile(`^/executable-icon$`), "GET"},
 }
@@ -218,10 +226,21 @@ func (a *application) serve(w http.ResponseWriter, r *http.Request, name string,
 			response = values
 		case "events":
 			values := make([]map[string]any, 0)
-			for i, entry := range a.events.Entries() {
-				values = append(values, map[string]any{"id": i + 1, "message": entry.Msg, "level": entry.LevelName()})
+			for _, record := range a.events.Records() {
+				values = append(values, map[string]any{"id": record.ID, "message": record.Entry.Msg, "level": record.Entry.LevelName()})
 			}
 			response = values
+		case "state":
+			views := slices.DeleteFunc(contentviews.DefaultRegistry.AvailableViews(), func(name string) bool { return name == "query" })
+			platform := runtime.GOOS
+			if platform == "windows" {
+				platform = "win32"
+			}
+			var unavailable any
+			if reason := local.UnavailableReason(runtime.GOOS, os.Geteuid()); reason != "" {
+				unavailable = reason
+			}
+			response = map[string]any{"version": version.Version, "contentViews": views, "servers": a.proxyserver.ServerSnapshot().Servers, "platform": platform, "localModeUnavailable": unavailable}
 		case "commands":
 			values := make(map[string]any)
 			for commandName, cmd := range a.master.Commands.Commands() {
@@ -396,6 +415,18 @@ func optionUpdate(body []byte) (map[string]any, error) {
 	return values, nil
 }
 
+func firstRequestArgument(r *http.Request, name string) (string, bool) {
+	// Tornado selects query values before body values for first-value access.
+	values := r.URL.Query()[name]
+	if len(values) == 0 {
+		values = r.PostForm[name]
+	}
+	if len(values) == 0 {
+		return "", false
+	}
+	return values[0], true
+}
+
 func (a *application) upload(r *http.Request) (io.ReadCloser, error) {
 	if a.firstFile != nil {
 		if file, ok := a.firstFile(r); ok {
@@ -430,9 +461,9 @@ func (a *application) dumpFlows(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	var expression filter.Expr
-	if values, ok := r.URL.Query()["filter"]; ok && len(values) > 0 {
+	if value, ok := firstRequestArgument(r, "filter"); ok {
 		var err error
-		expression, err = filter.Parse(values[0])
+		expression, err = filter.Parse(value)
 		if err != nil {
 			return apiError(400, "Invalid filter argument / regex")
 		}

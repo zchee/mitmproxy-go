@@ -18,11 +18,18 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/flow"
+	"github.com/zchee/mitmproxy-go/flowio"
 	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
 	"github.com/zchee/mitmproxy-go/master"
 )
 
 func TestWebRouteMethods(t *testing.T) {
+	t.Run("line_limits", testContentLineLimits)
+	t.Run("argument_order", testFirstRequestArgument)
+	t.Run("form_arguments", testWebFormArguments)
+	t.Run("state_http", testWebState)
+	t.Run("local_policy", testWebLocalPolicy)
+	t.Run("event_ids", testWebEventIDs)
 	t.Run("manifest", func(t *testing.T) {
 		tests := map[string]struct {
 			path    string
@@ -36,6 +43,7 @@ func TestWebRouteMethods(t *testing.T) {
 			"command_execute":   {path: "/commands/commands.history.get", methods: map[string]string{"POST": `{"arguments":[]}`}, shape: "object"},
 			"events":            {path: "/events", methods: map[string]string{"GET": ""}, alias: true, shape: "array"},
 			"flows":             {path: "/flows", methods: map[string]string{"GET": ""}, alias: true, shape: "array"},
+			"flows_dump":        {path: "/flows/dump", methods: map[string]string{"GET": "", "POST": ""}, shape: "dump"},
 			"flows_resume":      {path: "/flows/resume", methods: map[string]string{"POST": ""}},
 			"flows_kill":        {path: "/flows/kill", methods: map[string]string{"POST": ""}},
 			"flow":              {path: "/flows/42", methods: map[string]string{"PUT": `{"comment":"updated"}`, "DELETE": ""}},
@@ -44,16 +52,21 @@ func TestWebRouteMethods(t *testing.T) {
 			"flow_duplicate":    {path: "/flows/42/duplicate", methods: map[string]string{"POST": ""}, shape: "id"},
 			"flow_replay":       {path: "/flows/42/replay", methods: map[string]string{"POST": ""}},
 			"flow_revert":       {path: "/flows/42/revert", methods: map[string]string{"POST": ""}},
+			"flow_content":      {path: "/flows/42/request/content.data", methods: map[string]string{"GET": "", "POST": "plain content"}, shape: "content"},
 			"flow_content_view": {path: "/flows/42/request/content/raw", methods: map[string]string{"GET": ""}, alias: true, shape: "object"},
 			"clear":             {path: "/clear", methods: map[string]string{"POST": ""}},
 			"options":           {path: "/options", methods: map[string]string{"GET": "", "PUT": `{"anticache":true}`}, alias: true, shape: "object"},
 			"options_save":      {path: "/options/save", methods: map[string]string{"POST": ""}},
+			"state":             {path: "/state", methods: map[string]string{"GET": ""}, alias: true, shape: "object"},
 			"processes":         {path: "/processes", methods: map[string]string{"GET": ""}, shape: "array"},
 			"executable_icon":   {path: "/executable-icon?path=invalid", methods: map[string]string{"GET": ""}, shape: "png"},
 		}
 		for name, test := range tests {
 			t.Run(name, func(t *testing.T) {
 				h := newRouteHarness(t)
+				if name == "flows_dump" {
+					test.methods["POST"] = string(dumpBody(t, "a1", "a2"))
+				}
 				paths := []string{test.path}
 				if test.alias {
 					paths = append(paths, test.path+".json")
@@ -100,6 +113,27 @@ func TestWebRouteMethods(t *testing.T) {
 							if response.Header.Get("Content-Type") != "application/json; charset=UTF-8" {
 								t.Fatal(response.Header)
 							}
+						case "dump":
+							if response.Header.Get("Content-Type") != "application/octet-stream" || response.Header.Get("Content-Disposition") != "attachment; filename=flows" {
+								t.Fatalf("dump headers=%v", response.Header)
+							}
+							n := 0
+							for _, err := range flowio.NewReader(bytes.NewReader(body)).All() {
+								if err != nil {
+									t.Fatal(err)
+								}
+								n++
+							}
+							if n != 3 {
+								t.Fatalf("dump flow count=%d", n)
+							}
+						case "content":
+							if diff := gocmp.Diff("foo\nbar", string(body)); diff != "" {
+								t.Fatal(diff)
+							}
+							if response.Header.Get("Content-Type") != "application/text" || response.Header.Get("X-Content-Type-Options") != "nosniff" {
+								t.Fatal(response.Header)
+							}
 						case "html":
 							if !bytes.Contains(body, []byte("<html")) || response.Header.Get("Content-Type") != "text/html; charset=UTF-8" {
 								t.Fatalf("HTML response=%q", body)
@@ -118,6 +152,27 @@ func TestWebRouteMethods(t *testing.T) {
 							}
 						}
 					}
+				}
+				if name == "flows_dump" {
+					body, media := multipartBody(t, []uploadPart{{field: "flows", filename: "flows.mitm", body: dumpBody(t, "b1")}})
+					h.status(t, "POST", test.path, body, media, 200)
+					h.do(t, func(context.Context) error {
+						if h.app.view.Len() != 1 || h.app.view.GetByID("b1") == nil {
+							t.Fatal("multipart dump did not clear/load the selected flow")
+						}
+						return nil
+					})
+				}
+				if name == "flow_content" {
+					body, media := multipartBody(t, []uploadPart{{field: "a", filename: "body.txt", body: []byte("manifest multipart")}})
+					h.status(t, "POST", test.path, body, media, 200)
+					h.do(t, func(context.Context) error {
+						value := h.app.view.GetByID("42")
+						if !value.Modified() || string(value.(*flow.HTTPFlow).Request.ContentOrRaw()) != "manifest multipart" {
+							t.Fatal("multipart content update/backup missing")
+						}
+						return value.Revert()
+					})
 				}
 				if name == "options_save" {
 					entries, err := os.ReadDir(h.app.master.Options.Str("confdir"))
@@ -210,6 +265,8 @@ func TestWebRouteMethods(t *testing.T) {
 }
 
 func TestWebRouteAuth(t *testing.T) {
+	t.Run("policy", testWebAuthPolicy)
+	t.Run("login_post", testWebLoginPost)
 	t.Run("upstream", func(t *testing.T) {
 		t.Run("test_all_handlers_have_auth", func(t *testing.T) {
 			h := newRouteHarness(t)
@@ -220,7 +277,17 @@ func TestWebRouteAuth(t *testing.T) {
 			}
 		})
 	})
-	tests := map[string]struct{ method, path string }{"index": {"GET", "/"}, "flows": {"GET", "/flows"}, "commands": {"GET", "/commands"}, "options": {"PUT", "/options"}, "kill": {"POST", "/flows/42/kill"}, "icon": {"GET", "/executable-icon?path=invalid"}}
+	tests := map[string]struct{ method, path string }{
+		"index": {"GET", "/"}, "filter_help": {"GET", "/filter-help"}, "commands": {"GET", "/commands"},
+		"command_execute": {"POST", "/commands/unknown"}, "flows": {"GET", "/flows"}, "flows_dump": {"GET", "/flows/dump"},
+		"flows_resume": {"POST", "/flows/resume"}, "flows_kill": {"POST", "/flows/kill"}, "flow": {"PUT", "/flows/42"},
+		"flow_resume": {"POST", "/flows/42/resume"}, "flow_kill": {"POST", "/flows/42/kill"}, "flow_duplicate": {"POST", "/flows/42/duplicate"},
+		"flow_replay": {"POST", "/flows/42/replay"}, "flow_revert": {"POST", "/flows/42/revert"},
+		"flow_content": {"GET", "/flows/42/request/content.data"}, "flow_content_view": {"GET", "/flows/42/request/content/raw"},
+		"clear": {"POST", "/clear"}, "options": {"GET", "/options"}, "options_save": {"POST", "/options/save"},
+		"events": {"GET", "/events"}, "state": {"GET", "/state"},
+		"processes": {"GET", "/processes"}, "executable_icon": {"GET", "/executable-icon?path=invalid"},
+	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			h := newRouteHarness(t)
@@ -228,6 +295,7 @@ func TestWebRouteAuth(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			request.Header.Set("X-XSRFToken", h.xsrf)
 			response, err := h.server.Client().Do(request)
 			if err != nil {
 				t.Fatal(err)
@@ -297,6 +365,26 @@ func TestWebMutationDispatch(t *testing.T) {
 				return nil
 			})
 		}},
+		"content_null_and_empty": {func(t *testing.T) {
+			h := newRouteHarness(t)
+			h.put(t, "/flows/42", `{"request":{"content":null},"response":{"content":null}}`, 200)
+			h.do(t, func(context.Context) error {
+				value := h.app.view.GetByID("42").(*flow.HTTPFlow)
+				if value.Request.RawContent != nil || value.Response.RawContent != nil {
+					t.Fatal("null content lost its missing-body semantics")
+				}
+				return nil
+			})
+			h.put(t, "/flows/42", `{"request":{"content":""},"response":{"content":""}}`, 200)
+			h.do(t, func(context.Context) error {
+				value := h.app.view.GetByID("42").(*flow.HTTPFlow)
+				if value.Request.RawContent == nil || value.Response.RawContent == nil || len(value.Request.RawContent) != 0 || len(value.Response.RawContent) != 0 {
+					t.Fatal("empty content was confused with a missing body")
+				}
+				return nil
+			})
+		}},
+		"uploads": {testWebUploadContracts},
 		"raw_dump_roundtrip": {func(t *testing.T) {
 			h := newRouteHarness(t)
 			body := h.status(t, "GET", "/flows/dump", nil, "", 200)
@@ -320,9 +408,12 @@ func TestWebMutationDispatch(t *testing.T) {
 			if body := h.status(t, "GET", "/flows", nil, "", 200); string(body) != "[]" {
 				t.Fatalf("flows=%q", body)
 			}
-			if body := h.status(t, "GET", "/events", nil, "", 200); string(body) != "[]" {
-				t.Fatalf("events=%q", body)
-			}
+			h.do(t, func(context.Context) error {
+				if entries := h.app.events.Entries(); len(entries) != 0 {
+					t.Fatalf("clear retained events: %v", entries)
+				}
+				return nil
+			})
 		}},
 	}
 	for name, test := range tests {

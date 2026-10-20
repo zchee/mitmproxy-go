@@ -99,11 +99,16 @@ func (b *Bindings) dispatch(action contract.Action) tea.Cmd {
 }
 
 // Update handles binding actions without executing typed prompt text.
-func (b *Bindings) Update(msg tea.Msg) (tea.Cmd, bool) {
+func (b *Bindings) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 	if result, ok := msg.(bindingResult); ok {
 		if result.owner != b {
 			return nil, false
 		}
+		defer func() {
+			if result.err != nil {
+				cmd = tea.Batch(cmd, func() tea.Msg { return contract.ErrorMsg{Source: "keybindings", Err: result.err} })
+			}
+		}()
 		b.busy = false
 		b.err = result.err
 		for len(b.pending) > 0 {

@@ -107,13 +107,18 @@ func (m *Model) Result() contract.Result { return m.result }
 
 // Update handles local editing and returns all live work as a command.
 // Input arriving during a registry request is replayed in order after its reply.
-func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
+func (m *Model) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 	if r, ok := msg.(response); ok {
 		if r.owner != m {
 			return nil, false
 		}
 		m.busy = false
 		if r.epoch == m.epoch {
+			defer func() {
+				if r.err != nil {
+					cmd = tea.Batch(cmd, func() tea.Msg { return contract.ErrorMsg{Source: "commander", Err: r.err} })
+				}
+			}()
 			m.err = r.err
 			if r.err == nil {
 				switch r.kind {

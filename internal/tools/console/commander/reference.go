@@ -57,11 +57,16 @@ func (r *Reference) dispatch(action contract.Action) tea.Cmd {
 }
 
 // Update returns dispatch work for selection and prompt actions.
-func (r *Reference) Update(msg tea.Msg) (tea.Cmd, bool) {
+func (r *Reference) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 	if result, ok := msg.(referenceResult); ok {
 		if result.owner != r {
 			return nil, false
 		}
+		defer func() {
+			if result.err != nil {
+				cmd = tea.Batch(cmd, func() tea.Msg { return contract.ErrorMsg{Source: "commands", Err: result.err} })
+			}
+		}()
 		r.busy = false
 		r.err = result.err
 		for len(r.pending) > 0 {

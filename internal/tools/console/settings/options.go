@@ -82,11 +82,16 @@ func (o *Options) run(work func(context.Context) error) tea.Cmd {
 }
 
 // Update consumes all inline input and returns mutations only as commands.
-func (o *Options) Update(msg tea.Msg) (tea.Cmd, bool) {
+func (o *Options) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 	if result, ok := msg.(optionResult); ok {
 		if result.owner != o {
 			return nil, false
 		}
+		defer func() {
+			if result.err != nil {
+				cmd = tea.Batch(cmd, func() tea.Msg { return contract.ErrorMsg{Source: "options", Err: result.err} })
+			}
+		}()
 		o.busy = false
 		o.err = result.err
 		for len(o.pending) > 0 {

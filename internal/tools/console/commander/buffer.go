@@ -9,10 +9,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/rivo/uniseg"
-
 	"github.com/zchee/mitmproxy-go/command"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
+	"github.com/zchee/mitmproxy-go/internal/tools/console/style"
 )
 
 // Buffer is a UTF-8 command line with a rune-indexed, grapheme-aligned cursor.
@@ -55,35 +54,19 @@ func (b *Buffer) SetText(text string) {
 
 // SetCursor clamps a rune offset to the preceding grapheme boundary.
 func (b *Buffer) SetCursor(cursor int) {
-	cursor = min(max(cursor, 0), utf8.RuneCountInString(b.text))
-	b.cursor = 0
-	g := uniseg.NewGraphemes(b.text)
-	n := 0
-	for g.Next() {
-		n += len(g.Runes())
-		if n > cursor {
-			break
-		}
-		b.cursor = n
+	length := utf8.RuneCountInString(b.text)
+	b.cursor = min(max(cursor, 0), length)
+	if b.cursor < length {
+		b.cursor = style.PreviousGrapheme(b.text, b.cursor+1)
 	}
 	b.cycle = nil
 }
 
 // Left moves to the preceding grapheme boundary.
-func (b *Buffer) Left() { b.SetCursor(b.cursor - 1) }
+func (b *Buffer) Left() { b.SetCursor(style.PreviousGrapheme(b.text, b.cursor)) }
 
 // Right moves to the next grapheme boundary.
-func (b *Buffer) Right() {
-	g := uniseg.NewGraphemes(b.text)
-	n := 0
-	for g.Next() {
-		n += len(g.Runes())
-		if n > b.cursor {
-			b.SetCursor(n)
-			return
-		}
-	}
-}
+func (b *Buffer) Right() { b.SetCursor(style.NextGrapheme(b.text, b.cursor)) }
 
 // Insert inserts text without executing it; a leading single space is ignored.
 func (b *Buffer) Insert(text string) {

@@ -132,11 +132,8 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	u := gows.Upgrader{ForwardResponseHeaders: true, OriginCheck: func([]byte) bool { return sameOrigin(r) }}
 	conn, hs, err := u.UpgradeHTTP(w, r)
 	if err != nil {
-		// These configuration errors occur before hijacking and write no response.
+		// gows writes a generic 500 before returning rejected response-header errors.
 		// Other errors already emitted HTTP policy or closed the hijacked socket.
-		if errors.Is(err, gows.ErrMalformedHeader) || errors.Is(err, gows.ErrReservedHeader) || errors.Is(err, gows.ErrHeaderTooLarge) {
-			http.Error(w, "Internal server error.", http.StatusInternalServerError)
-		}
 		return
 	}
 	c := newClient(h, gows.NewServerConn(conn, gows.WithBuffered(hs.Buffered), gows.WithReadLimit(messageLimit)))

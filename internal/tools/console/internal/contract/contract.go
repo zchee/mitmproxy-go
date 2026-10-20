@@ -140,6 +140,8 @@ type Command struct{ Name, Signature, Help string }
 
 // Result is a detached display projection of a command's supported result.
 type Result struct {
+	// Kind distinguishes nil from a non-nil empty value: text, bytes, lines, table, flow or flows.
+	Kind  string
 	Text  string
 	Bytes []byte
 	Lines []string

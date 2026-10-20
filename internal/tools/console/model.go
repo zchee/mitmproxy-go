@@ -6,6 +6,7 @@ package console
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -33,6 +34,8 @@ type Model struct {
 	message       string
 	input         textinput.Model
 	prompt        contract.Widget
+	palette       style.Palette
+	lastEvent     uint64
 }
 
 type resultMsg struct {
@@ -46,6 +49,7 @@ type resultMsg struct {
 func NewModel(bridge *Bridge, factories map[string]WidgetFactory) *Model {
 	m := &Model{bridge: bridge, factories: factories, width: 80, height: 24, state: contract.NewState(), input: textinput.New()}
 	m.widgets = [2]map[string]contract.Widget{{}, {}}
+	m.palette, _ = style.NewPalette("solarized_dark", true)
 	// Clipboard access stays behind the application's explicit clipboard support.
 	m.input.KeyMap.Paste.Unbind()
 	if bridge != nil {
@@ -120,6 +124,78 @@ func (m *Model) refreshWidgets() {
 	}
 }
 
+func (m *Model) applySnapshot(snapshot contract.Snapshot) {
+	for i := range m.state.Panes {
+		for j := range m.state.Panes[i].Stack {
+			window := &m.state.Panes[i].Stack[j]
+			for _, projected := range snapshot.Control.Panes[i].Stack {
+				if window.Context == "flowview" && window.FlowID == projected.FlowID && len(projected.Tabs) > window.Index && window.Index >= 0 {
+					window.Tabs = slices.Clone(projected.Tabs)
+					window.Mode = projected.Tabs[window.Index].Mode
+					break
+				}
+			}
+		}
+	}
+	name, transparent := "solarized_dark", true
+	for _, option := range snapshot.Options {
+		switch option.Name() {
+		case "console_palette":
+			name, _ = option.Current().(string)
+		case "console_palette_transparent":
+			transparent, _ = option.Current().(bool)
+		}
+	}
+	if name != m.palette.Name || transparent != m.palette.Transparent {
+		palette, err := style.NewPalette(name, transparent)
+		if err != nil {
+			m.message = err.Error()
+		} else {
+			m.palette = palette
+		}
+	}
+	for _, record := range snapshot.Events {
+		if record.ID <= m.lastEvent {
+			continue
+		}
+		m.lastEvent = record.ID
+		switch record.Entry.LevelName() {
+		case "warn", "error", "alert":
+			m.message = record.Entry.Msg
+		}
+	}
+	m.snapshot = snapshot
+	m.refreshWidgets()
+}
+
+func (m *Model) showResult(result contract.Result) tea.Cmd {
+	if result.Kind == "flow" {
+		m.message = "Command returned 1 flow"
+		return nil
+	}
+	if result.Kind == "flows" || result.Flows != nil {
+		m.message = fmt.Sprintf("Command returned %d flows", len(result.Flows))
+		return nil
+	}
+	if result.Kind == "" && result.Text == "" && result.Bytes == nil && result.Lines == nil && result.Table == nil {
+		return nil
+	}
+	lines := []string{result.Text}
+	if result.Bytes != nil {
+		lines = []string{string(result.Bytes)}
+	}
+	if result.Lines != nil {
+		lines = result.Lines
+	}
+	if result.Table != nil {
+		lines = make([]string, len(result.Table))
+		for i, row := range result.Table {
+			lines[i] = strings.Join(row, "  ")
+		}
+	}
+	return m.transition(contract.Action{Kind: "overlay", Window: contract.Window{Name: "dataviewer", Context: "dataviewer"}, Text: strings.Join(lines, "\n")})
+}
+
 func (m *Model) install(effects contract.EffectsMsg) []tea.Cmd {
 	if m.installer == nil {
 		return nil
@@ -127,6 +203,9 @@ func (m *Model) install(effects contract.EffectsMsg) []tea.Cmd {
 	var commands []tea.Cmd
 	for _, effect := range m.installer.Install(effects) {
 		m.state = effect.State.Clone()
+		if effect.Action.Kind == "overlay" && effect.Action.Window.Name == "dataviewer" {
+			m.widgets[m.state.Pane]["dataviewer"] = newResultWidget(m.bridge, effect.Action.Text)
+		}
 		if effect.Action.Kind == "prompt" {
 			m.input.SetValue(m.state.Text)
 			m.input.SetCursor(m.state.Cursor)
@@ -159,7 +238,7 @@ func (m *Model) install(effects contract.EffectsMsg) []tea.Cmd {
 }
 
 func (m *Model) invoke(line string, recipe *contract.Recipe, choice string) tea.Cmd {
-	return func() tea.Msg {
+	return m.bridge.command(func() tea.Msg {
 		ctx, finish := BeginInvocation(m.bridge.Context())
 		var result contract.Result
 		var err error
@@ -169,22 +248,27 @@ func (m *Model) invoke(line string, recipe *contract.Recipe, choice string) tea.
 			result, err = m.bridge.Execute(ctx, line)
 		}
 		return resultMsg{result: result, effects: finish(), err: err}
-	}
+	})
 }
 
 func (m *Model) transition(action contract.Action) tea.Cmd {
 	if m.bridge == nil {
 		return nil
 	}
-	return func() tea.Msg {
+	return m.bridge.command(func() tea.Msg {
 		ctx, finish := BeginInvocation(m.bridge.Context())
 		err := m.bridge.Dispatch(ctx, action)
 		return resultMsg{effects: finish(), err: err}
-	}
+	})
 }
 
 // Update installs owned results and schedules live work, never calling Do or Send.
-func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
+	defer func() {
+		if m.bridge != nil {
+			cmd = m.bridge.command(cmd)
+		}
+	}()
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = max(0, msg.Width), max(0, msg.Height)
@@ -202,18 +286,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = msg.Err.Error()
 		}
 		if m.bridge == nil || m.bridge.Accept(msg.Snapshot) {
-			m.snapshot = msg.Snapshot
-			m.refreshWidgets()
+			m.applySnapshot(msg.Snapshot)
 		}
 	case contract.EffectsMsg:
 		return m, tea.Batch(m.install(msg)...)
+	case contract.Result:
+		return m, m.showResult(msg)
 	case resultMsg:
+		commands := m.install(msg.effects)
 		if msg.err != nil {
 			m.message = msg.err.Error()
-		} else if msg.result.Text != "" {
-			m.message = msg.result.Text
+		} else {
+			commands = append(commands, m.showResult(msg.result))
 		}
-		return m, tea.Batch(m.install(msg.effects)...)
+		return m, tea.Batch(commands...)
 	case tea.MouseClickMsg:
 		if !m.state.Mouse {
 			return m, nil
@@ -356,7 +442,30 @@ func (m *Model) View() tea.View {
 		}
 		panes = append(panes, text)
 	}
-	v := tea.NewView(Compose(m.state, panes, m.width, m.height, m.footer()))
+	footer := m.footer()
+	lines := strings.Split(Compose(m.state, panes, m.width, m.height, footer), "\n")
+	for i := range lines {
+		lines[i] = m.palette.Style("text").Render(lines[i])
+	}
+	if m.state.Headers {
+		for i, rect := range Layout(m.state, m.width, m.height, len(footer)) {
+			row := rect.Y - 1
+			if row < 0 || row >= len(lines) {
+				continue
+			}
+			tag := "heading_inactive"
+			if i == m.state.Pane {
+				tag = "heading"
+			}
+			if m.state.Layout != "horizontal" {
+				lines[row] = m.palette.Style(tag).Render(lines[row])
+			}
+		}
+	}
+	if row := len(lines) - len(footer); row >= 0 && row < len(lines) {
+		lines[row] = m.palette.Style("heading").Render(lines[row])
+	}
+	v := tea.NewView(strings.Join(lines, "\n"))
 	v.AltScreen = true
 	if m.state.Mouse {
 		v.MouseMode = tea.MouseModeCellMotion

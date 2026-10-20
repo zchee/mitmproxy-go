@@ -66,6 +66,11 @@ type Bridge struct {
 	mu                 sync.Mutex
 	viewport           contract.Viewport
 	unsubscribe        []func()
+	workMu             sync.Mutex
+	work               sync.WaitGroup
+	closing            bool
+	workDone           chan struct{}
+	joinOnce           sync.Once
 }
 
 var _ contract.Host = (*Bridge)(nil)
@@ -80,7 +85,7 @@ func NewBridge(ctx context.Context, cfg BridgeConfig) (*Bridge, error) {
 	}
 	// Never retain a dispatch-frame context for later snapshot work.
 	lifetime, cancel := context.WithCancel(context.Background())
-	b := &Bridge{cfg: cfg, Control: NewController(), ctx: lifetime, cancel: cancel, wake: make(chan struct{}, 1), installed: make(chan uint64, 1), done: make(chan struct{}), deliveryDone: make(chan struct{})}
+	b := &Bridge{cfg: cfg, Control: NewController(), ctx: lifetime, cancel: cancel, wake: make(chan struct{}, 1), installed: make(chan uint64, 1), done: make(chan struct{}), deliveryDone: make(chan struct{}), workDone: make(chan struct{})}
 	b.Keys = keymap.NewDefault(b.Invalidate)
 	if b.cfg.Bindings == nil {
 		b.cfg.Bindings = b.Keys.Snapshot
@@ -202,13 +207,24 @@ func (b *Bridge) Dispatch(ctx context.Context, a contract.Action) error {
 			if err != nil {
 				return err
 			}
-			a.Window.Mode = values["flowview_mode_"+strconv.Itoa(a.Window.Index)]
-			if a.Window.Mode == "" {
-				a.Window.Mode = "auto"
-				if _, ok := b.cfg.Master.Options.Lookup("console_default_contentview"); ok {
-					a.Window.Mode = b.cfg.Master.Options.Str("console_default_contentview")
-				}
+			b.hydrateWindow(&a.Window, f, values)
+		}
+		if a.Kind == "tab" {
+			window, ok := b.Control.State().Current("flowview", false)
+			if !ok {
+				return errors.New("Not viewing a flow.")
+			} //nolint:staticcheck // Preserve upstream's command error text.
+			f := b.cfg.View.GetByID(window.FlowID)
+			if f == nil {
+				return ErrEditConflict
 			}
+			values, err := b.cfg.View.Settings.Values(f)
+			if err != nil {
+				return err
+			}
+			window.Tab, window.Index = a.Value, a.Index
+			b.hydrateWindow(&window, f, values)
+			a.Value, a.Index, a.Text = window.Tab, window.Index, window.Mode
 		}
 		if a.Kind == "binding" && a.Value != "" {
 			if _, err := b.binding(a.Value); err != nil {
@@ -242,6 +258,36 @@ func (b *Bridge) Dispatch(ctx context.Context, a contract.Action) error {
 		}
 		return nil
 	})
+}
+
+func (b *Bridge) hydrateWindow(window *contract.Window, f flow.Flow, values map[string]string) {
+	names := []string{"Request", "Response", "Detail"}
+	switch f := f.(type) {
+	case *flow.HTTPFlow:
+		if f.WebSocket != nil {
+			names = []string{"Request", "Response", "WebSocket Messages", "Detail"}
+		}
+	case *flow.TCPFlow:
+		names = []string{"TCP Stream", "Detail"}
+	case *flow.UDPFlow:
+		names = []string{"UDP Stream", "Detail"}
+	}
+	fallback := "auto"
+	if _, ok := b.cfg.Master.Options.Lookup("console_default_contentview"); ok {
+		fallback = b.cfg.Master.Options.Str("console_default_contentview")
+	}
+	tabs := make([]contract.TabState, len(names))
+	for i, name := range names {
+		if i < len(window.Tabs) {
+			tabs[i] = window.Tabs[i]
+		}
+		tabs[i].Name, tabs[i].Mode = name, values["flowview_mode_"+strconv.Itoa(i)]
+		if tabs[i].Mode == "" {
+			tabs[i].Mode = fallback
+		}
+	}
+	window.Index = min(max(0, window.Index), len(tabs)-1)
+	window.Tab, window.Mode, window.Tabs = names[window.Index], tabs[window.Index].Mode, tabs
 }
 
 // binding resolves a complete identity against the current dispatch-owned keymap.
@@ -327,6 +373,21 @@ func (b *Bridge) Resolve(ctx context.Context, recipe contract.Recipe, choice str
 
 func (b *Bridge) projectResult(value any) (contract.Result, error) {
 	var result contract.Result
+	switch value.(type) {
+	case nil:
+	case []byte:
+		result.Kind = "bytes"
+	case command.CutSpec, []string:
+		result.Kind = "lines"
+	case command.Data, [][]string:
+		result.Kind = "table"
+	case flow.Flow:
+		result.Kind = "flow"
+	case []flow.Flow:
+		result.Kind = "flows"
+	default:
+		result.Kind = "text"
+	}
 	switch value := value.(type) {
 	case nil:
 	case string:
@@ -464,6 +525,23 @@ func (b *Bridge) capture(generation uint64) (contract.Snapshot, error) {
 		slices.SortFunc(snapshot.Commands, func(a, c contract.Command) int { return strings.Compare(a.Name, c.Name) })
 		snapshot.StoreCount = b.cfg.View.StoreCount()
 		snapshot.Options, snapshot.Events, snapshot.Control = opts.Items(), b.cfg.Events.Records(), b.Control.State()
+		for i := range snapshot.Control.Panes {
+			for j := range snapshot.Control.Panes[i].Stack {
+				window := &snapshot.Control.Panes[i].Stack[j]
+				if window.Context != "flowview" {
+					continue
+				}
+				selected := b.cfg.View.GetByID(window.FlowID)
+				if selected == nil {
+					continue
+				}
+				values, err := b.cfg.View.Settings.Values(selected)
+				if err != nil {
+					return err
+				}
+				b.hydrateWindow(window, selected, values)
+			}
+		}
 		snapshot.Status = b.statusSnapshot(ctx)
 		snapshot.Detail = contract.DetailOptions{Registry: b.cfg.Registry, DefaultContentView: "auto", FullContents: snapshot.ViewSettings["fullcontents"] == "true"}
 		if _, ok := opts.Lookup("console_default_contentview"); ok {
@@ -510,10 +588,11 @@ func (b *Bridge) drain(send func(tea.Msg)) {
 	}
 	defer close(b.done)
 	ticks := b.cfg.Ticks
+	var timer *time.Timer
 	if ticks == nil {
-		ticker := time.NewTicker(FrameInterval)
-		defer ticker.Stop()
-		ticks = ticker.C
+		timer = time.NewTimer(FrameInterval)
+		defer timer.Stop()
+		ticks = timer.C
 	}
 	var last time.Time
 	var completed uint64
@@ -528,9 +607,16 @@ func (b *Bridge) drain(send func(tea.Msg)) {
 			}
 			generation := b.generation.Load()
 			if generation == completed || (!last.IsZero() && tick.Sub(last) < FrameInterval) {
+				if timer != nil {
+					timer.Reset(FrameInterval)
+				}
 				continue
 			}
 			last = tick
+			if timer != nil {
+				// Admission is measured at traversal start, not the timer's queued time.
+				last = time.Now()
+			}
 			snapshot, err := b.capture(generation)
 			if b.ctx.Err() != nil {
 				return
@@ -543,6 +629,14 @@ func (b *Bridge) drain(send func(tea.Msg)) {
 				case installed := <-b.installed:
 					if installed == generation {
 						completed = generation
+						if timer != nil {
+							timer.Reset(FrameInterval)
+						} else {
+							// Injected buffered clocks cannot accumulate traversal credits.
+							for range len(ticks) {
+								<-ticks
+							}
+						}
 						goto nextFrame
 					}
 				}
@@ -571,9 +665,42 @@ func (b *Bridge) DeliverEffects(program *tea.Program) tea.Cmd {
 	}
 }
 
-// Close cancels first, detaches observers under Do, then joins snapshot work.
+// command joins active widget work and refuses queued work after shutdown.
+func (b *Bridge) command(cmd tea.Cmd) tea.Cmd {
+	if cmd == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		b.workMu.Lock()
+		if b.closing || b.ctx.Err() != nil {
+			b.workMu.Unlock()
+			return nil
+		}
+		b.work.Add(1)
+		b.workMu.Unlock()
+		defer b.work.Done()
+		message := cmd()
+		if batch, ok := message.(tea.BatchMsg); ok {
+			for i := range batch {
+				batch[i] = b.command(batch[i])
+			}
+		}
+		return message
+	}
+}
+
+// Close cancels first, detaches observers under Do, then joins owned work.
 func (b *Bridge) Close(ctx context.Context) error {
+	b.workMu.Lock()
+	b.closing = true
 	b.cancel()
+	b.workMu.Unlock()
+	b.joinOnce.Do(func() {
+		go func() {
+			b.work.Wait()
+			close(b.workDone)
+		}()
+	})
 	b.stopParent()
 	if err := b.Do(ctx, func(context.Context) error {
 		for _, cancel := range b.unsubscribe {
@@ -587,7 +714,7 @@ func (b *Bridge) Close(ctx context.Context) error {
 	for _, worker := range []struct {
 		started bool
 		done    <-chan struct{}
-	}{{b.started.Load(), b.done}, {b.deliveryStarted.Load(), b.deliveryDone}} {
+	}{{b.started.Load(), b.done}, {b.deliveryStarted.Load(), b.deliveryDone}, {true, b.workDone}} {
 		if worker.started {
 			select {
 			case <-worker.done:

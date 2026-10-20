@@ -6,6 +6,7 @@ package console
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	teatest "github.com/charmbracelet/x/exp/teatest/v2"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/addons/core"
 	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
@@ -187,6 +189,26 @@ func TestConsoleStatusBar(t *testing.T) {
 				refresh()
 				switch name {
 				case "test_statusbar":
+					for _, level := range []slog.Level{slog.LevelWarn, slog.LevelError, addon.LevelAlert} {
+						mustConsole(t, b.Do(t.Context(), func(ctx context.Context) error {
+							return b.cfg.Events.Add(ctx, addon.LogEntry{Msg: "new event", Level: level})
+						}))
+						refresh()
+						if m.message != "new event" {
+							t.Fatal("new warning/error/alert not routed to status")
+						}
+						m.message = "user message"
+						refresh()
+						if m.message != "user message" {
+							t.Fatal("retained event overwrote later status")
+						}
+					}
+					mustConsole(t, b.cfg.Master.Options.Add(t.Context(), "console_palette", options.TypeStr, "dark", "Palette."))
+					mustConsole(t, b.cfg.Master.Options.Add(t.Context(), "console_palette_transparent", options.TypeBool, false, "Transparency."))
+					refresh()
+					if m.palette.Name != "dark" || m.palette.Transparent {
+						t.Fatal("configured palette not applied")
+					}
 					<-b.installed
 					m.Update(contract.ErrorMsg{Source: "widget", Err: errors.New("bad\x1b]52;c;payload\a")})
 					if len(b.installed) != 0 || m.snapshot.Generation == 0 || strings.ContainsAny(strings.Join(m.footer(), "\n"), "\x1b\a") {

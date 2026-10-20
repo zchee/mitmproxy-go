@@ -20,6 +20,7 @@ import (
 
 	"github.com/zchee/mitmproxy-go/addons/eventstore"
 	"github.com/zchee/mitmproxy-go/addons/view"
+	"github.com/zchee/mitmproxy-go/command"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
@@ -166,6 +167,7 @@ func TestConsoleBridge(t *testing.T) {
 					b.cancel()
 					awaitConsole(t, b.done)
 				case "cancel_join":
+					verifyCommandJoin(t)
 					entered := make(chan struct{})
 					go b.drain(func(tea.Msg) { close(entered); <-b.Context().Done() })
 					ticks <- time.Unix(1, 0)
@@ -212,6 +214,7 @@ func TestConsoleBridge(t *testing.T) {
 						verifyAmendedContract(t)
 					}
 				case "same_do_read_after_write":
+					verifyModes(t)
 					mustConsole(t, b.Do(t.Context(), func(ctx context.Context) error {
 						mustConsole(t, b.Dispatch(ctx, contract.Action{Kind: "push", Window: contract.Window{Name: "options", Context: "options", Option: "showhost"}}))
 						w, ok := b.Control.State().Current("options", false)
@@ -344,6 +347,141 @@ func verifyAmendedContract(t *testing.T) {
 	}
 }
 
+func verifyResults(t *testing.T) {
+	t.Helper()
+	b, _ := testBridge(t)
+	m := NewModel(b, nil)
+	tests := map[string]struct {
+		value any
+		kind  string
+	}{
+		"nil": {nil, ""}, "empty string": {"", "text"}, "string": {"text\x1b[2J", "text"},
+		"bytes": {[]byte{0, 255}, "bytes"}, "bool": {false, "text"}, "int": {0, "text"},
+		"list": {[]string{}, "lines"}, "table": {command.Data{{"a", []byte{1}}}, "table"},
+		"flow": {testflow.TFlow(), "flow"}, "flows": {[]flow.Flow{testflow.TFlow()}, "flows"}, "empty flows": {[]flow.Flow{}, "flows"},
+	}
+	for name, test := range tests {
+		var result contract.Result
+		mustConsole(t, b.Do(t.Context(), func(context.Context) error { var err error; result, err = b.projectResult(test.value); return err }))
+		if result.Kind != test.kind {
+			t.Fatalf("%s kind=%q want %q", name, result.Kind, test.kind)
+		}
+		_, cmd := m.Update(result)
+		if test.kind == "flow" || test.kind == "flows" {
+			if !strings.HasPrefix(m.message, "Command returned ") {
+				t.Fatal("flow result lacks status")
+			}
+			if cmd != nil {
+				t.Fatal("flow result opened an overlay")
+			}
+		} else if test.kind == "" {
+			if cmd != nil {
+				t.Fatal("nil result opened an overlay")
+			}
+		} else {
+			if cmd == nil {
+				t.Fatalf("%s did not open data viewer", name)
+			}
+			m.Update(cmd())
+			window, ok := m.state.Current("dataviewer", true)
+			if !ok || window.Name != "dataviewer" {
+				t.Fatal("data viewer overlay missing")
+			}
+			widget := m.widget(m.state.Pane)
+			if strings.Contains(widget.(*resultWidget).text, "\x1b") {
+				t.Fatal("data viewer retained control bytes")
+			}
+			_, cmd = m.Update(resultMsg{effects: nil})
+			if cmd != nil {
+				m.Update(cmd())
+			}
+			m.Update(m.transition(contract.Action{Kind: "dismiss"})())
+		}
+	}
+}
+
+func verifyModes(t *testing.T) {
+	t.Helper()
+	b, _ := testBridge(t)
+	f := testflow.TFlow()
+	mustConsole(t, b.Do(t.Context(), func(ctx context.Context) error {
+		b.cfg.View.Add(ctx, []flow.Flow{f})
+		_, err := b.Call(ctx, "view.settings.setval", []flow.Flow{f}, "flowview_mode_1", "raw")
+		return err
+	}))
+	ctx, finish := BeginInvocation(t.Context())
+	mustConsole(t, b.Dispatch(ctx, contract.Action{Kind: "push", Window: contract.Window{Name: "flowview", Context: "flowview", Index: 1}}))
+	m := NewModel(b, nil)
+	m.install(finish())
+	w, _ := m.state.Current("flowview", false)
+	if w.Mode != "raw" || w.Tab != "Response" || len(w.Tabs) != 3 {
+		t.Fatalf("window not hydrated: %+v", w)
+	}
+	_, err := b.Call(t.Context(), "view.settings.setval", []flow.Flow{f}, "flowview_mode_1", "hex")
+	mustConsole(t, err)
+	snapshot, err := b.capture(b.generation.Load())
+	mustConsole(t, err)
+	m.applySnapshot(snapshot)
+	w, _ = m.state.Current("flowview", false)
+	if w.Mode != "hex" || w.Tabs[1].Mode != "hex" {
+		t.Fatalf("snapshot did not use view-owned mode: %+v", w)
+	}
+}
+
+func verifyCommandJoin(t *testing.T) {
+	t.Helper()
+	b, _ := testBridge(t)
+	entered, canceled, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{}), make(chan struct{})
+	cmd := b.command(func() tea.Msg {
+		close(entered)
+		<-b.Context().Done()
+		close(canceled)
+		<-release
+		return nil
+	})
+	go func() { cmd(); close(finished) }()
+	awaitConsole(t, entered)
+	closed := make(chan error, 1)
+	go func() { closed <- b.Close(context.WithoutCancel(t.Context())) }()
+	awaitConsole(t, canceled)
+	select {
+	case <-closed:
+		t.Fatal("close returned while a command was active")
+	default:
+	}
+	close(release)
+	awaitConsole(t, finished)
+	mustConsole(t, awaitConsole(t, closed))
+	called := false
+	b.command(func() tea.Msg { called = true; return nil })()
+	if called {
+		t.Fatal("queued command ran after close")
+	}
+}
+
+func verifyLiveCadence(t *testing.T) {
+	t.Helper()
+	b, _ := testBridge(t)
+	b.cfg.Ticks = nil
+	starts := make(chan time.Time, 2)
+	project := b.cfg.Project
+	b.cfg.Project = func(fs []flow.Flow, r contract.ProjectionRequest) contract.Projection {
+		starts <- time.Now()
+		return project(fs, r)
+	}
+	frames := make(chan contract.Snapshot, 2)
+	go b.drain(func(msg tea.Msg) { frames <- msg.(contract.SnapshotMsg).Snapshot })
+	first := awaitConsole(t, frames)
+	start := awaitConsole(t, starts)
+	b.Invalidate()
+	b.Accept(first)
+	second := awaitConsole(t, frames)
+	if next := awaitConsole(t, starts); next.Sub(start) < FrameInterval {
+		t.Fatalf("traversals started only %s apart", next.Sub(start))
+	}
+	b.Accept(second)
+}
+
 func TestConsoleSnapshots(t *testing.T) {
 	tests := map[string]struct{}{"detached": {}, "visible_rows": {}, "stale_generation": {}, "flow_removed": {}, "admitted_traversals": {}}
 	t.Run("ownership", func(t *testing.T) {
@@ -357,6 +495,7 @@ func TestConsoleSnapshots(t *testing.T) {
 				mustConsole(t, err)
 				switch name {
 				case "detached":
+					verifyResults(t)
 					copy := snapshot.Clone()
 					copy.Focused.(*flow.HTTPFlow).Request.Method = "DELETE"
 					copy.IDs[0] = "changed"
@@ -428,6 +567,7 @@ func TestConsoleSnapshots(t *testing.T) {
 						t.Fatal("missing target did not conflict")
 					}
 				case "admitted_traversals":
+					verifyLiveCadence(t)
 					var traversals atomic.Int64
 					project := b.cfg.Project
 					b.cfg.Project = func(fs []flow.Flow, r contract.ProjectionRequest) contract.Projection {

@@ -34,7 +34,6 @@ func TestWebRouteMethods(t *testing.T) {
 			"filter_help":       {path: "/filter-help", methods: map[string]string{"GET": ""}, alias: true, shape: "object"},
 			"commands":          {path: "/commands", methods: map[string]string{"GET": ""}, alias: true, shape: "object"},
 			"command_execute":   {path: "/commands/commands.history.get", methods: map[string]string{"POST": `{"arguments":[]}`}, shape: "object"},
-			"events":            {path: "/events", methods: map[string]string{"GET": ""}, alias: true, shape: "array"},
 			"flows":             {path: "/flows", methods: map[string]string{"GET": ""}, alias: true, shape: "array"},
 			"flows_resume":      {path: "/flows/resume", methods: map[string]string{"POST": ""}},
 			"flows_kill":        {path: "/flows/kill", methods: map[string]string{"POST": ""}},
@@ -320,9 +319,10 @@ func TestWebMutationDispatch(t *testing.T) {
 			if body := h.status(t, "GET", "/flows", nil, "", 200); string(body) != "[]" {
 				t.Fatalf("flows=%q", body)
 			}
-			if body := h.status(t, "GET", "/events", nil, "", 200); string(body) != "[]" {
-				t.Fatalf("events=%q", body)
-			}
+			h.do(t, func(context.Context) error {
+				if entries := h.app.events.Entries(); len(entries) != 0 { t.Fatalf("clear retained events: %v", entries) }
+				return nil
+			})
 		}},
 	}
 	for name, test := range tests {

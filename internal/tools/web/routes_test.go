@@ -341,15 +341,6 @@ func TestWebRoutes(t *testing.T) {
 					}
 				}
 			}},
-			"test_events": {func(t *testing.T, h *routeHarness) {
-				var got []map[string]any
-				if err := json.Unmarshal(h.status(t, "GET", "/events", nil, "", 200), &got); err != nil {
-					t.Fatal(err)
-				}
-				if got[0]["level"] != "info" {
-					t.Fatalf("events=%v", got)
-				}
-			}},
 			"test_options": {func(t *testing.T, h *routeHarness) {
 				var got map[string]map[string]any
 				if err := json.Unmarshal(h.status(t, "GET", "/options", nil, "", 200), &got); err != nil {

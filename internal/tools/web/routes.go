@@ -35,6 +35,7 @@ type application struct {
 	master    *master.Master
 	view      *view.View
 	events    *eventstore.EventStore
+	eventRows func() []map[string]any
 	protect   func(http.Handler, bool) http.Handler
 	firstFile func(*http.Request) (*multipart.FileHeader, bool)
 }
@@ -79,6 +80,7 @@ func (a *application) handler() http.Handler {
 			}
 		}()
 		for _, route := range webRoutes {
+			if route.name == "events" && a.eventRows == nil { continue }
 			captures := route.pattern.FindStringSubmatch(r.URL.Path)
 			if captures == nil {
 				continue
@@ -217,11 +219,7 @@ func (a *application) serve(w http.ResponseWriter, r *http.Request, name string,
 			}
 			response = values
 		case "events":
-			values := make([]map[string]any, 0)
-			for i, entry := range a.events.Entries() {
-				values = append(values, map[string]any{"id": i + 1, "message": entry.Msg, "level": entry.LevelName()})
-			}
-			response = values
+			response = a.eventRows()
 		case "commands":
 			values := make(map[string]any)
 			for commandName, cmd := range a.master.Commands.Commands() {

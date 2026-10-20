@@ -4,6 +4,7 @@
 package webauth
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"mime"
@@ -32,9 +33,7 @@ func (auth *WebAuth) Wrap(next http.Handler, login LoginRenderer) http.Handler {
 		if !prepareArguments(w, r) {
 			return
 		}
-		if r.MultipartForm != nil {
-			defer func() { _ = r.MultipartForm.RemoveAll() }()
-		}
+		defer cleanupArguments(r)
 		if unsafeMethod(r.Method) {
 			if err := auth.checkXSRF(r); err != nil {
 				writePolicyError(w, http.StatusForbidden)
@@ -60,6 +59,7 @@ func (auth *WebAuth) PrepareUpgrade(w http.ResponseWriter, r *http.Request) bool
 	if !prepareArguments(w, r) {
 		return false
 	}
+	defer cleanupArguments(r)
 	if unsafeMethod(r.Method) {
 		if err := auth.checkXSRF(r); err != nil {
 			writePolicyError(w, http.StatusForbidden)
@@ -125,26 +125,54 @@ func prepareArguments(w http.ResponseWriter, r *http.Request) bool {
 	if r.PostForm != nil {
 		return true
 	}
-	mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	mediaType, parameters, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if mediaType != "application/x-www-form-urlencoded" && mediaType != "multipart/form-data" {
 		return true
 	}
-	// Match the HTTP receive ceiling without ParseForm's implicit 10 MiB
-	// limit. Multipart contents spill to owned temporary files, not to RAM.
-	if r.Body != nil {
-		r.Body = http.MaxBytesReader(w, r.Body, 4<<30)
+	// Keep upstream's raw request.body available after argument parsing. The
+	// snapshot spills to an owned file without changing the receive ceiling.
+	body := r.Body
+	if body == nil {
+		body = http.NoBody
 	}
+	limited := http.MaxBytesReader(w, body, receiveLimit)
+	defer func() { _ = limited.Close() }()
+	snapshot, err := captureBody(limited, formMemoryLimit)
+	if err != nil {
+		writePolicyError(w, http.StatusBadRequest)
+		return false
+	}
+	parsed := &parsedArguments{body: snapshot}
+	*r = *r.WithContext(context.WithValue(r.Context(), parsedArgumentsKey{}, parsed))
 	// Tornado parses form bodies on every method, unlike net/http's ParseForm.
 	parser := r.Clone(r.Context())
 	parser.Method = http.MethodPost
-	var err error
+	// Preserve ParseForm's MaxBytesReader exemption from its implicit 10 MiB
+	// limit even though it now reads the captured snapshot.
+	parser.Body = http.MaxBytesReader(w, snapshot.reader(), receiveLimit)
+	var firstField string
 	if mediaType == "multipart/form-data" {
-		err = parser.ParseMultipartForm(32 << 20)
+		// ReadForm preserves per-field order but not cross-field order. Scan
+		// only the leading metadata, then let the standard storage parser own
+		// every FileHeader and multipart temporary file.
+		firstField, err = firstFileField(snapshot.reader(), parameters["boundary"])
+		if err == nil {
+			err = parser.ParseMultipartForm(formMemoryLimit)
+		}
 	} else {
 		err = parser.ParseForm()
 	}
 	r.Form, r.PostForm, r.MultipartForm = parser.Form, parser.PostForm, parser.MultipartForm
+	r.Body = snapshot.reader()
+	if err == nil && firstField != "" {
+		if files := r.MultipartForm.File[firstField]; len(files) != 0 {
+			parsed.first = files[0]
+		} else {
+			err = errors.New("multipart file metadata unavailable")
+		}
+	}
 	if err != nil {
+		cleanupArguments(r)
 		writePolicyError(w, http.StatusBadRequest)
 		return false
 	}

@@ -230,6 +230,9 @@ func TestWebAuthentication(t *testing.T) {
 			})
 		}
 	})
+	t.Run("body_snapshot", testWebBodySnapshot)
+	t.Run("uploads", testWebUploads)
+	t.Run("upload_file_lifetime", testWebUploadFileLifetime)
 }
 
 func TestWebLogin(t *testing.T) {

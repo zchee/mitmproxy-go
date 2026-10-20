@@ -166,6 +166,50 @@ notice in its SVG, remain in the copied files.
 | `mitmproxy/web/src/js/ducks/_options_gen.ts` | `web/src/js/ducks/_options_gen.ts` | `d0f75a217c2238bf489592c8a7fd921f779aba78` | `100644` |
 | `mitmproxy/web/src/js/flow.ts` | `web/src/js/flow.ts` | `80d2f6bd3a60d909f7183f450a2298e38c363999` | `100644` |
 
+## Console references
+
+These 25 files are byte-exact references from mitmproxy commit
+`3368a0a06ae6195aad817a1ece1aaeb6fe0353a1`. The eleven `test_*.py`
+modules preserve the 47 upstream test functions and their parameter cases;
+they are references, not Python tests run by this repository. `conftest.py`
+records the isolated 80×24 console renderer. The other Python modules retain
+the command, binding, option, palette and layout contracts.
+
+`mitmproxy.png` is the single upstream console screenshot, used only as
+qualitative layout context; it is not a frozen frame for either terminal size.
+Generated Go frames and live-oracle outputs have separate provenance and are
+not imported upstream bytes. `UPSTREAM_LICENSE` retains the complete MIT
+notice beside the references. All paths and SHA-256 digests below are relative
+to this directory and also appear in `SHA256SUMS`.
+
+| Path | Upstream path | Upstream Git blob | Git mode | Bytes | SHA-256 |
+| --- | --- | --- | --- | ---: | --- |
+| `mitmproxy/tools/console/conftest.py` | `test/mitmproxy/tools/console/conftest.py` | `b470a6ef8cbd8bf5c5c0b3296c060a2c58877316` | `100644` | 1784 | `b000690b8b084fa6c7f7e5dede9cce4400424154bc824aa0d3a2e33e7409a123` |
+| `mitmproxy/tools/console/test_commander.py` | `test/mitmproxy/tools/console/test_commander.py` | `a4fd3c322537924f26738b772cd07c81e439b726` | `100644` | 11418 | `828339f8623be88041e0784d3211a32da8b2f63c9dce197d461bf1924c7ac754` |
+| `mitmproxy/tools/console/test_common.py` | `test/mitmproxy/tools/console/test_common.py` | `b81c2491ce77d34231a1975feac71608e16735a6` | `100644` | 1357 | `6d7c8975018d68d260d5200d798b1cca8821800cd161844700046ee58cd55737` |
+| `mitmproxy/tools/console/test_contentview.py` | `test/mitmproxy/tools/console/test_contentview.py` | `8ff09bd2cb3e1ebe009704deaf3e51a536d863ca` | `100644` | 1158 | `65b634b543299428e6ae1a2a41a13baf8bd63dfbc90b6ee0ffd0b1dbf1f8c885` |
+| `mitmproxy/tools/console/test_defaultkeys.py` | `test/mitmproxy/tools/console/test_defaultkeys.py` | `f9f2d9a2da4b9110f05e6e2e9b788dd4657fdedf` | `100644` | 650 | `508ea9d334471338eb921ba90b4d1b8b5a8a608416bfe4864ec5cfbd7705f191` |
+| `mitmproxy/tools/console/test_flowview.py` | `test/mitmproxy/tools/console/test_flowview.py` | `191f5af0bb704a48d2d8508ff53c0bddc115d0cc` | `100644` | 3090 | `abb1cbb512251444adc25089a118dc1a574f86a8a3a22f3c36787a706952d225` |
+| `mitmproxy/tools/console/test_integration.py` | `test/mitmproxy/tools/console/test_integration.py` | `5eaf32e993e0eab39a905cf1f4cabc9361602bd7` | `100644` | 688 | `afaeab2172c64362314ae7734b5043e5874b3c64d1c83bc1efcd3eba4adcb01c` |
+| `mitmproxy/tools/console/test_keymap.py` | `test/mitmproxy/tools/console/test_keymap.py` | `f2e3f2cf6b41d948c3e57de442c50fb21ef161a5` | `100644` | 6145 | `d39b0aeb01940a5641e0e42b0ec86c8f3a59ff062962d292003f28287c582d98` |
+| `mitmproxy/tools/console/test_master.py` | `test/mitmproxy/tools/console/test_master.py` | `47651482c1f3c39dd39e58169e47adf8b33622c1` | `100644` | 903 | `239ad91f79cce6fe1e677a678c1010477b1db71e54ce934d28987ae5c2713570` |
+| `mitmproxy/tools/console/test_palettes.py` | `test/mitmproxy/tools/console/test_palettes.py` | `b6f4a05e03186c987a65bd76e941dca6b57c68b1` | `100644` | 486 | `22aea882c93b9c306a6c1ca661500dba7f3a62faf2637c6acb47278515c7b1d0` |
+| `mitmproxy/tools/console/test_quickhelp.py` | `test/mitmproxy/tools/console/test_quickhelp.py` | `e129850d57106ed37542edd82955e9b7cab04378` | `100644` | 2068 | `cb06cb2b3f89b1f829187ebc2f7f8961183815be9dd3f06eef5ca1a09226d44e` |
+| `mitmproxy/tools/console/test_statusbar.py` | `test/mitmproxy/tools/console/test_statusbar.py` | `00ce3c23f60a8ece08f0936b187eb6d86e235e88` | `100644` | 5443 | `c29c6bc552f0023c16fda180d87e9437ea5628fc751b65b123e6e8da9b50e102` |
+| `mitmproxy/tools/console/defaultkeys.py` | `mitmproxy/tools/console/defaultkeys.py` | `0ff9d0a291bf968cb8d65c89bb0802ee0c71d536` | `100644` | 9002 | `9007fbdbe78fc71e1ed5b6fcf9fd97dda93a38e4694e621b56a3b423c5950d6e` |
+| `mitmproxy/tools/console/consoleaddons.py` | `mitmproxy/tools/console/consoleaddons.py` | `0dc3722c2030ccf9c38d0fc262ca36bd0e07167d` | `100644` | 25217 | `bdbb867cd9cf1165e16ec85dfbbef5447b927d23add6c94ee4eb7f272d2476c8` |
+| `mitmproxy/tools/console/options.py` | `mitmproxy/tools/console/options.py` | `73973783e2407fb4472012d4092b1e5ec3a41f0d` | `100644` | 8637 | `71d2ce3d754d28855d487c2f9c5ae6d4e3c71735106445da49d61a6eb609efab` |
+| `mitmproxy/tools/console/palettes.py` | `mitmproxy/tools/console/palettes.py` | `a5321e07c5e87b9c25f4c5e5b0e948b9485e001c` | `100644` | 18319 | `5ef357d27f45f1f98a0e1d5492e98974605ede415d2a238d370c1d6208a5f0e4` |
+| `mitmproxy/tools/console/common.py` | `mitmproxy/tools/console/common.py` | `e28100b268270cead0ff811d4a7f978ed6f4e0d7` | `100644` | 26202 | `01b0632f9c9c434349846e3331e0fef8362edd0e20c7d6e17ee95846740c32f8` |
+| `mitmproxy/tools/console/window.py` | `mitmproxy/tools/console/window.py` | `baeec5be8512b5a88127ce1538c20f7d3fb82dd9` | `100644` | 10790 | `330256a8f802e7610f0bd03a1c7c9d3e45ee4ee19d9ccb62557070a49a725939` |
+| `mitmproxy/tools/console/statusbar.py` | `mitmproxy/tools/console/statusbar.py` | `480676778cada066d5cd8bb08081ab519e4163da` | `100644` | 13222 | `b39816640ed958b562603024cbd99889b3f0b9274b86e8065d9331a1a2bfd2ab` |
+| `mitmproxy/tools/console/quickhelp.py` | `mitmproxy/tools/console/quickhelp.py` | `663a03cfadad83b2f35b9673f0a6527650285151` | `100644` | 6341 | `88ac1cc6c004a5323953919e6f06de3a4422d57ea34dde429e4571e47c10815f` |
+| `mitmproxy/tools/console/flowview.py` | `mitmproxy/tools/console/flowview.py` | `e575fb5ddbb2ffe62ac5656d04913c4fdb3cbf5c` | `100644` | 17988 | `d467702d78e087e2dc76ddee2d653d1db8aae2b6f7afd0f624dab1e2e284cd7d` |
+| `mitmproxy/tools/console/master.py` | `mitmproxy/tools/console/master.py` | `5457ba4665de4ff52ef4a53c9e1587b19f5bc447` | `100644` | 8382 | `5ba896ecb1dda33f16758f5d3466829335273a38872413b556a66cadf77ff555` |
+| `mitmproxy/tools/console/keymap.py` | `mitmproxy/tools/console/keymap.py` | `514066a9bc605a03ee4bb3812c038c67fa464003` | `100644` | 8157 | `6747e2bdceeed307f996664625e196dca9e55601d5ab1f1c12215ca732a2cff8` |
+| `mitmproxy/tools/console/mitmproxy.png` | `docs/src/static/screenshots/mitmproxy.png` | `3fd14b9d4aa913edc83d9e2806b35e04da4bf48a` | `100644` | 286915 | `694d8f4254e3ff917524974db7ea26f0b31515646f106c050b5cf35e73174018` |
+| `mitmproxy/tools/console/UPSTREAM_LICENSE` | `LICENSE` | `c08a0186d79d45a4647c31f5dfeabfbc4db82daf` | `100644` | 1079 | `cc4ab04ed7180af6c0ede7147f9ec2aa05212c088d7b3c8e38bbffe91c9c8f82` |
+
 ## Generated highlighting expectations
 
 [highlight/](highlight/README.md) is separate from the byte-exact imported

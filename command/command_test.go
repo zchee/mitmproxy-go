@@ -566,13 +566,64 @@ func TestManagerHelp(t *testing.T) {
 }
 
 // TestHelpWrapping checks the layout of help text against values recorded
-// with CPython 3.13 from "\n".join(textwrap.wrap(doc.strip())), which is
-// how mitmproxy builds Command.help from a docstring.
+// with CPython 3.13 from compiled docstrings followed by
+// "\n".join(textwrap.wrap(doc.strip())), as mitmproxy builds Command.help.
 func TestHelpWrapping(t *testing.T) {
 	tests := map[string]struct {
 		in   string
 		want string
 	}{
+		"success: cut docstring": {
+			in: `
+        Cut data from a set of flows. Cut specifications are attribute paths
+        from the base of the flow object, with a few conveniences - "port"
+        and "host" retrieve parts of an address tuple, ".header[key]"
+        retrieves a header value. Return values converted to strings or
+        bytes: SSL certificates are converted to PEM format, bools are "true"
+        or "false", "bytes" are preserved, and all other values are
+        converted to strings.
+        `,
+			want: `Cut data from a set of flows. Cut specifications are attribute paths
+from the base of the flow object, with a few conveniences - "port" and
+"host" retrieve parts of an address tuple, ".header[key]" retrieves a
+header value. Return values converted to strings or bytes: SSL
+certificates are converted to PEM format, bools are "true" or "false",
+"bytes" are preserved, and all other values are converted to strings.`,
+		},
+		"success: cut save docstring": {
+			in: `
+        Save cuts to file. If there are multiple flows or cuts, the format
+        is UTF-8 encoded CSV. If there is exactly one row and one column,
+        the data is written to file as-is, with raw bytes preserved. If the
+        path is prefixed with a "+", values are appended if there is an
+        existing file.
+        `,
+			want: `Save cuts to file. If there are multiple flows or cuts, the format is
+UTF-8 encoded CSV. If there is exactly one row and one column, the
+data is written to file as-is, with raw bytes preserved. If the path
+is prefixed with a "+", values are appended if there is an existing
+file.`,
+		},
+		"success: first line excluded from margin": {
+			in:   "first\n        second\n            third\n",
+			want: "first second     third",
+		},
+		"success: short blank line": {
+			in:   "first\n        second\n  \n        third\n",
+			want: "first second  third",
+		},
+		"success: excess blank line indentation": {
+			in:   "first\n        second\n          \n        third\n",
+			want: "first second    third",
+		},
+		"success: tab indentation": {
+			in:   "first\n\tsecond\n        third\n",
+			want: "first second third",
+		},
+		"success: internal tabs before dedent": {
+			in:   "first\n\tvalue\twith tabs\n        next\n",
+			want: "first value   with tabs next",
+		},
 		"success: short": {
 			in:   "  cmd1 help\n",
 			want: "cmd1 help",
@@ -587,7 +638,7 @@ func TestHelpWrapping(t *testing.T) {
 		},
 		"success: indented lines": {
 			in:   "\n        Replay flows from a server.\n\n        Every flow is replayed in turn;\n            an indented continuation line keeps its leading spaces as part of the text.\n    ",
-			want: "Replay flows from a server.          Every flow is replayed in turn;\nan indented continuation line keeps its leading spaces as part of the\ntext.",
+			want: "Replay flows from a server.  Every flow is replayed in turn;     an\nindented continuation line keeps its leading spaces as part of the\ntext.",
 		},
 		"success: tabs and hyphens": {
 			in:   "Mark flows.\tA well-known, mode-specific marker--the default--is used when no marker-name-that-is-rather-long-indeed is given.",

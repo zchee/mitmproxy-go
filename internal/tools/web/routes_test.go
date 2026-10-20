@@ -377,6 +377,24 @@ func TestWebRoutes(t *testing.T) {
 				if got["set"]["help"] == "" {
 					t.Fatal("set command has no help")
 				}
+				want := map[string]map[string]any{
+					"flow.resume": {
+						"help":           "Resume flows if they are intercepted.",
+						"parameters":     []any{map[string]any{"name": "flows", "type": "flow[]", "kind": "POSITIONAL_OR_KEYWORD"}},
+						"return_type":    nil,
+						"signature_help": "flow.resume flows",
+					},
+					"flow.set.options": {
+						"help":           nil,
+						"parameters":     []any{},
+						"return_type":    "str[]",
+						"signature_help": "flow.set.options  -> str[]",
+					},
+				}
+				actual := map[string]map[string]any{"flow.resume": got["flow.resume"], "flow.set.options": got["flow.set.options"]}
+				if diff := gocmp.Diff(want, actual); diff != "" {
+					t.Fatalf("command descriptions (-want +got):\n%s", diff)
+				}
 			}},
 			"test_command_execute": {func(t *testing.T, h *routeHarness) {
 				for path, want := range map[string]string{"unknown": `{"error":"Unknown command: unknown"}`, "commands.history.get": `{"value":[]}`} {

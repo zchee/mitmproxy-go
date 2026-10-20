@@ -262,7 +262,11 @@ func (a *application) serve(w http.ResponseWriter, r *http.Request, name string,
 				if cmd.Return != nil {
 					returnType = cmd.Return.Display()
 				}
-				values[commandName] = map[string]any{"help": cmd.Help, "parameters": parameters, "return_type": returnType, "signature_help": cmd.SignatureHelp()}
+				var help any
+				if cmd.Help != "" {
+					help = cmd.Help
+				}
+				values[commandName] = map[string]any{"help": help, "parameters": parameters, "return_type": returnType, "signature_help": cmd.SignatureHelp()}
 			}
 			response = values
 		case "command_execute":

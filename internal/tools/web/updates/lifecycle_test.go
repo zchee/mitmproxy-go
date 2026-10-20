@@ -150,6 +150,7 @@ func TestWebUpdateLifecycle(t *testing.T) {
 				t.Fatalf("closed hub admitted HTTP upgrade: %d", status)
 			}
 		}},
+		"peer_close_while_data_is_pending":  {run: testPendingPeerClose},
 		"shutdown_during_inbound_fragments": {run: testInboundAbort},
 		"missing_dependencies_fail_fast": {run: func(t *testing.T) {
 			if h, err := New(t.Context(), Config{}); h != nil || err == nil {
@@ -160,6 +161,37 @@ func TestWebUpdateLifecycle(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, tt.run)
 	}
+}
+
+func testPendingPeerClose(t *testing.T) {
+	f := newFixture(t, nil)
+	p := f.connect(t)
+	c := onlyClient(t, f)
+	item := testflow.TFlow()
+	item.ID = "closing"
+	if err := f.m.Addons.Trigger(t.Context(), addon.RequestHeadersHook{Flow: item}); err != nil {
+		t.Fatal(err)
+	}
+	body := gows.AppendCloseBody(nil, gows.CloseNormalClosure, nil)
+	if err := p.ws.WriteFrame(gows.OpcodeClose, true, body, false); err != nil {
+		t.Fatal(err)
+	}
+	seen := 0
+	for {
+		frame := p.frame(t)
+		if frame.Header.Opcode == gows.OpcodeClose {
+			closed, err := gows.ParseClose(frame.Payload)
+			if err != nil || closed.Code != gows.CloseNormalClosure {
+				t.Fatal("peer Close was not answered")
+			}
+			break
+		}
+		seen++
+		if seen > 1 || frame.Header.Opcode != gows.OpcodeText {
+			t.Fatal("unexpected data/control during close exchange")
+		}
+	}
+	await(t, c.done)
 }
 
 func testInboundAbort(t *testing.T) {

@@ -35,6 +35,7 @@ type client struct {
 	wake            chan struct{}
 	terminalReady   chan struct{}
 	done            chan struct{}
+	readStopped     chan struct{}
 	mu              sync.Mutex
 	readMu          sync.Mutex // Extends borrowed-buffer lifetime through copying.
 	terminal        bool
@@ -54,7 +55,7 @@ type client struct {
 }
 
 func newClient(h *Hub, ws *gows.Conn) *client {
-	return &client{hub: h, ws: ws, queue: make(chan []byte, queueCapacity), wake: make(chan struct{}, 1), terminalReady: make(chan struct{}), done: make(chan struct{}), filters: make(map[string]filter.Expr)}
+	return &client{hub: h, ws: ws, queue: make(chan []byte, queueCapacity), wake: make(chan struct{}, 1), terminalReady: make(chan struct{}), done: make(chan struct{}), readStopped: make(chan struct{}), filters: make(map[string]filter.Expr)}
 }
 
 func (c *client) signalLocked() {
@@ -116,7 +117,7 @@ func (c *client) run(ctx context.Context) {
 	reader := make(chan error, 1)
 	writer := make(chan error, 1)
 	var workers sync.WaitGroup
-	workers.Go(func() { reader <- c.read() })
+	workers.Go(func() { defer close(c.readStopped); reader <- c.read() })
 	workers.Go(func() { writer <- c.write() })
 	defer func() {
 		c.mu.Lock()
@@ -215,6 +216,18 @@ func (c *client) write() error {
 			// is retained during I/O; overflow may let this one frame finish.
 			c.mu.Unlock()
 			if err := c.ws.WriteFrame(gows.OpcodeText, true, message, false); err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					// The frame API can refuse data after receiving a peer Close
+					// without poisoning the writer. Let the reader publish that
+					// Close first; sticky transport errors still reject the reply.
+					<-c.readStopped
+					c.mu.Lock()
+					peerClosed := c.peerClosed && !c.finished
+					c.mu.Unlock()
+					if peerClosed {
+						continue
+					}
+				}
 				return err
 			}
 			c.mu.Lock()

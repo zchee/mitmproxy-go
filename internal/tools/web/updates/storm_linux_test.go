@@ -11,6 +11,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -67,8 +68,15 @@ func TestWebUpdateStorm(t *testing.T) {
 				err   error
 			}
 			readers := make(chan result, len(peers))
+			var readerWorkers sync.WaitGroup
+			t.Cleanup(func() {
+				for _, peer := range peers {
+					_ = peer.conn.SetReadDeadline(time.Now())
+				}
+				readerWorkers.Wait()
+			})
 			for _, peer := range peers {
-				go func() {
+				readerWorkers.Go(func() {
 					for index := range 10000 {
 						if err := peer.conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 							readers <- result{index, err}
@@ -105,7 +113,7 @@ func TestWebUpdateStorm(t *testing.T) {
 						}
 					}
 					readers <- result{count: 10000}
-				}()
+				})
 			}
 			start := time.Now()
 			do(t, f, func(ctx context.Context) error {

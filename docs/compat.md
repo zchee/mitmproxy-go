@@ -476,6 +476,25 @@ responses add no explicit `Cache-Control`; a `v` query parameter selects
 `max-age=315360000` and `Expires`. Static files remain unauthenticated, as upstream;
 index authentication belongs to the composed backend, not `IndexHandler` itself.
 
+### Authentication
+
+Upstream references in this section use the Python pin `3368a0a`.
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| Hash configuration and verification delegate to argon2/libargon2 (`py:mitmproxy/tools/web/webaddons.py:43-57,75-85` at `3368a0a`). | Accepts only Argon2i/Argon2id version 19, unique decimal `m`, `t`, `p`, `8*p <= m <= 262144` KiB, `t` 1–10, `p` 1–16, decoded salt 8–64 bytes, digest 16–64 bytes, and encoded PHC length at most 1024 bytes. Base64 must be canonical, standard and unpadded. Invalid configuration fails before derivation, without plaintext fallback (`internal/tools/web/webauth/phc.go:33-85`, `webauth.go:82-103`). | Bound configuration-driven decoding and derivation; these are deliberate restrictions on upstream hash acceptance. |
+| Verification has no equivalent process-wide concurrent-memory admission budget (`py:mitmproxy/tools/web/webaddons.py:75-85` at `3368a0a`). | Across addon instances and configuration generations, at most two derivations and 262144 KiB aggregate reserved memory are admitted. Exhaustion returns HTTP 503 without queueing or derivation, not an incorrect-password 403. Cancellation is checked before admission; an admitted derivation retains its reservation until it finishes (`internal/tools/web/webauth/phc.go:88-136`, `handler.go:93-100`). | Bound resource use without claiming that x/crypto derivation can be interrupted. |
+| Unsafe requests with a present `Sec-Fetch-Site` other than `same-origin` or `none` raise `tornado.httpclient.HTTPError(403)`, not the web error class (`py:mitmproxy/tools/web/app.py:284-290` at `3368a0a`); the pinned Tornado 6.5.10 runtime returns 500. | Returns 403 for `same-site`, `cross-site` and other disallowed values. XSRF is checked first; an absent header is permitted subject to XSRF (`internal/tools/web/webauth/handler.go:37-45`). | Enforce the intended refusal instead of reproducing the upstream error-class mismatch. |
+
+Reproduced on purpose (compatibility, not differences):
+
+| Upstream contract | Go contract | Reason |
+|---|---|---|
+| A valid signed session takes precedence; otherwise `Authorization: Bearer` precedes the `token` argument. Empty `web_password` generates a random token; the cookie name is `mitmproxy-auth-<web_port>` (`py:mitmproxy/tools/web/app.py:249-278`, `webaddons.py:26-28,43-85` at `3368a0a`). | Preserves that precedence, generated-token URL and port scope (`internal/tools/web/webauth/handler.go:77-117`, `webauth.go:82-131`). Cookies retain Tornado-v2 `y`/HMAC-SHA256 signing, 400-day browser expiry, default 31-day validation, HttpOnly and SameSite Strict (`cookie.go:17-77`). | Existing authentication behavior is unchanged; the PHC resource restrictions above are separate. |
+| XSRF uses the readable `_mitmproxy_xsrf` cookie and strict SameSite policy (`py:mitmproxy/tools/web/app.py:383-386,929-934` at `3368a0a`). | Unsafe methods require the decoded token from `_xsrf`, `X-XSRFToken` or `X-CSRFToken` to match the cookie; masked and legacy forms are decoded before comparison (`internal/tools/web/webauth/xsrf.go:19-57,88-133`, `handler.go:37-45`). | Preserve token semantics rather than compare randomized masked strings. |
+| Authenticated WebSocket upgrades retain pending auth and XSRF cookies (`py:mitmproxy/tools/web/app.py:263-269,383-386` at `3368a0a`). | `PrepareUpgrade` sets the pending cookies and the hub opts into gows `ForwardResponseHeaders`, retaining separate `Set-Cookie` fields on the real 101 (`internal/tools/web/webauth/handler.go:53-75`, `internal/tools/web/updates/hub.go:123-139`; integration contract `internal/tools/web/webauth/handshake_test.go:113-239`). | Use the response-header API rather than a synthetic handshake; existing gows callers remain unchanged unless they opt in. |
+| Upload handlers select the first file in wire order, or the exact raw body when no file exists (`py:mitmproxy/tools/web/app.py:325-334` at `3368a0a`). | A bounded scan records the first file before the standard storage parse; exact raw bytes are replayed through the wrapped handler, and owned temporary storage is cleaned afterward (`internal/tools/web/webauth/handler.go:124-179`). | Form parsing must not reorder file selection or consume the raw-body fallback. |
+
 ## internal/tools/cmdline
 
 | Upstream | Go | Reason |

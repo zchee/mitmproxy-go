@@ -23,7 +23,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.26.9
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	github.com/zchee/gows v0.1.0
+	github.com/zchee/gows v0.1.1-0.20261020002959-9de4995d09a4
 	go.uber.org/goleak v1.3.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.design/x/clipboard v0.11.0

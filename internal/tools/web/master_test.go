@@ -294,6 +294,7 @@ func TestWebMaster(t *testing.T) {
 			}
 			stopWebMaster(t, m, done)
 		}},
+		"early_shutdown": {run: testWebEarlyShutdown},
 		"run_once": {run: func(t *testing.T) {
 			m := newWebMaster(t)
 			done := startWebMaster(t, m)

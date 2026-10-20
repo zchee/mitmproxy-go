@@ -57,10 +57,16 @@ func (a *WebAddon) Running(ctx context.Context) error {
 		return errors.New("web addon requires an assembled master to run")
 	}
 	m := a.master
+	if m.stopping.Load() {
+		return nil
+	}
 	host, port := m.Options.Str("web_host"), m.Options.Int("web_port")
 	open, password := m.Options.Bool("web_open_browser"), m.Options.Str("web_password") != ""
 	_, err := addon.Concurrent(ctx, func(clean context.Context) error {
 		if err := m.startHTTP(clean, host, port); err != nil {
+			if m.stopping.Load() && errors.Is(err, context.Canceled) {
+				return nil
+			}
 			return &options.OptionsError{Msg: err.Error(), Err: err}
 		}
 		address := m.WebURL()
@@ -69,7 +75,7 @@ func (a *WebAddon) Running(ctx context.Context) error {
 			m.mu.Lock()
 			if m.closed {
 				m.mu.Unlock()
-				return context.Canceled
+				return nil
 			}
 			life := m.lifetime
 			m.browser.Go(func() {
@@ -82,9 +88,11 @@ func (a *WebAddon) Running(ctx context.Context) error {
 			})
 			m.mu.Unlock()
 		}
-		close(m.ready)
 		return nil
 	})
+	if err == nil && !m.stopping.Load() {
+		close(m.ready)
+	}
 	return err
 }
 
@@ -109,6 +117,9 @@ func (m *Master) startHTTP(ctx context.Context, host string, port int) error {
 	m.mu.Unlock()
 	if life == nil {
 		return errors.New("web master must be started with Run")
+	}
+	if err := life.Err(); err != nil {
+		return err
 	}
 	listener, err := new(net.ListenConfig).Listen(life, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {

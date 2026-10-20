@@ -93,6 +93,7 @@ type Master struct {
 	app        *application
 	ready      chan struct{}
 	running    atomic.Bool
+	stopping   atomic.Bool
 	runDone    chan struct{}
 	mu         sync.Mutex
 	closed     bool
@@ -202,14 +203,19 @@ func (m *Master) Run(ctx context.Context) (err error) {
 		return errors.New("web master is closed")
 	}
 	m.lifetime, m.cancel = context.WithCancel(ctx)
-	life := m.lifetime
+	if m.stopping.Load() {
+		m.cancel()
+	}
 	m.mu.Unlock()
-	return m.Master.Run(life)
+	// Frontend cancellation must not prevent the lifecycle from reacquiring
+	// dispatch to finish startup and deliver its normal shutdown result.
+	return m.Master.Run(ctx)
 }
 
 // Shutdown cancels frontend requests immediately and asks the addon lifecycle
 // to stop. It never waits for request handlers or browser work under dispatch.
 func (m *Master) Shutdown() {
+	m.stopping.Store(true)
 	m.mu.Lock()
 	if m.cancel != nil {
 		m.cancel()

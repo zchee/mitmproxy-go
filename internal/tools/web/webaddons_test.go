@@ -24,13 +24,14 @@ func TestWebOptions(t *testing.T) {
 		def     any
 		choices []string
 	}{
-		"web_columns":      {typ: options.TypeSeq, def: []string{"tls", "icon", "path", "method", "status", "size", "time"}},
-		"web_debug":        {typ: options.TypeBool, def: false},
-		"web_host":         {typ: options.TypeStr, def: "127.0.0.1"},
-		"web_open_browser": {typ: options.TypeBool, def: true},
-		"web_password":     {typ: options.TypeStr, def: ""},
-		"web_port":         {typ: options.TypeInt, def: 8081},
-		"web_theme":        {typ: options.TypeStr, def: "system", choices: []string{"system", "dark", "light"}},
+		"web_columns":       {typ: options.TypeSeq, def: []string{"tls", "icon", "path", "method", "status", "size", "time"}},
+		"web_debug":         {typ: options.TypeBool, def: false},
+		"web_host":          {typ: options.TypeStr, def: "127.0.0.1"},
+		"web_open_browser":  {typ: options.TypeBool, def: true},
+		"web_password":      {typ: options.TypeStr, def: ""},
+		"web_port":          {typ: options.TypeInt, def: 8081},
+		"web_static_viewer": {typ: options.TypeOptStr, def: new("")},
+		"web_theme":         {typ: options.TypeStr, def: "system", choices: []string{"system", "dark", "light"}},
 	}
 	registered := newWebMaster(t)
 	var names []string

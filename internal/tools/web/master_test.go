@@ -123,6 +123,34 @@ func TestWebMaster(t *testing.T) {
 		}
 	})
 	tests := map[string]struct{ run func(*testing.T) }{
+		"proxy_close_rebind": {run: func(t *testing.T) {
+			m := newWebMaster(t)
+			if err := m.Do(t.Context(), func(ctx context.Context) error {
+				return m.Options.Update(ctx, map[string]any{"server": true, "mode": []string{"regular@127.0.0.1:0"}})
+			}); err != nil {
+				t.Fatal(err)
+			}
+			done := startWebMaster(t, m)
+			addresses := m.ProxyServer.ListenAddrs()
+			if len(addresses) != 1 {
+				t.Fatalf("proxy was not listening: %v", addresses)
+			}
+			if err := m.Close(t.Context()); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			if err := <-done; err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			for _, address := range []string{addresses[0].String(), m.WebAddr().String()} {
+				listener, err := net.Listen("tcp4", address)
+				if err != nil {
+					t.Fatalf("owned listener still bound after Close returned: %s: %v", address, err)
+				}
+				if err := listener.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}},
 		"constructor": {run: func(t *testing.T) {
 			m := newWebMaster(t)
 			if m.WebAddr() != nil {
@@ -146,7 +174,7 @@ func TestWebMaster(t *testing.T) {
 			for _, a := range m.Addons.Chain() {
 				got = append(got, fmt.Sprintf("%T", a))
 			}
-			want := []string{"*core.Core", "*browser.Browser", "*block.Block", "*stripdnshttpsrecords.StripDNSHTTPSRecords", "*blocklist.BlockList", "*anticache.AntiCache", "*anticomp.AntiComp", "*clientplayback.ClientPlayback", "*commandhistory.Addon", "*comment.Comment", "*cut.Addon", "*disableh2c.DisableH2C", "*export.Addon", "*onboarding.Onboarding", "*proxyauth.ProxyAuth", "*proxyserver.ProxyServer", "*dnsresolver.DnsResolver", "*nextlayer.NextLayer", "*serverplayback.ServerPlayback", "*mapremote.MapRemote", "*maplocal.MapLocal", "*modifybody.ModifyBody", "*modifyheaders.ModifyHeaders", "*stickyauth.StickyAuth", "*stickycookie.StickyCookie", "*save.Save", "*savehar.Addon", "*tlsconfig.TLSConfig", "*upstreamauth.UpstreamAuth", "*updatealtsvc.UpdateAltSvc", "*web.WebAddon", "*webauth.WebAuth", "*intercept.Intercept", "*readfile.ReadFile", "*view.View", "*eventstore.EventStore", "*errorcheck.ErrorCheck"}
+			want := []string{"*core.Core", "*browser.Browser", "*block.Block", "*stripdnshttpsrecords.StripDNSHTTPSRecords", "*blocklist.BlockList", "*anticache.AntiCache", "*anticomp.AntiComp", "*clientplayback.ClientPlayback", "*commandhistory.Addon", "*comment.Comment", "*cut.Addon", "*disableh2c.DisableH2C", "*export.Addon", "*onboarding.Onboarding", "*proxyauth.ProxyAuth", "*proxyserver.ProxyServer", "*dnsresolver.DnsResolver", "*nextlayer.NextLayer", "*serverplayback.ServerPlayback", "*mapremote.MapRemote", "*maplocal.MapLocal", "*modifybody.ModifyBody", "*modifyheaders.ModifyHeaders", "*stickyauth.StickyAuth", "*stickycookie.StickyCookie", "*save.Save", "*savehar.Addon", "*tlsconfig.TLSConfig", "*upstreamauth.UpstreamAuth", "*updatealtsvc.UpdateAltSvc", "*web.WebAddon", "*webauth.WebAuth", "*intercept.Intercept", "*readfile.ReadFile", "*web.StaticViewer", "*view.View", "*eventstore.EventStore", "*errorcheck.ErrorCheck"}
 			if diff := gocmp.Diff(want, got); diff != "" {
 				t.Fatalf("addon order (-want +got):\n%s", diff)
 			}

@@ -60,9 +60,20 @@ func (a *WebAddon) Running(ctx context.Context) error {
 	if m.stopping.Load() {
 		return nil
 	}
+	// The HTTP ready signal must not race a pending startup export. The later
+	// StaticViewer running hook is idempotent and retains upstream addon order.
+	ctx, exportFailed, err := m.StaticViewer.start(ctx)
+	if err != nil {
+		return err
+	}
+	if exportFailed {
+		// Errorcheck handles the logged startup failure after the running chain;
+		// do not publish listener readiness for a failed offline export.
+		return nil
+	}
 	host, port := m.Options.Str("web_host"), m.Options.Int("web_port")
 	open, password := m.Options.Bool("web_open_browser"), m.Options.Str("web_password") != ""
-	_, err := addon.Concurrent(ctx, func(clean context.Context) error {
+	_, err = addon.Concurrent(ctx, func(clean context.Context) error {
 		if err := m.startHTTP(clean, host, port); err != nil {
 			if m.stopping.Load() && errors.Is(err, context.Canceled) {
 				return nil

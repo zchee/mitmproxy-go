@@ -66,6 +66,8 @@ type ProxyServer struct {
 	cancel               context.CancelFunc
 	wake                 chan struct{}
 	workers              sync.WaitGroup
+	stopped              chan struct{}
+	closeErr             error
 	localDaemon          struct {
 		sync.Mutex
 		redirector local.Redirector
@@ -86,7 +88,7 @@ func New(cfg proxy.Config) (*ProxyServer, error) {
 	// Configure carries a dispatch frame; asynchronous listener work must never
 	// inherit it. SetupServers links its outside-dispatch lifetime separately.
 	ctx, cancel := context.WithCancel(context.Background())
-	p := &ProxyServer{manager: cfg.Manager, opts: cfg.Options, connections: cfg.Connections, logger: logger, lifetime: ctx, cancel: cancel, wake: make(chan struct{}, 1)}
+	p := &ProxyServer{manager: cfg.Manager, opts: cfg.Options, connections: cfg.Connections, logger: logger, lifetime: ctx, cancel: cancel, wake: make(chan struct{}, 1), stopped: make(chan struct{})}
 	p.instances.Store(&serverState{})
 	p.presentationWake = make(chan struct{}, 1)
 	p.stateObservers = make(map[uint64]func(context.Context, ServerSnapshot))
@@ -201,6 +203,24 @@ func (p *ProxyServer) Done(context.Context) error {
 	return nil
 }
 
+// Close cancels listener work and waits for its worker to release all listeners.
+// Call it outside addon dispatch, after Done and before closing the manager.
+// It is idempotent and also handles a server that never reached SetupServers.
+// A canceled context returns ctx.Err without claiming the worker has joined;
+// later calls can finish the join. Accepted clients retain their existing
+// asynchronous teardown policy. Listener and redirector close errors are returned.
+func (p *ProxyServer) Close(ctx context.Context) error {
+	p.cancel()
+	p.connections.Close()
+	p.startOnce.Do(func() { close(p.stopped) })
+	select {
+	case <-p.stopped:
+		return p.closeErr
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // SetupServers applies the current listener configuration synchronously.
 // Listener close and bind failures are logged, as upstream does, so startup
 // error collection decides whether the proxy exits; the returned error is
@@ -216,6 +236,7 @@ func (p *ProxyServer) SetupServers(ctx context.Context) error {
 }
 
 func (p *ProxyServer) run() {
+	defer close(p.stopped)
 	defer func() {
 		p.updateMu.Lock()
 		defer func() {
@@ -226,6 +247,7 @@ func (p *ProxyServer) run() {
 		state := p.instances.Swap(&serverState{})
 		for _, instance := range state.instances {
 			if err := instance.Stop(); err != nil {
+				p.closeErr = errors.Join(p.closeErr, err)
 				p.logger.Error(err.Error())
 			}
 		}
@@ -236,6 +258,7 @@ func (p *ProxyServer) run() {
 		p.localDaemon.Unlock()
 		if redirector != nil {
 			if err := redirector.Close(); err != nil {
+				p.closeErr = errors.Join(p.closeErr, err)
 				p.logger.Error("Closing local redirector", "error", err)
 			}
 		}

@@ -115,11 +115,19 @@ func (o *Options) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 		return nil, true
 	}
 	key, ok := msg.(tea.KeyPressMsg)
+	name := key.String()
+	if action, isAction := msg.(contract.Action); isAction && action.Kind == "nav" {
+		name, ok = action.Value, true
+		if o.busy {
+			o.pending = append(o.pending, msg)
+			return nil, true
+		}
+	}
 	if !ok {
 		return nil, false
 	}
 	if o.editing {
-		switch key.String() {
+		switch name {
 		case "esc":
 			o.editing = false
 			o.err = nil
@@ -148,18 +156,24 @@ func (o *Options) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 		}
 		return nil, true
 	}
-	switch key.String() {
-	case "tab":
+	switch name {
+	case "tab", "next":
 		o.help = !o.help
-	case "home":
+	case "home", "start":
 		o.index = 0
 	case "end":
 		o.index = max(0, len(o.options)-1)
+	case "pgup", "pageup":
+		o.index = max(0, o.index-max(1, o.height-6))
+	case "pgdown", "pagedown":
+		o.index = min(max(0, len(o.options)-1), o.index+max(1, o.height-6))
+	case "left", "right":
+		return nil, true
 	case "up":
 		o.index = max(0, o.index-1)
 	case "down":
 		o.index = min(max(0, len(o.options)-1), o.index+1)
-	case "enter":
+	case "enter", "select":
 		if !o.help {
 			return o.Select(), true
 		}

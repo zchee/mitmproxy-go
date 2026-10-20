@@ -121,6 +121,10 @@ func (b *Bindings) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 		return nil, true
 	}
 	key, ok := msg.(tea.KeyPressMsg)
+	name := key.String()
+	if action, isAction := msg.(contract.Action); isAction && action.Kind == "nav" {
+		name, ok = action.Value, true
+	}
 	if !ok {
 		return nil, false
 	}
@@ -128,26 +132,32 @@ func (b *Bindings) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 		b.pending = append(b.pending, msg)
 		return nil, true
 	}
-	switch key.String() {
+	switch name {
 	case "up":
 		b.index = max(0, b.index-1)
 	case "down":
 		b.index = min(max(0, len(b.bindings)-1), b.index+1)
-	case "home":
+	case "home", "start":
 		b.index = 0
 	case "end":
 		b.index = max(0, len(b.bindings)-1)
-	case "tab":
+	case "pgup", "pageup":
+		b.index = max(0, b.index-max(1, b.height-6))
+	case "pgdown", "pagedown":
+		b.index = min(max(0, len(b.bindings)-1), b.index+max(1, b.height-6))
+	case "left", "right":
+		return nil, true
+	case "tab", "next":
 		b.help = !b.help
 	case "a":
 		return b.dispatch(commander.ChoicePrompt("Context", keymap.Contexts(), "console.command", []string{"console.key.bind", "{choice}"})), true
-	case "enter", "x", "d":
+	case "enter", "select", "x", "d":
 		binding, ok := b.Focused()
 		if !ok {
 			return nil, true
 		}
-		switch key.String() {
-		case "enter":
+		switch name {
+		case "enter", "select":
 			return b.dispatch(commander.CommandPrompt("console.key.bind", strings.Join(binding.Contexts, ","), binding.Key, binding.Command)), true
 		case "x":
 			return b.dispatch(commander.CommandPrompt(binding.Command)), true

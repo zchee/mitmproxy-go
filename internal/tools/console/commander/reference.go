@@ -79,6 +79,10 @@ func (r *Reference) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 		return nil, true
 	}
 	key, ok := msg.(tea.KeyPressMsg)
+	name := key.String()
+	if action, isAction := msg.(contract.Action); isAction && action.Kind == "nav" {
+		name, ok = action.Value, true
+	}
 	if !ok {
 		return nil, false
 	}
@@ -86,18 +90,24 @@ func (r *Reference) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 		r.pending = append(r.pending, msg)
 		return nil, true
 	}
-	switch key.String() {
+	switch name {
 	case "up":
 		r.index = max(0, r.index-1)
 	case "down":
 		r.index = min(max(0, len(r.commands)-1), r.index+1)
-	case "home":
+	case "home", "start":
 		r.index = 0
 	case "end":
 		r.index = max(0, len(r.commands)-1)
-	case "tab":
+	case "pgup", "pageup":
+		r.index = max(0, r.index-max(1, r.height-6))
+	case "pgdown", "pagedown":
+		r.index = min(max(0, len(r.commands)-1), r.index+max(1, r.height-6))
+	case "left", "right":
+		return nil, true
+	case "tab", "next":
 		r.help = !r.help
-	case "enter":
+	case "enter", "select":
 		if r.help || len(r.commands) == 0 {
 			return nil, true
 		}

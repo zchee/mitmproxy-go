@@ -6,6 +6,7 @@ package settings_test
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -67,15 +68,36 @@ func key(name string) tea.KeyPressMsg {
 	return tea.KeyPressMsg{Code: []rune(name)[0], Text: name}
 }
 
-func update(t *testing.T, widget contract.Widget, msg tea.Msg) {
+func update(t *testing.T, widget contract.Widget, msg tea.Msg) []contract.ErrorMsg {
 	t.Helper()
 	cmd, _ := widget.Update(msg)
-	for n := 0; cmd != nil; n++ {
-		if n > 100 {
+	return settle(t, widget, cmd)
+}
+
+func settle(t *testing.T, widget contract.Widget, cmd tea.Cmd) []contract.ErrorMsg {
+	t.Helper()
+	pending := []tea.Cmd{cmd}
+	var failures []contract.ErrorMsg
+	for n := 0; len(pending) > 0; n++ {
+		if n > 1000 {
 			t.Fatal("widget did not settle")
 		}
-		cmd, _ = widget.Update(cmd())
+		next := pending[0]
+		pending = pending[1:]
+		if next == nil {
+			continue
+		}
+		switch result := next().(type) {
+		case tea.BatchMsg:
+			pending = append(pending, result...)
+		case contract.ErrorMsg:
+			failures = append(failures, result)
+		default:
+			following, _ := widget.Update(result)
+			pending = append(pending, following)
+		}
 	}
+	return failures
 }
 
 func (f fixture) options(t *testing.T, name string) *settings.Options {
@@ -204,6 +226,15 @@ func TestConsoleOptionsEditor(t *testing.T) {
 				if f.m.Options.HasChanged("listen_host") || o.Error() != nil {
 					t.Fatalf("reset: %v", o.Error())
 				}
+				cmd, _ := o.Update(contract.Action{Kind: "nav", Value: "end"})
+				o.Update(contract.Action{Kind: "nav", Value: "start"})
+				settle(t, o, cmd)
+				state := f.snapshot(t)
+				want := slices.Min(f.m.Options.Keys())
+				window, _ := state.Control.Current("options", false)
+				if o.CurrentName() != want || window.Option != want || window.Index != 0 {
+					t.Fatalf("queued option navigation lost: local=%q authoritative=%+v want=%q", o.CurrentName(), window, want)
+				}
 			},
 			"load_save": func(t *testing.T) {
 				f := newFixture(t)
@@ -237,7 +268,10 @@ func TestConsoleOptionsEditor(t *testing.T) {
 				o := f.options(t, "listen_port")
 				update(t, o, key("enter"))
 				update(t, o, tea.PasteMsg{Content: "invalid"})
-				update(t, o, key("enter"))
+				failures := update(t, o, key("enter"))
+				if len(failures) != 1 || failures[0].Source != "options" || failures[0].Err == nil {
+					t.Fatalf("typed option failure not routed: %+v", failures)
+				}
 				if o.Error() == nil || !gocmp.Equal(f.m.Options.OptInt("listen_port"), before) {
 					t.Fatal("invalid integer was not refused atomically")
 				}
@@ -329,7 +363,7 @@ func TestConsoleKeybindings(t *testing.T) {
 			},
 			"home_end": func(t *testing.T) {
 				f, b := bindingFixture(t)
-				update(t, b, key("end"))
+				update(t, b, contract.Action{Kind: "nav", Value: "end"})
 				last, _ := b.Focused()
 				all := f.bridge.Keys.Snapshot()
 				if diff := gocmp.Diff(all[len(all)-1], last); diff != "" {
@@ -347,6 +381,20 @@ func TestConsoleKeybindings(t *testing.T) {
 				update(t, b, key("x"))
 				if f.snapshot(t).Control.Prompt != "" {
 					t.Fatal("help pane executed a binding")
+				}
+				window, _ := f.snapshot(t).Control.Current("keybindings", false)
+				if window.Binding != "" {
+					t.Fatal("help focus retained a binding identity")
+				}
+				update(t, b, contract.Action{Kind: "nav", Value: "next"})
+				cmd, _ := b.Update(contract.Action{Kind: "nav", Value: "end"})
+				b.Update(contract.Action{Kind: "nav", Value: "start"})
+				b.Update(contract.Action{Kind: "nav", Value: "down"})
+				settle(t, b, cmd)
+				focused, _ := b.Focused()
+				window, _ = f.snapshot(t).Control.Current("keybindings", false)
+				if !gocmp.Equal(focused, all[1]) || window.Binding != focused.Key+"@"+strings.Join(focused.Contexts, ",") {
+					t.Fatalf("queued binding identity was lost: focused=%+v control=%+v", focused, window)
 				}
 			},
 		}

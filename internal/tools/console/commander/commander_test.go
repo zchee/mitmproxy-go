@@ -66,15 +66,38 @@ func newFixture(t *testing.T, text string) fixture {
 func run(t *testing.T, model *commander.Model, msg tea.Msg) {
 	t.Helper()
 	cmd, _ := model.Update(msg)
-	for n := 0; cmd != nil; n++ {
-		if n > 100 {
-			t.Fatal("command response did not settle")
-		}
-		cmd, _ = model.Update(cmd())
+	if failures := settle(t, model, cmd); len(failures) > 0 {
+		t.Fatalf("unexpected widget failure: %+v", failures)
 	}
 	if err := model.Error(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func settle(t *testing.T, widget contract.Widget, cmd tea.Cmd) []contract.ErrorMsg {
+	t.Helper()
+	pending := []tea.Cmd{cmd}
+	var failures []contract.ErrorMsg
+	for n := 0; len(pending) > 0; n++ {
+		if n > 1000 {
+			t.Fatal("command response did not settle")
+		}
+		next := pending[0]
+		pending = pending[1:]
+		if next == nil {
+			continue
+		}
+		switch result := next().(type) {
+		case tea.BatchMsg:
+			pending = append(pending, result...)
+		case contract.ErrorMsg:
+			failures = append(failures, result)
+		default:
+			following, _ := widget.Update(result)
+			pending = append(pending, following)
+		}
+	}
+	return failures
 }
 
 func key(name string) tea.KeyPressMsg {
@@ -285,6 +308,23 @@ func TestConsoleCommander(t *testing.T) {
 				ref.SetSnapshot(contract.Snapshot{Commands: []contract.Command{{Name: "z", Signature: "z", Help: "last"}, {Name: "available", Signature: "available", Help: "choices"}}})
 				if !strings.Contains(ref.View(), "choices") {
 					t.Fatal("reference did not sort owned metadata")
+				}
+				if err := f.bridge.Dispatch(t.Context(), contract.Action{Kind: "push", Window: contract.Window{Name: "commands", Context: "commands"}}); err != nil {
+					t.Fatal(err)
+				}
+				cmd, _ := ref.Update(contract.Action{Kind: "nav", Value: "end"})
+				ref.Update(contract.Action{Kind: "nav", Value: "start"})
+				ref.Update(contract.Action{Kind: "nav", Value: "down"})
+				ref.Update(contract.Action{Kind: "nav", Value: "select"})
+				if failures := settle(t, ref, cmd); len(failures) > 0 {
+					t.Fatal(failures)
+				}
+				var state contract.State
+				if err := f.bridge.Do(t.Context(), func(context.Context) error { state = f.bridge.Control.State(); return nil }); err != nil {
+					t.Fatal(err)
+				}
+				if state.Prompt != "command" || state.Text != "z " {
+					t.Fatalf("queued reference selection lost: %+v", state)
 				}
 			},
 			"quoted_partial": func(t *testing.T) {

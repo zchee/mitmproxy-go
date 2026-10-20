@@ -18,16 +18,16 @@ import (
 // Buffer is a UTF-8 command line with a rune-indexed, grapheme-aligned cursor.
 // It owns no live registry or dispatch context.
 type Buffer struct {
-	text string
+	text   string
 	cursor int
-	cycle *completionCycle
+	cycle  *completionCycle
 }
 
 type completionCycle struct {
-	choices []string
+	choices        []string
 	prefix, suffix string
-	quote rune
-	position int
+	quote          rune
+	position       int
 }
 
 // NewBuffer returns an editable command line with its cursor at the end.
@@ -61,7 +61,9 @@ func (b *Buffer) SetCursor(cursor int) {
 	n := 0
 	for g.Next() {
 		n += len(g.Runes())
-		if n > cursor { break }
+		if n > cursor {
+			break
+		}
 		b.cursor = n
 	}
 	b.cycle = nil
@@ -76,13 +78,18 @@ func (b *Buffer) Right() {
 	n := 0
 	for g.Next() {
 		n += len(g.Runes())
-		if n > b.cursor { b.SetCursor(n); return }
+		if n > b.cursor {
+			b.SetCursor(n)
+			return
+		}
 	}
 }
 
 // Insert inserts text without executing it; a leading single space is ignored.
 func (b *Buffer) Insert(text string) {
-	if text == " " && strings.TrimSpace(b.BeforeCursor()) == "" { return }
+	if text == " " && strings.TrimSpace(b.BeforeCursor()) == "" {
+		return
+	}
 	runes := []rune(b.text)
 	text = strings.ToValidUTF8(text, "�")
 	b.text = string(runes[:b.cursor]) + text + string(runes[b.cursor:])
@@ -109,8 +116,11 @@ func (b *Buffer) Delete() {
 // WordLeft moves to the preceding space, matching the command editor's word motion.
 func (b *Buffer) WordLeft() {
 	before := []rune(b.BeforeCursor())
-	for i := len(before)-1; i >= 0; i-- {
-		if before[i] == ' ' { b.SetCursor(i); return }
+	for i := len(before) - 1; i >= 0; i-- {
+		if before[i] == ' ' {
+			b.SetCursor(i)
+			return
+		}
 	}
 	b.SetCursor(0)
 }
@@ -118,8 +128,11 @@ func (b *Buffer) WordLeft() {
 // WordRight moves to the next space or the end of the line.
 func (b *Buffer) WordRight() {
 	runes := []rune(b.text)
-	for i := b.cursor+1; i < len(runes); i++ {
-		if runes[i] == ' ' { b.SetCursor(i); return }
+	for i := b.cursor + 1; i < len(runes); i++ {
+		if runes[i] == ' ' {
+			b.SetCursor(i)
+			return
+		}
 	}
 	b.SetCursor(len(runes))
 }
@@ -128,8 +141,11 @@ func (b *Buffer) WordRight() {
 func (b *Buffer) DeleteWord() {
 	runes := []rune(b.text)
 	start := 0
-	for i := b.cursor-2; i >= 0; i-- {
-		if runes[i] == ' ' { start = i+1; break }
+	for i := b.cursor - 2; i >= 0; i-- {
+		if runes[i] == ' ' {
+			start = i + 1
+			break
+		}
 	}
 	b.text = string(runes[:start]) + string(runes[b.cursor:])
 	b.SetCursor(start)
@@ -158,24 +174,32 @@ func (b *Buffer) Complete(result contract.Completion, forward bool) {
 		}
 		choices := make([]string, 0, len(result.Choices))
 		for _, candidate := range result.Choices {
-			if strings.HasPrefix(candidate, prefix) { choices = append(choices, candidate) }
+			if strings.HasPrefix(candidate, prefix) {
+				choices = append(choices, candidate)
+			}
 		}
 		slices.Sort(choices)
-		if len(choices) == 0 { return }
+		if len(choices) == 0 {
+			return
+		}
 		b.cycle = &completionCycle{choices: choices, prefix: string(runes[:start]), suffix: string(runes[end:]), quote: quote, position: -1}
 	}
 	c := b.cycle
 	if c.position < 0 {
-		if forward { c.position = 0 } else { c.position = len(c.choices)-1 }
+		if forward {
+			c.position = 0
+		} else {
+			c.position = len(c.choices) - 1
+		}
 	} else if forward {
-		c.position = (c.position+1)%len(c.choices)
+		c.position = (c.position + 1) % len(c.choices)
 	} else {
-		c.position = (c.position+len(c.choices)-1)%len(c.choices)
+		c.position = (c.position + len(c.choices) - 1) % len(c.choices)
 	}
 	value := command.Quote(c.choices[c.position])
 	if c.quote != 0 && !strings.ContainsRune(c.choices[c.position], c.quote) {
-		value = string(c.quote)+c.choices[c.position]+string(c.quote)
+		value = string(c.quote) + c.choices[c.position] + string(c.quote)
 	}
-	b.text = c.prefix+value+c.suffix
-	b.cursor = utf8.RuneCountInString(c.prefix+value)
+	b.text = c.prefix + value + c.suffix
+	b.cursor = utf8.RuneCountInString(c.prefix + value)
 }

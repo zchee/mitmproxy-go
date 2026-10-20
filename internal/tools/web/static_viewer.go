@@ -103,18 +103,19 @@ func (s *StaticViewer) Configure(_ context.Context, updated map[string]struct{})
 // It must be called from a running hook; an export failure is logged so the
 // existing startup errorcheck remains responsible for the process exit.
 func (s *StaticViewer) Running(ctx context.Context) error {
-	_, err := s.start(ctx)
+	_, _, err := s.start(ctx)
 	return err
 }
 
-func (s *StaticViewer) start(ctx context.Context) (context.Context, error) {
+func (s *StaticViewer) start(ctx context.Context) (context.Context, bool, error) {
 	s.mu.Lock()
 	started := s.stopped != nil
 	s.mu.Unlock()
 	if started {
-		return ctx, nil
+		return ctx, false, nil
 	}
-	return addon.Concurrent(ctx, func(clean context.Context) error {
+	failed := false
+	next, err := addon.Concurrent(ctx, func(clean context.Context) error {
 		s.master.mu.Lock()
 		lifetime := s.master.lifetime
 		s.master.mu.Unlock()
@@ -131,9 +132,10 @@ func (s *StaticViewer) start(ctx context.Context) (context.Context, error) {
 		// Frontend Shutdown cancels the worker and this wait, but not the base
 		// lifecycle context needed by Concurrent to reacquire dispatch normally.
 		// Export failures are already logged for startup errorcheck.
-		_ = s.Wait(lifetime)
+		failed = s.Wait(lifetime) != nil
 		return clean.Err()
 	})
+	return next, failed, err
 }
 
 // Wait observes the latest captured request, including any superseding request.
@@ -191,9 +193,12 @@ func (s *StaticViewer) run(ctx context.Context) {
 				}
 				s.published[job.input] = true
 			}
-			if err != nil && job == s.latest && ctx.Err() == nil && !errors.Is(err, context.Canceled) {
+			shouldLog := err != nil && job == s.latest && ctx.Err() == nil && !errors.Is(err, context.Canceled)
+			s.mu.Unlock()
+			if shouldLog {
 				s.master.logger.ErrorContext(ctx, "Static viewer export failed", "error", err)
 			}
+			s.mu.Lock()
 			job.err = err
 			close(job.done)
 			s.mu.Unlock()
@@ -351,6 +356,9 @@ func viewerFiles(ctx context.Context, flows []flow.Flow, definitions string) (ma
 			body := []byte("No content.")
 			pretty := contentviews.Result{Text: "No content.", SyntaxHighlight: "none", ViewName: "/", Description: ""}
 			if message != nil {
+				if message.RawContent == nil {
+					return nil, errors.New("static viewer cannot export missing message content")
+				}
 				body, err = message.Content()
 				if err != nil {
 					return nil, err

@@ -79,7 +79,7 @@ func newViewerExport(destination string, files map[string][]byte) (_ *viewerExpo
 	}
 	export.stage, err = parent.OpenRoot(export.name)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(err, parent.Remove(export.name))
 	}
 	export.marker, err = export.stage.OpenFile(viewerMarker, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {

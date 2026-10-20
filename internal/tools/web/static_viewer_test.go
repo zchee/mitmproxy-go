@@ -9,7 +9,6 @@ import (
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"errors"
-	"fmt"
 	"io/fs"
 	"maps"
 	"os"
@@ -232,6 +231,16 @@ func TestWebStaticViewer(t *testing.T) {
 							}
 						}
 					}
+				}
+				empty := testflow.TFlow()
+				empty.Request.SetContent([]byte{})
+				emptyFiles := viewerTestFiles(t, []flow.Flow{empty})
+				if len(emptyFiles["flows/"+empty.ID+"/request/content.data"]) != 0 {
+					t.Fatal("present empty body changed")
+				}
+				empty.Request.RawContent = nil
+				if _, err := viewerFiles(t.Context(), []flow.Flow{empty}, ""); err == nil {
+					t.Fatal("missing content was silently exported as an empty body")
 				}
 			}},
 			"test_static_viewer": {run: func(t *testing.T) {
@@ -510,6 +519,11 @@ func TestWebStaticViewer(t *testing.T) {
 			if err := m.StaticViewer.Wait(t.Context()); err == nil {
 				t.Fatal("startup observation lost the export failure")
 			}
+			select {
+			case <-m.Ready():
+				t.Fatal("failed startup export published Ready")
+			default:
+			}
 		}},
 		"runtime_failure": {run: func(t *testing.T) {
 			m := newWebMaster(t)
@@ -636,8 +650,5 @@ func viewerChild(t *testing.T, phase string) {
 	}
 	// Exit at a real process boundary without deferred cleanup. Parent recovery
 	// must distinguish incomplete hidden staging from a complete visible export.
-	if _, err := fmt.Fprintln(os.Stdout, e.name); err != nil {
-		t.Fatal(err)
-	}
 	os.Exit(0)
 }

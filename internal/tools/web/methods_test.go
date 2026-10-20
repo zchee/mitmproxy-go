@@ -23,6 +23,8 @@ import (
 )
 
 func TestWebRouteMethods(t *testing.T) {
+	t.Run("line_limits", testContentLineLimits)
+	t.Run("argument_order", testFirstRequestArgument)
 	t.Run("manifest", func(t *testing.T) {
 		tests := map[string]struct {
 			path    string

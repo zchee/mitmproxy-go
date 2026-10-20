@@ -505,13 +505,14 @@ func TestWebFlowJSON(t *testing.T) {
 }
 
 func FuzzWebJSON(f *testing.F) {
-	for _, seed := range []string{`{}`, `{"request":{"headers":[["x","a"],["x","b"]]}}`, `{"comment":"日本語"}`, `{"comment":"one","comment":"two"}`, `[`, "\xff"} {
+	for _, seed := range []string{`{}`, `{"request":{"headers":[["x","a"],["x","b"]]}}`, `{"comment":"日本語"}`, `{"comment":"one","comment":"two"}`, `[`, "\xff", "1_000", "9223372036854775808", "-1"} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, input string) {
 		if len(input) > 1<<16 {
 			return
 		}
+		_, _ = lineLimit(input)
 		request := httptest.NewRequestWithContext(t.Context(), "PUT", "/flows/42", strings.NewReader(input))
 		request.Header.Set("Content-Type", "application/json")
 		body, err := requestJSON(request)
@@ -523,27 +524,28 @@ func FuzzWebJSON(f *testing.F) {
 }
 
 func FuzzWebUpload(f *testing.F) {
-	for _, seed := range []string{"", "broken", "--boundary\r\nContent-Disposition: form-data; name=\"a\"; filename=\"a.txt\"\r\n\r\ndata\r\n--boundary--\r\n"} {
+	var valid bytes.Buffer
+	if err := flowio.NewWriter(&valid).Add(testflow.TFlow(testflow.WithResponse)); err != nil { f.Fatal(err) }
+	for _, seed := range []string{"", "broken", "--boundary\r\nContent-Disposition: form-data; name=\"a\"; filename=\"a.txt\"\r\n\r\ndata\r\n--boundary--\r\n", valid.String()} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, input string) {
-		if len(input) > 1<<16 {
-			return
-		}
+		if len(input) > 1<<16 { return }
 		reader := multipart.NewReader(strings.NewReader(input), "boundary")
 		for range 64 {
 			part, err := reader.NextPart()
-			if err != nil {
-				break
-			}
+			if err != nil { break }
 			_, _ = io.Copy(io.Discard, part)
 			_ = part.Close()
 		}
-		flowReader := flowio.NewReader(strings.NewReader(input))
-		for range 16 {
-			if _, err := flowReader.Next(); err != nil {
-				break
-			}
-		}
+		m := master.New(master.Config{})
+		t.Cleanup(func() { if err := m.Close(context.WithoutCancel(t.Context())); err != nil { t.Error(err) } })
+		v := view.New(m.Addons)
+		if err := m.Addons.Add(t.Context(), v); err != nil { t.Fatal(err) }
+		app := &application{master:m, view:v}
+		request := httptest.NewRequestWithContext(t.Context(), "POST", "/flows/dump", strings.NewReader(input))
+		response := httptest.NewRecorder()
+		_ = app.dumpFlows(response, request)
+		if response.Body.Len() != 0 { t.Fatalf("flow upload wrote an unexpected response: %q", response.Body.Bytes()) }
 	})
 }

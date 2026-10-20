@@ -394,6 +394,14 @@ func optionUpdate(body []byte) (map[string]any, error) {
 	return values, nil
 }
 
+func firstRequestArgument(r *http.Request, name string) (string, bool) {
+	// Tornado selects query values before body values for first-value access.
+	values := r.URL.Query()[name]
+	if len(values) == 0 { values = r.PostForm[name] }
+	if len(values) == 0 { return "", false }
+	return values[0], true
+}
+
 func (a *application) upload(r *http.Request) (io.ReadCloser, error) {
 	if a.firstFile != nil {
 		if file, ok := a.firstFile(r); ok {
@@ -428,9 +436,9 @@ func (a *application) dumpFlows(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	var expression filter.Expr
-	if values, ok := r.URL.Query()["filter"]; ok && len(values) > 0 {
+	if value, ok := firstRequestArgument(r, "filter"); ok {
 		var err error
-		expression, err = filter.Parse(values[0])
+		expression, err = filter.Parse(value)
 		if err != nil {
 			return apiError(400, "Invalid filter argument / regex")
 		}

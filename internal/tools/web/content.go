@@ -6,6 +6,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,22 @@ import (
 )
 
 var downloadFilename = regexp.MustCompile(`filename=([-\pL\pN_" .()]+)`)
+
+var decimalLineLimit = regexp.MustCompile(`^[+-]?[0-9](?:_?[0-9])*$`)
+
+func lineLimit(value string) (int, error) {
+	value = strings.Trim(value, " \t\n\r\v\f")
+	if !decimalLineLimit.MatchString(value) { return 0, fmt.Errorf("invalid content line limit") }
+	value = strings.ReplaceAll(value, "_", "")
+	digits := len(value)
+	if value[0] == '+' || value[0] == '-' { digits-- }
+	// Match the pinned Python runtime's decimal conversion guard.
+	if digits > 4300 { return 0, fmt.Errorf("content line limit exceeds the decimal digit guard") }
+	limit, err := strconv.Atoi(value)
+	// Any larger magnitude has identical cutoff semantics for a bounded body.
+	if errors.Is(err, strconv.ErrRange) { err = nil }
+	return limit, err
+}
 
 func (a *application) flowContent(w http.ResponseWriter, r *http.Request, name string, args []string) error {
 	var uploaded []byte
@@ -94,8 +111,8 @@ func (a *application) flowContent(w http.ResponseWriter, r *http.Request, name s
 		return err
 	}
 	limit := 0
-	if values := r.URL.Query()["lines"]; len(values) > 0 {
-		limit, err = strconv.Atoi(strings.TrimSpace(values[0]))
+	if value, ok := firstRequestArgument(r, "lines"); ok {
+		limit, err = lineLimit(value)
 		if err != nil {
 			return err
 		}
@@ -105,7 +122,8 @@ func (a *application) flowContent(w http.ResponseWriter, r *http.Request, name s
 		viewName = "auto"
 	}
 	metadata := contentviews.Metadata{Flow: snapshot, ProtobufDefinitions: definitions}
-	render := func(message any, fromClient *bool, timestamp *float64) map[string]any {
+	render := func(message any, fromClient *bool, timestamp *float64) (map[string]any, error) {
+		if limit < 0 { return nil, fmt.Errorf("content line limit must be positive") }
 		pretty := contentviews.PrettifyMessageWithMetadata(message, metadata, viewName, nil, limit)
 		value := map[string]any{"text": pretty.Text, "view_name": pretty.ViewName, "syntax_highlight": pretty.SyntaxHighlight, "description": pretty.Description}
 		if fromClient != nil {
@@ -117,14 +135,16 @@ func (a *application) flowContent(w http.ResponseWriter, r *http.Request, name s
 		if limit > 0 {
 			limit -= strings.Count(pretty.Text, "\n") + 1
 		}
-		return value
+		return value, nil
 	}
 	if args[1] != "messages" {
 		message, err := httpMessage(snapshot, args[1])
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, render(message, nil, nil))
+		value, err := render(message, nil, nil)
+		if err != nil { return err }
+		return writeJSON(w, value)
 	}
 	values := make([]map[string]any, 0)
 	bounded := limit > 0
@@ -134,21 +154,27 @@ func (a *application) flowContent(w http.ResponseWriter, r *http.Request, name s
 			return apiError(400, "This flow has no messages.")
 		}
 		for _, message := range f.WebSocket.Messages {
-			values = append(values, render(message, &message.FromClient, &message.Timestamp))
+			value, err := render(message, &message.FromClient, &message.Timestamp)
+			if err != nil { return err }
+			values = append(values, value)
 			if bounded && limit <= 0 {
 				break
 			}
 		}
 	case *flow.TCPFlow:
 		for _, message := range f.Messages {
-			values = append(values, render(message, &message.FromClient, &message.Timestamp))
+			value, err := render(message, &message.FromClient, &message.Timestamp)
+			if err != nil { return err }
+			values = append(values, value)
 			if bounded && limit <= 0 {
 				break
 			}
 		}
 	case *flow.UDPFlow:
 		for _, message := range f.Messages {
-			values = append(values, render(message, &message.FromClient, &message.Timestamp))
+			value, err := render(message, &message.FromClient, &message.Timestamp)
+			if err != nil { return err }
+			values = append(values, value)
 			if bounded && limit <= 0 {
 				break
 			}

@@ -17,9 +17,9 @@
 // waiting for it forever.
 //
 // Help text set with [WithHelp] is laid out as mitmproxy lays out a
-// command's docstring: surrounding whitespace removed, then re-wrapped to
-// 70 columns with Python's textwrap.wrap, which joins paragraphs and
-// indented lines into one run of text.
+// command's Python docstring: tabs expanded, common indentation after the
+// first line removed, surrounding whitespace stripped, then re-wrapped to
+// 70 columns with Python's textwrap.wrap.
 package command
 
 import (
@@ -104,11 +104,45 @@ type options struct {
 	defaults  map[string]any
 }
 
-// WithHelp sets the command's help text. Surrounding whitespace is removed
-// and the rest is re-wrapped to 70 columns, its lines joined by newlines, as
-// mitmproxy does with "\n".join(textwrap.wrap(doc.strip())).
+// WithHelp sets the command's help text, removing Python docstring indentation
+// before stripping surrounding whitespace and wrapping the text to 70 columns.
 func WithHelp(help string) Option {
-	return func(o *options) { o.help = strings.Join(textwrap.Wrap(strings.TrimSpace(help)), "\n") }
+	if strings.ContainsRune(help, '\t') {
+		var expanded strings.Builder
+		column := 0
+		for _, r := range help {
+			switch r {
+			case '\t':
+				spaces := 8 - column%8
+				expanded.WriteString(strings.Repeat(" ", spaces))
+				column += spaces
+			case '\n', '\r':
+				expanded.WriteRune(r)
+				column = 0
+			default:
+				expanded.WriteRune(r)
+				column++
+			}
+		}
+		help = expanded.String()
+	}
+	lines := strings.Split(help, "\n")
+	margin := len(help)
+	for _, line := range lines[1:] {
+		if text := strings.TrimLeft(line, " "); text != "" {
+			margin = min(margin, len(line)-len(text))
+		}
+	}
+	if margin == len(help) {
+		margin = 0
+	}
+	lines[0] = strings.TrimLeft(lines[0], " ")
+	for i := 1; i < len(lines); i++ {
+		indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
+		lines[i] = lines[i][min(margin, indent):]
+	}
+	help = strings.Join(textwrap.Wrap(strings.TrimSpace(strings.Join(lines, "\n"))), "\n")
+	return func(o *options) { o.help = help }
 }
 
 // WithParams names the command's parameters in order, excluding the leading

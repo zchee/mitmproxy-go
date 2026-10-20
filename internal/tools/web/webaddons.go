@@ -58,9 +58,9 @@ func (a *WebAddon) Running(ctx context.Context) error {
 	}
 	m := a.master
 	host, port := m.Options.Str("web_host"), m.Options.Int("web_port")
-	open, password, debug := m.Options.Bool("web_open_browser"), m.Options.Str("web_password") != "", m.Options.Bool("web_debug")
+	open, password := m.Options.Bool("web_open_browser"), m.Options.Str("web_password") != ""
 	_, err := addon.Concurrent(ctx, func(clean context.Context) error {
-		if err := m.startHTTP(clean, host, port, debug); err != nil {
+		if err := m.startHTTP(clean, host, port); err != nil {
 			return &options.OptionsError{Msg: err.Error(), Err: err}
 		}
 		address := m.WebURL()
@@ -89,18 +89,21 @@ func (a *WebAddon) Running(ctx context.Context) error {
 }
 
 // Done signals request and launcher cancellation without joining under dispatch.
-func (a *WebAddon) Done(context.Context) error {
+func (a *WebAddon) Done(ctx context.Context) error {
 	if a.master != nil {
 		a.master.mu.Lock()
 		if a.master.cancel != nil {
 			a.master.cancel()
 		}
 		a.master.mu.Unlock()
+		if a.master.hub != nil {
+			return a.master.hub.Done(ctx)
+		}
 	}
 	return nil
 }
 
-func (m *Master) startHTTP(ctx context.Context, host string, port int, debug bool) error {
+func (m *Master) startHTTP(ctx context.Context, host string, port int) error {
 	m.mu.Lock()
 	life := m.lifetime
 	m.mu.Unlock()
@@ -125,16 +128,7 @@ func (m *Master) startHTTP(ctx context.Context, host string, port int, debug boo
 			return errors.Join(err, listener.Close())
 		}
 	}
-	handler := m.Handler()
-	if debug {
-		next := handler
-		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Never include query strings, headers, bodies or listener snapshots.
-			m.logger.DebugContext(r.Context(), "Web request", "method", r.Method, "path", r.URL.Path)
-			next.ServeHTTP(w, r)
-		})
-	}
-	server := &http.Server{Handler: handler, BaseContext: func(net.Listener) context.Context { return life }}
+	server := &http.Server{Handler: m.Handler(), BaseContext: func(net.Listener) context.Context { return life }}
 	served := make(chan struct{})
 	m.mu.Lock()
 	if m.closed {

@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/addons/anticache"
 	"github.com/zchee/mitmproxy-go/addons/anticomp"
 	"github.com/zchee/mitmproxy-go/addons/block"
@@ -52,6 +53,7 @@ import (
 	"github.com/zchee/mitmproxy-go/addons/view"
 	"github.com/zchee/mitmproxy-go/internal/http1"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
+	"github.com/zchee/mitmproxy-go/internal/tools/web/updates"
 	"github.com/zchee/mitmproxy-go/internal/tools/web/webauth"
 	"github.com/zchee/mitmproxy-go/internal/version"
 	"github.com/zchee/mitmproxy-go/master"
@@ -86,19 +88,24 @@ type Master struct {
 	Events      *eventstore.EventStore
 	ProxyServer *proxyserver.ProxyServer
 
-	logger   *slog.Logger
-	auth     *webauth.WebAuth
-	app      *application
-	ready    chan struct{}
-	running  atomic.Bool
-	mu       sync.Mutex
-	closed   bool
-	lifetime context.Context
-	cancel   context.CancelFunc
-	server   *http.Server
-	addr     net.Addr
-	served   chan struct{}
-	browser  sync.WaitGroup
+	logger     *slog.Logger
+	auth       *webauth.WebAuth
+	app        *application
+	ready      chan struct{}
+	running    atomic.Bool
+	runDone    chan struct{}
+	mu         sync.Mutex
+	closed     bool
+	lifetime   context.Context
+	cancel     context.CancelFunc
+	server     *http.Server
+	addr       net.Addr
+	served     chan struct{}
+	browser    sync.WaitGroup
+	hub        *updates.Hub
+	eventLogs  *addon.LogHandler
+	closeMu    sync.Mutex
+	logsClosed bool
 }
 
 // logHandler is initialized before addon registration can emit any records.
@@ -113,10 +120,17 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 	}
 	handler := new(logHandler)
 	logger := slog.New(handler)
-	base := master.New(master.Config{Options: opts, Logger: logger})
-	m := &Master{Master: base, logger: logger, ready: make(chan struct{})}
+	var m *Master
+	base := master.New(master.Config{Options: opts, Logger: logger, BeforeClose: func(ctx context.Context) error { return m.closeFrontend(ctx) }})
+	m = &Master{Master: base, logger: logger, ready: make(chan struct{}), runDone: make(chan struct{})}
+	var err error
+	m.Events, err = eventstore.New()
+	if err != nil {
+		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
+	}
+	m.eventLogs = m.Events.LogHandler(base.Addons)
 	ec := errorcheck.New(errorcheck.Config{Stderr: cfg.Stderr})
-	handlers := []slog.Handler{base.LogHandler(), ec.LogHandler()}
+	handlers := []slog.Handler{base.LogHandler(), m.eventLogs, ec.LogHandler()}
 	var addons []any
 	if cfg.WithTermlog {
 		tl := termlog.New(opts, cfg.Stdout, m.ShutdownWithError)
@@ -126,14 +140,10 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 	handler.Handler = slog.NewMultiHandler(handlers...)
 	ps, err := proxyserver.New(proxy.Config{Manager: base.Addons, Options: opts, Connections: new(proxy.Connections), HTTPFidelity: new(http1.FidelityCounter), Logger: logger})
 	if err != nil {
-		return nil, errors.Join(err, base.Close(context.WithoutCancel(ctx)))
+		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
 	}
 	m.ProxyServer = ps
 	m.View = view.New(base.Addons)
-	m.Events, err = eventstore.New()
-	if err != nil {
-		return nil, errors.Join(err, base.Close(context.WithoutCancel(ctx)))
-	}
 	m.auth = webauth.New(opts)
 	addons = append(addons,
 		core.New(base.Addons), browser.New(opts, base.Addons), block.New(opts),
@@ -149,10 +159,15 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		m.View, m.Events, ec,
 	)
 	if err := base.Addons.Add(ctx, addons...); err != nil {
-		return nil, errors.Join(err, base.Close(context.WithoutCancel(ctx)))
+		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
 	}
 	m.app = &application{master: base, view: m.View, events: m.Events, proxyserver: ps}
 	m.app.useAuth(m.auth)
+	m.hub, err = updates.New(ctx, updates.Config{Master: base, View: m.View, Events: m.Events, Servers: ps, Auth: m.auth})
+	if err != nil {
+		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
+	}
+	m.app.updates = m.hub
 	return m, nil
 }
 
@@ -180,6 +195,7 @@ func (m *Master) Run(ctx context.Context) (err error) {
 	if !m.running.CompareAndSwap(false, true) {
 		return errors.New("web master already run")
 	}
+	defer close(m.runDone)
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
@@ -188,7 +204,6 @@ func (m *Master) Run(ctx context.Context) (err error) {
 	m.lifetime, m.cancel = context.WithCancel(ctx)
 	life := m.lifetime
 	m.mu.Unlock()
-	defer func() { err = errors.Join(err, m.Close(context.WithoutCancel(ctx))) }()
 	return m.Master.Run(life)
 }
 
@@ -216,6 +231,22 @@ func (m *Master) ShutdownWithError(err error) {
 // closure and is returned rather than being mistaken for a completed join.
 func (m *Master) Close(ctx context.Context) error {
 	m.Shutdown()
+	if m.running.Load() {
+		select {
+		case <-m.runDone:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return errors.Join(m.closeFrontend(ctx), m.Master.Close(ctx))
+}
+
+func (m *Master) closeFrontend(ctx context.Context) error {
+	m.closeMu.Lock()
+	defer m.closeMu.Unlock()
+	m.Shutdown()
+	drain, stop := context.WithTimeout(ctx, 5*time.Second)
+	defer stop()
 	m.mu.Lock()
 	m.closed = true
 	cancel, server, served := m.cancel, m.server, m.served
@@ -225,9 +256,7 @@ func (m *Master) Close(ctx context.Context) error {
 	}
 	var err error
 	if server != nil {
-		drain, stop := context.WithTimeout(ctx, 5*time.Second)
 		err = server.Shutdown(drain)
-		stop()
 		if err != nil {
 			err = errors.Join(err, server.Close())
 		}
@@ -235,10 +264,20 @@ func (m *Master) Close(ctx context.Context) error {
 	if served != nil {
 		select {
 		case <-served:
-		case <-ctx.Done():
-			return errors.Join(err, ctx.Err())
+		case <-drain.Done():
+			err = errors.Join(err, drain.Err())
 		}
 	}
+	if m.hub != nil {
+		err = errors.Join(err, m.hub.Close(drain))
+	}
 	m.browser.Wait()
-	return errors.Join(err, m.Master.Close(ctx))
+	if m.eventLogs != nil {
+		if !m.logsClosed {
+			err = errors.Join(err, m.Master.LogHandler().Flush(drain), m.eventLogs.Flush(drain))
+			m.logsClosed = true
+		}
+		err = errors.Join(err, m.eventLogs.Close(drain))
+	}
+	return err
 }

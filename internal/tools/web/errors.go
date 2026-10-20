@@ -5,6 +5,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -31,18 +33,61 @@ func (e *APIError) Error() string { return e.Message }
 
 func apiError(status int, message string) error { return &APIError{Status: status, Message: message} }
 
+type debugRequestKey struct{}
+
+func (a *application) writeError(w http.ResponseWriter, r *http.Request, err error) {
+	if _, api := errors.AsType[*APIError](err); api {
+		writeWebError(w, r, err)
+		return
+	}
+	enabled := false
+	if a.master != nil {
+		if readErr := a.master.Do(r.Context(), func(context.Context) error {
+			if a.master.Options.Has("web_debug") {
+				enabled = a.master.Options.Bool("web_debug")
+			}
+			return nil
+		}); readErr != nil {
+			slog.DebugContext(r.Context(), "Web debug setting unavailable", "error", readErr)
+		}
+	}
+	if enabled {
+		r = r.WithContext(context.WithValue(r.Context(), debugRequestKey{}, true))
+	}
+	writeWebError(w, r, err)
+}
+
 func writeWebError(w http.ResponseWriter, r *http.Request, err error) {
 	status := http.StatusInternalServerError
+	contentType := "text/html; charset=UTF-8"
 	var body string
+	api := false
 	if e, ok := errors.AsType[*APIError](err); ok {
+		api = true
 		status, body = e.Status, e.Message
 	} else {
 		slog.ErrorContext(r.Context(), "Web request failed", "error", err)
 	}
 	if body == "" {
-		body = fmt.Sprintf("<html><title>%d: %s</title><body>%d: %s</body></html>", status, http.StatusText(status), status, http.StatusText(status))
+		if enabled, _ := r.Context().Value(debugRequestKey{}).(bool); enabled && !api {
+			contentType = "text/plain; charset=UTF-8"
+			var stack strings.Builder
+			_, _ = fmt.Fprintf(&stack, "HTTP %d: %s\n", status, http.StatusText(status))
+			var pcs [64]uintptr
+			frames := runtime.CallersFrames(pcs[:runtime.Callers(2, pcs[:])])
+			for {
+				frame, more := frames.Next()
+				_, _ = fmt.Fprintf(&stack, "%s\n\t%s:%d\n", frame.Function, frame.File, frame.Line)
+				if !more {
+					break
+				}
+			}
+			body = stack.String()
+		} else {
+			body = fmt.Sprintf("<html><title>%d: %s</title><body>%d: %s</body></html>", status, http.StatusText(status), status, http.StatusText(status))
+		}
 	}
-	w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.Header().Del("Content-Disposition")
 	w.WriteHeader(status)

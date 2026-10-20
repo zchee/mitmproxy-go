@@ -4,7 +4,6 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	gocmp "github.com/google/go-cmp/cmp"
+	"github.com/zchee/gows"
 
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
@@ -87,6 +87,13 @@ func masterRequest(t *testing.T, m *Master, method, path, body, password string)
 	}
 	t.Cleanup(func() { _ = response.Body.Close() })
 	return response
+}
+
+type finalWebLog struct{ logger *slog.Logger }
+
+func (a *finalWebLog) Done(ctx context.Context) error {
+	a.logger.InfoContext(ctx, "final web lifecycle entry")
+	return nil
 }
 
 func TestWebMaster(t *testing.T) {
@@ -222,21 +229,70 @@ func TestWebMaster(t *testing.T) {
 				t.Fatal("HTTP request survived shutdown")
 			}
 		}},
-		"debug": {run: func(t *testing.T) {
+		"debug": {run: testWebDebug},
+		"done_log": {run: func(t *testing.T) {
 			m := newWebMaster(t)
-			var output bytes.Buffer
-			m.logger = slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug}))
-			if err := m.Do(t.Context(), func(ctx context.Context) error { return m.Options.Update(ctx, map[string]any{"web_debug": true}) }); err != nil {
+			if err := m.Addons.Add(t.Context(), &finalWebLog{logger: m.Logger()}); err != nil {
 				t.Fatal(err)
 			}
 			done := startWebMaster(t, m)
-			response := masterRequest(t, m, "GET", "/flows?private-marker=not-for-debug-logs", "", "master-test")
-			_, _ = io.Copy(io.Discard, response.Body)
-			_ = response.Body.Close()
-			stopWebMaster(t, m, done)
-			if !strings.Contains(output.String(), "Web request") || strings.Contains(output.String(), "not-for-debug-logs") || strings.Contains(output.String(), "master-test") {
-				t.Fatal("debug logging missing or included query/authentication data")
+			if err := m.Close(t.Context()); err != nil {
+				t.Fatal(err)
 			}
+			stopWebMaster(t, m, done)
+			if err := m.Do(t.Context(), func(context.Context) error {
+				found := 0
+				for _, record := range m.Events.Records() {
+					if strings.Contains(record.Entry.Msg, "add_log event has been deprecated") {
+						t.Fatal("built-in store emitted a legacy-hook warning")
+					}
+					if strings.HasSuffix(record.Entry.Msg, "final web lifecycle entry") {
+						found++
+					}
+				}
+				if found != 1 {
+					t.Fatalf("Done-time log entries after Close=%d want=1", found)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		"stream_shutdown": {run: func(t *testing.T) {
+			m := newWebMaster(t)
+			done := startWebMaster(t, m)
+			if err := m.eventLogs.Flush(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			p := openWebPeer(t, m.WebURL(), "master-test")
+			p.barrier(t)
+			m.Shutdown()
+			closed := false
+			for range 16 {
+				frame, err := p.ws.ReadFrame()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if frame.Header.Opcode == gows.OpcodeText {
+					continue
+				}
+				if frame.Header.Opcode != gows.OpcodeClose {
+					t.Fatalf("shutdown frame=%+v", frame.Header)
+				}
+				body, err := gows.ParseClose(frame.Payload)
+				if err != nil || body.Code != gows.CloseGoingAway {
+					t.Fatalf("shutdown close=%+v error=%v", body, err)
+				}
+				if err := p.ws.WriteFrame(gows.OpcodeClose, true, frame.Payload, false); err != nil {
+					t.Fatal(err)
+				}
+				closed = true
+				break
+			}
+			if !closed {
+				t.Fatal("owned stream did not send its shutdown close")
+			}
+			stopWebMaster(t, m, done)
 		}},
 		"run_once": {run: func(t *testing.T) {
 			m := newWebMaster(t)

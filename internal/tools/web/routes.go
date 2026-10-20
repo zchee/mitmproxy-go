@@ -44,6 +44,7 @@ type application struct {
 	proxyserver *proxyserver.ProxyServer
 	protect     func(http.Handler, bool) http.Handler
 	firstFile   func(*http.Request) (*multipart.FileHeader, bool)
+	updates     http.Handler
 }
 
 type webRoute struct {
@@ -55,6 +56,7 @@ type webRoute struct {
 var webRoutes = []webRoute{
 	{"index", regexp.MustCompile(`^/$`), "GET POST"},
 	{"filter_help", regexp.MustCompile(`^/filter-help(?:\.json)?$`), "GET"},
+	{"updates", regexp.MustCompile(`^/updates$`), "GET"},
 	{"commands", regexp.MustCompile(`^/commands(?:\.json)?$`), "GET"},
 	{"command_execute", regexp.MustCompile(`^/commands/([a-z.]+)$`), "POST"},
 	{"events", regexp.MustCompile(`^/events(?:\.json)?$`), "GET"},
@@ -83,7 +85,7 @@ func (a *application) handler() http.Handler {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if value := recover(); value != nil {
-				writeWebError(w, r, fmt.Errorf("web handler panic (%T)", value))
+				a.writeError(w, r, fmt.Errorf("web handler panic (%T)", value))
 			}
 		}()
 		for _, route := range webRoutes {
@@ -94,22 +96,26 @@ func (a *application) handler() http.Handler {
 			securityHeaders(w)
 			// Tornado does not derive HEAD from GET, and unimplemented methods are not auth-wrapped.
 			if !strings.Contains(" "+route.methods+" ", " "+r.Method+" ") {
-				writeWebError(w, r, apiError(405, ""))
+				a.writeError(w, r, apiError(405, ""))
+				return
+			}
+			if route.name == "updates" && a.updates != nil {
+				a.updates.ServeHTTP(w, r)
 				return
 			}
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if err := a.serve(w, r, route.name, captures[1:]); err != nil {
-					writeWebError(w, r, err)
+					a.writeError(w, r, err)
 				}
 			})
 			if a.protect == nil {
-				writeWebError(w, r, apiError(403, ""))
+				a.writeError(w, r, apiError(403, ""))
 				return
 			}
 			a.protect(handler, route.name == "index").ServeHTTP(w, r)
 			return
 		}
-		writeWebError(w, r, apiError(404, ""))
+		a.writeError(w, r, apiError(404, ""))
 	})
 	static := StaticHandler()
 	return withGzip(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +126,7 @@ func (a *application) handler() http.Handler {
 		}
 		// Reject noncanonical paths instead of ServeMux's automatic clean-path redirect.
 		if path.Clean(r.URL.Path) != r.URL.Path {
-			writeWebError(w, r, apiError(404, ""))
+			a.writeError(w, r, apiError(404, ""))
 			return
 		}
 		mux.ServeHTTP(w, r)

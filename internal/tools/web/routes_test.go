@@ -33,6 +33,7 @@ import (
 	"github.com/zchee/mitmproxy-go/flowio"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
+	"github.com/zchee/mitmproxy-go/internal/tools/web/updates"
 	"github.com/zchee/mitmproxy-go/internal/tools/web/webauth"
 	"github.com/zchee/mitmproxy-go/master"
 )
@@ -71,6 +72,11 @@ func newRouteHarness(t *testing.T, eventSize ...int) *routeHarness {
 		t.Fatal(err)
 	}
 	app.useAuth(auth)
+	hub, err := updates.New(t.Context(), updates.Config{Master: m, View: v, Events: events, Servers: ps, Auth: auth})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.updates = hub
 	if err := m.Do(t.Context(), func(ctx context.Context) error {
 		first := testflow.TFlow(testflow.WithResponse)
 		first.ID = "42"
@@ -133,6 +139,13 @@ func newRouteHarness(t *testing.T, eventSize ...int) *routeHarness {
 	if xsrf == "" {
 		t.Fatal("real login middleware did not issue an XSRF cookie")
 	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+		defer cancel()
+		if err := hub.Close(ctx); err != nil {
+			t.Error(err)
+		}
+	})
 	return &routeHarness{app: app, server: server, xsrf: xsrf}
 }
 

@@ -87,6 +87,7 @@ type heldModel struct {
 	once             sync.Once
 	entered, release chan struct{}
 	frames           chan contract.Snapshot
+	sizes            chan tea.WindowSizeMsg
 }
 
 func (m *heldModel) Init() tea.Cmd  { return m.model.Init() }
@@ -96,6 +97,9 @@ func (m *heldModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.once.Do(func() { close(m.entered); <-m.release })
 	}
 	_, cmd := m.model.Update(msg)
+	if _, ok := msg.(tea.WindowSizeMsg); ok {
+		m.sizes <- tea.WindowSizeMsg{Width: m.model.width, Height: m.model.height}
+	}
 	if snapshot, ok := msg.(contract.SnapshotMsg); ok && m.model.snapshot.Generation == snapshot.Snapshot.Generation {
 		m.frames <- m.model.snapshot
 	}
@@ -113,7 +117,7 @@ func TestConsoleBridge(t *testing.T) {
 				}
 				switch name {
 				case "update_blocked":
-					held := &heldModel{model: NewModel(b, nil), entered: make(chan struct{}), release: make(chan struct{}), frames: make(chan contract.Snapshot, 1)}
+					held := &heldModel{model: NewModel(b, nil), entered: make(chan struct{}), release: make(chan struct{}), frames: make(chan contract.Snapshot, 1), sizes: make(chan tea.WindowSizeMsg, 2)}
 					tm := teatest.NewTestModel(t, held, teatest.WithProgramOptions(tea.WithContext(b.Context())))
 					var releaseOnce sync.Once
 					t.Cleanup(func() {
@@ -121,6 +125,17 @@ func TestConsoleBridge(t *testing.T) {
 						mustConsole(t, tm.Quit())
 						tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
 					})
+					// Both startup resizes must precede manually admitted snapshots.
+					for range 2 {
+						select {
+						case size := <-held.sizes:
+							if size.Width != 80 || size.Height != 24 {
+								t.Fatalf("unexpected startup size: %+v", size)
+							}
+						case <-time.After(5 * time.Second):
+							t.Fatal("startup resize was not installed before watchdog")
+						}
+					}
 					go b.drain(tm.Send)
 					ticks <- time.Unix(1, 0)
 					awaitConsole(t, held.entered)

@@ -213,6 +213,19 @@ func TestMitmwebBrowser(t *testing.T) {
 			if err := chromedp.Do(browser, chromedp.Navigate("about:blank")); err != nil {
 				t.Fatalf("sandbox-capable Chrome launch: %v", err)
 			}
+			sandboxContext, cancelSandbox := context.WithTimeout(browser, 30*time.Second)
+			defer cancelSandbox()
+			if err := chromedp.Do(sandboxContext, chromedp.Navigate("chrome://sandbox")); err != nil {
+				t.Fatalf("navigate certifying browser sandbox status: %v", err)
+			}
+			sandboxStatus, err := chromedp.Run(sandboxContext, chromedp.Evaluate[string](`document.body.innerText`))
+			if err != nil {
+				t.Fatalf("read certifying browser sandbox status: %v", err)
+			}
+			write("sandbox-status.txt", []byte(sandboxStatus+"\n"))
+			if !strings.Contains(sandboxStatus, "You are adequately sandboxed.") {
+				t.Fatalf("certifying browser is not adequately sandboxed: %s", sandboxStatus)
+			}
 			eventsContext, cancelEvents := context.WithCancel(browser)
 			var workers sync.WaitGroup
 			var evidenceMu sync.Mutex

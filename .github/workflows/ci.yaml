@@ -210,6 +210,27 @@ jobs:
               exit 1
               ;;
           esac
+          mkdir -m 0700 "$RUNTIME/negative-nohelper-profile" "$RUNTIME/negative-unprivileged-profile"
+          set +e
+          timeout --signal=QUIT --kill-after=15s 1m /usr/bin/env -u CHROME_DEVEL_SANDBOX "$CHROME" --headless --disable-gpu --no-first-run --no-default-browser-check --user-data-dir="$RUNTIME/negative-nohelper-profile" --dump-dom about:blank >| "$OUT/sandbox-negative-nohelper.stdout" 2>| "$OUT/sandbox-negative-nohelper.stderr"
+          result=$?
+          set -e
+          printf '%s\n' "$result" >| "$OUT/sandbox-negative-nohelper.exit"
+          if (( result == 0 )); then
+            printf 'Chrome unexpectedly launched without a usable sandbox helper\n' >&2
+            exit 1
+          fi
+          grep -F 'No usable sandbox' "$OUT/sandbox-negative-nohelper.stderr"
+          set +e
+          timeout --signal=QUIT --kill-after=15s 1m /usr/bin/env CHROME_DEVEL_SANDBOX="$SANDBOX" "$CHROME" --headless --disable-gpu --no-first-run --no-default-browser-check --user-data-dir="$RUNTIME/negative-unprivileged-profile" --dump-dom about:blank >| "$OUT/sandbox-negative-unprivileged.stdout" 2>| "$OUT/sandbox-negative-unprivileged.stderr"
+          result=$?
+          set -e
+          printf '%s\n' "$result" >| "$OUT/sandbox-negative-unprivileged.exit"
+          if (( result == 0 )); then
+            printf 'Chrome unexpectedly launched with an unprivileged sandbox helper\n' >&2
+            exit 1
+          fi
+          grep -F 'The SUID sandbox helper binary was found, but is not configured correctly' "$OUT/sandbox-negative-unprivileged.stderr"
           sudo -n chown root:root -- "$SANDBOX"
           sudo -n chmod 4755 -- "$SANDBOX"
           ls -l "$SANDBOX" >| "$OUT/sandbox-helper.after.txt"
@@ -217,12 +238,9 @@ jobs:
           sha256sum --check "$OUT/sandbox-helper.sha256"
           CHROME_DEVEL_SANDBOX="$SANDBOX"
           export CHROME_DEVEL_SANDBOX
-          mkdir -m 0700 "$RUNTIME/profile" "$RUNTIME/sandbox-profile"
+          mkdir -m 0700 "$RUNTIME/profile"
           timeout --signal=QUIT --kill-after=15s 1m "$CHROME" --headless --disable-gpu --no-first-run --no-default-browser-check --user-data-dir="$RUNTIME/profile" --dump-dom about:blank >| "$OUT/sandbox-dom.html" 2>| "$OUT/sandbox.stderr"
           grep -F '<html>' "$OUT/sandbox-dom.html"
-          timeout --signal=QUIT --kill-after=15s 1m "$CHROME" --headless --disable-gpu --no-first-run --no-default-browser-check --user-data-dir="$RUNTIME/sandbox-profile" --dump-dom chrome://sandbox >| "$OUT/sandbox-status.html" 2>| "$OUT/sandbox-status.stderr"
-          grep -F 'You are adequately sandboxed.' "$OUT/sandbox-status.html"
-          grep -iE 'suid|namespace|seccomp' "$OUT/sandbox-status.html" >| "$OUT/sandbox-status.rows.txt"
           printf 'MITMPROXY_TEST_CHROME=%s\nMITMPROXY_TEST_CHROME_SHA256=%s\nCHROME_DEVEL_SANDBOX=%s\n' "$CHROME" "$DIGEST" "$SANDBOX" >> "$GITHUB_ENV"
           finish 0
       - name: Verify embedded mitmweb browser acceptance

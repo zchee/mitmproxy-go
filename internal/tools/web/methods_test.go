@@ -39,6 +39,7 @@ func TestWebRouteMethods(t *testing.T) {
 		}{
 			"index":             {path: "/", methods: map[string]string{"GET": "", "POST": ""}, shape: "html"},
 			"filter_help":       {path: "/filter-help", methods: map[string]string{"GET": ""}, alias: true, shape: "object"},
+			"updates":           {path: "/updates", methods: map[string]string{"GET": ""}, shape: "stream"},
 			"commands":          {path: "/commands", methods: map[string]string{"GET": ""}, alias: true, shape: "object"},
 			"command_execute":   {path: "/commands/commands.history.get", methods: map[string]string{"POST": `{"arguments":[]}`}, shape: "object"},
 			"events":            {path: "/events", methods: map[string]string{"GET": ""}, alias: true, shape: "array"},
@@ -83,6 +84,10 @@ func TestWebRouteMethods(t *testing.T) {
 							if response.StatusCode != 405 || response.ContentLength != 87 || string(body) != want || response.Header.Get("Content-Type") != "text/html; charset=UTF-8" {
 								t.Fatalf("%s %s unsupported: status=%d headers=%v body=%q", method, path, response.StatusCode, response.Header, body)
 							}
+							continue
+						}
+						if name == "updates" {
+							testWebStreamRoute(t, h)
 							continue
 						}
 						if name == "flow_replay" {
@@ -270,6 +275,9 @@ func TestWebRouteAuth(t *testing.T) {
 	t.Run("upstream", func(t *testing.T) {
 		t.Run("test_all_handlers_have_auth", func(t *testing.T) {
 			h := newRouteHarness(t)
+			if len(webRoutes) != 24 || h.app.updates == nil {
+				t.Fatal("incomplete authenticated route surface")
+			}
 			for _, route := range webRoutes {
 				if route.pattern == nil || route.methods == "" || h.app.protect == nil {
 					t.Fatalf("route lacks authentication boundary: %s", route.name)
@@ -278,7 +286,7 @@ func TestWebRouteAuth(t *testing.T) {
 		})
 	})
 	tests := map[string]struct{ method, path string }{
-		"index": {"GET", "/"}, "filter_help": {"GET", "/filter-help"}, "commands": {"GET", "/commands"},
+		"index": {"GET", "/"}, "filter_help": {"GET", "/filter-help"}, "updates": {"GET", "/updates"}, "commands": {"GET", "/commands"},
 		"command_execute": {"POST", "/commands/unknown"}, "flows": {"GET", "/flows"}, "flows_dump": {"GET", "/flows/dump"},
 		"flows_resume": {"POST", "/flows/resume"}, "flows_kill": {"POST", "/flows/kill"}, "flow": {"PUT", "/flows/42"},
 		"flow_resume": {"POST", "/flows/42/resume"}, "flow_kill": {"POST", "/flows/42/kill"}, "flow_duplicate": {"POST", "/flows/42/duplicate"},

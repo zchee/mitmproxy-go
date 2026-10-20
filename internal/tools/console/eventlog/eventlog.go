@@ -23,27 +23,32 @@ type visibleRow struct {
 	index, first, height int
 }
 
-// Model owns only the current viewport and stable selection, not an event history.
+// Model retains the latest bounded record snapshot and stable selection, never a history.
 type Model struct {
-	ctx                                context.Context
-	host                               contract.Host
-	viewport                           viewport.Model
-	rows                               []visibleRow
-	selected                           uint64
-	index, total, offset, controlIndex int
-	lastID                             uint64
-	mouse                              bool
+	ctx                  context.Context
+	host                 contract.Host
+	viewport             viewport.Model
+	rows                 []visibleRow
+	records              []eventstore.Record
+	palette              style.Palette
+	selected             uint64
+	index, total, offset int
+	lastID               uint64
+	mouse                bool
 }
 
 // New constructs an event-log widget using the frontend's lifetime context.
 func New(ctx context.Context, host contract.Host) *Model {
-	return &Model{ctx: ctx, host: host, viewport: viewport.New(), controlIndex: -1}
+	return &Model{ctx: ctx, host: host, viewport: viewport.New()}
 }
 
 // Resize sets the physical viewport dimensions; the next snapshot reprojects rows.
 func (m *Model) Resize(width, height int) {
 	m.viewport.SetWidth(max(0, width))
 	m.viewport.SetHeight(max(0, height))
+	if len(m.records) > 0 {
+		m.render()
+	}
 }
 
 // SetSnapshot filters owned records and preserves selection through ring eviction.
@@ -72,6 +77,7 @@ func (m *Model) SetSnapshot(snapshot contract.Snapshot) {
 			records = append(records, record)
 		}
 	}
+	m.records, m.palette = records, palette
 	m.total = len(records)
 	m.rows = m.rows[:0]
 	if m.total == 0 {
@@ -80,34 +86,37 @@ func (m *Model) SetSnapshot(snapshot contract.Snapshot) {
 		return
 	}
 	latest := records[len(records)-1].ID
-	window, _ := snapshot.Control.Current("eventlog", false)
-	if window.Index != m.controlIndex {
-		m.index = min(max(window.Index, 0), m.total-1)
-	} else if index := slices.IndexFunc(records, func(record eventstore.Record) bool { return record.ID == m.selected }); index >= 0 {
+	if index := slices.IndexFunc(records, func(record eventstore.Record) bool { return record.ID == m.selected }); index >= 0 {
 		m.index = index
 	} else {
 		m.index = min(m.index, m.total-1)
 	}
-	m.controlIndex = window.Index
 	if follow && latest > m.lastID {
 		m.index = m.total - 1
 	}
 	m.lastID = latest
 	m.selected = records[m.index].ID
+	if follow && m.index == m.total-1 {
+		m.offset = max(0, m.index-m.viewport.Height()+1)
+	}
+	m.render()
+}
+
+func (m *Model) render() {
 	if m.viewport.Width() == 0 || m.viewport.Height() == 0 {
 		m.viewport.SetContent("")
 		return
 	}
 	m.offset = min(max(m.offset, 0), m.index)
-	if m.index >= m.offset+m.viewport.Height() || follow && m.index == m.total-1 {
+	if m.index >= m.offset+m.viewport.Height() {
 		m.offset = max(0, m.index-m.viewport.Height()+1)
 	}
 	// A record can wrap to several physical rows. Advancing the origin until the
 	// selection fits costs at most two viewport-sized groups of formatted records.
-	lines := m.project(records, palette)
+	lines := m.project(m.records, m.palette)
 	if !slices.ContainsFunc(m.rows, func(row visibleRow) bool { return row.id == m.selected }) {
 		m.offset = m.index
-		lines = m.project(records, palette)
+		lines = m.project(m.records, m.palette)
 	}
 	m.viewport.SetContent(strings.Join(lines, "\n"))
 	m.viewport.SetYOffset(0)
@@ -150,22 +159,28 @@ func levelTier(level string) int {
 // Update handles local navigation and leaves other keys to the console keymap.
 // Mouse coordinates are relative to this widget's body, after pane/header offsets.
 func (m *Model) Update(message tea.Msg) (tea.Cmd, bool) {
-	index, command := m.index, ""
+	index, direction := m.index, ""
+	accepted := false
 	switch message := message.(type) {
+	case contract.Action:
+		if message.Kind != "nav" {
+			return nil, false
+		}
+		direction, accepted = message.Value, true
 	case tea.KeyPressMsg:
 		switch message.String() {
 		case "up":
-			command = "console.nav.up"
+			direction = "up"
 		case "down":
-			command = "console.nav.down"
+			direction = "down"
 		case "pgup":
-			command = "console.nav.pageup"
+			direction = "pageup"
 		case "pgdown":
-			command = "console.nav.pagedown"
+			direction = "pagedown"
 		case "home":
-			command = "console.nav.start"
+			direction = "start"
 		case "end":
-			command = "console.nav.end"
+			direction = "end"
 		default:
 			return nil, false
 		}
@@ -189,9 +204,9 @@ func (m *Model) Update(message tea.Msg) (tea.Cmd, bool) {
 		}
 		switch message.Button {
 		case tea.MouseWheelUp:
-			command = "console.nav.up"
+			direction = "up"
 		case tea.MouseWheelDown:
-			command = "console.nav.down"
+			direction = "down"
 		default:
 			return nil, false
 		}
@@ -201,17 +216,32 @@ func (m *Model) Update(message tea.Msg) (tea.Cmd, bool) {
 	if m.total == 0 {
 		return nil, true
 	}
-	index = min(max(index, 0), m.total-1)
-	return func() tea.Msg {
-		if command != "" {
-			_, err := m.host.Execute(m.ctx, command)
-			return err
-		}
-		if err := m.host.Dispatch(m.ctx, contract.Action{Kind: "selection", Value: "eventlog", Index: index}); err != nil {
-			return err
-		}
-		return nil
-	}, true
+	if !accepted && direction != "" {
+		return func() tea.Msg {
+			if err := m.host.Dispatch(m.ctx, contract.Action{Kind: "nav", Value: direction}); err != nil {
+				return contract.ErrorMsg{Source: "eventlog", Err: err}
+			}
+			return nil
+		}, true
+	}
+	switch direction {
+	case "up":
+		index--
+	case "down":
+		index++
+	case "pageup":
+		index -= max(1, len(m.rows))
+	case "pagedown":
+		index += max(1, len(m.rows))
+	case "start":
+		index = 0
+	case "end":
+		index = m.total - 1
+	}
+	m.index = min(max(index, 0), m.total-1)
+	m.selected = m.records[m.index].ID
+	m.render()
+	return nil, true
 }
 
 // View renders only the already-projected viewport.

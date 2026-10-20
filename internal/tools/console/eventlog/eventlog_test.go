@@ -148,8 +148,14 @@ func testFollow(t *testing.T) {
 	if model.selected != 4 || !strings.Contains(model.View(), "fourth") {
 		t.Fatal("follow did not expose newest event")
 	}
-	state.Panes[1].Stack[0].Index = 0
-	model.controlIndex = 1
+	for range 2 {
+		if cmd, consumed := model.Update(contract.Action{Kind: "nav", Value: "up"}); !consumed || cmd != nil {
+			t.Fatal("event navigation must install locally without a dispatch command")
+		}
+	}
+	if model.selected != 2 {
+		t.Fatal("consecutive navigation effects did not advance the stable selection")
+	}
 	model.SetSnapshot(contract.Snapshot{Events: entries, Control: state, Options: logOptions(t, "info", true)})
 	if model.selected != 2 {
 		t.Fatal("unchanged newest ID overrode explicit navigation")
@@ -157,7 +163,7 @@ func testFollow(t *testing.T) {
 	if _, consumed := model.Update(tea.KeyPressMsg{Code: 'q', Text: "q"}); consumed {
 		t.Fatal("log captured global quit binding")
 	}
-	if cmd, consumed := model.Update(tea.MouseClickMsg{X: 0, Y: 0, Button: tea.MouseLeft}); !consumed || cmd == nil {
+	if cmd, consumed := model.Update(tea.MouseClickMsg{X: 0, Y: 0, Button: tea.MouseLeft}); !consumed || cmd != nil {
 		t.Fatal("visible event mouse selection not consumed")
 	}
 	state.Mouse = false

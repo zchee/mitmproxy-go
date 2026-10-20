@@ -508,7 +508,7 @@ Reproduced on purpose (compatibility, not differences):
 
 | Upstream contract | Go contract | Reason |
 |---|---|---|
-| An absent request/response object exports `No content.` and its corresponding Auto view; an empty captured message exports empty bytes, while missing message content fails (`py:mitmproxy/tools/web/static_viewer.py:51-95` at `3368a0a`). | Preserves these distinctions. Safe opaque flow-ID components are accepted; repeated IDs retain all flows.json records and the last content payload wins. Empty/dot/dotdot, separators, NUL and escaping paths are refused (`internal/tools/web/static_viewer.go:315-378`). | Keep payload semantics without allowing flow IDs to escape the private export tree. |
+| An absent response object exports `No content.` and its corresponding Auto view; an empty captured message exports empty bytes, while missing message content fails (`py:mitmproxy/tools/web/static_viewer.py:51-95` at `3368a0a`). | Preserves these distinctions. Safe opaque flow-ID components are accepted; repeated IDs retain all flows.json records and the last content payload wins. Empty/dot/dotdot, separators, NUL and escaping paths are refused (`internal/tools/web/static_viewer.go:315-378`). | Keep payload semantics without allowing flow IDs to escape the private export tree. |
 | The viewer copies the pinned static frontend and index (`py:mitmproxy/tools/web/static_viewer.py:22-33` at `3368a0a`; upstream `LICENSE:1-19`). | Keeps those bytes and additionally exports the upstream MIT notice at `static/UPSTREAM_LICENSE` (`internal/tools/web/static_viewer.go:290-312`). | Preserve provenance and redistribution notice. |
 
 ### Web options
@@ -915,7 +915,11 @@ Scripting (Starlark instead of Python):
 | Calling a `@concurrent` handler directly returns a coroutine that is never awaited, so the handler does not run. | A direct call fails with `concurrent(<fn>) cannot be called directly; it runs only when invoked as a hook`. | Starlark has no coroutine value to return. |
 | `script.run` rejects a concurrent handler with `Async handler <hook> (<module repr>) cannot be called from sync context`. | The message names the script path where upstream prints the module's repr. | A Starlark module has no Python repr. |
 
-Options that only the Go port has (`testdata/options-go-only.txt`; not registered yet):
+Options that only the Go port has (`testdata/options-go-only.txt:1-6`):
+`content_decode_limit` and `max_client_connections` are registered by the default addon set
+(`addons/core/core.go:38-40`, `addons/proxyserver/proxyserver.go:126`).
+`local_redirector_path`, `otel_exporter_endpoint`, `pprof_addr` and `script_max_steps` remain reserved,
+not runtime options. The historical four-name description is not the current registry difference.
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
@@ -993,7 +997,7 @@ TLS and protocol layers:
 
 | Upstream behaviour | Go behaviour | Reason |
 |---|---|---|
-| The constructor installs a process-global Python logging handler (`py:mitmproxy/addons/eventstore.py:18-26,41-56` at `3368a0a`). | The frontend explicitly composes one `EventStore.LogHandler`, delivering `Add` through `manager.Do`, and owns Flush/Close outside dispatch before manager closure. Construction/loading installs no global logger; the store no longer implements the deprecated `add_log` hook (`addons/eventstore/eventstore.go:44-65,92-119`, `internal/tools/web/master.go:127-140,292-294`). | Embedders own logger composition and lifetime while store mutation stays synchronized. |
+| The constructor installs a process-global Python logging handler (`py:mitmproxy/addons/eventstore.py:18-26,41-56` at `3368a0a`). | The frontend explicitly composes one `EventStore.LogHandler`, delivering `Add` through `manager.Do`, and owns Flush/Close outside dispatch before manager closure. Construction/loading installs no global logger; the store no longer implements the deprecated `add_log` hook (`addons/eventstore/eventstore.go:44-65,92-119`, `internal/tools/web/master.go:127-140,290-295`). | Embedders own logger composition and lifetime while store mutation stays synchronized. |
 | Web event IDs are Python object-address integers (`py:mitmproxy/tools/web/app.py:212-217,800-802` at `3368a0a`). | A monotonic per-store uint64 identifies both `/events` and `events/add`, without reuse after clear or eviction (`addons/eventstore/eventstore.go:83-126`, `internal/tools/web/routes.go:234-238`, `internal/tools/web/updates/broadcast.go:91-96`). | Keep one stable identity source without exposing Go object addresses. |
 | Synchronous addition and refresh signals (`mitmproxy/addons/eventstore.py`). | Bounded event channels; overflow closes and removes the subscriber, which must resnapshot. Subscribe and cancel require the dispatch lock. | A slow frontend cannot block the dispatcher or retain an unbounded notification queue. |
 

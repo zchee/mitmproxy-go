@@ -24,6 +24,21 @@ import (
 	"github.com/zchee/mitmproxy-go/options"
 )
 
+type resizeModel struct {
+	model *Model
+	sizes chan tea.WindowSizeMsg
+}
+
+func (m *resizeModel) Init() tea.Cmd  { return m.model.Init() }
+func (m *resizeModel) View() tea.View { return m.model.View() }
+func (m *resizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	_, cmd := m.model.Update(msg)
+	if _, ok := msg.(tea.WindowSizeMsg); ok {
+		m.sizes <- tea.WindowSizeMsg{Width: m.model.width, Height: m.model.height}
+	}
+	return m, cmd
+}
+
 func TestConsoleWindow(t *testing.T) {
 	tests := map[string]struct{}{"single": {}, "vertical": {}, "horizontal": {}, "overlay_stack": {}, "resize": {}, "mouse_offsets": {}}
 	t.Run("layout", func(t *testing.T) {
@@ -95,15 +110,37 @@ func TestConsoleWindow(t *testing.T) {
 					}
 				case "resize":
 					m := NewModel(nil, map[string]WidgetFactory{"flowlist": func(contract.Host) contract.Widget { return NewHelpWidget("flowlist") }})
-					tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(80, 24))
-					tm.Send(tea.WindowSizeMsg{Width: 200, Height: 50})
+					wrapped := &resizeModel{model: m, sizes: make(chan tea.WindowSizeMsg, 2)}
+					tm := teatest.NewTestModel(t, wrapped, teatest.WithInitialTermSize(80, 24))
+					t.Cleanup(func() {
+						mustConsole(t, tm.Quit())
+						tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+					})
+					// Teatest and the program each deliver their own initial size.
+					for i, size := range []tea.WindowSizeMsg{{Width: 80, Height: 24}, {Width: 80, Height: 24}, {Width: 200, Height: 50}} {
+						if i == 2 {
+							tm.Send(size)
+						}
+						select {
+						case installed := <-wrapped.sizes:
+							if diff := cmp.Diff(size, installed); diff != "" {
+								t.Fatal("installed resize mismatch (-want +got): " + diff)
+							}
+						case <-time.After(5 * time.Second):
+							t.Fatal("resize was not installed before watchdog")
+						}
+					}
 					mustConsole(t, tm.Quit())
-					final := tm.FinalModel(t, teatest.WithFinalTimeout(5*time.Second)).(*Model)
+					final := tm.FinalModel(t, teatest.WithFinalTimeout(5*time.Second)).(*resizeModel).model
 					if final.width != 200 || final.height != 50 {
 						t.Fatal("resize lost")
 					}
 					if len(strings.Split(final.View().Content, "\n")) != 50 {
 						t.Fatal("resized frame height wrong")
+					}
+					final.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+					if final.width != 80 || final.height != 24 {
+						t.Fatal("later delivered smaller size was ignored")
 					}
 				case "mouse_offsets":
 					state.Layout = "vertical"

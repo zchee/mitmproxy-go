@@ -43,6 +43,10 @@ func (i *Instance) WebState() map[string]any {
 }
 
 func (i *Instance) signalPresentation() {
+	if i.presentationRevision != nil {
+		i.presentationRevision.Add(1)
+	}
+	// A nil notification channel intentionally disables sends without blocking.
 	select {
 	case i.presentationChanged <- struct{}{}:
 	default:

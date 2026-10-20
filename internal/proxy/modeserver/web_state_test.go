@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"golang.zx2c4.com/wireguard/tun/tuntest"
 
 	"github.com/zchee/mitmproxy-go/internal/local"
+	"github.com/zchee/mitmproxy-go/internal/wireguard"
 )
 
 func TestWebStatePublication(t *testing.T) {
@@ -46,14 +48,17 @@ func awaitWebPublication(t *testing.T, changed <-chan struct{}) {
 func assertWebStopped(t *testing.T, instance *Instance, field string, failure bool) {
 	t.Helper()
 	got := instance.WebState()
+	if revision := instance.presentationRevision.Load(); revision < 2 {
+		t.Fatalf("completed lifecycle did not advance invalidation revision: %d", revision)
+	}
 	if got["is_running"] != false || (got["last_exception"] != nil) != failure {
-		t.Fatalf("stopped presentation = %#v", got)
+		t.Fatal("stopped presentation has an unexpected running or error state")
 	}
 	if diff := cmp.Diff([][2]any{}, got["listen_addrs"]); diff != "" {
 		t.Fatalf("stopped addresses (-want +got):\n%s", diff)
 	}
 	if field != "" && got[field] != nil {
-		t.Fatalf("stopped native metadata retained: %#v", got)
+		t.Fatal("stopped native presentation retained source metadata")
 	}
 }
 
@@ -62,7 +67,9 @@ func testWebWireGuardPublication(t *testing.T) {
 		cfg, _, _ := fixture(t)
 		changed := make(chan struct{}, 1)
 		cfg.PresentationChanged = changed
-		instance := makeInstance(t, "wireguard:"+filepath.Join(t.TempDir(), "wireguard.conf")+"@127.0.0.1:0", cfg)
+		cfg.PresentationRevision = new(atomic.Uint64)
+		path := filepath.Join(t.TempDir(), "wireguard.conf")
+		instance := makeInstance(t, "wireguard:"+path+"@127.0.0.1:0", cfg)
 		t.Cleanup(func() { _ = instance.Stop() })
 		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
@@ -73,7 +80,21 @@ func testWebWireGuardPublication(t *testing.T) {
 		live := instance.WebState()
 		config, ok := live["wireguard_conf"].(string)
 		if !ok || !strings.Contains(config, "[Interface]") || live["is_running"] != true {
-			t.Fatalf("WireGuard success metadata = %#v", live)
+			t.Fatal("WireGuard success presentation lacks client configuration or running state")
+		}
+		configuration, err := wireguard.LoadConfig(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		clientKeys, err := configuration.PeerKeys()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(config+"\n", "PrivateKey = "+clientKeys[0]+"\n") {
+			t.Fatal("WireGuard presentation does not contain the first client private-key line")
+		}
+		if strings.Contains(config, configuration.ServerKey) {
+			t.Fatal("WireGuard presentation exposes the server private key")
 		}
 		source := instance.state.Load().wireguard
 		if unexpected {
@@ -128,6 +149,7 @@ func testWebTunPublication(t *testing.T) {
 		cfg, _, _ := fixture(t)
 		changed := make(chan struct{}, 1)
 		cfg.PresentationChanged = changed
+		cfg.PresentationRevision = new(atomic.Uint64)
 		instance := makeInstance(t, "tun", cfg)
 		device := &webFailureTun{Device: tuntest.NewChannelTUN().TUN(), fail: make(chan struct{}), closed: make(chan struct{})}
 		instance.openTun = func(string, *slog.Logger) (wgtun.Device, error) { return device, nil }
@@ -141,7 +163,7 @@ func testWebTunPublication(t *testing.T) {
 		live := instance.WebState()
 		name, ok := live["tun_name"].(string)
 		if !ok || name == "" || live["is_running"] != true {
-			t.Fatalf("TUN success metadata = %#v", live)
+			t.Fatal("TUN success presentation lacks interface name or running state")
 		}
 		source := instance.state.Load().tun
 		if unexpected {
@@ -177,6 +199,7 @@ func testWebLocalPublication(t *testing.T) {
 		cfg, _, _ := fixture(t)
 		changed := make(chan struct{}, 1)
 		cfg.PresentationChanged = changed
+		cfg.PresentationRevision = new(atomic.Uint64)
 		cfg.LocalRedirector = redirector
 		instance := makeInstance(t, "local", cfg)
 		t.Cleanup(func() { _ = instance.Stop() })
@@ -189,7 +212,7 @@ func testWebLocalPublication(t *testing.T) {
 		awaitWebPublication(t, changed)
 		live := instance.WebState()
 		if live["is_running"] != true || currentLocal.Load() != instance {
-			t.Fatalf("local success publication = %#v", live)
+			t.Fatal("local success presentation or active instance was not published")
 		}
 		source := instance.state.Load().local
 		if unexpected {
@@ -229,6 +252,7 @@ func testWebCancellationPublication(t *testing.T) {
 	cfg, _, _ := fixture(t)
 	changed := make(chan struct{}, 1)
 	cfg.PresentationChanged = changed
+	cfg.PresentationRevision = new(atomic.Uint64)
 	instance := makeInstance(t, "regular@127.0.0.1:0", cfg)
 	t.Cleanup(func() { _ = instance.Stop() })
 	for range 2 {

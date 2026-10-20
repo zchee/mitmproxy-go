@@ -15,6 +15,8 @@ import (
 // Generation orders publications internally and must not appear on the wire.
 // Servers is keyed by full mode specification and contains content-only JSON.
 // Callers may modify every returned map or byte slice without changing the addon.
+// Servers can contain WireGuard client private keys; never log this snapshot or
+// its Servers map.
 type ServerSnapshot struct {
 	Generation uint64                    `json:"-"`
 	Servers    map[string]jsontext.Value `json:"servers"`
@@ -40,7 +42,9 @@ func (state *ServerSnapshot) clone() ServerSnapshot {
 // instance lifecycle lock. Coalesced invalidations deliver the current snapshot,
 // never a captured older generation. The callback may only copy/serialize and
 // enqueue nonblocking data; no I/O or waiting. The returned idempotent unsubscribe
-// also requires dispatch. A nil callback is ignored. No initial event is sent.
+// also requires dispatch. Unsubscribe affects future notifications, not the
+// callback set already captured for delivery. A nil callback is ignored. No
+// initial event is sent. Snapshots are secret-bearing and must never be logged.
 func (p *ProxyServer) SubscribeServerState(fn func(context.Context, ServerSnapshot)) func() {
 	if fn == nil {
 		return func() {}
@@ -48,7 +52,11 @@ func (p *ProxyServer) SubscribeServerState(fn func(context.Context, ServerSnapsh
 	p.nextStateObserver++
 	id := p.nextStateObserver
 	p.stateObservers[id] = fn
-	return func() { delete(p.stateObservers, id) }
+	return func() {
+		if p.stateObservers[id] != nil {
+			delete(p.stateObservers, id)
+		}
+	}
 }
 
 // publishServerState is called only under updateMu after lifecycle work has
@@ -71,6 +79,19 @@ func (p *ProxyServer) publishServerState() {
 	p.presentation.Store(&ServerSnapshot{Generation: previous.Generation + 1, Servers: servers})
 }
 
+func (p *ProxyServer) refreshServerState(revision uint64) {
+	for {
+		p.updateMu.Lock()
+		p.publishServerState()
+		p.updateMu.Unlock()
+		current := p.presentationRevision.Load()
+		if current == revision {
+			return
+		}
+		revision = current
+	}
+}
+
 func (p *ProxyServer) signalServerState() {
 	select {
 	case p.presentationWake <- struct{}{}:
@@ -85,7 +106,7 @@ func (p *ProxyServer) deliverServerState(ctx context.Context) {
 			return nil
 		}
 		p.lastStateGeneration = state.Generation
-		for _, observer := range p.stateObservers {
+		for _, observer := range maps.Clone(p.stateObservers) {
 			observer(ctx, state.clone())
 		}
 		return nil

@@ -66,6 +66,10 @@ type Config struct {
 	// publication. It must remain open for the lifetime of every instance.
 	// Nil disables presentation notifications without starting any work.
 	PresentationChanged chan<- struct{}
+	// PresentationRevision, when non-nil, advances before each invalidation.
+	// A consumer can recheck it after copying state to detect a publication that
+	// raced its refresh. The pointer must outlive every instance using it.
+	PresentationRevision *atomic.Uint64
 }
 
 // Instance owns a mode's TCP or UDP listeners. Start and Stop serialize lifecycle work
@@ -73,26 +77,27 @@ type Config struct {
 // they read immutable snapshots and never wait for network I/O or handlers.
 // Use New to create an instance; the zero value is not ready to serve.
 type Instance struct {
-	mode                modespec.Mode
-	handler             *proxy.Handler
-	confDir             string
-	redirector          local.Redirector
-	limiter             *ClientLimiter
-	host                string
-	port                int
-	top                 hookdata.LayerSpec
-	logger              *slog.Logger
-	mu                  sync.Mutex
-	state               atomic.Pointer[instanceState]
-	stopCancel          func() bool
-	listenTCP           func(context.Context, string, string) (net.Listener, error)
-	listenUDP           func(context.Context, string, string) (net.PacketConn, error)
-	portCandidates      func(context.Context) (portCandidateCursor, error)
-	openTun             func(string, *slog.Logger) (wgtun.Device, error)
-	checkTransparent    func(context.Context) error
-	originalAddr        func(context.Context, *net.TCPConn) (connection.Address, error)
-	factories           map[ListenerKey]ListenerFactory
-	presentationChanged chan<- struct{}
+	mode                 modespec.Mode
+	handler              *proxy.Handler
+	confDir              string
+	redirector           local.Redirector
+	limiter              *ClientLimiter
+	host                 string
+	port                 int
+	top                  hookdata.LayerSpec
+	logger               *slog.Logger
+	mu                   sync.Mutex
+	state                atomic.Pointer[instanceState]
+	stopCancel           func() bool
+	listenTCP            func(context.Context, string, string) (net.Listener, error)
+	listenUDP            func(context.Context, string, string) (net.PacketConn, error)
+	portCandidates       func(context.Context) (portCandidateCursor, error)
+	openTun              func(string, *slog.Logger) (wgtun.Device, error)
+	checkTransparent     func(context.Context) error
+	originalAddr         func(context.Context, *net.TCPConn) (connection.Address, error)
+	factories            map[ListenerKey]ListenerFactory
+	presentationChanged  chan<- struct{}
+	presentationRevision *atomic.Uint64
 }
 
 type instanceState struct {
@@ -168,6 +173,7 @@ func New(mode modespec.Mode, cfg Config) (*Instance, error) {
 	}
 	i := &Instance{mode: mode, handler: cfg.Handler, confDir: confDir, redirector: cfg.LocalRedirector, limiter: cfg.ClientLimiter, host: host, port: port, top: hookdata.LayerSpec{Kind: kind}, logger: logger}
 	i.presentationChanged = cfg.PresentationChanged
+	i.presentationRevision = cfg.PresentationRevision
 	i.factories = registeredFactories(cfg.ListenerFactories)
 	i.listenTCP = new(net.ListenConfig).Listen
 	i.listenUDP = new(net.ListenConfig).ListenPacket

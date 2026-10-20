@@ -45,27 +45,28 @@ import (
 // changes are serialized outside dispatch, and never join accepted connections.
 // Use New; the zero value is not usable.
 type ProxyServer struct {
-	manager             *addon.Manager
-	opts                *options.Manager
-	handler             *proxy.Handler
-	connections         *proxy.Connections
-	limiter             modeserver.ClientLimiter
-	logger              *slog.Logger
-	isRunning           bool
-	connectAddr         *connection.Address
-	instances           atomic.Pointer[serverState]
-	presentation        atomic.Pointer[ServerSnapshot]
-	presentationWake    chan struct{}
-	stateObservers      map[uint64]func(context.Context, ServerSnapshot)
-	nextStateObserver   uint64
-	lastStateGeneration uint64
-	updateMu            sync.Mutex
-	startOnce           sync.Once
-	lifetime            context.Context
-	cancel              context.CancelFunc
-	wake                chan struct{}
-	workers             sync.WaitGroup
-	localDaemon         struct {
+	manager              *addon.Manager
+	opts                 *options.Manager
+	handler              *proxy.Handler
+	connections          *proxy.Connections
+	limiter              modeserver.ClientLimiter
+	logger               *slog.Logger
+	isRunning            bool
+	connectAddr          *connection.Address
+	instances            atomic.Pointer[serverState]
+	presentation         atomic.Pointer[ServerSnapshot]
+	presentationWake     chan struct{}
+	presentationRevision atomic.Uint64
+	stateObservers       map[uint64]func(context.Context, ServerSnapshot)
+	nextStateObserver    uint64
+	lastStateGeneration  uint64
+	updateMu             sync.Mutex
+	startOnce            sync.Once
+	lifetime             context.Context
+	cancel               context.CancelFunc
+	wake                 chan struct{}
+	workers              sync.WaitGroup
+	localDaemon          struct {
 		sync.Mutex
 		redirector local.Redirector
 		closed     bool
@@ -246,16 +247,14 @@ func (p *ProxyServer) run() {
 		case <-p.wake:
 			_ = p.reconcile(p.lifetime)
 		case <-p.presentationWake:
-			p.updateMu.Lock()
-			p.publishServerState()
-			p.updateMu.Unlock()
+			p.refreshServerState(p.presentationRevision.Load())
 			p.deliverServerState(p.lifetime)
 		}
 	}
 }
 
 func (p *ProxyServer) configuredInstances() ([]*modeserver.Instance, error) {
-	cfg := modeserver.Config{Handler: p.handler, ConfDir: p.opts.Str("confdir"), ClientLimiter: &p.limiter, ListenHost: p.opts.Str("listen_host"), ListenPort: p.opts.OptInt("listen_port"), Logger: p.logger, PresentationChanged: p.presentationWake}
+	cfg := modeserver.Config{Handler: p.handler, ConfDir: p.opts.Str("confdir"), ClientLimiter: &p.limiter, ListenHost: p.opts.Str("listen_host"), ListenPort: p.opts.OptInt("listen_port"), Logger: p.logger, PresentationChanged: p.presentationWake, PresentationRevision: &p.presentationRevision}
 	var instances []*modeserver.Instance
 	var addresses []connection.Address
 	counts := make(map[connection.Address]int)

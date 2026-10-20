@@ -51,7 +51,7 @@ func TestEventStoreObservers(t *testing.T) {
 			}
 			s.clear(t.Context())
 			unsubscribe()
-			want := []Event{{Kind: "add", Entry: first}, {Kind: "add", Entry: second}, {Kind: "refresh"}}
+			want := []Event{{Kind: "add", ID: 1, Entry: first}, {Kind: "add", ID: 2, Entry: second}, {Kind: "refresh"}}
 			if diff := gocmp.Diff(want, observed); diff != "" {
 				t.Fatal(diff)
 			}

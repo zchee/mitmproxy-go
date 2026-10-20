@@ -29,7 +29,7 @@ func TestEventRecords(t *testing.T) {
 			all := make([]Record, 0, 5)
 			for index := range 5 {
 				entry := addon.LogEntry{Msg: string(rune('a' + index))}
-				if err := store.AddLog(t.Context(), entry); err != nil {
+				if err := store.Add(t.Context(), entry); err != nil {
 					t.Fatal(err)
 				}
 				all = append(all, Record{ID: uint64(index + 1), Entry: entry})
@@ -60,7 +60,7 @@ func TestEventRecords(t *testing.T) {
 			if len(store.Records()) != 0 {
 				t.Fatal("clear retained records")
 			}
-			if err := store.AddLog(t.Context(), addon.LogEntry{Msg: "after clear"}); err != nil {
+			if err := store.Add(t.Context(), addon.LogEntry{Msg: "after clear"}); err != nil {
 				t.Fatal(err)
 			}
 			if got := events[len(events)-1].ID; got != 6 {
@@ -73,7 +73,7 @@ func TestEventRecords(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := other.AddLog(t.Context(), addon.LogEntry{}); err != nil {
+			if err := other.Add(t.Context(), addon.LogEntry{}); err != nil {
 				t.Fatal(err)
 			}
 			if got := other.Records()[0].ID; got != 1 {
@@ -94,14 +94,14 @@ func TestEventIdentityExhaustion(t *testing.T) {
 			store.nextID = ^uint64(0) - 1
 			var events []Event
 			store.Observe(func(event Event) { events = append(events, event) })
-			if err := store.AddLog(t.Context(), addon.LogEntry{Msg: "last identity"}); err != nil {
+			if err := store.Add(t.Context(), addon.LogEntry{Msg: "last identity"}); err != nil {
 				t.Fatal(err)
 			}
 			before := store.Records()
 			if before[0].ID != ^uint64(0) {
 				t.Fatal("last uint64 identity was not assigned")
 			}
-			if err := store.AddLog(t.Context(), addon.LogEntry{Msg: "must not replace"}); err == nil {
+			if err := store.Add(t.Context(), addon.LogEntry{Msg: "must not replace"}); err == nil {
 				t.Fatal("exhausted identity counter wrapped")
 			}
 			if diff := gocmp.Diff(before, store.Records()); diff != "" {
@@ -126,13 +126,13 @@ func TestEventObserverUnsubscribeDuringCallback(t *testing.T) {
 			var stopFirst, stopSecond func()
 			stopFirst = store.Observe(func(Event) { first++; stopFirst(); stopSecond(); stopFirst(); stopSecond() })
 			stopSecond = store.Observe(func(Event) { second++ })
-			if err := store.AddLog(t.Context(), addon.LogEntry{Msg: "first"}); err != nil {
+			if err := store.Add(t.Context(), addon.LogEntry{Msg: "first"}); err != nil {
 				t.Fatal(err)
 			}
 			if first != 1 || second != 1 {
 				t.Fatalf("captured callbacks = %d, %d", first, second)
 			}
-			if err := store.AddLog(t.Context(), addon.LogEntry{Msg: "second"}); err != nil {
+			if err := store.Add(t.Context(), addon.LogEntry{Msg: "second"}); err != nil {
 				t.Fatal(err)
 			}
 			if first != 1 || second != 1 {

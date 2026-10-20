@@ -44,11 +44,7 @@ func TestUpstreamEventStore(t *testing.T) {
 			var events <-chan Event
 			var cancel func()
 			must(t, m.Do(t.Context(), func(context.Context) error { events, cancel = store.Subscribe(10); return nil }))
-			handler := addon.NewLogHandler(func(ctx context.Context, entry addon.LogEntry) {
-				if err := m.Trigger(ctx, addon.AddLogHook{Entry: entry}); err != nil {
-					t.Error(err)
-				}
-			}, addon.LogHandlerOptions{})
+			handler := store.LogHandler(m)
 			defer func() { must(t, handler.Close(t.Context())) }()
 			logger := slog.New(handler)
 			for _, msg := range tt.messages {
@@ -132,7 +128,7 @@ func TestDispatchAndOverflow(t *testing.T) {
 		fast, cancel := store.Subscribe(4)
 		defer cancel()
 		for range 2 {
-			must(t, m.Trigger(ctx, addon.AddLogHook{Entry: addon.LogEntry{Msg: "x"}}))
+			must(t, store.Add(ctx, addon.LogEntry{Msg: "x"}))
 		}
 		if !active || len(fast) != 2 {
 			t.Fatal("not delivered under dispatcher")
@@ -148,7 +144,9 @@ func TestDispatchAndOverflow(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 50 {
 		wg.Go(func() {
-			if err := m.Trigger(t.Context(), addon.AddLogHook{Entry: addon.LogEntry{Msg: "concurrent"}}); err != nil {
+			if err := m.Do(t.Context(), func(ctx context.Context) error {
+				return store.Add(ctx, addon.LogEntry{Msg: "concurrent"})
+			}); err != nil {
 				t.Error(err)
 			}
 		})

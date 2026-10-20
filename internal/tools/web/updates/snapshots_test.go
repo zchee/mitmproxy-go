@@ -96,7 +96,7 @@ func TestWebUpdateSnapshots(t *testing.T) {
 			p := f.connect(t)
 			do(t, f, func(ctx context.Context) error {
 				for _, msg := range []string{"first", "second", "third"} {
-					if err := f.h.cfg.Events.AddLog(ctx, addon.LogEntry{Msg: msg}); err != nil {
+					if err := f.h.cfg.Events.Add(ctx, addon.LogEntry{Msg: msg}); err != nil {
 						return err
 					}
 				}
@@ -118,7 +118,7 @@ func TestWebUpdateSnapshots(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				return f.h.cfg.Events.AddLog(ctx, addon.LogEntry{Msg: "fourth"})
+				return f.h.cfg.Events.Add(ctx, addon.LogEntry{Msg: "fourth"})
 			})
 			reset := p.message(t)
 			if reset.Type != "events/reset" || reset.Payload != nil {

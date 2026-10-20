@@ -82,7 +82,7 @@ func newRouteHarness(t *testing.T, eventSize ...int) *routeHarness {
 		third := testflow.TFlow(testflow.WithError)
 		third.ID = "44"
 		v.Add(ctx, []flow.Flow{first, second, third})
-		return events.AddLog(ctx, addon.LogEntry{Msg: "test log", Level: slog.LevelInfo})
+		return events.Add(ctx, addon.LogEntry{Msg: "test log", Level: slog.LevelInfo})
 	}); err != nil {
 		t.Fatal(err)
 	}

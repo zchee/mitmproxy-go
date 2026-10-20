@@ -44,8 +44,8 @@ type EventStore struct {
 // New constructs an EventStore with capacity 10000 by default. An optional size
 // sets the capacity, including zero to discard stored entries but still signal
 // additions. Negative sizes and more than one size argument return an error.
-// Logging is supplied by the master's existing add_log dispatch, not a global
-// handler installed by this constructor.
+// The frontend installs LogHandler in its logger; this constructor does not
+// change the process-wide default logger or start a delivery goroutine.
 func New(size ...int) (*EventStore, error) {
 	capacity := 10000
 	if len(size) > 1 {
@@ -89,9 +89,19 @@ func (s *EventStore) Records() []Record {
 	return append(records, s.data[:s.start]...)
 }
 
-// AddLog retains an entry and emits an addition event under the dispatch lock.
+// LogHandler returns a new asynchronous slog handler that stores each entry
+// under manager's dispatch lock. The frontend composes it with its other log
+// handlers and owns its lifetime: Flush and Close must run outside dispatch,
+// before the manager is closed. Each call starts an independent delivery worker.
+func (s *EventStore) LogHandler(manager *addon.Manager) *addon.LogHandler {
+	return addon.NewLogHandler(func(ctx context.Context, entry addon.LogEntry) {
+		_ = manager.Do(ctx, func(ctx context.Context) error { return s.Add(ctx, entry) })
+	}, addon.LogHandlerOptions{})
+}
+
+// Add retains an entry and emits an addition event under the dispatch lock.
 // It fails without retaining or notifying if the uint64 identity space is spent.
-func (s *EventStore) AddLog(_ context.Context, entry addon.LogEntry) error {
+func (s *EventStore) Add(_ context.Context, entry addon.LogEntry) error {
 	if s.nextID == ^uint64(0) {
 		return errors.New("eventstore: event identity space exhausted")
 	}

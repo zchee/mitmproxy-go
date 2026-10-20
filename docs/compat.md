@@ -463,6 +463,19 @@ DTLS sniffing also follows upstream's ordered record concatenation (`mitmproxy/p
 records are read in arrival order and the first handshake header's fragment length is used. The ClientHello sniffer
 does not reorder fragments or deduplicate retransmissions; pion handles retransmissions in the subsequent handshake.
 
+## internal/tools/web
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| Tornado's static handler derives `Last-Modified` from the file's checkout mtime. | The embedded static handler uses the pinned upstream commit timestamp, Unix `1791038697`, for every static asset (`internal/tools/web/assets.go`). | Embedded files have zero mtimes; a fixed source timestamp makes validators reproducible across builds and checkouts. |
+
+Reproduced on purpose: the ten static files and index are byte-exact upstream
+references with the MIT notice. Static ETags are quoted SHA-512 digests; JavaScript
+uses `text/javascript` independently of the host MIME registry. Ordinary static
+responses add no explicit `Cache-Control`; a `v` query parameter selects
+`max-age=315360000` and `Expires`. Static files remain unauthenticated, as upstream;
+index authentication belongs to the composed backend, not `IndexHandler` itself.
+
 ## internal/tools/cmdline
 
 | Upstream | Go | Reason |

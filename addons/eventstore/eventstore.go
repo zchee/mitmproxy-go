@@ -8,25 +8,37 @@ package eventstore
 import (
 	"context"
 	"errors"
+	"maps"
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/command"
 )
 
 // Event describes an added log entry or a refresh after clearing the store.
-// Kind is "add" or "refresh"; Entry is meaningful only for "add".
+// Kind is "add" or "refresh"; ID and Entry are meaningful only for "add".
+// IDs increase per store and are never reused after clearing or ring eviction.
 type Event struct {
 	Kind  string
+	ID    uint64
+	Entry addon.LogEntry
+}
+
+// Record pairs a retained log entry with its stable, per-store identity.
+type Record struct {
+	ID    uint64
 	Entry addon.LogEntry
 }
 
 // EventStore retains the most recent log entries in a ring. Construct it with New.
 type EventStore struct {
 	size           int
-	data           []addon.LogEntry
+	data           []Record
+	nextID         uint64
 	start          int
 	subscribers    map[uint64]chan Event
 	nextSubscriber uint64
+	observers      map[uint64]func(Event)
+	nextObserver   uint64
 }
 
 // New constructs an EventStore with capacity 10000 by default. An optional size
@@ -59,21 +71,41 @@ func (s *EventStore) Size() int { return s.size }
 // Entries returns a snapshot of entries from oldest to newest.
 func (s *EventStore) Entries() []addon.LogEntry {
 	entries := make([]addon.LogEntry, 0, len(s.data))
-	entries = append(entries, s.data[s.start:]...)
-	return append(entries, s.data[:s.start]...)
+	for _, record := range s.data[s.start:] {
+		entries = append(entries, record.Entry)
+	}
+	for _, record := range s.data[:s.start] {
+		entries = append(entries, record.Entry)
+	}
+	return entries
+}
+
+// Records returns an owned snapshot of identities and entries, oldest to newest.
+// Each identity matches the corresponding addition Event.ID. Clearing the store
+// removes retained records without resetting the next identity.
+func (s *EventStore) Records() []Record {
+	records := make([]Record, 0, len(s.data))
+	records = append(records, s.data[s.start:]...)
+	return append(records, s.data[:s.start]...)
 }
 
 // AddLog retains an entry and emits an addition event under the dispatch lock.
+// It fails without retaining or notifying if the uint64 identity space is spent.
 func (s *EventStore) AddLog(_ context.Context, entry addon.LogEntry) error {
+	if s.nextID == ^uint64(0) {
+		return errors.New("eventstore: event identity space exhausted")
+	}
+	s.nextID++
+	record := Record{ID: s.nextID, Entry: entry}
 	if s.size > 0 {
 		if len(s.data) < s.size {
-			s.data = append(s.data, entry)
+			s.data = append(s.data, record)
 		} else {
-			s.data[s.start] = entry
+			s.data[s.start] = record
 			s.start = (s.start + 1) % s.size
 		}
 	}
-	s.emit(Event{Kind: "add", Entry: entry})
+	s.emit(Event{Kind: "add", ID: record.ID, Entry: entry})
 	return nil
 }
 
@@ -101,6 +133,29 @@ func (s *EventStore) Subscribe(capacity int) (<-chan Event, func()) {
 	}
 }
 
+// Observe registers a synchronous observer under addon dispatch. The callback
+// may only copy/serialize and enqueue nonblocking data; it must not perform I/O,
+// mutate the store or wait for another dispatch. Registration and idempotent
+// unsubscribe require dispatch. A nil callback is ignored; Done removes all
+// observers. Unsubscribe affects later emissions, not the callback set already
+// captured by an in-flight emission. Observe starts no goroutines.
+func (s *EventStore) Observe(fn func(Event)) func() {
+	if fn == nil {
+		return func() {}
+	}
+	if s.observers == nil {
+		s.observers = make(map[uint64]func(Event))
+	}
+	s.nextObserver++
+	id := s.nextObserver
+	s.observers[id] = fn
+	return func() {
+		if s.observers[id] != nil {
+			delete(s.observers, id)
+		}
+	}
+}
+
 func (s *EventStore) emit(event Event) {
 	for id, ch := range s.subscribers {
 		select {
@@ -110,10 +165,14 @@ func (s *EventStore) emit(event Event) {
 			delete(s.subscribers, id)
 		}
 	}
+	for _, observer := range maps.Clone(s.observers) {
+		observer(event)
+	}
 }
 
 // Done releases every subscription; existing entries remain accessible.
 func (s *EventStore) Done(context.Context) error {
+	clear(s.observers)
 	for id, ch := range s.subscribers {
 		close(ch)
 		delete(s.subscribers, id)

@@ -80,7 +80,7 @@ func (i *Instance) startTun(ctx context.Context) error {
 		return err
 	}
 	source := &tunSource{ctx: lifetime, cancel: cancel, stack: stack, name: name, done: make(chan struct{}), monitorDone: make(chan struct{}), bridgeDone: make(chan struct{})}
-	state := &instanceState{tun: source}
+	state := &instanceState{tun: source, tunName: name}
 	i.state.Store(state)
 	go i.serveTun(source)
 	go func() {
@@ -91,7 +91,9 @@ func (i *Instance) startTun(ctx context.Context) error {
 		if unexpected && err == nil {
 			err = errors.New("TUN interface stopped unexpectedly")
 		}
-		i.state.CompareAndSwap(state, &instanceState{err: err})
+		if i.state.CompareAndSwap(state, &instanceState{err: err}) {
+			i.signalPresentation()
+		}
 		close(source.monitorDone)
 	}()
 	i.logger.Info("TUN interface created: " + source.name)

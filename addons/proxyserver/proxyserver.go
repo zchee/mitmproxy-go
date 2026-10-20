@@ -6,6 +6,7 @@ package proxyserver
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -44,22 +45,28 @@ import (
 // changes are serialized outside dispatch, and never join accepted connections.
 // Use New; the zero value is not usable.
 type ProxyServer struct {
-	manager     *addon.Manager
-	opts        *options.Manager
-	handler     *proxy.Handler
-	connections *proxy.Connections
-	limiter     modeserver.ClientLimiter
-	logger      *slog.Logger
-	isRunning   bool
-	connectAddr *connection.Address
-	instances   atomic.Pointer[serverState]
-	updateMu    sync.Mutex
-	startOnce   sync.Once
-	lifetime    context.Context
-	cancel      context.CancelFunc
-	wake        chan struct{}
-	workers     sync.WaitGroup
-	localDaemon struct {
+	manager              *addon.Manager
+	opts                 *options.Manager
+	handler              *proxy.Handler
+	connections          *proxy.Connections
+	limiter              modeserver.ClientLimiter
+	logger               *slog.Logger
+	isRunning            bool
+	connectAddr          *connection.Address
+	instances            atomic.Pointer[serverState]
+	presentation         atomic.Pointer[ServerSnapshot]
+	presentationWake     chan struct{}
+	presentationRevision atomic.Uint64
+	stateObservers       map[uint64]func(context.Context, ServerSnapshot)
+	nextStateObserver    uint64
+	lastStateGeneration  uint64
+	updateMu             sync.Mutex
+	startOnce            sync.Once
+	lifetime             context.Context
+	cancel               context.CancelFunc
+	wake                 chan struct{}
+	workers              sync.WaitGroup
+	localDaemon          struct {
 		sync.Mutex
 		redirector local.Redirector
 		closed     bool
@@ -81,6 +88,9 @@ func New(cfg proxy.Config) (*ProxyServer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &ProxyServer{manager: cfg.Manager, opts: cfg.Options, connections: cfg.Connections, logger: logger, lifetime: ctx, cancel: cancel, wake: make(chan struct{}, 1)}
 	p.instances.Store(&serverState{})
+	p.presentationWake = make(chan struct{}, 1)
+	p.stateObservers = make(map[uint64]func(context.Context, ServerSnapshot))
+	p.presentation.Store(&ServerSnapshot{Servers: make(map[string]jsontext.Value)})
 	if cfg.Dialer == nil {
 		cfg.Dialer = p.Dialer()
 	}
@@ -208,7 +218,11 @@ func (p *ProxyServer) SetupServers(ctx context.Context) error {
 func (p *ProxyServer) run() {
 	defer func() {
 		p.updateMu.Lock()
-		defer p.updateMu.Unlock()
+		defer func() {
+			p.publishServerState()
+			p.updateMu.Unlock()
+			p.deliverServerState(context.WithoutCancel(p.lifetime))
+		}()
 		state := p.instances.Swap(&serverState{})
 		for _, instance := range state.instances {
 			if err := instance.Stop(); err != nil {
@@ -232,12 +246,15 @@ func (p *ProxyServer) run() {
 			return
 		case <-p.wake:
 			_ = p.reconcile(p.lifetime)
+		case <-p.presentationWake:
+			p.refreshServerState(p.presentationRevision.Load())
+			p.deliverServerState(p.lifetime)
 		}
 	}
 }
 
 func (p *ProxyServer) configuredInstances() ([]*modeserver.Instance, error) {
-	cfg := modeserver.Config{Handler: p.handler, ConfDir: p.opts.Str("confdir"), ClientLimiter: &p.limiter, ListenHost: p.opts.Str("listen_host"), ListenPort: p.opts.OptInt("listen_port"), Logger: p.logger}
+	cfg := modeserver.Config{Handler: p.handler, ConfDir: p.opts.Str("confdir"), ClientLimiter: &p.limiter, ListenHost: p.opts.Str("listen_host"), ListenPort: p.opts.OptInt("listen_port"), Logger: p.logger, PresentationChanged: p.presentationWake, PresentationRevision: &p.presentationRevision}
 	var instances []*modeserver.Instance
 	var addresses []connection.Address
 	counts := make(map[connection.Address]int)
@@ -312,7 +329,11 @@ func (p *ProxyServer) configuredInstances() ([]*modeserver.Instance, error) {
 
 func (p *ProxyServer) reconcile(ctx context.Context) error {
 	p.updateMu.Lock()
-	defer p.updateMu.Unlock()
+	defer func() {
+		p.publishServerState()
+		p.updateMu.Unlock()
+		p.signalServerState()
+	}()
 	if err := p.lifetime.Err(); err != nil {
 		return err
 	}

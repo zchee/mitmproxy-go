@@ -126,8 +126,11 @@ func (i *Instance) startLocal(ctx context.Context) error {
 		case <-lifetime.Done():
 		}
 		err := errors.Join(failure, source.Close())
-		i.state.CompareAndSwap(state, &instanceState{err: err})
+		changed := i.state.CompareAndSwap(state, &instanceState{err: err})
 		currentLocal.CompareAndSwap(i, nil)
+		if changed {
+			i.signalPresentation()
+		}
 		close(source.monitorDone)
 	}()
 	i.logger.Info(i.mode.Description() + " started.")

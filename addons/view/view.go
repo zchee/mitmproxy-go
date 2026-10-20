@@ -9,6 +9,7 @@ package view
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 
 	"github.com/google/btree"
@@ -22,8 +23,9 @@ import (
 // Event describes a view, store or focus change. Kind is view_add, view_remove,
 // view_update, view_refresh, store_add, store_remove, store_refresh or focus.
 // Index is the ascending index before removal, matching upstream's signal.
-// Flow is nil for refresh and focus events. Flow objects remain dispatch-owned;
-// a consumer must use master.Do before inspecting them.
+// Flow is nil for refresh and focus events. Subscribe delivers dispatch-owned
+// flows that require master.Do before inspection. Observe delivers detached,
+// independently owned copies with the original flow identity and live flag.
 type Event struct {
 	Kind  string
 	Flow  flow.Flow
@@ -60,6 +62,8 @@ type View struct {
 	sequence       uint64
 	subscribers    map[uint64]chan Event
 	nextSubscriber uint64
+	observers      map[uint64]func(Event)
+	nextObserver   uint64
 }
 
 // New constructs a View. A nil manager permits standalone store use; commands
@@ -98,6 +102,37 @@ func (v *View) Subscribe(capacity int) (<-chan Event, func()) {
 			close(existing)
 		}
 	}
+}
+
+// Observe registers a synchronous observer of the existing event sequence.
+// Registration, notification and the idempotent unsubscribe require addon
+// dispatch. Each callback receives its own detached Flow copy, safe to retain or
+// mutate without changing the store or other observers. Copying preserves the
+// original ID and Live flag. The callback must not mutate the view, perform I/O
+// or wait for another dispatch; it may only copy/serialize and enqueue nonblocking
+// data. Unsubscribe affects later emissions, not the captured callback set of an
+// in-flight emission. A nil callback is ignored. Observe starts no goroutines.
+func (v *View) Observe(fn func(Event)) func() {
+	if fn == nil {
+		return func() {}
+	}
+	if v.observers == nil {
+		v.observers = make(map[uint64]func(Event))
+	}
+	v.nextObserver++
+	id := v.nextObserver
+	v.observers[id] = fn
+	return func() {
+		if v.observers[id] != nil {
+			delete(v.observers, id)
+		}
+	}
+}
+
+// Done releases synchronous observers without changing the bounded Subscribe API.
+func (v *View) Done(context.Context) error {
+	clear(v.observers)
+	return nil
 }
 
 func (v *View) emit(e Event) {
@@ -143,6 +178,15 @@ func (v *View) emit(e Event) {
 			close(ch)
 			delete(v.subscribers, id)
 		}
+	}
+	for _, observer := range maps.Clone(v.observers) {
+		snapshot := e
+		if e.Flow != nil {
+			snapshot.Flow = e.Flow.Copy()
+			snapshot.Flow.Common().ID = e.Flow.Common().ID
+			snapshot.Flow.Common().Live = e.Flow.Common().Live
+		}
+		observer(snapshot)
 	}
 }
 

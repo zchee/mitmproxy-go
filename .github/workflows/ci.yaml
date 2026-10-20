@@ -198,10 +198,24 @@ jobs:
           (( result == 1 )) || exit 1
           timeout --signal=QUIT --kill-after=15s 1m "$CHROME" --version >| "$OUT/chrome-version.txt" 2>| "$OUT/chrome-version.stderr"
           grep -Eq '^Google Chrome for Testing 155\.0\.8059\.84[[:space:]]*$' "$OUT/chrome-version.txt"
-          mkdir -m 0700 "$RUNTIME/profile"
+          SANDBOX="$RUNTIME/chrome-linux64/chrome_sandbox"
+          test -f "$SANDBOX" && test ! -L "$SANDBOX"
+          ls -l "$SANDBOX" >| "$OUT/sandbox-helper.before.txt"
+          sha256sum "$SANDBOX" >| "$OUT/sandbox-helper.sha256"
+          sudo -n chown root:root -- "$SANDBOX"
+          sudo -n chmod 4755 -- "$SANDBOX"
+          ls -l "$SANDBOX" >| "$OUT/sandbox-helper.after.txt"
+          test "$(stat -c '%u:%g:%a' "$SANDBOX")" = '0:0:4755'
+          sha256sum --check "$OUT/sandbox-helper.sha256"
+          CHROME_DEVEL_SANDBOX="$SANDBOX"
+          export CHROME_DEVEL_SANDBOX
+          mkdir -m 0700 "$RUNTIME/profile" "$RUNTIME/sandbox-profile"
           timeout --signal=QUIT --kill-after=15s 1m "$CHROME" --headless --disable-gpu --no-first-run --no-default-browser-check --user-data-dir="$RUNTIME/profile" --dump-dom about:blank >| "$OUT/sandbox-dom.html" 2>| "$OUT/sandbox.stderr"
           grep -F '<html>' "$OUT/sandbox-dom.html"
-          printf 'MITMPROXY_TEST_CHROME=%s\nMITMPROXY_TEST_CHROME_SHA256=%s\n' "$CHROME" "$DIGEST" >> "$GITHUB_ENV"
+          timeout --signal=QUIT --kill-after=15s 1m "$CHROME" --headless --disable-gpu --no-first-run --no-default-browser-check --user-data-dir="$RUNTIME/sandbox-profile" --dump-dom chrome://sandbox >| "$OUT/sandbox-status.html" 2>| "$OUT/sandbox-status.stderr"
+          grep -F 'You are adequately sandboxed.' "$OUT/sandbox-status.html"
+          grep -iE 'suid|namespace|seccomp' "$OUT/sandbox-status.html" >| "$OUT/sandbox-status.rows.txt"
+          printf 'MITMPROXY_TEST_CHROME=%s\nMITMPROXY_TEST_CHROME_SHA256=%s\nCHROME_DEVEL_SANDBOX=%s\n' "$CHROME" "$DIGEST" "$SANDBOX" >> "$GITHUB_ENV"
           finish 0
       - name: Verify embedded mitmweb browser acceptance
         if: matrix.os == 'ubuntu-26.04'

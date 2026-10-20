@@ -12,7 +12,9 @@ import (
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -31,43 +33,39 @@ import (
 	"github.com/zchee/mitmproxy-go/flowio"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
+	"github.com/zchee/mitmproxy-go/internal/tools/web/webauth"
 	"github.com/zchee/mitmproxy-go/master"
 )
 
 type routeHarness struct {
 	app    *application
 	server *httptest.Server
+	xsrf string
 }
 
-func newRouteHarness(t *testing.T) *routeHarness {
+func newRouteHarness(t *testing.T, eventSize ...int) *routeHarness {
 	t.Helper()
 	m := master.New(master.Config{})
-	if err := m.Options.Update(t.Context(), map[string]any{"confdir": t.TempDir()}); err != nil {
+	confdir := t.TempDir()
+	if err := m.Do(t.Context(), func(ctx context.Context) error { return m.Options.Update(ctx, map[string]any{"confdir": confdir}) }); err != nil {
 		t.Fatal(err)
 	}
 	v := view.New(m.Addons)
-	events, err := eventstore.New()
+	events, err := eventstore.New(eventSize...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	app := &application{master: m, view: v, events: events}
-	// Route tests supply a policy boundary; composed authentication has its own real middleware campaign.
-	app.protect = func(next http.Handler, index bool) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get("Authorization") != "Bearer route-test" {
-				writeWebError(w, r, apiError(403, ""))
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
+	auth := webauth.New(m.Options)
 	ps, err := proxyserver.New(proxy.Config{Manager: m.Addons, Options: m.Options, Connections: new(proxy.Connections)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Addons.Add(t.Context(), core.New(m.Addons), anticache.New(m.Options), commandhistory.New(m.Options), clientplayback.New(m), ps, v, events); err != nil {
+	if err := m.Addons.Add(t.Context(), core.New(m.Addons), anticache.New(m.Options), commandhistory.New(m.Options), clientplayback.New(m), ps, auth, v, events); err != nil {
 		t.Fatal(err)
 	}
+	if err := m.Do(t.Context(), func(ctx context.Context) error { return m.Options.Update(ctx, map[string]any{"web_password":"route-test"}) }); err != nil { t.Fatal(err) }
+	app.useAuth(auth)
 	if err := m.Do(t.Context(), func(ctx context.Context) error {
 		first := testflow.TFlow(testflow.WithResponse)
 		first.ID = "42"
@@ -96,7 +94,23 @@ func newRouteHarness(t *testing.T) *routeHarness {
 	})
 	server := httptest.NewServer(app.handler())
 	t.Cleanup(server.Close)
-	return &routeHarness{app: app, server: server}
+	jar, err := cookiejar.New(nil)
+	if err != nil { t.Fatal(err) }
+	server.Client().Jar = jar
+	base, err := url.Parse(server.URL)
+	if err != nil { t.Fatal(err) }
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/", nil)
+	if err != nil { t.Fatal(err) }
+	response, err := server.Client().Do(request)
+	if err != nil { t.Fatal(err) }
+	_, readErr := io.Copy(io.Discard, response.Body)
+	closeErr := response.Body.Close()
+	if readErr != nil || closeErr != nil { t.Fatalf("read login response: %v; close: %v", readErr, closeErr) }
+	if response.StatusCode != http.StatusForbidden { t.Fatalf("unauthenticated login status=%d", response.StatusCode) }
+	var xsrf string
+	for _, cookie := range jar.Cookies(base) { if cookie.Name == "_mitmproxy_xsrf" { xsrf = cookie.Value } }
+	if xsrf == "" { t.Fatal("real login middleware did not issue an XSRF cookie") }
+	return &routeHarness{app: app, server: server, xsrf: xsrf}
 }
 
 func (h *routeHarness) do(t *testing.T, fn func(context.Context) error) {
@@ -113,6 +127,7 @@ func (h *routeHarness) fetch(t *testing.T, method, path string, body []byte, con
 		t.Fatal(err)
 	}
 	request.Header.Set("Authorization", "Bearer route-test")
+	request.Header.Set("X-XSRFToken", h.xsrf)
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
@@ -294,6 +309,7 @@ func TestWebRoutes(t *testing.T) {
 					return f.Revert()
 				})
 			}},
+			"test_update_flow_content_multipart": {testWebMultipartContent},
 			"test_flow_contentview": {func(t *testing.T, h *routeHarness) {
 				for query, want := range map[string]string{"": "foo\nbar", "?lines=1": "foo\n"} {
 					var got map[string]any

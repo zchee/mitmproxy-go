@@ -133,10 +133,10 @@ func testMitmwebControl(t *testing.T, binary string) {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
 	defer func() { cancel(); _ = cmd.Process.Kill() }()
 	addresses := make(chan string, 1)
 	scanned := make(chan struct{})
+	var scanErr error
 	go func() {
 		defer close(scanned)
 		scanner := bufio.NewScanner(stdout)
@@ -150,7 +150,12 @@ func testMitmwebControl(t *testing.T, binary string) {
 				}
 			}
 		}
+		if err := scanner.Err(); err != nil {
+			scanErr = err
+		}
 	}()
+	// Wait closes StdoutPipe, so drain the reader before transferring ownership.
+	go func() { <-scanned; done <- cmd.Wait() }()
 	var address string
 	select {
 	case address = <-addresses:
@@ -258,6 +263,9 @@ func testMitmwebControl(t *testing.T, binary string) {
 	case <-scanned:
 	case <-ctx.Done():
 		t.Fatal("stdout scanner did not finish")
+	}
+	if scanErr != nil {
+		t.Fatalf("stdout scanner: %v", scanErr)
 	}
 	if conn, err := net.DialTimeout("tcp", base.Host, time.Second); err == nil {
 		_ = conn.Close()

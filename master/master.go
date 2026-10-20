@@ -31,6 +31,13 @@ type Config struct {
 	// [addon.LogHandlerOptions].
 	LogQueueSize int
 
+	// BeforeClose runs after the done hook, outside dispatch and before Close,
+	// including on a startup failure that never reached running. Its context
+	// retains Run's values but is not canceled. Frontends use it to drain owned
+	// log consumers while the manager is still available. Nil does nothing.
+	// An earlier Run error takes precedence over a callback error.
+	BeforeClose func(context.Context) error
+
 	// OnDispatchStart and OnDispatchEnd observe every process-level dispatch
 	// lock acquisition and release; see [addon.Config]. They must not manage
 	// a connection's idle watchdog, which the proxy's hook runner disarms.
@@ -48,7 +55,8 @@ type Master struct {
 	// Addons holds the addons and dispatches hooks to them.
 	Addons *addon.Manager
 
-	logs *addon.LogHandler
+	logs        *addon.LogHandler
+	beforeClose func(context.Context) error
 
 	shutdownOnce sync.Once
 	shutdown     chan struct{}
@@ -62,9 +70,10 @@ func New(cfg Config) *Master {
 		opts = options.New()
 	}
 	m := &Master{
-		Options:  opts,
-		Commands: command.NewManager(),
-		shutdown: make(chan struct{}),
+		Options:     opts,
+		Commands:    command.NewManager(),
+		shutdown:    make(chan struct{}),
+		beforeClose: cfg.BeforeClose,
 	}
 	m.Addons = addon.NewManager(m.Options, m.Commands, addon.Config{
 		Logger:          cfg.Logger,
@@ -120,6 +129,11 @@ func (m *Master) Run(ctx context.Context) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer func() {
+		if m.beforeClose != nil {
+			if cerr := m.beforeClose(context.WithoutCancel(ctx)); err == nil {
+				err = cerr
+			}
+		}
 		if cerr := m.Close(context.WithoutCancel(ctx)); err == nil {
 			err = cerr
 		}

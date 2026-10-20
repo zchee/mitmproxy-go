@@ -467,7 +467,7 @@ does not reorder fragments or deduplicate retransmissions; pion handles retransm
 
 | Upstream behaviour | Go behaviour | Reason |
 |---|---|---|
-| Tornado's static handler derives `Last-Modified` from the file's checkout mtime. | The embedded static handler uses the pinned upstream commit timestamp, Unix `1791038697`, for every static asset (`internal/tools/web/assets.go`). | Embedded files have zero mtimes; a fixed source timestamp makes validators reproducible across builds and checkouts. |
+| Tornado's static handler derives `Last-Modified` from the file's checkout mtime (`py:mitmproxy/tools/web/app.py:925-928` at `3368a0a`; inherited Tornado 6.5.10 `tornado/web.py:3229-3250`). | The embedded static handler uses the pinned upstream commit timestamp, Unix `1791038697`, for every static asset (`internal/tools/web/assets.go:23-27,153-167`). | Embedded files have zero mtimes; a fixed source timestamp makes validators reproducible across builds and checkouts. |
 
 Reproduced on purpose: the ten static files and index are byte-exact upstream
 references with the MIT notice. Static ETags are quoted SHA-512 digests; JavaScript
@@ -475,6 +475,118 @@ uses `text/javascript` independently of the host MIME registry. Ordinary static
 responses add no explicit `Cache-Control`; a `v` query parameter selects
 `max-age=315360000` and `Expires`. Static files remain unauthenticated, as upstream;
 index authentication belongs to the composed backend, not `IndexHandler` itself.
+The static handler and index remain the same pinned frontend (`py:mitmproxy/tools/web/app.py:52-55,361-368,925-928`
+at `3368a0a`; `internal/tools/web/assets.go:23-24,31-112`, `assets.tsv:1-16`, `UPSTREAM_LICENSE:1-19`).
+
+### Routes and metadata
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| The API Server header identifies mitmproxy (`py:mitmproxy/tools/web/app.py:300-312` at `3368a0a`). | Identifies mitmproxy-go; the other security headers retain upstream values (`internal/tools/web/routes.go:136-141`). | Name the implementation serving the response, without normalizing response bodies. |
+| Malformed JSON reports Python parser line/column wording; non-object option updates report Python's keyword-argument error (`py:mitmproxy/tools/web/app.py:314-323,805-814` at `3368a0a`). | The same 400 status uses the Go JSON parser's byte offset or JSON-kind diagnostic (`internal/tools/web/errors.go:99-125`, `routes.go:298-309`). | Diagnostics describe the parser actually used; there is no broad diagnostic exclusion. |
+| With `web_debug`, generic errors render Python/Tornado tracebacks; explicit `APIError` bodies bypass the generic renderer (`py:mitmproxy/tools/web/app.py:354-358,935-936` at `3368a0a`). | Generic errors render Go stack frames, not Python tracebacks, when debug is enabled. The stack contains function/file/line frames, not request lines, headers, cookies, bodies, snapshots or option values. Default debug-off HTML 500 and explicit APIError bodies are unchanged (`internal/tools/web/errors.go:38-97`). | Report the actual runtime without disclosing request values or enabling a frontend build/autoreloader. |
+
+Reproduced on purpose (compatibility, not differences):
+
+| Upstream contract | Go contract | Reason |
+|---|---|---|
+| `/commands` returns wrapped docstring help, or null when absent (`py:mitmproxy/command.py:77-81`, `py:mitmproxy/tools/web/app.py:758-777` at `3368a0a`). | Removes continuation-line common indentation as Python 3.13 does for docstrings, strips and wraps at 70 columns; empty help serializes as null (`command/command.go:107-145`, `internal/tools/web/routes.go:250-269`). | Preserve help layout and nullable metadata, including the existing CLI help-line layout. |
+| `content.data` calls `write(message.get_content(strict=False))`; an uncaptured body is None and produces the generic 500 (`py:mitmproxy/tools/web/app.py:670-688,354-358`, `py:mitmproxy/http.py:390-391` at `3368a0a`). | Missing `RawContent` produces the centralized generic 500, or the Go stack under `web_debug`; a present empty body retains 200, empty `application/text` content and Content-Disposition. POST and contentview paths are unchanged (`internal/tools/web/content.go:91-123`, `errors.go:60-97`). | Reproduce upstream's `write(None)` result without conflating absent and empty bodies. |
+| Authenticated `/state` includes mode-server JSON, including client-private-key-bearing `wireguard_conf` (`py:mitmproxy/tools/web/app.py:826-843`, `py:mitmproxy/proxy/mode_servers.py:393-417` at `3368a0a`). | `/state` and `state/update` include the first client's configuration, never the server private key. Treat server snapshots and their Servers maps as secret-bearing: do not log or expose their values outside authenticated readers (`internal/tools/web/routes.go:239-249`, `updates/broadcast.go:97-99`, `internal/proxy/modeserver/wireguard.go:94-108`, `addons/proxyserver/web_state.go:14-28`). | Client configuration parity is intentional; it is not public status metadata. Event identities are described under [addons/eventstore](#addonseventstore). |
+| State reports the host platform and local-mode availability; process and icon routes delegate to native process information (`py:mitmproxy/tools/web/app.py:826-879` at `3368a0a`). | Preserves host/effective-UID availability policy (`internal/tools/web/routes.go:165-194,239-249`, `internal/local/spec.go:65-80`). Handler tests and Linux root/nonroot evidence do not certify native process listing/icons on other hosts. Windows remains build/vet-only, with native execution deferred as described under [internal/processinfo](#internalprocessinfo). | Cross-compilation and host-independent HTTP contracts are not native process or driver evidence. |
+
+### Static viewer
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| Updating `web_static_viewer` exports synchronously inside configure (`py:mitmproxy/tools/web/static_viewer.py:108-118` at `3368a0a`). | Configure captures immutable inputs; a single owned worker exports outside dispatch, serializing/coalescing pending work. Runtime completion is asynchronous after the option update. Failures are logged, not raised to that update, and the option is not rolled back. Startup drains before readiness and existing errorcheck decides startup failure (`internal/tools/web/static_viewer.go:37-40,57-207`, `webaddons.go:63-73`). | Filesystem I/O must not hold the shared dispatch lock. An identical successful input is not exported again. |
+| Export replaces an existing static subtree and writes files directly with ambient permissions (`py:mitmproxy/tools/web/static_viewer.py:22-38,46-64,114-118` at `3368a0a`). | Requires an absent destination, including refusal of an empty directory, symlink or previous export. Builds a private 0700 sibling stage with 0600 files, validates the complete inventory, then atomically publishes without replacement (`internal/tools/web/static_publication.go:38-101,182-255`, `static_viewer.go:400-417`). | Never expose a partial export or overwrite caller-owned files; updating requires a fresh absent destination. Parents must already exist and be trusted. |
+| Direct export has no owner-marker recovery protocol (`py:mitmproxy/tools/web/static_viewer.py:22-38,114-118` at `3368a0a`). | Recovery validates stage name, ownership, exact permissions, a locked marker of at most 4096 bytes, and matching destination/stage fields before removing an abandoned owned stage. It never promotes an incomplete stage, merges destinations or recursively deletes through a replaced parent entry (`internal/tools/web/static_publication.go:104-179,258-310`). | Recover only identified owned staging work; refuse foreign or unrecognized contents. |
+| Ordinary Python filesystem operations supply publication behavior (`py:mitmproxy/tools/web/static_viewer.py:22-38,114-118` at `3368a0a`). | macOS uses `renameatx_np(RENAME_EXCL)` and Linux uses `renameat2(RENAME_NOREPLACE)`. Unsupported platforms/filesystems fail without a replacing fallback (`internal/tools/web/static_publish_darwin.go:22-33`, `static_publish_linux.go:22-33`, `static_publish_other.go:13-20`). | Atomic no-overwrite publication is required. Windows compile/static checks are not native export proof. |
+
+Reproduced on purpose (compatibility, not differences):
+
+| Upstream contract | Go contract | Reason |
+|---|---|---|
+| An absent response object exports `No content.` and its corresponding Auto view; an empty captured message exports empty bytes, while missing message content fails (`py:mitmproxy/tools/web/static_viewer.py:51-95` at `3368a0a`). | Preserves these distinctions. Safe opaque flow-ID components are accepted; repeated IDs retain all flows.json records and the last content payload wins. Empty/dot/dotdot, separators, NUL and escaping paths are refused (`internal/tools/web/static_viewer.go:315-378`). | Keep payload semantics without allowing flow IDs to escape the private export tree. |
+| The viewer copies the pinned static frontend and index (`py:mitmproxy/tools/web/static_viewer.py:22-33` at `3368a0a`; upstream `LICENSE:1-19`). | Keeps those bytes and additionally exports the upstream MIT notice at `static/UPSTREAM_LICENSE` (`internal/tools/web/static_viewer.go:290-312`). | Preserve provenance and redistribution notice. |
+
+### Web options
+
+All eight options are functional; their names, types, defaults, help and theme choices retain upstream metadata.
+The resource, debug and export differences above do not add option names.
+
+| Option | Type and default | Source |
+|---|---|---|
+| `web_columns` | sequence of str, `tls, icon, path, method, status, size, time` | `py:mitmproxy/tools/web/webaddons.py:94-99` at `3368a0a`; `internal/tools/web/webaddons.go:44`. |
+| `web_debug` | bool, `false` | `py:mitmproxy/tools/web/webaddons.py:91` at `3368a0a`; `internal/tools/web/webaddons.go:41`. |
+| `web_host` | str, `127.0.0.1` | `py:mitmproxy/tools/web/webaddons.py:93` at `3368a0a`; `internal/tools/web/webaddons.go:43`. |
+| `web_open_browser` | bool, `true` | `py:mitmproxy/tools/web/webaddons.py:90` at `3368a0a`; `internal/tools/web/webaddons.go:40`. |
+| `web_password` | str, empty | `py:mitmproxy/tools/web/webaddons.py:30-41` at `3368a0a`; `internal/tools/web/webauth/webauth.go:51-54`. |
+| `web_port` | int, `8081` | `py:mitmproxy/tools/web/webaddons.py:92` at `3368a0a`; `internal/tools/web/webaddons.go:42`. |
+| `web_static_viewer` | optional str, empty string (not null) | `py:mitmproxy/tools/web/static_viewer.py:100-106` at `3368a0a`; `internal/tools/web/static_viewer.go:52-55`. |
+| `web_theme` | str, `system`; choices `system`, `dark`, `light` | `py:mitmproxy/tools/web/webaddons.py:100-106` at `3368a0a`; `internal/tools/web/webaddons.go:45`. |
+
+### Update stream
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| Each connection has an unbounded application send queue (`py:mitmproxy/tools/web/app.py:376-417` at `3368a0a`). | Each `/updates` client has 1024 ordinary FIFO slots. Enqueue never waits for capacity or socket I/O. Overflow selects terminal 1011, stops ordinary admission, allows an already claimed frame to finish, discards backlog and writes Close 1011 before another ordinary message (`internal/tools/web/updates/client.go:23-29,74-98,183-240`). | A nonreader cannot block dispatch or retain an unlimited per-client backlog. A completed graceful close can be peer-observed as 1011. |
+| The application queue has no equivalent terminal-write grace (`py:mitmproxy/tools/web/app.py:388-417` at `3368a0a`). | After 15 seconds from terminal selection, a still-blocked or partial transport is aborted and owned workers are joined. The outcome is recorded as transport-aborted/local-1011, separately from peer-observed 1011 (`internal/tools/web/updates/client.go:100-179`). | Bound cleanup without claiming that a local close intent or failed write delivered a wire Close frame. |
+| The inherited Tornado WebSocket handler has a default 10 MiB message limit but no separate data-fragment count limit (`py:mitmproxy/tools/web/app.py:376-386` at `3368a0a`; Tornado 6.5.10 `tornado/websocket.py:100,1171-1210`). | Retains the 10 MiB assembled-message ceiling and additionally permits at most 1024 data fragments per message, including empty fragments; control frames do not count. Fragment 1025 closes with 1009 (`internal/tools/web/updates/client.go:23-29,243-313`, `hub.go:139`). | Bound fragment bookkeeping independently of payload bytes; the byte ceiling is unchanged. |
+
+Reproduced on purpose (compatibility, not differences):
+
+| Upstream contract | Go contract | Reason |
+|---|---|---|
+| The inherited Tornado handler checks `Origin`, falling back to `Sec-WebSocket-Origin` only when absent; missing headers pass and empty Origin fails. The lowercase parsed Origin authority must equal raw Host, including port (`py:mitmproxy/tools/web/app.py:376-386` at `3368a0a`; Tornado 6.5.10 `tornado/websocket.py:256-273,559-566`). | Applies the same comparison, preserving Host case and port rather than normalizing default ports or forwarded hosts (`internal/tools/web/updates/hub.go:126-139,161-175`). | Preserve Tornado's exact Origin contract instead of gows' permissive zero-value Origin policy. |
+| Per-client named filters have no count cap; changing a filter scans the current view. WebSocket compression is not enabled (`py:mitmproxy/tools/web/app.py:428-485` at `3368a0a`; inherited Tornado 6.5.10 `tornado/websocket.py:399-421`). | No per-client named-filter cap; filter updates scan the view, and frame writes do not compress (`internal/tools/web/updates/client.go:218,361-379`, `hub.go:132-139`). | This behavior is unchanged. The queue is a per-client message bound, not a global memory or work bound; matching scales with clients, retained filters and affected flows. |
+
+### Authentication
+
+Upstream references in this section use the Python pin `3368a0a`.
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| Hash configuration and verification delegate to argon2/libargon2 (`py:mitmproxy/tools/web/webaddons.py:43-57,75-85` at `3368a0a`). | Accepts only Argon2i/Argon2id version 19, unique decimal `m`, `t`, `p`, `8*p <= m <= 262144` KiB, `t` 1–10, `p` 1–16, decoded salt 8–64 bytes, digest 16–64 bytes, and encoded PHC length at most 1024 bytes. Base64 must be canonical, standard and unpadded. Invalid configuration fails before derivation, without plaintext fallback (`internal/tools/web/webauth/phc.go:33-85`, `webauth.go:82-103`). | Bound configuration-driven decoding and derivation; these are deliberate restrictions on upstream hash acceptance. |
+| Verification has no equivalent process-wide concurrent-memory admission budget (`py:mitmproxy/tools/web/webaddons.py:75-85` at `3368a0a`). | Across addon instances and configuration generations, at most two derivations and 262144 KiB aggregate reserved memory are admitted. Exhaustion returns HTTP 503 without queueing or derivation, not an incorrect-password 403. Cancellation is checked before admission; an admitted derivation retains its reservation until it finishes (`internal/tools/web/webauth/phc.go:88-136`, `handler.go:93-100`). | Bound resource use without claiming that x/crypto derivation can be interrupted. |
+| Unsafe requests with a present `Sec-Fetch-Site` other than `same-origin` or `none` raise `tornado.httpclient.HTTPError(403)`, not the web error class (`py:mitmproxy/tools/web/app.py:284-290` at `3368a0a`); the pinned Tornado 6.5.10 runtime returns 500. | Returns 403 for `same-site`, `cross-site` and other disallowed values. XSRF is checked first; an absent header is permitted subject to XSRF (`internal/tools/web/webauth/handler.go:37-45`). | Enforce the intended refusal instead of reproducing the upstream error-class mismatch. |
+
+Reproduced on purpose (compatibility, not differences):
+
+| Upstream contract | Go contract | Reason |
+|---|---|---|
+| A valid signed session takes precedence; otherwise `Authorization: Bearer` precedes the `token` argument. Empty `web_password` generates a random token; the cookie name is `mitmproxy-auth-<web_port>` (`py:mitmproxy/tools/web/app.py:249-278`, `webaddons.py:26-28,43-85` at `3368a0a`). | Preserves that precedence, generated-token URL and port scope (`internal/tools/web/webauth/handler.go:77-117`, `webauth.go:82-131`). Cookies retain Tornado-v2 `y`/HMAC-SHA256 signing, 400-day browser expiry, default 31-day validation, HttpOnly and SameSite Strict (`cookie.go:17-77`). | Existing authentication behavior is unchanged; the PHC resource restrictions above are separate. |
+| XSRF uses the readable `_mitmproxy_xsrf` cookie and strict SameSite policy (`py:mitmproxy/tools/web/app.py:383-386,929-934` at `3368a0a`). | Unsafe methods require the decoded token from `_xsrf`, `X-XSRFToken` or `X-CSRFToken` to match the cookie; masked and legacy forms are decoded before comparison (`internal/tools/web/webauth/xsrf.go:19-57,88-133`, `handler.go:37-45`). | Preserve token semantics rather than compare randomized masked strings. |
+| Authenticated WebSocket upgrades retain pending auth and XSRF cookies (`py:mitmproxy/tools/web/app.py:263-269,383-386` at `3368a0a`). | `PrepareUpgrade` sets the pending cookies and the hub opts into gows `ForwardResponseHeaders`, retaining separate `Set-Cookie` fields on the real 101 (`internal/tools/web/webauth/handler.go:53-75`, `internal/tools/web/updates/hub.go:123-139`; integration contract `internal/tools/web/webauth/handshake_test.go:113-239`). | Use the response-header API rather than a synthetic handshake; existing gows callers remain unchanged unless they opt in. |
+| Upload handlers select the first file in wire order, or the exact raw body when no file exists (`py:mitmproxy/tools/web/app.py:325-334` at `3368a0a`). | A bounded scan records the first file before the standard storage parse; exact raw bytes are replayed through the wrapped handler, and owned temporary storage is cleaned afterward (`internal/tools/web/webauth/handler.go:124-179`). | Form parsing must not reorder file selection or consume the raw-body fallback. |
+
+### Acceptance infrastructure
+
+These are test-harness and runner boundaries, not changes to mitmweb's application shutdown or the user's browser.
+
+| Upstream product contract | Go acceptance boundary | Reason |
+|---|---|---|
+| The pinned executable installs SIGTERM handling before running the master (`py:mitmproxy/tools/main.py:122-140` at `3368a0a`). | Normal harness shutdown sends SIGTERM once to the direct owned child; uv forwards it once to Python. The existing 15-second grace, whole-group SIGKILL on timeout, direct-child reap, leftover-group failure and immediate port-rebind checks remain. Any nonzero exit, including 143, fails (`internal/tools/web/acceptance/subprocess_unix_test.go:59-95`, `subprocess_stop_unix_test.go:21-88`, `differential_unix_test.go:108-113`). | Signalling the whole uv-owned group also signals Python directly, so uv's forwarding can deliver a second TERM during interpreter teardown. The real supervisor/descendant sensitivity pins one forwarded signal and an orderly descendant exit; no exit-143 waiver is used. |
+| The product opens a suitable installed GUI browser (`py:mitmproxy/tools/web/webaddons.py:123-158` at `3368a0a`); it does not provision a headless test browser. | The hosted `ubuntu-26.04` carrier uses frozen Chrome's setuid sandbox because unprivileged user namespaces are restricted there. Before configuring the helper, two bounded negative controls must fail: no helper with `No usable sandbox`, and an unprivileged helper with `The SUID sandbox helper binary was found, but is not configured correctly`. The unchanged helper hash, root:root ownership, mode 4755 and a non-nosuid mount are checked; `CHROME_DEVEL_SANDBOX` propagates to later launches (`.github/workflows/ci.yaml:201-244`). | Keep the sandbox enabled rather than change the runner's namespace policy or use `--no-sandbox`. Native Debian uses the namespace sandbox instead; the hosted provisioner is not its setup procedure. |
+| Upstream browser opening makes no claim about this port's Linux acceptance browser (`py:mitmproxy/tools/web/webaddons.py:108-119,123-158` at `3368a0a`). | The same unprivileged chromedp browser session used for UI acceptance navigates to `chrome://sandbox`, saves the full status text as `sandbox-status.txt`, and requires `You are adequately sandboxed.` (`internal/tools/web/acceptance/browser_linux_test.go:41-49,208-228`). | A successful about:blank render alone does not prove sandbox status; a command-line headless chrome:// URL can dump a fallback start page. The recorded SUID/Namespace/Seccomp rows distinguish hosted and native modes without disabling either sandbox. |
+
+### Differential comparison boundaries
+
+The seven-fixture oracle reuses identical input tuples sequentially, resets the confdir and verifies teardown between
+runtimes (`internal/tools/web/acceptance/differential_unix_test.go:56-84,108-113`). Comparisons retain strict flow/schema,
+HTTP status/content type, raw-body and metadata checks; the named exceptions below are not a registry intersection or
+a general help, whitespace, empty/null, error-text or content-body normalizer.
+
+| Pinned upstream surface | Named exclusion or adapter | Reason |
+|---|---|---|
+| `/options` dumps the upstream registry (`py:mitmproxy/tools/web/app.py:805-807` at `3368a0a`). | Removes Go-only `content_decode_limit` (decoded-body bound) and `max_client_connections` (client-admission bound) from Go equality when present (`testdata/options-go-only.txt:1,3`, `addons/core/core.go:38-40`, `addons/proxyserver/proxyserver.go:126`, `internal/tools/web/acceptance/differential_unix_test.go:228-234`). | These safety options have no upstream counterpart; they are registered by the current default addon set. |
+| `/options` dumps the upstream registry (`py:mitmproxy/tools/web/app.py:805-807` at `3368a0a`). | The same manifest-only removal names `local_redirector_path` (redirector override), `otel_exporter_endpoint` (telemetry), `pprof_addr` (profiling) and `script_max_steps` (Starlark execution budget), if present (`testdata/options-go-only.txt:2,4-6`, `internal/tools/web/acceptance/differential_unix_test.go:228-234`). | These four names remain reserved, not runtime registrations; the six-entry manifest is not a claim of six active extra options. |
+| Python registers the `scripts` option and `script.run` command (`py:mitmproxy/addons/script.py:163-169` at `3368a0a`). | Removes only Python `scripts` from `/options` and `script.run` from `/commands` (`internal/tools/web/acceptance/differential_unix_test.go:237-238`). | Script-addon loading is not implemented; no other upstream option or command is excluded. |
+| `browser.start(browser: str = "chrome")` has an ordinary parameter (`py:mitmproxy/addons/browser.py:39-40` at `3368a0a`). | Guards exact Python `browser:str` / `POSITIONAL_OR_KEYWORD` and `browser.start browser`, then compares against `arg0:str` / `VAR_POSITIONAL` and `browser.start *arg0` (`internal/tools/web/acceptance/differential_unix_test.go:239-248`). | The existing Go variadic/default API is documented under [addons/browser](#addonsbrowser); this is a guarded metadata adapter, not altered help text. |
+| `export` returns text after backslash replacement (`py:mitmproxy/addons/export.py:218-232` at `3368a0a`). | Guards Python return `str` and `export format f -> str`, then compares as `bytes` and `export format f -> bytes` (`internal/tools/web/acceptance/differential_unix_test.go:249-254`). | The existing Go byte-result contract is documented under [addons/export](#addonsexport); no unrelated signature is adapted. |
+| `/state` includes `version`, `platform`, `localModeUnavailable`, `contentViews` and `servers` (`py:mitmproxy/tools/web/app.py:826-840` at `3368a0a`). | Fixture equality compares only `contentViews` and `servers` (`internal/tools/web/acceptance/differential_unix_test.go:189-200`); it does not compare `version`, `platform` or `localModeUnavailable`. | Version identifies the implementation; platform and availability depend on the host/effective UID. Separate handler and Linux root/nonroot checks cover the availability contract; no native Windows evidence is inferred. |
+| Process/icon results use native host state, and contentview rendering uses the runtime's renderer (`py:mitmproxy/tools/web/app.py:691-755,846-879` at `3368a0a`). | Fixture equality does not compare `/processes`, `/executable-icon` or highlighted `/flows/<id>/<part>/content/<view>` output; it compares flow schemas and raw `content.data` replies instead (`internal/tools/web/acceptance/differential_unix_test.go:135-204`). | Host process/icon results and highlighter output are not portable cross-runtime values. Their handler/native/rendering contracts remain separate; raw bytes and error statuses are not normalized away. |
 
 ## internal/tools/cmdline
 
@@ -830,7 +942,11 @@ Scripting (Starlark instead of Python):
 | Calling a `@concurrent` handler directly returns a coroutine that is never awaited, so the handler does not run. | A direct call fails with `concurrent(<fn>) cannot be called directly; it runs only when invoked as a hook`. | Starlark has no coroutine value to return. |
 | `script.run` rejects a concurrent handler with `Async handler <hook> (<module repr>) cannot be called from sync context`. | The message names the script path where upstream prints the module's repr. | A Starlark module has no Python repr. |
 
-Options that only the Go port has (`testdata/options-go-only.txt`; not registered yet):
+Options that only the Go port has (`testdata/options-go-only.txt:1-6`):
+`content_decode_limit` and `max_client_connections` are registered by the default addon set
+(`addons/core/core.go:38-40`, `addons/proxyserver/proxyserver.go:126`).
+`local_redirector_path`, `otel_exporter_endpoint`, `pprof_addr` and `script_max_steps` remain reserved,
+not runtime options. The historical four-name description is not the current registry difference.
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
@@ -901,14 +1017,15 @@ TLS and protocol layers:
 
 | Upstream behaviour | Go behaviour | Reason |
 |---|---|---|
-| Synchronous Python signals (`mitmproxy/addons/view.py`). | Bounded event channels; overflow closes and removes the subscriber, which must resnapshot. | A slow frontend cannot block the dispatch lock. Channel subscribe/cancel and store access require that lock. |
+| Synchronous Python signals (`py:mitmproxy/addons/view.py:169-184` at `3368a0a`). | Bounded `Subscribe` channels; overflow still closes and removes the subscriber, which must resnapshot. Synchronous `Observe` callbacks additionally receive a detached deep copy per non-nil flow, observer and event, retaining ID and Live (`addons/view/view.go:89-130,174-190`). | Existing channel behavior is unchanged. Observer copies isolate the store and other observers; copying, serialization and filter fanout still consume dispatch time. |
 | `intercept`, `resume` and `kill` are directly dispatched hooks (`mitmproxy/addons/view.py`). | Runtime changes arrive through `update`; direct methods remain available. | The Go core dispatches the shared update hook for lifecycle notifications. |
 
 ## addons/eventstore
 
 | Upstream behaviour | Go behaviour | Reason |
 |---|---|---|
-| The constructor installs a process-global Python logging handler (`mitmproxy/addons/eventstore.py`). | Entries arrive through the master's existing `add_log` dispatch. | Embedders own logger composition; store mutation remains under the dispatch lock. |
+| The constructor installs a process-global Python logging handler (`py:mitmproxy/addons/eventstore.py:18-26,41-56` at `3368a0a`). | The frontend explicitly composes one `EventStore.LogHandler`, delivering `Add` through `manager.Do`, and owns Flush/Close outside dispatch before manager closure. Construction/loading installs no global logger; the store no longer implements the deprecated `add_log` hook (`addons/eventstore/eventstore.go:44-65,92-119`, `internal/tools/web/master.go:127-140,290-295`). | Embedders own logger composition and lifetime while store mutation stays synchronized. |
+| Web event IDs are Python object-address integers (`py:mitmproxy/tools/web/app.py:212-217,800-802` at `3368a0a`). | A monotonic per-store uint64 identifies both `/events` and `events/add`, without reuse after clear or eviction (`addons/eventstore/eventstore.go:83-126`, `internal/tools/web/routes.go:234-238`, `internal/tools/web/updates/broadcast.go:91-96`). | Keep one stable identity source without exposing Go object addresses. |
 | Synchronous addition and refresh signals (`mitmproxy/addons/eventstore.py`). | Bounded event channels; overflow closes and removes the subscriber, which must resnapshot. Subscribe and cancel require the dispatch lock. | A slow frontend cannot block the dispatcher or retain an unbounded notification queue. |
 
 ## addons/cut

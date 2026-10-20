@@ -36,6 +36,7 @@ type client struct {
 	terminalReady   chan struct{}
 	done            chan struct{}
 	mu              sync.Mutex
+	readMu          sync.Mutex // Extends borrowed-buffer lifetime through copying.
 	terminal        bool
 	finished        bool
 	closeBody       []byte
@@ -103,7 +104,12 @@ func (c *client) abort() {
 	}
 	c.signalLocked()
 	c.mu.Unlock()
+	// Interrupt a blocked reader without releasing its borrowed buffers, then
+	// wait for the application's copy before Abort returns them to the pool.
+	_ = c.ws.SetReadDeadline(time.Now())
+	c.readMu.Lock()
 	_ = c.ws.Abort()
+	c.readMu.Unlock()
 }
 
 func (c *client) run(ctx context.Context) {
@@ -225,7 +231,12 @@ func (c *client) read() error {
 	var message []byte
 	fragments := 0
 	for {
+		c.readMu.Lock()
 		frame, err := c.ws.ReadFrame()
+		if err == nil {
+			frame.Payload = bytes.Clone(frame.Payload)
+		}
+		c.readMu.Unlock()
 		if err != nil {
 			if protocol, ok := errors.AsType[*gows.ProtocolError](err); ok {
 				c.terminate(protocol.Code, protocol.Reason)
@@ -263,7 +274,12 @@ func (c *client) read() error {
 			c.terminate(gows.CloseMessageTooBig, "Too many message fragments.")
 			return nil
 		}
+		c.readMu.Lock()
 		payload, complete, err := c.ws.DecodeFrame(frame)
+		if err == nil && frame.Compressed {
+			payload = bytes.Clone(payload)
+		}
+		c.readMu.Unlock()
 		if err != nil {
 			if protocol, ok := errors.AsType[*gows.ProtocolError](err); ok {
 				c.terminate(protocol.Code, protocol.Reason)

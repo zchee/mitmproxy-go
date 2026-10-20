@@ -150,6 +150,7 @@ func TestWebUpdateLifecycle(t *testing.T) {
 				t.Fatalf("closed hub admitted HTTP upgrade: %d", status)
 			}
 		}},
+		"shutdown_during_inbound_fragments": {run: testInboundAbort},
 		"missing_dependencies_fail_fast": {run: func(t *testing.T) {
 			if h, err := New(t.Context(), Config{}); h != nil || err == nil {
 				t.Fatal("missing dependencies accepted")
@@ -159,6 +160,42 @@ func TestWebUpdateLifecycle(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, tt.run)
 	}
+}
+
+func testInboundAbort(t *testing.T) {
+	f := newFixture(t, nil)
+	peers := []*testPeer{f.connect(t), f.connect(t), f.connect(t), f.connect(t)}
+	started, finished := make(chan struct{}, len(peers)), make(chan struct{}, len(peers))
+	for _, peer := range peers {
+		go func() {
+			err := peer.ws.WriteFrame(gows.OpcodeText, false, bytes.Repeat([]byte("x"), 2048), false)
+			started <- struct{}{}
+			for range 128 {
+				if err != nil {
+					break
+				}
+				err = peer.ws.WriteFrame(gows.OpcodeContinuation, false, bytes.Repeat([]byte("y"), 2048), false)
+			}
+			finished <- struct{}{}
+		}()
+	}
+	for range peers {
+		await(t, started)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := f.h.Close(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Close=%v", err)
+	}
+	for range peers {
+		await(t, finished)
+	}
+	do(t, f, func(context.Context) error {
+		if len(f.h.clients) != 0 {
+			t.Fatal("inbound readers remained registered after Abort")
+		}
+		return nil
+	})
 }
 
 func onlyClient(t *testing.T, f *streamFixture) *client {

@@ -42,6 +42,8 @@ type Hub struct {
 	workers     sync.WaitGroup
 	waitOnce    sync.Once
 	joined      chan struct{}
+
+	afterAdmission func() // Optional test barrier, set before serving requests.
 }
 
 // New registers observers under Master.Do. ctx is used only for registration;
@@ -110,9 +112,10 @@ func (h *Hub) Close(ctx context.Context) error {
 	}
 }
 
-// ServeHTTP authenticates outside dispatch and performs the HTTP upgrade with
-// validated pending response headers.
-// It owns its handler lifetime until the reader and writer have both joined.
+// ServeHTTP authenticates outside dispatch and admits the client under dispatch
+// before writing the HTTP upgrade with validated pending response headers.
+// Updates queue while the transport is pending; the reader and writer start only
+// after attachment. It owns its handler lifetime until both have joined.
 // Do not wrap it in a second authentication or compression middleware.
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	open := false
@@ -129,16 +132,10 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprint(w, "<html><title>403: Forbidden</title><body>403: Forbidden</body></html>")
 		return
 	}
-	u := gows.Upgrader{ForwardResponseHeaders: true, OriginCheck: func([]byte) bool { return sameOrigin(r) }}
-	conn, hs, err := u.UpgradeHTTP(w, r)
-	if err != nil {
-		// gows writes a generic 500 before returning rejected response-header errors.
-		// Other errors already emitted HTTP policy or closed the hijacked socket.
-		return
-	}
-	c := newClient(h, gows.NewServerConn(conn, gows.WithBuffered(hs.Buffered), gows.WithReadLimit(messageLimit)))
+	// Register before the peer can observe the 101, so every later event is queued.
+	c := newClient(h)
 	admitted := false
-	err = h.cfg.Master.Do(r.Context(), func(context.Context) error {
+	err := h.cfg.Master.Do(r.Context(), func(context.Context) error {
 		if !h.closed {
 			h.clients[c] = struct{}{}
 			h.workers.Add(1)
@@ -147,7 +144,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil || !admitted {
-		c.abort()
+		http.Error(w, "Service unavailable.", http.StatusServiceUnavailable)
 		return
 	}
 	defer close(c.done)
@@ -155,6 +152,24 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		_ = h.cfg.Master.Do(context.WithoutCancel(r.Context()), func(context.Context) error { delete(h.clients, c); return nil })
 	}()
+	if h.afterAdmission != nil {
+		h.afterAdmission()
+	}
+	u := gows.Upgrader{ForwardResponseHeaders: true, OriginCheck: func([]byte) bool { return sameOrigin(r) }}
+	conn, hs, err := u.UpgradeHTTP(w, r)
+	if err != nil {
+		// gows already answered the HTTP failure or closed the hijacked socket.
+		return
+	}
+	ws := gows.NewServerConn(conn, gows.WithBuffered(hs.Buffered), gows.WithReadLimit(messageLimit))
+	c.mu.Lock()
+	if c.finished {
+		c.mu.Unlock()
+		_ = ws.Abort()
+		return
+	}
+	c.ws = ws
+	c.mu.Unlock()
 	c.run(r.Context())
 }
 

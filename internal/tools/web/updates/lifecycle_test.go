@@ -150,6 +150,7 @@ func TestWebUpdateLifecycle(t *testing.T) {
 				t.Fatalf("closed hub admitted HTTP upgrade: %d", status)
 			}
 		}},
+		"admission_before_upgrade":          {run: testAdmission},
 		"peer_close_while_data_is_pending":  {run: testPendingPeerClose},
 		"shutdown_during_inbound_fragments": {run: testInboundAbort},
 		"missing_dependencies_fail_fast": {run: func(t *testing.T) {

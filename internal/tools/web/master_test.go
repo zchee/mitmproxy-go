@@ -123,6 +123,34 @@ func TestWebMaster(t *testing.T) {
 		}
 	})
 	tests := map[string]struct{ run func(*testing.T) }{
+		"proxy_close_rebind": {run: func(t *testing.T) {
+			m := newWebMaster(t)
+			if err := m.Do(t.Context(), func(ctx context.Context) error {
+				return m.Options.Update(ctx, map[string]any{"server": true, "mode": []string{"regular@127.0.0.1:0"}})
+			}); err != nil {
+				t.Fatal(err)
+			}
+			done := startWebMaster(t, m)
+			addresses := m.ProxyServer.ListenAddrs()
+			if len(addresses) != 1 {
+				t.Fatalf("proxy was not listening: %v", addresses)
+			}
+			if err := m.Close(t.Context()); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			if err := <-done; err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			for _, address := range []string{addresses[0].String(), m.WebAddr().String()} {
+				listener, err := net.Listen("tcp4", address)
+				if err != nil {
+					t.Fatalf("owned listener still bound after Close returned: %s: %v", address, err)
+				}
+				if err := listener.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}},
 		"constructor": {run: func(t *testing.T) {
 			m := newWebMaster(t)
 			if m.WebAddr() != nil {

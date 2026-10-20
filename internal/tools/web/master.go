@@ -280,6 +280,9 @@ func (m *Master) closeFrontend(ctx context.Context) error {
 			err = errors.Join(err, drain.Err())
 		}
 	}
+	if m.ProxyServer != nil {
+		err = errors.Join(err, m.ProxyServer.Close(drain))
+	}
 	if m.hub != nil {
 		err = errors.Join(err, m.hub.Close(drain))
 	}

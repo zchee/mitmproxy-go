@@ -31,7 +31,7 @@ func TestEventStoreObservers(t *testing.T) {
 			var observed []Event
 			cancel := s.Observe(func(e Event) { observed = append(observed, e) })
 			s.Observe(nil)()
-			if err := other.AddLog(t.Context(), addon.LogEntry{Msg: "unrelated"}); err != nil {
+			if err := other.Add(t.Context(), addon.LogEntry{Msg: "unrelated"}); err != nil {
 				t.Fatal(err)
 			}
 			if len(observed) != 0 {
@@ -40,13 +40,13 @@ func TestEventStoreObservers(t *testing.T) {
 			queued, unsubscribe := s.Subscribe(8)
 			first := addon.LogEntry{Msg: "first", Level: slog.LevelInfo}
 			second := addon.LogEntry{Msg: "second", Level: slog.LevelWarn}
-			if err := s.AddLog(t.Context(), first); err != nil {
+			if err := s.Add(t.Context(), first); err != nil {
 				t.Fatal(err)
 			}
 			if len(observed) != 1 {
 				t.Fatal("observer was not synchronous")
 			}
-			if err := s.AddLog(t.Context(), second); err != nil {
+			if err := s.Add(t.Context(), second); err != nil {
 				t.Fatal(err)
 			}
 			s.clear(t.Context())
@@ -64,7 +64,7 @@ func TestEventStoreObservers(t *testing.T) {
 			}
 			cancel()
 			cancel()
-			if err := s.AddLog(t.Context(), first); err != nil {
+			if err := s.Add(t.Context(), first); err != nil {
 				t.Fatal(err)
 			}
 			if diff := gocmp.Diff(want, observed); diff != "" {

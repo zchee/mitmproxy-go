@@ -164,7 +164,7 @@ func testWebEventIDs(t *testing.T) {
 	})
 	h.do(t, func(ctx context.Context) error {
 		for range 2 {
-			if err := h.app.events.AddLog(ctx, addon.LogEntry{Msg: "identical entry", Level: slog.LevelInfo}); err != nil {
+			if err := h.app.events.Add(ctx, addon.LogEntry{Msg: "identical entry", Level: slog.LevelInfo}); err != nil {
 				return err
 			}
 		}
@@ -189,7 +189,7 @@ func testWebEventIDs(t *testing.T) {
 	}
 	h.status(t, "POST", "/clear", nil, "", 200)
 	h.do(t, func(ctx context.Context) error {
-		return h.app.events.AddLog(ctx, addon.LogEntry{Msg: "after clear", Level: slog.LevelInfo})
+		return h.app.events.Add(ctx, addon.LogEntry{Msg: "after clear", Level: slog.LevelInfo})
 	})
 	var after []testEvent
 	if err := json.Unmarshal(h.status(t, "GET", "/events", nil, "", 200), &after); err != nil {

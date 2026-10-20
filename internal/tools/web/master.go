@@ -87,6 +87,8 @@ type Master struct {
 	View        *view.View
 	Events      *eventstore.EventStore
 	ProxyServer *proxyserver.ProxyServer
+	// StaticViewer owns offline exports; Wait observes the latest captured input.
+	StaticViewer *StaticViewer
 
 	logger     *slog.Logger
 	auth       *webauth.WebAuth
@@ -146,6 +148,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 	m.ProxyServer = ps
 	m.View = view.New(base.Addons)
 	m.auth = webauth.New(opts)
+	m.StaticViewer = &StaticViewer{master: m, wake: make(chan struct{}, 1)}
 	addons = append(addons,
 		core.New(base.Addons), browser.New(opts, base.Addons), block.New(opts),
 		stripdnshttpsrecords.New(opts), blocklist.New(opts), anticache.New(opts), anticomp.New(opts),
@@ -157,7 +160,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		savehar.New(opts, version.Version), tlsconfig.New(opts), upstreamauth.New(opts), updatealtsvc.New(opts),
 		&WebAddon{master: m}, m.auth, intercept.New(opts),
 		readfile.New(base, readfile.Config{Stdin: cfg.Stdin, Logger: logger}),
-		m.View, m.Events, ec,
+		m.StaticViewer, m.View, m.Events, ec,
 	)
 	if err := base.Addons.Add(ctx, addons...); err != nil {
 		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
@@ -261,8 +264,11 @@ func (m *Master) closeFrontend(ctx context.Context) error {
 		cancel()
 	}
 	var err error
+	if m.StaticViewer != nil {
+		err = m.StaticViewer.close(drain)
+	}
 	if server != nil {
-		err = server.Shutdown(drain)
+		err = errors.Join(err, server.Shutdown(drain))
 		if err != nil {
 			err = errors.Join(err, server.Close())
 		}

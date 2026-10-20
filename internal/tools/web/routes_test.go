@@ -576,6 +576,8 @@ func TestWebFlowJSON(t *testing.T) {
 }
 
 func FuzzWebJSON(f *testing.F) {
+	f.Add(`{"version":1,"uid":0,"destination":"viewer","stage":"owned"}`)
+	f.Add(`{"version":1,"uid":0,"uid":1,"destination":"viewer","stage":"owned"}`)
 	for _, seed := range []string{`{}`, `{"request":{"headers":[["x","a"],["x","b"]]}}`, `{"comment":"日本語"}`, `{"comment":"one","comment":"two"}`, `[`, "\xff", "1_000", "9223372036854775808", "-1"} {
 		f.Add(seed)
 	}
@@ -583,6 +585,7 @@ func FuzzWebJSON(f *testing.F) {
 		if len(input) > 1<<16 {
 			return
 		}
+		_ = parseViewerOwner([]byte(input), viewerOwner{Version: 1, UID: 0, Destination: "viewer", Stage: "owned"})
 		_, _ = lineLimit(input)
 		request := httptest.NewRequestWithContext(t.Context(), "PUT", "/flows/42", strings.NewReader(input))
 		request.Header.Set("Content-Type", "application/json")

@@ -126,6 +126,23 @@ func TestWebAuthConfiguration(t *testing.T) {
 				}
 			})
 		}
+		t.Run("test_web_theme_option", func(t *testing.T) {
+			m := composedWebMaster(t)
+			option, ok := m.Options.Lookup("web_theme")
+			if !ok {
+				t.Fatal("composed web registry lacks web_theme")
+			}
+			if diff := gocmp.Diff("system", m.Options.Str("web_theme")); diff != "" {
+				t.Fatal(diff)
+			}
+			if diff := gocmp.Diff([]string{"system", "dark", "light"}, option.Choices()); diff != "" {
+				t.Fatal(diff)
+			}
+			configured(t, m.Addons, m.Options, map[string]any{"web_theme": "dark"})
+			if diff := gocmp.Diff("dark", m.Options.Str("web_theme")); diff != "" {
+				t.Fatal(diff)
+			}
+		})
 		t.Run("test_web_url", func(t *testing.T) {
 			tests := map[string]struct {
 				host string

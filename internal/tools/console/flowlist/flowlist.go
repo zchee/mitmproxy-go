@@ -6,6 +6,7 @@ package flowlist
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -18,6 +19,15 @@ import (
 )
 
 type rowFormatter func(flow.Flow, contract.ProjectionRequest, bool) contract.Row
+
+// Project extracts owned visible rows from one dispatch-protected view traversal.
+func Project(flows []flow.Flow, request contract.ProjectionRequest) contract.Projection {
+	return project(flows, request, formatRow)
+}
+
+func formatRow(f flow.Flow, request contract.ProjectionRequest, focused bool) contract.Row {
+	return style.FormatFlow(f, request.Layout, request.ShowHost, request.Viewport.Width, focused)
+}
 
 func project(flows []flow.Flow, request contract.ProjectionRequest, format rowFormatter) contract.Projection {
 	result := contract.Projection{Total: len(flows), FocusIndex: -1, IDs: make([]string, len(flows))}
@@ -70,7 +80,10 @@ func flowHeight(f flow.Flow, layout string, width int) int {
 	return 1
 }
 
-type visibleRow struct{ index, first, height int }
+type visibleRow struct {
+	id                   string
+	index, first, height int
+}
 
 // Model retains only owned visible rows and viewport coordinates.
 type Model struct {
@@ -114,7 +127,7 @@ func (m *Model) SetSnapshot(snapshot contract.Snapshot) {
 		}
 		parts := strings.Split(row.Text, "\n")
 		parts = parts[:min(len(parts), m.viewport.Height()-len(lines))]
-		m.rows = append(m.rows, visibleRow{index: snapshot.FirstIndex + index, first: len(lines), height: len(parts)})
+		m.rows = append(m.rows, visibleRow{id: row.ID, index: snapshot.FirstIndex + index, first: len(lines), height: len(parts)})
 		for _, line := range parts {
 			lines = append(lines, style.Fit(line, m.viewport.Width()))
 		}
@@ -126,24 +139,30 @@ func (m *Model) SetSnapshot(snapshot contract.Snapshot) {
 // Update handles list navigation; other keys remain available to the keymap.
 // Mouse coordinates must be relative to the body after pane/header offsets.
 func (m *Model) Update(message tea.Msg) (tea.Cmd, bool) {
-	command, index := "", -1
+	direction, clickedID := "", ""
+	accepted := false
 	switch message := message.(type) {
+	case contract.Action:
+		if message.Kind != "nav" {
+			return nil, false
+		}
+		direction, accepted = message.Value, true
 	case tea.KeyPressMsg:
 		switch message.String() {
 		case "up":
-			command = "console.nav.up"
+			direction = "up"
 		case "down":
-			command = "console.nav.down"
+			direction = "down"
 		case "home":
-			command = "console.nav.start"
+			direction = "start"
 		case "end":
-			command = "console.nav.end"
+			direction = "end"
 		case "pgup":
-			command = "console.nav.pageup"
+			direction = "pageup"
 		case "pgdown":
-			command = "console.nav.pagedown"
+			direction = "pagedown"
 		case "enter":
-			command = "console.nav.select"
+			direction = "select"
 		default:
 			return nil, false
 		}
@@ -151,20 +170,20 @@ func (m *Model) Update(message tea.Msg) (tea.Cmd, bool) {
 		if !m.mouse || message.Button != tea.MouseLeft {
 			return nil, false
 		}
-		var ok bool
-		index, ok = m.hit(message.X, message.Y)
+		index, ok := m.hit(message.X, message.Y)
 		if !ok {
 			return nil, false
 		}
+		clickedID = m.rows[index-m.first].id
 	case tea.MouseWheelMsg:
 		if !m.mouse {
 			return nil, false
 		}
 		switch message.Button {
 		case tea.MouseWheelUp:
-			command = "console.nav.up"
+			direction = "up"
 		case tea.MouseWheelDown:
-			command = "console.nav.down"
+			direction = "down"
 		default:
 			return nil, false
 		}
@@ -174,19 +193,64 @@ func (m *Model) Update(message tea.Msg) (tea.Cmd, bool) {
 	if m.total == 0 {
 		return nil, true
 	}
+	pageSize := max(1, len(m.rows))
 	return func() tea.Msg {
-		if command != "" {
-			_, err := m.host.Execute(m.ctx, command)
-			return err
+		if !accepted && clickedID == "" {
+			if err := m.host.Dispatch(m.ctx, contract.Action{Kind: "nav", Value: direction}); err != nil {
+				return contract.ErrorMsg{Source: "flowlist", Err: err}
+			}
+			return nil
 		}
 		err := m.host.Do(m.ctx, func(ctx context.Context) error {
-			if _, err := m.host.Call(ctx, "view.focus.go", index); err != nil {
+			if clickedID != "" {
+				value, err := m.host.Call(ctx, "view.flows.resolve", "@shown")
+				if err != nil {
+					return err
+				}
+				flows, ok := value.([]flow.Flow)
+				if !ok {
+					return fmt.Errorf("invalid flow view result")
+				}
+				index := slices.IndexFunc(flows, func(f flow.Flow) bool { return f.Common().ID == clickedID })
+				if index < 0 {
+					return fmt.Errorf("selected flow is no longer visible")
+				}
+				if _, err := m.host.Call(ctx, "view.focus.go", index); err != nil {
+					return err
+				}
+				direction = "select"
+			}
+			switch direction {
+			case "start", "end":
+				offset := 0
+				if direction == "end" {
+					offset = -1
+				}
+				_, err := m.host.Call(ctx, "view.focus.go", offset)
+				return err
+			case "up", "down", "pageup", "pagedown":
+				command, count := "view.focus.next", 1
+				if direction == "up" || direction == "pageup" {
+					command = "view.focus.prev"
+				}
+				if direction == "pageup" || direction == "pagedown" {
+					count = pageSize
+				}
+				for range count {
+					if _, err := m.host.Call(ctx, command); err != nil {
+						return err
+					}
+				}
+			case "select":
+				_, err := m.host.Execute(ctx, "console.view.flow @focus")
 				return err
 			}
-			_, err := m.host.Execute(ctx, "console.view.flow @focus")
-			return err
+			return nil
 		})
-		return err
+		if err != nil {
+			return contract.ErrorMsg{Source: "flowlist", Err: err}
+		}
+		return nil
 	}, true
 }
 

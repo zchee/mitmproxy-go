@@ -150,7 +150,7 @@ func testLayoutList(t *testing.T) {
 	model := New(t.Context(), host)
 	model.Resize(200, 5)
 	model.SetSnapshot(contract.Snapshot{Rows: got.Rows, Total: got.Total, FirstIndex: got.FirstIndex, FocusIndex: got.FocusIndex, Control: contract.NewState()})
-	if diff := cmp.Diff([]visibleRow{{index: 0, first: 0, height: 2}, {index: 1, first: 2, height: 1}, {index: 2, first: 3, height: 1}, {index: 3, first: 4, height: 1}}, model.rows); diff != "" {
+	if diff := cmp.Diff([]visibleRow{{id: flows[0].Common().ID, index: 0, first: 0, height: 2}, {id: flows[1].Common().ID, index: 1, first: 2, height: 1}, {id: flows[2].Common().ID, index: 2, first: 3, height: 1}, {id: flows[3].Common().ID, index: 3, first: 4, height: 1}}, model.rows, cmp.AllowUnexported(visibleRow{})); diff != "" {
 		t.Fatalf("physical hit map (-want +got): %s", diff)
 	}
 	for y, want := range map[int]int{0: 0, 1: 0, 2: 1, 4: 3} {
@@ -236,6 +236,51 @@ func testFollowFocus(t *testing.T) {
 	if got.FocusID == flows[1].Common().ID || got.FocusIndex < got.FirstIndex {
 		t.Fatal("removed focus retained")
 	}
+
+	host := &viewHost{recordingHost: &recordingHost{}, manager: manager}
+	model := New(t.Context(), host)
+	model.Resize(80, 6)
+	model.SetSnapshot(contract.Snapshot{Rows: got.Rows, Total: got.Total, FirstIndex: got.FirstIndex, FocusIndex: got.FocusIndex, Control: contract.NewState()})
+	for range 2 {
+		cmd, consumed := model.Update(contract.Action{Kind: "nav", Value: "down"})
+		if !consumed || cmd == nil {
+			t.Fatal("accepted navigation effect not handled")
+		}
+		if message := cmd(); message != nil {
+			t.Fatalf("live navigation: %v", message)
+		}
+	}
+	if v.Focus.Flow().Common().ID != flows[4].Common().ID {
+		t.Fatalf("consecutive effects used stale snapshot focus: %s", v.Focus.Flow().Common().ID)
+	}
+
+	clickedID := model.rows[0].id
+	cmd, consumed := model.Update(tea.MouseClickMsg{X: 1, Y: 0, Button: tea.MouseLeft})
+	if !consumed || cmd == nil {
+		t.Fatal("stable-ID click was not captured")
+	}
+	if err := manager.Do(t.Context(), func(ctx context.Context) error {
+		value, err := manager.Commands().Call(ctx, "view.flows.resolve", "@shown")
+		if err != nil {
+			return err
+		}
+		for _, f := range value.([]flow.Flow) {
+			if f.Common().ID == clickedID {
+				_, err = manager.Commands().Call(ctx, "view.flows.remove", []flow.Flow{f})
+				return err
+			}
+		}
+		return fmt.Errorf("clicked flow missing before removal")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	message, ok := cmd().(contract.ErrorMsg)
+	if !ok || message.Source != "flowlist" || message.Err == nil || message.Err.Error() != "selected flow is no longer visible" {
+		t.Fatalf("stale click did not report a typed removal error: %+v", message)
+	}
+	if v.Focus.Flow().Common().ID != flows[4].Common().ID {
+		t.Fatal("stale click selected the replacement index")
+	}
 }
 
 func testOrderFilterMark(t *testing.T) {
@@ -277,6 +322,19 @@ func testOrderFilterMark(t *testing.T) {
 	if !slices.IsSorted(got.IDs) {
 		t.Fatal("existing ordering was not consumed")
 	}
+}
+
+type viewHost struct {
+	*recordingHost
+	manager *addon.Manager
+}
+
+func (h *viewHost) Do(ctx context.Context, callback func(context.Context) error) error {
+	return h.manager.Do(ctx, callback)
+}
+
+func (h *viewHost) Call(ctx context.Context, name string, args ...any) (any, error) {
+	return h.manager.Commands().Call(ctx, name, args...)
 }
 
 type recordingHost struct {

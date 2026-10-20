@@ -40,7 +40,7 @@ import (
 type routeHarness struct {
 	app    *application
 	server *httptest.Server
-	xsrf string
+	xsrf   string
 }
 
 func newRouteHarness(t *testing.T, eventSize ...int) *routeHarness {
@@ -61,10 +61,15 @@ func newRouteHarness(t *testing.T, eventSize ...int) *routeHarness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	app.proxyserver = ps
 	if err := m.Addons.Add(t.Context(), core.New(m.Addons), anticache.New(m.Options), commandhistory.New(m.Options), clientplayback.New(m), ps, auth, v, events); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Do(t.Context(), func(ctx context.Context) error { return m.Options.Update(ctx, map[string]any{"web_password":"route-test"}) }); err != nil { t.Fatal(err) }
+	if err := m.Do(t.Context(), func(ctx context.Context) error {
+		return m.Options.Update(ctx, map[string]any{"web_password": "route-test"})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	app.useAuth(auth)
 	if err := m.Do(t.Context(), func(ctx context.Context) error {
 		first := testflow.TFlow(testflow.WithResponse)
@@ -95,21 +100,39 @@ func newRouteHarness(t *testing.T, eventSize ...int) *routeHarness {
 	server := httptest.NewServer(app.handler())
 	t.Cleanup(server.Close)
 	jar, err := cookiejar.New(nil)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	server.Client().Jar = jar
 	base, err := url.Parse(server.URL)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/", nil)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	response, err := server.Client().Do(request)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, readErr := io.Copy(io.Discard, response.Body)
 	closeErr := response.Body.Close()
-	if readErr != nil || closeErr != nil { t.Fatalf("read login response: %v; close: %v", readErr, closeErr) }
-	if response.StatusCode != http.StatusForbidden { t.Fatalf("unauthenticated login status=%d", response.StatusCode) }
+	if readErr != nil || closeErr != nil {
+		t.Fatalf("read login response: %v; close: %v", readErr, closeErr)
+	}
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("unauthenticated login status=%d", response.StatusCode)
+	}
 	var xsrf string
-	for _, cookie := range jar.Cookies(base) { if cookie.Name == "_mitmproxy_xsrf" { xsrf = cookie.Value } }
-	if xsrf == "" { t.Fatal("real login middleware did not issue an XSRF cookie") }
+	for _, cookie := range jar.Cookies(base) {
+		if cookie.Name == "_mitmproxy_xsrf" {
+			xsrf = cookie.Value
+		}
+	}
+	if xsrf == "" {
+		t.Fatal("real login middleware did not issue an XSRF cookie")
+	}
 	return &routeHarness{app: app, server: server, xsrf: xsrf}
 }
 
@@ -357,6 +380,25 @@ func TestWebRoutes(t *testing.T) {
 					}
 				}
 			}},
+			"test_events": {func(t *testing.T, h *routeHarness) {
+				var values []struct {
+					ID      uint64 `json:"id"`
+					Message string `json:"message"`
+					Level   string `json:"level"`
+				}
+				if err := json.Unmarshal(h.status(t, "GET", "/events", nil, "", 200), &values); err != nil {
+					t.Fatal(err)
+				}
+				if len(values) == 0 || values[0].Level != "info" {
+					t.Fatal("initial info event missing")
+				}
+				h.do(t, func(context.Context) error {
+					if values[0].ID != h.app.events.Records()[0].ID {
+						t.Fatal("event identity differs from the store")
+					}
+					return nil
+				})
+			}},
 			"test_options": {func(t *testing.T, h *routeHarness) {
 				var got map[string]map[string]any
 				if err := json.Unmarshal(h.status(t, "GET", "/options", nil, "", 200), &got); err != nil {
@@ -541,27 +583,41 @@ func FuzzWebJSON(f *testing.F) {
 
 func FuzzWebUpload(f *testing.F) {
 	var valid bytes.Buffer
-	if err := flowio.NewWriter(&valid).Add(testflow.TFlow(testflow.WithResponse)); err != nil { f.Fatal(err) }
+	if err := flowio.NewWriter(&valid).Add(testflow.TFlow(testflow.WithResponse)); err != nil {
+		f.Fatal(err)
+	}
 	for _, seed := range []string{"", "broken", "--boundary\r\nContent-Disposition: form-data; name=\"a\"; filename=\"a.txt\"\r\n\r\ndata\r\n--boundary--\r\n", valid.String()} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, input string) {
-		if len(input) > 1<<16 { return }
+		if len(input) > 1<<16 {
+			return
+		}
 		reader := multipart.NewReader(strings.NewReader(input), "boundary")
 		for range 64 {
 			part, err := reader.NextPart()
-			if err != nil { break }
+			if err != nil {
+				break
+			}
 			_, _ = io.Copy(io.Discard, part)
 			_ = part.Close()
 		}
 		m := master.New(master.Config{})
-		t.Cleanup(func() { if err := m.Close(context.WithoutCancel(t.Context())); err != nil { t.Error(err) } })
+		t.Cleanup(func() {
+			if err := m.Close(context.WithoutCancel(t.Context())); err != nil {
+				t.Error(err)
+			}
+		})
 		v := view.New(m.Addons)
-		if err := m.Addons.Add(t.Context(), v); err != nil { t.Fatal(err) }
-		app := &application{master:m, view:v}
+		if err := m.Addons.Add(t.Context(), v); err != nil {
+			t.Fatal(err)
+		}
+		app := &application{master: m, view: v}
 		request := httptest.NewRequestWithContext(t.Context(), "POST", "/flows/dump", strings.NewReader(input))
 		response := httptest.NewRecorder()
 		_ = app.dumpFlows(response, request)
-		if response.Body.Len() != 0 { t.Fatalf("flow upload wrote an unexpected response: %q", response.Body.Bytes()) }
+		if response.Body.Len() != 0 {
+			t.Fatalf("flow upload wrote an unexpected response: %q", response.Body.Bytes())
+		}
 	})
 }

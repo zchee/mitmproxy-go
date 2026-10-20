@@ -93,6 +93,10 @@ func updateHTTP(f *flow.HTTPFlow, part, key string, value jsontext.Value) error 
 			message.Trailers = headers
 		}
 	case "content":
+		if string(value) == "null" {
+			message.SetContent(nil)
+			return nil
+		}
 		var text string
 		if err := json.Unmarshal(value, &text); err != nil {
 			return err

@@ -212,8 +212,8 @@ func (b *Bridge) Dispatch(ctx context.Context, a contract.Action) error {
 		if a.Kind == "tab" {
 			window, ok := b.Control.State().Current("flowview", false)
 			if !ok {
-				return errors.New("Not viewing a flow.")
-			} //nolint:staticcheck // Preserve upstream's command error text.
+				return errors.New("Not viewing a flow.") //nolint:staticcheck // Preserve upstream's command error text.
+			}
 			f := b.cfg.View.GetByID(window.FlowID)
 			if f == nil {
 				return ErrEditConflict
@@ -428,11 +428,12 @@ func (b *Bridge) projectResult(value any) (contract.Result, error) {
 			result.Table = append(result.Table, slices.Clone(row))
 		}
 	case flow.Flow:
-		p := b.cfg.Project([]flow.Flow{value}, contract.ProjectionRequest{Viewport: contract.Viewport{Height: 1}})
-		result.Flows = p.Rows
+		result.Flows = []contract.Row{{ID: value.Common().ID, Type: value.Type()}}
 	case []flow.Flow:
-		p := b.cfg.Project(value, contract.ProjectionRequest{Viewport: contract.Viewport{Height: len(value)}})
-		result.Flows = p.Rows
+		result.Flows = make([]contract.Row, len(value))
+		for i, f := range value {
+			result.Flows[i] = contract.Row{ID: f.Common().ID, Type: f.Type()}
+		}
 	default:
 		return result, fmt.Errorf("unsupported console result type %T", value)
 	}

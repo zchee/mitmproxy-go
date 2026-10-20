@@ -352,13 +352,17 @@ func verifyResults(t *testing.T) {
 	b, _ := testBridge(t)
 	m := NewModel(b, nil)
 	tests := map[string]struct {
-		value any
-		kind  string
+		value  any
+		kind   string
+		status string
 	}{
-		"nil": {nil, ""}, "empty string": {"", "text"}, "string": {"text\x1b[2J", "text"},
-		"bytes": {[]byte{0, 255}, "bytes"}, "bool": {false, "text"}, "int": {0, "text"},
-		"list": {[]string{}, "lines"}, "table": {command.Data{{"a", []byte{1}}}, "table"},
-		"flow": {testflow.TFlow(), "flow"}, "flows": {[]flow.Flow{testflow.TFlow()}, "flows"}, "empty flows": {[]flow.Flow{}, "flows"},
+		"nil": {nil, "", ""}, "empty string": {"", "text", ""}, "string": {"text\x1b[2J", "text", ""},
+		"bytes": {[]byte{0, 255}, "bytes", ""}, "bool": {false, "text", ""}, "int": {0, "text", ""},
+		"list": {[]string{}, "lines", ""}, "table": {command.Data{{"a", []byte{1}}}, "table", ""},
+		"flow":          {testflow.TFlow(), "flow", "Command returned 1 flow"},
+		"flows":         {[]flow.Flow{testflow.TFlow()}, "flows", "Command returned 1 flows"},
+		"several flows": {[]flow.Flow{testflow.TFlow(), testflow.TFlow(), testflow.TFlow()}, "flows", "Command returned 3 flows"},
+		"empty flows":   {[]flow.Flow{}, "flows", "Command returned 0 flows"},
 	}
 	for name, test := range tests {
 		var result contract.Result
@@ -367,18 +371,19 @@ func verifyResults(t *testing.T) {
 			t.Fatalf("%s kind=%q want %q", name, result.Kind, test.kind)
 		}
 		_, cmd := m.Update(result)
-		if test.kind == "flow" || test.kind == "flows" {
-			if !strings.HasPrefix(m.message, "Command returned ") {
-				t.Fatal("flow result lacks status")
+		switch test.kind {
+		case "flow", "flows":
+			if m.message != test.status {
+				t.Fatalf("%s status=%q want %q", name, m.message, test.status)
 			}
 			if cmd != nil {
 				t.Fatal("flow result opened an overlay")
 			}
-		} else if test.kind == "" {
+		case "":
 			if cmd != nil {
 				t.Fatal("nil result opened an overlay")
 			}
-		} else {
+		default:
 			if cmd == nil {
 				t.Fatalf("%s did not open data viewer", name)
 			}

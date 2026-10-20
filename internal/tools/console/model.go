@@ -12,6 +12,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/keymap"
@@ -444,10 +445,8 @@ func (m *Model) View() tea.View {
 	}
 	footer := m.footer()
 	lines := strings.Split(Compose(m.state, panes, m.width, m.height, footer), "\n")
-	for i := range lines {
-		lines[i] = m.palette.Style("text").Render(lines[i])
-	}
 	if m.state.Headers {
+		rawLines := slices.Clone(lines)
 		for i, rect := range Layout(m.state, m.width, m.height, len(footer)) {
 			row := rect.Y - 1
 			if row < 0 || row >= len(lines) {
@@ -457,13 +456,20 @@ func (m *Model) View() tea.View {
 			if i == m.state.Pane {
 				tag = "heading"
 			}
-			if m.state.Layout != "horizontal" {
+			if m.state.Layout == "horizontal" {
+				line := lines[row]
+				end := rect.X + rect.Width
+				lines[row] = ansi.Cut(line, 0, rect.X) + m.palette.Style(tag).Render(ansi.Cut(rawLines[row], rect.X, end)) + ansi.Cut(rawLines[row], end, m.width)
+			} else {
 				lines[row] = m.palette.Style(tag).Render(lines[row])
 			}
 		}
 	}
 	if row := len(lines) - len(footer); row >= 0 && row < len(lines) {
 		lines[row] = m.palette.Style("heading").Render(lines[row])
+	}
+	for i := range lines {
+		lines[i] = m.palette.Style("text").Render(lines[i])
 	}
 	v := tea.NewView(strings.Join(lines, "\n"))
 	v.AltScreen = true

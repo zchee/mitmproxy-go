@@ -55,6 +55,19 @@ func TestConsoleWindow(t *testing.T) {
 							t.Fatal("wrong frame width")
 						}
 					}
+					m := NewModel(nil, nil)
+					m.state = state
+					frame = m.View().Content
+					for i, rect := range rects {
+						tag := "heading_inactive"
+						if i == state.Pane {
+							tag = "heading"
+						}
+						title := state.Panes[i].Stack[0].Name
+						if !strings.Contains(frame, m.palette.Style(tag).Render(style.Fit(title, rect.Width))) {
+							t.Fatalf("%s pane %d missing %s header styling: %q", name, i, tag, strings.Split(frame, "\n")[rect.Y-1])
+						}
+					}
 				case "overlay_stack":
 					var err error
 					state, err = reduce(state, contract.Action{Kind: "push", Window: contract.Window{Name: "options", Context: "options"}})

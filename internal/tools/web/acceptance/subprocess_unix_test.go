@@ -67,7 +67,8 @@ func startWebProcess(t *testing.T, executable string, args []string, label strin
 func (process *webProcess) stop(t *testing.T) {
 	t.Helper()
 	process.stopOnce.Do(func() {
-		if err := unix.Kill(-process.cmd.Process.Pid, unix.SIGTERM); err != nil && !errors.Is(err, unix.ESRCH) {
+		// uv forwards SIGTERM to Python; signalling the group would deliver it twice.
+		if err := unix.Kill(process.cmd.Process.Pid, unix.SIGTERM); err != nil && !errors.Is(err, unix.ESRCH) {
 			t.Errorf("stop owned %d: %v", process.cmd.Process.Pid, err)
 		}
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 15*time.Second)

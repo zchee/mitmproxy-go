@@ -15,7 +15,7 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/tools/console/style"
 )
 
-// Model owns a command prompt, its completion hints and detached command output.
+// Model owns a command prompt and its completion hints.
 // Its context must be the frontend lifetime, never a dispatch-frame context.
 type Model struct {
 	ctx                        context.Context
@@ -29,7 +29,6 @@ type Model struct {
 	epoch                      uint64
 	pending                    []tea.Msg
 	hints                      contract.Completion
-	result                     contract.Result
 	err                        error
 	width, height              int
 	choice                     int
@@ -44,7 +43,6 @@ type response struct {
 	completion  contract.Completion
 	forward     bool
 	resetFilter bool
-	result      contract.Result
 	err         error
 }
 
@@ -64,7 +62,7 @@ func (m *Model) SetSnapshot(snapshot contract.Snapshot) {
 		m.initialPrompt, m.initialText, m.initialCursor = s.Prompt, s.Text, s.Cursor
 		m.buffer = NewBuffer(s.Text)
 		m.buffer.SetCursor(s.Cursor)
-		m.active = s.Prompt != ""
+		m.active, m.busy = s.Prompt != "", false
 		m.pending = nil
 		m.hints = contract.Completion{}
 		m.filterActive, m.filter, m.choice = false, "", 0
@@ -102,9 +100,6 @@ func (m *Model) Cursor() int { return m.buffer.Cursor() }
 // Error returns the last registry or input error for the status renderer.
 func (m *Model) Error() error { return m.err }
 
-// Result returns the last detached command result; callers must not mutate it.
-func (m *Model) Result() contract.Result { return m.result }
-
 // Update handles local editing and returns all live work as a command.
 // Input arriving during a registry request is replayed in order after its reply.
 func (m *Model) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
@@ -112,28 +107,27 @@ func (m *Model) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 		if r.owner != m {
 			return nil, false
 		}
+		if r.epoch != m.epoch {
+			return nil, true
+		}
 		m.busy = false
-		if r.epoch == m.epoch {
-			defer func() {
-				if r.err != nil {
-					cmd = tea.Batch(cmd, func() tea.Msg { return contract.ErrorMsg{Source: "commander", Err: r.err} })
-				}
-			}()
-			m.err = r.err
-			if r.err == nil {
-				switch r.kind {
-				case "hints":
-					m.hints = r.completion
-				case "complete":
-					m.buffer.Complete(r.completion, r.forward)
-					return m.complete(false, true), true
-				case "history":
-					m.buffer.SetText(r.text)
-					if r.resetFilter {
-						m.filterActive, m.filter = false, ""
-					}
-				case "execute":
-					m.result = r.result
+		defer func() {
+			if r.err != nil {
+				cmd = tea.Batch(cmd, func() tea.Msg { return contract.ErrorMsg{Source: "commander", Err: r.err} })
+			}
+		}()
+		m.err = r.err
+		if r.err == nil {
+			switch r.kind {
+			case "hints":
+				m.hints = r.completion
+			case "complete":
+				m.buffer.Complete(r.completion, r.forward)
+				return m.complete(false, true), true
+			case "history":
+				m.buffer.SetText(r.text)
+				if r.resetFilter {
+					m.filterActive, m.filter = false, ""
 				}
 			}
 		}
@@ -308,9 +302,11 @@ func (m *Model) finish(execute bool, choice string) tea.Cmd {
 	line, recipe := m.buffer.Text(), m.state.Recipe
 	recipe.Arguments = slices.Clone(recipe.Arguments)
 	recipe.ChoiceIndices = slices.Clone(recipe.ChoiceIndices)
-	m.active = false
-	return m.request("execute", func(r *response) {
-		r.err = m.host.Do(m.ctx, func(ctx context.Context) error {
+	m.active, m.busy = false, false
+	m.pending = nil
+	return func() tea.Msg {
+		var result contract.Result
+		err := m.host.Do(m.ctx, func(ctx context.Context) error {
 			if err := m.host.Dispatch(ctx, contract.Action{Kind: "prompt_done"}); err != nil {
 				return err
 			}
@@ -319,16 +315,23 @@ func (m *Model) finish(execute bool, choice string) tea.Cmd {
 			}
 			var err error
 			if recipe.Command != "" {
-				r.result, err = m.host.Resolve(ctx, recipe, choice)
+				result, err = m.host.Resolve(ctx, recipe, choice)
 			} else if strings.TrimSpace(line) != "" {
 				if _, err = m.host.Call(ctx, "commands.history.add", line); err != nil {
 					return err
 				}
-				r.result, err = m.host.Execute(ctx, line)
+				result, err = m.host.Execute(ctx, line)
 			}
 			return err
 		})
-	})
+		if err != nil {
+			return contract.ErrorMsg{Source: "commander", Err: err}
+		}
+		if !execute {
+			return nil
+		}
+		return result
+	}
 }
 
 // View renders escaped prompt text and hints, never live registry state.
@@ -355,7 +358,8 @@ func (m *Model) View() string {
 		return strings.Join(lines[:min(len(lines), m.height)], "\n")
 	}
 	if m.active {
-		text := ": "
+		var text strings.Builder
+		text.WriteString(": ")
 		var parsed strings.Builder
 		for _, token := range m.hints.Tokens {
 			parsed.WriteString(token.Value)
@@ -368,31 +372,18 @@ func (m *Model) View() string {
 				} else if token.Type == "Cmd" {
 					tag = "commander_command"
 				}
-				text += m.palette.Render(tag, token.Value)
+				text.WriteString(m.palette.Render(tag, token.Value))
 			}
 		} else {
-			text += m.palette.Render("text", m.buffer.Text())
+			text.WriteString(m.palette.Render("text", m.buffer.Text()))
 		}
 		if len(m.hints.Tokens) > 0 && len(m.hints.Remaining) > 0 {
 			if !strings.HasSuffix(m.buffer.Text(), " ") {
-				text += " "
+				text.WriteString(" ")
 			}
-			text += m.palette.Render("commander_hint", strings.Join(m.hints.Remaining, " ")+" ")
+			text.WriteString(m.palette.Render("commander_hint", strings.Join(m.hints.Remaining, " ")+" "))
 		}
-		return style.Truncate(text, m.width)
+		return style.Truncate(text.String(), m.width)
 	}
-	if len(m.result.Flows) > 0 {
-		return fmt.Sprintf("Command returned %d flows", len(m.result.Flows))
-	}
-	lines := append([]string{m.result.Text}, m.result.Lines...)
-	for _, row := range m.result.Table {
-		lines = append(lines, strings.Join(row, "  "))
-	}
-	if len(m.result.Bytes) > 0 {
-		lines = append(lines, string(m.result.Bytes))
-	}
-	for i := range lines {
-		lines[i] = style.Truncate(style.Escape(lines[i]), m.width)
-	}
-	return strings.Join(lines[:min(len(lines), m.height)], "\n")
+	return ""
 }

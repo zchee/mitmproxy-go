@@ -99,8 +99,8 @@ func (b *Buffer) Delete() {
 // WordLeft moves to the preceding space, matching the command editor's word motion.
 func (b *Buffer) WordLeft() {
 	before := []rune(b.BeforeCursor())
-	for i := len(before) - 1; i >= 0; i-- {
-		if before[i] == ' ' {
+	for i, r := range slices.Backward(before) {
+		if r == ' ' {
 			b.SetCursor(i)
 			return
 		}

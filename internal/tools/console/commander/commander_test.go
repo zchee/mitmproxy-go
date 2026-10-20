@@ -45,7 +45,11 @@ func newFixture(t *testing.T, text string) fixture {
 		t.Fatal(err)
 	}
 	bridge, err := console.NewBridge(t.Context(), console.BridgeConfig{Master: m, View: v, Events: events, Project: func(flows []flow.Flow, _ contract.ProjectionRequest) contract.Projection {
-		return contract.Projection{Total: len(flows)}
+		rows := make([]contract.Row, len(flows))
+		for i, f := range flows {
+			rows[i] = contract.Row{ID: f.Common().ID}
+		}
+		return contract.Projection{Rows: rows, Total: len(flows)}
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -356,6 +360,7 @@ func TestConsoleCommander(t *testing.T) {
 				}
 			},
 			"cancel_prompt": func(t *testing.T) {
+				testResultHandoff(t)
 				f := newFixture(t, "")
 				calls := 0
 				if err := f.master.Commands.Register("chosen", func(_ context.Context, a, b string) {
@@ -423,11 +428,79 @@ func testCompletionOrdering(t *testing.T) {
 	f.model.SetSnapshot(contract.Snapshot{Control: contract.State{Prompt: "command", Text: "zz", Cursor: 2}})
 	cmd, _ = f.model.Update(key("tab"))
 	f.model.SetSnapshot(contract.Snapshot{Control: contract.State{Prompt: "command", Text: "new", Cursor: 3}})
-	f.model.Update(tea.PasteMsg{Content: "!"})
+	current, _ := f.model.Update(tea.PasteMsg{Content: "!"})
+	if current == nil {
+		t.Fatal("new prompt inherited an outstanding busy request")
+	}
 	if failures := settle(t, f.model, cmd); len(failures) > 0 {
 		t.Fatal(failures)
 	}
-	textEqual(t, f.model, "new!")
+	f.model.Update(tea.PasteMsg{Content: "?"})
+	if failures := settle(t, f.model, current); len(failures) > 0 {
+		t.Fatal(failures)
+	}
+	textEqual(t, f.model, "new!?")
+}
+
+func testResultHandoff(t *testing.T) {
+	t.Helper()
+	data := []byte("bytes")
+	lines := []string{"line"}
+	table := command.Data{{"cell"}}
+	live := flow.NewHTTPFlow(nil, nil, false)
+	tests := map[string]struct {
+		handler any
+		want    contract.Result
+		mutate  func()
+	}{
+		"nil":         {handler: func(context.Context) {}},
+		"text":        {handler: func(context.Context) string { return "output" }, want: contract.Result{Kind: "text", Text: "output"}},
+		"empty_text":  {handler: func(context.Context) string { return "" }, want: contract.Result{Kind: "text"}},
+		"bytes":       {handler: func(context.Context) []byte { return data }, want: contract.Result{Kind: "bytes", Bytes: []byte("bytes")}, mutate: func() { data[0] = 'X' }},
+		"lines":       {handler: func(context.Context) []string { return lines }, want: contract.Result{Kind: "lines", Lines: []string{"line"}}, mutate: func() { lines[0] = "changed" }},
+		"table":       {handler: func(context.Context) command.Data { return table }, want: contract.Result{Kind: "table", Table: [][]string{{"cell"}}}, mutate: func() { table[0][0] = "changed" }},
+		"flow":        {handler: func(context.Context) flow.Flow { return live }, want: contract.Result{Kind: "flow", Flows: []contract.Row{{ID: "original"}}}, mutate: func() { live.ID = "changed" }},
+		"flows":       {handler: func(context.Context) []flow.Flow { return []flow.Flow{live} }, want: contract.Result{Kind: "flows", Flows: []contract.Row{{ID: "original"}}}, mutate: func() { live.ID = "changed" }},
+		"empty_flows": {handler: func(context.Context) []flow.Flow { return nil }, want: contract.Result{Kind: "flows", Flows: []contract.Row{}}},
+	}
+	for name, tt := range tests {
+		live.ID = "original"
+		f := newFixture(t, "result")
+		if err := f.master.Commands.Register("result", tt.handler); err != nil {
+			t.Fatalf("%s registration: %v", name, err)
+		}
+		cmd, consumed := f.model.Update(key("enter"))
+		if cmd == nil || !consumed || f.model.Active() {
+			t.Fatalf("%s did not finish prompt", name)
+		}
+		message := cmd()
+		result, ok := message.(contract.Result)
+		if !ok {
+			t.Fatalf("%s delivered %T, want detached contract.Result: %+v", name, message, message)
+		}
+		if tt.mutate != nil {
+			tt.mutate()
+		}
+		if diff := gocmp.Diff(tt.want, result); diff != "" {
+			t.Fatalf("%s detached handoff (-want +got):\n%s", name, diff)
+		}
+		if f.model.View() != "" {
+			t.Fatalf("%s commander rendered a root-owned result: %q", name, f.model.View())
+		}
+		f.model.SetSnapshot(contract.Snapshot{Control: contract.State{Prompt: "command", Text: "new", Cursor: 3}})
+		run(t, f.model, tea.PasteMsg{Content: "!"})
+		textEqual(t, f.model, "new!")
+	}
+	f := newFixture(t, "missing.command")
+	cmd, _ := f.model.Update(key("enter"))
+	if message, ok := cmd().(contract.ErrorMsg); !ok || message.Source != "commander" || message.Err == nil {
+		t.Fatalf("execution failure was not routed to root: %+v", message)
+	}
+	f = newFixture(t, "missing.command")
+	cmd, _ = f.model.Update(key("esc"))
+	if message := cmd(); message != nil {
+		t.Fatalf("cancel emitted %T: %+v", message, message)
+	}
 }
 
 func testHistoryTrace(t *testing.T) {

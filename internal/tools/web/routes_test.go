@@ -194,6 +194,42 @@ func (h *routeHarness) put(t *testing.T, path, body string, want int) []byte {
 }
 
 func TestWebRoutes(t *testing.T) {
+	tests := map[string]struct {
+		body        []byte
+		status      int
+		contentType string
+		content     string
+		disposition []string
+	}{
+		"content_missing_body": {
+			status:      http.StatusInternalServerError,
+			contentType: "text/html; charset=UTF-8",
+			content:     "<html><title>500: Internal Server Error</title><body>500: Internal Server Error</body></html>",
+		},
+		"content_present_empty_body": {
+			body:        []byte{},
+			status:      http.StatusOK,
+			contentType: "application/text",
+			disposition: []string{`attachment; filename="body.txt"`},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			h := newRouteHarness(t)
+			h.do(t, func(context.Context) error {
+				message := &h.app.view.GetByID("42").(*flow.HTTPFlow).Response.Message
+				message.RawContent = test.body
+				message.Headers.Set("Content-Disposition", `inline; filename="body.txt"`)
+				return nil
+			})
+			response, body := h.fetch(t, "GET", "/flows/42/response/content.data", nil, "")
+			want := []any{test.status, test.contentType, test.content, test.disposition}
+			got := []any{response.StatusCode, response.Header.Get("Content-Type"), string(body), response.Header.Values("Content-Disposition")}
+			if diff := gocmp.Diff(want, got); diff != "" {
+				t.Fatalf("content response (-want +got):\n%s", diff)
+			}
+		})
+	}
 	t.Run("upstream", func(t *testing.T) {
 		tests := map[string]struct {
 			run func(*testing.T, *routeHarness)

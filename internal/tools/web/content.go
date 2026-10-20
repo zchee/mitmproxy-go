@@ -93,6 +93,10 @@ func (a *application) flowContent(w http.ResponseWriter, r *http.Request, name s
 		if err != nil {
 			return err
 		}
+		// Upstream's attempt to write an uncaptured body raises a generic 500.
+		if message.RawContent == nil {
+			return errors.New("message has no captured body")
+		}
 		httpFlow := snapshot.(*flow.HTTPFlow)
 		filename := ""
 		if match := downloadFilename.FindStringSubmatch(message.Headers.Get("Content-Disposition")); match != nil {

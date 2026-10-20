@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 // Package grideditor edits detached rows and commits validated changes through dispatch.
+// The caller runs Model.Commit before popping an editor. A nil result permits a
+// fresh pop dispatch; a contract.ErrorMsg leaves the editor open for correction.
 package grideditor
 
 import (

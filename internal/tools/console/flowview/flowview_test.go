@@ -26,6 +26,8 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/tools/console/external"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/style"
+	"github.com/zchee/mitmproxy-go/tcp"
+	"github.com/zchee/mitmproxy-go/udp"
 	"github.com/zchee/mitmproxy-go/websocket"
 )
 
@@ -184,6 +186,20 @@ func TestConsoleFlowView(t *testing.T) {
 					}
 					m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 				}
+				m.search[0].Term = "remember"
+				m.Resize(80, 8)
+				if _, consumed := m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 79, Y: 0}); !consumed || m.tab != len(tt.want)-1 {
+					t.Fatal("tab header hit testing lost the last tab")
+				}
+				m.Update(contract.Action{Kind: "nav", Value: "next"})
+				if m.tab != 0 || m.search[0].Term != "remember" {
+					t.Fatal("admitted navigation lost per-tab search state")
+				}
+				m.search[0].Focus = 1000
+				m.SetSnapshot(contract.Snapshot{Focused: f})
+				if m.search[0].Focus >= max(1, len(m.lines)) {
+					t.Fatal("snapshot retained an out-of-bounds search cursor")
+				}
 			})
 		}
 	})
@@ -202,6 +218,13 @@ func (v customView) Prettify(_ []byte, m contentviews.Metadata) (string, error) 
 		*v.metadata = m
 	}
 	return v.text, nil
+}
+
+func (v customView) Reencode(text string, m contentviews.Metadata) ([]byte, error) {
+	if v.metadata != nil {
+		*v.metadata = m
+	}
+	return []byte(text), nil
 }
 
 func TestConsoleContentView(t *testing.T) {
@@ -258,6 +281,37 @@ func TestConsoleContentView(t *testing.T) {
 				_, _, errs := Content(f, f.Request, "custom", contract.DetailOptions{Registry: r, ProtobufDefinitions: "/operator/definitions.proto"}, testPalette(t))
 				if len(errs) > 0 || metadata.HTTPRequest != f.Request || metadata.Flow != f || metadata.ProtobufDefinitions != "/operator/definitions.proto" {
 					t.Fatalf("metadata=%+v errors=%v", metadata, errs)
+				}
+				tcpFlow := flow.NewTCPFlow(f.ClientConn, f.ServerConn, false)
+				tcpFlow.Messages = []*tcp.Message{tcp.NewMessage(true, []byte("tcp original"))}
+				udpFlow := flow.NewUDPFlow(f.ClientConn, f.ServerConn, false)
+				udpFlow.Messages = []*udp.Message{udp.NewMessage(false, []byte("udp original"))}
+				wsFlow := fixture(t)
+				wsFlow.WebSocket = &websocket.Data{Messages: []*websocket.Message{websocket.NewMessage(websocket.OpBinary, true, []byte("ws original"))}}
+				tests := map[string]struct {
+					flow                     flow.Flow
+					part, protocol, original string
+				}{
+					"request":   {f, "request-body", "http", "body\n"},
+					"response":  {f, "response-body", "http", "response\n"},
+					"tcp":       {tcpFlow, "tcp-message", "tcp", "tcp original"},
+					"udp":       {udpFlow, "udp-message", "udp", "udp original"},
+					"websocket": {wsFlow, "websocket-message", "websocket", "ws original"},
+				}
+				for name, tt := range tests {
+					s, err := external.Capture(tt.flow, tt.part+" (Custom)", contract.DetailOptions{Registry: r, ProtobufDefinitions: "/operator/definitions.proto"})
+					if err != nil {
+						t.Fatal(name, err)
+					}
+					if _, err := s.PrepareBytes([]byte("replacement"), false); err != nil {
+						t.Fatal(name, err)
+					}
+					if metadata.Flow != s.Flow || metadata.Protocol != tt.protocol || string(metadata.OriginalData) != tt.original || metadata.ProtobufDefinitions != "/operator/definitions.proto" {
+						t.Fatalf("%s: incomplete edit metadata: %+v", name, metadata)
+					}
+					if metadata.TCPMessage != nil && !metadata.TCPMessage.FromClient || metadata.UDPMessage != nil && metadata.UDPMessage.FromClient || metadata.WebSocketMessage != nil && !metadata.WebSocketMessage.FromClient {
+						t.Fatal(name, "message direction lost")
+					}
 				}
 			}},
 			"fallback_cutoff": {func(t *testing.T) {

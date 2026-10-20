@@ -15,6 +15,9 @@ import (
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
+	"github.com/zchee/mitmproxy-go/tcp"
+	"github.com/zchee/mitmproxy-go/udp"
+	"github.com/zchee/mitmproxy-go/websocket"
 )
 
 // EditSession holds a detached edit target. Flow is working data, never live state.
@@ -29,10 +32,10 @@ type EditSession struct {
 // f must be a detached snapshot captured under dispatch.
 func Capture(f flow.Flow, part string, options contract.DetailOptions) (*EditSession, error) {
 	if f == nil {
-		return nil, errors.New("No flow selected.")
+		return nil, errors.New("No flow selected.") //nolint:staticcheck // Preserve upstream's operator-facing diagnostic.
 	}
 	if _, ok := f.(*flow.DNSFlow); ok {
-		return nil, errors.New("Cannot edit DNS flows yet, please submit a patch.")
+		return nil, errors.New("Cannot edit DNS flows yet, please submit a patch.") //nolint:staticcheck // Preserve upstream's unsupported-flow diagnostic.
 	}
 	mode := ""
 	if prefix, tail, ok := strings.Cut(part, " ("); ok && strings.HasSuffix(tail, ")") {
@@ -68,7 +71,12 @@ func Fingerprint(f flow.Flow, target contract.EditTarget) ([32]byte, error) {
 		value = f.Common().Comment
 	} else if h, ok := f.(*flow.HTTPFlow); ok && target.Part != "websocket-message" {
 		switch target.Part {
-		case "url", "path", "query":
+		case "url":
+			if h.Request == nil {
+				return [32]byte{}, errors.New("request missing")
+			}
+			value = []any{h.Request.Scheme, h.Request.Host, h.Request.Port, h.Request.Path, h.Request.Headers}
+		case "path", "query":
 			if h.Request == nil {
 				return [32]byte{}, errors.New("request missing")
 			}
@@ -221,23 +229,39 @@ func (s *EditSession) PrepareBytes(data []byte, strip bool) (contract.Edit, erro
 			}
 			view, ok := registry.Get(s.Mode)
 			if !ok {
-				return contract.Edit{}, fmt.Errorf("Contentview %s is not bidirectional.", s.Mode)
+				return contract.Edit{}, fmt.Errorf("Contentview %s is not bidirectional.", s.Mode) //nolint:staticcheck // Preserve upstream's contentview diagnostic.
 			}
 			interactive, ok := view.(contentviews.InteractiveView)
 			if !ok {
-				return contract.Edit{}, fmt.Errorf("Contentview %s is not bidirectional.", s.Mode)
+				return contract.Edit{}, fmt.Errorf("Contentview %s is not bidirectional.", s.Mode) //nolint:staticcheck // Preserve upstream's contentview diagnostic.
 			}
 			message, err := editMessage(s.Flow, s.Target)
 			if err != nil {
 				return contract.Edit{}, err
 			}
 			metadata := contentviews.Metadata{Flow: s.Flow, ProtobufDefinitions: s.Options.ProtobufDefinitions}
-			if request, ok := message.(*httpmsg.Request); ok {
-				metadata.HTTPMessage = &request.Message
-				metadata.HTTPRequest = request
+			switch message := message.(type) {
+			case *httpmsg.Request:
+				metadata.Protocol = "http"
+				metadata.HTTPMessage, metadata.HTTPRequest = &message.Message, message
+				metadata.OriginalData = bytes.Clone(message.ContentOrRaw())
+			case *httpmsg.Response:
+				metadata.Protocol = "http"
+				metadata.HTTPMessage = &message.Message
+				metadata.OriginalData = bytes.Clone(message.ContentOrRaw())
+			case *tcp.Message:
+				metadata.Protocol, metadata.TCPMessage = "tcp", message
+				metadata.OriginalData = bytes.Clone(message.Content)
+			case *udp.Message:
+				metadata.Protocol, metadata.UDPMessage = "udp", message
+				metadata.OriginalData = bytes.Clone(message.Content)
+			case *websocket.Message:
+				metadata.Protocol, metadata.WebSocketMessage = "websocket", message
+				metadata.OriginalData = bytes.Clone(message.Content)
 			}
-			if response, ok := message.(*httpmsg.Response); ok {
-				metadata.HTTPMessage = &response.Message
+			if metadata.HTTPMessage != nil {
+				media, _, _ := strings.Cut(metadata.HTTPMessage.Headers.Get("content-type"), ";")
+				metadata.ContentType = strings.TrimSpace(media)
 			}
 			data, err = interactive.Reencode(string(data), metadata)
 			if err != nil {

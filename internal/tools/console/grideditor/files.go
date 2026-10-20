@@ -5,7 +5,6 @@ package grideditor
 
 import (
 	"bytes"
-	"encoding/csv"
 	"errors"
 	"io"
 	"os"
@@ -23,7 +22,7 @@ func ReadFile(path string, escaped bool) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // The operator explicitly selects this grid input file.
 	if err != nil {
 		return nil, err
 	}
@@ -75,29 +74,31 @@ func SaveFile(path string, rows [][]Cell) error {
 
 func writeCSV(dst io.Writer, rows [][]Cell) error {
 	var buffer bytes.Buffer
-	writer := csv.NewWriter(&buffer)
 	for _, row := range rows {
-		values := make([]string, len(row))
 		for i, cell := range row {
-			values[i] = string(cell.Data)
+			if i > 0 {
+				buffer.WriteByte(',')
+			}
+			// Python's minimal dialect leaves leading whitespace unquoted and
+			// quotes a sole empty field, unlike encoding/csv's writer.
+			quoted := bytes.ContainsAny(cell.Data, ",\"\r\n") || len(row) == 1 && len(cell.Data) == 0
+			if quoted {
+				buffer.WriteByte('"')
+			}
+			for _, value := range cell.Data {
+				buffer.WriteByte(value)
+				if quoted && value == '"' {
+					buffer.WriteByte('"')
+				}
+			}
+			if quoted {
+				buffer.WriteByte('"')
+			}
 		}
-		if err := writer.Write(values); err != nil {
+		buffer.WriteString("\r\n")
+		if _, err := buffer.WriteTo(dst); err != nil {
 			return err
 		}
-		writer.Flush()
-		if err := writer.Error(); err != nil {
-			return err
-		}
-		data := buffer.Bytes()
-		if len(data) > 0 {
-			if _, err := dst.Write(data[:len(data)-1]); err != nil {
-				return err
-			}
-			if _, err := io.WriteString(dst, "\r\n"); err != nil {
-				return err
-			}
-		}
-		buffer.Reset()
 	}
 	return nil
 }

@@ -79,7 +79,10 @@ type Process struct {
 	root            *os.Root
 	viewer          bool
 	input           []byte
+	mu              sync.Mutex
 	once            sync.Once
+	stopCleanup     func() bool
+	cleaned         chan struct{}
 	closeErr        error
 }
 
@@ -98,7 +101,7 @@ func Prepare(ctx context.Context, request Request) (*Process, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Process{directory: dir, name: "payload" + extension(request.ContentType), viewer: request.Viewer, input: bytes.Clone(request.Data)}
+	p := &Process{directory: dir, name: "payload" + extension(request.ContentType), viewer: request.Viewer, input: bytes.Clone(request.Data), cleaned: make(chan struct{})}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return nil, errors.Join(err, os.RemoveAll(dir))
@@ -118,7 +121,10 @@ func Prepare(ctx context.Context, request Request) (*Process, error) {
 			return nil, errors.Join(err, p.Close())
 		}
 	}
-	p.Command = exec.CommandContext(ctx, args[0], append(args[1:], filepath.Join(dir, p.name))...)
+	p.Command = exec.CommandContext(ctx, args[0], append(args[1:], filepath.Join(dir, p.name))...) //nolint:gosec // Argv comes from the operator's editor setting; the payload is a literal file argument.
+	p.mu.Lock()
+	p.stopCleanup = context.AfterFunc(ctx, func() { _ = p.Close() })
+	p.mu.Unlock()
 	return p, nil
 }
 
@@ -136,7 +142,7 @@ func extension(contentType string) string {
 		if len(ext) < 2 || len(ext) > 16 || ext[0] != '.' {
 			continue
 		}
-		if strings.IndexFunc(ext[1:], func(r rune) bool { return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') }) < 0 {
+		if strings.IndexFunc(ext[1:], func(r rune) bool { return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') }) < 0 {
 			return ext
 		}
 	}
@@ -152,6 +158,8 @@ func (p *Process) Tea(done func(Result) tea.Msg) tea.Cmd {
 // Complete reads a successful edit after validating its opened regular file.
 // Any process, read, validation or cleanup failure is returned to the caller.
 func (p *Process) Complete(processErr error) Result {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	result := Result{Err: processErr}
 	if processErr == nil {
 		if p.viewer {
@@ -160,7 +168,7 @@ func (p *Process) Complete(processErr error) Result {
 			result.Data, result.Err = p.read()
 		}
 	}
-	result.Err = errors.Join(result.Err, p.Close())
+	result.Err = errors.Join(result.Err, p.close())
 	return result
 }
 
@@ -188,11 +196,21 @@ func (p *Process) read() ([]byte, error) {
 // Close removes the owned files; it does not terminate a running child.
 // Cancel the context and wait for Command before closing a running process.
 func (p *Process) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.close()
+}
+
+func (p *Process) close() error {
+	if p.stopCleanup != nil {
+		p.stopCleanup()
+	}
 	p.once.Do(func() {
 		if p.root != nil {
 			p.closeErr = p.root.Close()
 		}
 		p.closeErr = errors.Join(p.closeErr, os.RemoveAll(p.directory))
+		close(p.cleaned)
 	})
 	return p.closeErr
 }

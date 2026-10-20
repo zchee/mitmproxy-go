@@ -4,8 +4,9 @@
 package flowview
 
 import (
-	"github.com/charmbracelet/x/ansi"
 	"strings"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Search is the independent case-sensitive search state of one tab.

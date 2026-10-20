@@ -20,20 +20,22 @@ import (
 // Operation is an admitted grid command delivered on the program goroutine.
 type Operation struct{ Name, Path string }
 
-// ResultMsg reports completion without hiding an edit or file error.
-type ResultMsg struct{ Err error }
+func errorResult(err error) tea.Msg {
+	if err != nil {
+		return contract.ErrorMsg{Source: "grid editor", Err: err}
+	}
+	return nil
+}
 
 type cellMsg struct {
 	revision    uint64
 	row, column int
 	data        []byte
-	err         error
 }
 type processMsg struct {
 	revision    uint64
 	row, column int
 	process     *external.Process
-	err         error
 }
 
 // Model owns copied working rows and never modifies a live flow directly.
@@ -176,13 +178,19 @@ func (m *Model) finish() bool {
 // Load reads into the selected cell outside dispatch and detects stale selection.
 func (m *Model) Load(path string, escaped bool) tea.Cmd {
 	rev, row, column := m.revision, m.row, m.column
-	return func() tea.Msg { data, err := ReadFile(path, escaped); return cellMsg{rev, row, column, data, err} }
+	return func() tea.Msg {
+		data, err := ReadFile(path, escaped)
+		if err != nil {
+			return errorResult(err)
+		}
+		return cellMsg{revision: rev, row: row, column: column, data: data}
+	}
 }
 
 // Save captures rows and writes the requested CSV outside dispatch.
 func (m *Model) Save(path string) tea.Cmd {
 	rows := m.Values()
-	return func() tea.Msg { return ResultMsg{SaveFile(path, rows)} }
+	return func() tea.Msg { return errorResult(SaveFile(path, rows)) }
 }
 
 // Editor prepares a cancellable external editor for the selected cell.
@@ -192,30 +200,37 @@ func (m *Model) Editor() tea.Cmd {
 		return nil
 	}
 	if m.columns[m.column].Subgrid {
-		m.err = errors.New("Press enter to edit this field.")
+		m.err = errors.New("Press enter to edit this field.") //nolint:staticcheck // Preserve upstream's grid instruction.
 		return nil
 	}
 	data := bytes.Clone(cell.Data)
 	rev, row, column := m.revision, m.row, m.column
 	return func() tea.Msg {
 		process, err := external.Prepare(m.ctx, external.Request{Data: data})
-		return processMsg{rev, row, column, process, err}
+		if err != nil {
+			return errorResult(err)
+		}
+		return processMsg{revision: rev, row: row, column: column, process: process}
 	}
 }
 
 // Commit validates working rows before making a fresh dispatch edit.
 func (m *Model) Commit() tea.Cmd {
+	if m.editing && !m.finish() {
+		err := m.err
+		return func() tea.Msg { return errorResult(err) }
+	}
 	rows := m.Values()
 	return func() tea.Msg {
 		if m.host == nil {
-			return ResultMsg{errors.New("grid has no dispatch host")}
+			return errorResult(errors.New("grid has no dispatch host"))
 		}
 		if m.session != nil {
 			edit, err := PrepareRows(m.session, rows)
 			if err != nil {
-				return ResultMsg{err}
+				return errorResult(err)
 			}
-			return ResultMsg{m.host.CommitEdit(m.ctx, edit)}
+			return errorResult(m.host.CommitEdit(m.ctx, edit))
 		}
 		args := []any{m.option}
 		for _, row := range rows {
@@ -224,12 +239,23 @@ func (m *Model) Commit() tea.Cmd {
 			}
 		}
 		_, err := m.host.Call(m.ctx, "set", args...)
-		return ResultMsg{err}
+		return errorResult(err)
 	}
 }
 
 // Update applies admitted commands and consumes editor input before global bindings.
 func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
+	if action, ok := msg.(contract.Action); ok {
+		switch action.Kind {
+		case "grid":
+			msg = Operation{Name: action.Value, Path: action.Text}
+		case "nav":
+			keys := map[string]rune{"start": tea.KeyHome, "end": tea.KeyEnd, "next": tea.KeyTab, "select": tea.KeyEnter, "up": tea.KeyUp, "down": tea.KeyDown, "left": tea.KeyLeft, "right": tea.KeyRight, "pageup": tea.KeyPgUp, "pagedown": tea.KeyPgDown}
+			if code, ok := keys[action.Value]; ok {
+				msg = tea.KeyPressMsg{Code: code}
+			}
+		}
+	}
 	if m.child != nil {
 		if key, ok := msg.(tea.KeyPressMsg); ok && key.String() == "esc" && !m.child.editing {
 			if cell := m.current(); cell != nil {
@@ -242,17 +268,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
 		return m.child.Update(msg)
 	}
 	switch msg := msg.(type) {
-	case ResultMsg:
-		m.err = msg.Err
-		return nil, true
 	case cellMsg:
-		if msg.err != nil {
-			m.err = msg.err
-			return nil, true
-		}
 		if msg.revision != m.revision || msg.row != m.row || msg.column != m.column {
 			m.err = errors.New("grid cell changed during external work")
-			return nil, true
+			err := m.err
+			return func() tea.Msg { return errorResult(err) }, true
 		}
 		if cell := m.current(); cell != nil {
 			cell.Data = bytes.Clone(msg.data)
@@ -261,12 +281,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		return nil, true
 	case processMsg:
-		if msg.err != nil {
-			m.err = msg.err
-			return nil, true
+		if msg.revision != m.revision || msg.row != m.row || msg.column != m.column {
+			return func() tea.Msg {
+				return errorResult(errors.Join(errors.New("grid cell changed during external work"), msg.process.Close()))
+			}, true
 		}
 		return msg.process.Tea(func(result external.Result) tea.Msg {
-			return cellMsg{msg.revision, msg.row, msg.column, bytes.TrimSuffix(result.Data, []byte("\n")), result.Err}
+			if result.Err != nil {
+				return errorResult(result.Err)
+			}
+			return cellMsg{msg.revision, msg.row, msg.column, bytes.TrimSuffix(result.Data, []byte("\n"))}
 		}), true
 	case Operation:
 		switch msg.Name {
@@ -342,6 +366,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
 		case "down", "j":
 			m.row = min(max(0, len(m.rows)-1), m.row+1)
 			return nil, true
+		case "pgup":
+			m.row = max(0, m.row-max(1, m.height-2))
+			return nil, true
+		case "pgdown":
+			m.row = min(max(0, len(m.rows)-1), m.row+max(1, m.height-2))
+			return nil, true
 		case "home", "g":
 			m.row = 0
 			return nil, true
@@ -350,9 +380,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
 			return nil, true
 		}
 	case tea.MouseClickMsg:
-		if msg.Button == tea.MouseLeft && msg.Y > 0 && msg.Y <= len(m.rows) {
-			offset := max(0, m.row-max(0, m.height-2)+1)
-			m.row = min(len(m.rows)-1, offset+msg.Y-1)
+		if msg.Button == tea.MouseLeft && msg.Y > 0 && msg.Y < m.height-1 {
+			offset := max(0, m.row-max(0, m.height-3)+1)
+			if offset+msg.Y-1 >= len(m.rows) {
+				return nil, false
+			}
+			m.row = offset + msg.Y - 1
 			m.column = min(len(m.columns)-1, msg.X/max(1, m.width/len(m.columns)))
 			return nil, true
 		}

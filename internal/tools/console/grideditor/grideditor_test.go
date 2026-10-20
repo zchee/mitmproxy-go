@@ -151,13 +151,18 @@ func TestConsoleGridEditor(t *testing.T) {
 				if err := f.Revert(); err != nil {
 					t.Fatal(err)
 				}
-				m.Add(false)
+				if cmd, consumed := m.Update(contract.Action{Kind: "grid", Value: "add"}); cmd != nil || !consumed {
+					t.Fatal("admitted grid add was not consumed")
+				}
 				if !m.editing {
 					t.Fatal("add did not enter cell")
 				}
 				m.input = `bad\x`
 				if m.finish() {
 					t.Fatal("invalid escape accepted")
+				}
+				if result, ok := m.Commit()().(contract.ErrorMsg); !ok || result.Err == nil {
+					t.Fatal("invalid pending edit did not preserve the editor with an error")
 				}
 				m.input = `value\n`
 				if !m.finish() {
@@ -219,6 +224,26 @@ func TestConsoleGridEditor(t *testing.T) {
 				if err != nil || info.Mode().Perm() != 0o600 {
 					t.Fatal("not private", err)
 				}
+				tests := map[string]struct {
+					rows [][]Cell
+					want string
+				}{
+					"empty row":         {[][]Cell{nil}, "\r\n"},
+					"empty field":       {[][]Cell{{{}}}, "\"\"\r\n"},
+					"empty pair":        {[][]Cell{{{}, {}}}, ",\r\n"},
+					"whitespace":        {[][]Cell{{{Data: []byte(" leading ")}, {Data: []byte("\tvalue")}}}, " leading ,\tvalue\r\n"},
+					"dot escape":        {[][]Cell{{{Data: []byte(`\.`)}}}, "\\.\r\n"},
+					"embedded controls": {[][]Cell{{{Data: []byte("a\rb\nc")}}}, "\"a\rb\nc\"\r\n"},
+				}
+				for name, tt := range tests {
+					var output bytes.Buffer
+					if err := writeCSV(&output, tt.rows); err != nil {
+						t.Fatal(name, err)
+					}
+					if diff := gocmp.Diff(tt.want, output.String()); diff != "" {
+						t.Fatal(name, diff)
+					}
+				}
 			}},
 			"invalid": {func(t *testing.T) {
 				if _, err := ReadFile(filepath.Join(t.TempDir(), "missing"), false); err == nil {
@@ -257,7 +282,7 @@ func TestConsoleGridEditor(t *testing.T) {
 }
 
 func FuzzConsoleGridEscaped(f *testing.F) {
-	for _, seed := range []string{"hello", `\x00\xff`, "\\", "日", `\777`} {
+	for _, seed := range []string{"hello", `\x00\xff`, "\\", "日", `\777`, "", "header value", `\x00\x7f\xff`, `line\nnext\tcolumn\\`, `€\U0001f642`, `\x0g`, "abc\\", "\xff\xfe"} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, input string) {

@@ -49,6 +49,7 @@ func (m *Model) SetSnapshot(s contract.Snapshot) {
 	if m.snapshot.FocusID != s.FocusID {
 		m.search = nil
 		m.tab = 0
+		m.searching, m.input, m.status = false, "", ""
 	}
 	m.snapshot = s
 	name, transparent := "solarized_dark", true
@@ -139,6 +140,11 @@ func (m *Model) mode() string {
 
 func (m *Model) render() {
 	m.lines, m.errs = nil, nil
+	defer func() {
+		if m.tab < len(m.search) {
+			m.search[m.tab].Focus = min(m.search[m.tab].Focus, max(0, len(m.lines)-1))
+		}
+	}()
 	f := m.snapshot.Focused
 	tabs := Tabs(f)
 	if len(tabs) == 0 {
@@ -323,17 +329,33 @@ func dnsLines(message *dns.Message, part string, palette style.Palette) []string
 
 // Update handles only local tab, search and scrolling input.
 func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
-	key, ok := msg.(tea.KeyPressMsg)
-	if !ok {
-		return nil, false
-	}
 	tabs := Tabs(m.snapshot.Focused)
 	if len(tabs) == 0 {
 		return nil, false
 	}
+	if mouse, ok := msg.(tea.MouseClickMsg); ok {
+		if mouse.Button != tea.MouseLeft || mouse.Y != 0 || mouse.X < 0 || mouse.X >= m.width {
+			return nil, false
+		}
+		width := max(1, (m.width-len(tabs)+1)/len(tabs))
+		return m.selectTab(min(mouse.X/(width+1), len(tabs)-1)), true
+	}
+	key, isKey := msg.(tea.KeyPressMsg)
+	name := key.String()
+	if action, ok := msg.(contract.Action); ok && action.Kind == "nav" {
+		name = action.Value
+		switch name {
+		case "start":
+			name = "home"
+		case "next":
+			name = "tab"
+		}
+	} else if !isKey {
+		return nil, false
+	}
 	search := &m.search[m.tab]
 	if m.searching {
-		switch key.String() {
+		switch name {
 		case "esc":
 			m.searching = false
 		case "enter":
@@ -350,26 +372,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		return nil, true
 	}
-	switch key.String() {
+	switch name {
 	case "tab", "right", "left":
 		next := (m.tab + 1) % len(tabs)
-		if key.String() == "left" {
+		if name == "left" {
 			next = (m.tab + len(tabs) - 1) % len(tabs)
 		}
-		if m.host == nil {
-			m.tab = next
-			m.render()
-			return nil, true
-		}
-		return func() tea.Msg {
-			return m.host.Dispatch(m.ctx, contract.Action{Kind: "tab", Value: tabName(tabs[next]), Index: next})
-		}, true
+		return m.selectTab(next), true
 	case "/":
 		m.searching = true
 		m.input = ""
 		return nil, true
 	case "n", "N":
-		if !search.Find(m.lines, key.String() == "N") {
+		if !search.Find(m.lines, name == "N") {
 			m.status = "Search not found."
 		}
 		return nil, true
@@ -379,6 +394,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
 	case "k", "up":
 		search.Focus = max(0, search.Focus-1)
 		return nil, true
+	case "pageup":
+		search.Focus = max(0, search.Focus-max(1, m.height-1))
+		return nil, true
+	case "pagedown":
+		search.Focus = min(max(0, len(m.lines)-1), search.Focus+max(1, m.height-1))
+		return nil, true
 	case "g", "home":
 		search.Focus = 0
 		return nil, true
@@ -387,6 +408,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 	}
 	return nil, false
+}
+
+func (m *Model) selectTab(index int) tea.Cmd {
+	if m.host == nil {
+		m.tab = index
+		m.render()
+		return nil
+	}
+	action := contract.Action{Kind: "tab", Value: tabName(Tabs(m.snapshot.Focused)[index]), Index: index}
+	return func() tea.Msg {
+		if err := m.host.Dispatch(m.ctx, action); err != nil {
+			return contract.ErrorMsg{Source: "flow view", Err: err}
+		}
+		return nil
+	}
 }
 
 // View renders the selected tab at the current viewport size.

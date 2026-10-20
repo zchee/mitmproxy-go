@@ -9,6 +9,7 @@
 # ///
 """Exercise the live console oracle as a real subprocess."""
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -20,15 +21,21 @@ import pytest
 ROOT = Path(__file__).resolve().parents[5]
 ORACLE = Path(__file__).with_name("oracle.py")
 REFERENCE = ROOT / "testdata/mitmproxy/tools/console/conftest.py"
-FLOWS = ROOT / "testdata/mitmproxy/flows/successful_log.mitm"
+FLOWS = Path(__file__).with_name("console.mitm")
+FIXTURES = orjson.loads(Path(__file__).with_name("fixtures.json").read_bytes())
 
 
 @pytest.mark.parametrize(
-    "keys,expected",
-    [("", "Flows"), ("<enter>", "Flow Details"), (":console.view.", "console.view.")],
+    "name,expected",
+    [
+        ("flowlist", "Flows"),
+        ("flowview", "Flow Details"),
+        ("commander", "console.view."),
+    ],
 )
-def test_render(tmp_path: Path, keys: str, expected: str) -> None:
+def test_render(tmp_path: Path, name: str, expected: str) -> None:
     """Render source flow data in each required view without a terminal or proxy."""
+    assert hashlib.sha256(FLOWS.read_bytes()).hexdigest() == FIXTURES["flow_sha256"]
     result = subprocess.run(
         [
             sys.executable,
@@ -40,7 +47,12 @@ def test_render(tmp_path: Path, keys: str, expected: str) -> None:
             "--work-dir",
             str(tmp_path),
             "--keys",
-            keys,
+            FIXTURES["states"][name],
+            *[
+                argument
+                for value in FIXTURES["options"]
+                for argument in ("--set", value)
+            ],
         ],
         check=True,
         capture_output=True,
@@ -52,8 +64,20 @@ def test_render(tmp_path: Path, keys: str, expected: str) -> None:
     assert len(frame["frame"].split("\n")) == 24
     assert expected in frame["frame"]
     assert frame["upstream_commit"] == "3368a0a06ae6195aad817a1ece1aaeb6fe0353a1"
-    assert frame["flow_count"] > 0
+    assert frame["flow_count"] == len(FIXTURES["ids"])
     (tmp_path / "result.json").write_bytes(result.stdout)
+
+
+def test_fixture_generation(tmp_path: Path) -> None:
+    """Regenerate identical flow bytes and state settings without live I/O."""
+    subprocess.run(
+        [sys.executable, str(ORACLE.with_name("generate_fixtures.py")), str(tmp_path)],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    assert (tmp_path / "console.mitm").read_bytes() == FLOWS.read_bytes()
+    assert orjson.loads((tmp_path / "fixtures.json").read_bytes()) == FIXTURES
 
 
 def test_isolation_refusal(tmp_path: Path) -> None:

@@ -476,6 +476,21 @@ responses add no explicit `Cache-Control`; a `v` query parameter selects
 `max-age=315360000` and `Expires`. Static files remain unauthenticated, as upstream;
 index authentication belongs to the composed backend, not `IndexHandler` itself.
 
+### Update stream
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| Each connection has an unbounded application send queue (`py:mitmproxy/tools/web/app.py:376-417` at `3368a0a`). | Each `/updates` client has 1024 ordinary FIFO slots. Enqueue never waits for capacity or socket I/O. Overflow selects terminal 1011, stops ordinary admission, allows an already claimed frame to finish, discards backlog and writes Close 1011 before another ordinary message (`internal/tools/web/updates/client.go:23-29,74-98,183-240`). | A nonreader cannot block dispatch or retain an unlimited per-client backlog. A completed graceful close can be peer-observed as 1011. |
+| The application queue has no equivalent terminal-write grace (`py:mitmproxy/tools/web/app.py:388-417` at `3368a0a`). | After 15 seconds from terminal selection, a still-blocked or partial transport is aborted and owned workers are joined. The outcome is recorded as transport-aborted/local-1011, separately from peer-observed 1011 (`internal/tools/web/updates/client.go:100-179`). | Bound cleanup without claiming that a local close intent or failed write delivered a wire Close frame. |
+| The inherited Tornado WebSocket handler has a default 10 MiB message limit but no separate data-fragment count limit (`py:mitmproxy/tools/web/app.py:376-386` at `3368a0a`; Tornado 6.5.10 `tornado/websocket.py:100,1171-1210`). | Retains the 10 MiB assembled-message ceiling and additionally permits at most 1024 data fragments per message, including empty fragments; control frames do not count. Fragment 1025 closes with 1009 (`internal/tools/web/updates/client.go:23-29,243-313`, `hub.go:139`). | Bound fragment bookkeeping independently of payload bytes; the byte ceiling is unchanged. |
+
+Reproduced on purpose (compatibility, not differences):
+
+| Upstream contract | Go contract | Reason |
+|---|---|---|
+| The inherited Tornado handler checks `Origin`, falling back to `Sec-WebSocket-Origin` only when absent; missing headers pass and empty Origin fails. The lowercase parsed Origin authority must equal raw Host, including port (`py:mitmproxy/tools/web/app.py:376-386` at `3368a0a`; Tornado 6.5.10 `tornado/websocket.py:256-273,559-566`). | Applies the same comparison, preserving Host case and port rather than normalizing default ports or forwarded hosts (`internal/tools/web/updates/hub.go:126-139,161-175`). | Preserve Tornado's exact Origin contract instead of gows' permissive zero-value Origin policy. |
+| Per-client named filters have no count cap; changing a filter scans the current view. WebSocket compression is not enabled (`py:mitmproxy/tools/web/app.py:428-485` at `3368a0a`; inherited Tornado 6.5.10 `tornado/websocket.py:399-421`). | No per-client named-filter cap; filter updates scan the view, and frame writes do not compress (`internal/tools/web/updates/client.go:218,361-379`, `hub.go:132-139`). | This behavior is unchanged. The queue is a per-client message bound, not a global memory or work bound; matching scales with clients, retained filters and affected flows. |
+
 ### Authentication
 
 Upstream references in this section use the Python pin `3368a0a`.
@@ -920,14 +935,15 @@ TLS and protocol layers:
 
 | Upstream behaviour | Go behaviour | Reason |
 |---|---|---|
-| Synchronous Python signals (`mitmproxy/addons/view.py`). | Bounded event channels; overflow closes and removes the subscriber, which must resnapshot. | A slow frontend cannot block the dispatch lock. Channel subscribe/cancel and store access require that lock. |
+| Synchronous Python signals (`py:mitmproxy/addons/view.py:169-184` at `3368a0a`). | Bounded `Subscribe` channels; overflow still closes and removes the subscriber, which must resnapshot. Synchronous `Observe` callbacks additionally receive a detached deep copy per non-nil flow, observer and event, retaining ID and Live (`addons/view/view.go:89-130,174-190`). | Existing channel behavior is unchanged. Observer copies isolate the store and other observers; copying, serialization and filter fanout still consume dispatch time. |
 | `intercept`, `resume` and `kill` are directly dispatched hooks (`mitmproxy/addons/view.py`). | Runtime changes arrive through `update`; direct methods remain available. | The Go core dispatches the shared update hook for lifecycle notifications. |
 
 ## addons/eventstore
 
 | Upstream behaviour | Go behaviour | Reason |
 |---|---|---|
-| The constructor installs a process-global Python logging handler (`mitmproxy/addons/eventstore.py`). | Entries arrive through the master's existing `add_log` dispatch. | Embedders own logger composition; store mutation remains under the dispatch lock. |
+| The constructor installs a process-global Python logging handler (`py:mitmproxy/addons/eventstore.py:18-26,41-56` at `3368a0a`). | The frontend explicitly composes one `EventStore.LogHandler`, delivering `Add` through `manager.Do`, and owns Flush/Close outside dispatch before manager closure. Construction/loading installs no global logger; the store no longer implements the deprecated `add_log` hook (`addons/eventstore/eventstore.go:44-65,92-119`, `internal/tools/web/master.go:127-140,292-294`). | Embedders own logger composition and lifetime while store mutation stays synchronized. |
+| Web event IDs are Python object-address integers (`py:mitmproxy/tools/web/app.py:212-217,800-802` at `3368a0a`). | A monotonic per-store uint64 identifies both `/events` and `events/add`, without reuse after clear or eviction (`addons/eventstore/eventstore.go:83-126`, `internal/tools/web/routes.go:234-238`, `internal/tools/web/updates/broadcast.go:91-96`). | Keep one stable identity source without exposing Go object addresses. |
 | Synchronous addition and refresh signals (`mitmproxy/addons/eventstore.py`). | Bounded event channels; overflow closes and removes the subscriber, which must resnapshot. Subscribe and cancel require the dispatch lock. | A slow frontend cannot block the dispatcher or retain an unbounded notification queue. |
 
 ## addons/cut

@@ -5,6 +5,8 @@ package updates
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -22,6 +24,7 @@ import (
 func testAdmission(t *testing.T) {
 	tests := map[string]struct {
 		reject bool
+		abort  bool
 		before func(*testing.T, *streamFixture, *client)
 		after  func(*testing.T, *streamFixture, *client, *testPeer)
 	}{
@@ -122,17 +125,21 @@ func testAdmission(t *testing.T) {
 			},
 		},
 		"abort_before_attachment_cannot_resurrect_client": {
+			abort:  true,
 			before: func(_ *testing.T, _ *streamFixture, c *client) { c.abort() },
-			after: func(t *testing.T, _ *streamFixture, c *client, p *testPeer) {
-				if _, err := p.ws.ReadFrame(); err == nil {
-					t.Fatal("aborted pending client wrote a frame")
-				}
+			after: func(t *testing.T, f *streamFixture, c *client, _ *testPeer) {
 				await(t, c.done)
 				c.mu.Lock()
-				finished, ws := c.finished, c.ws
+				finished, ws, pending, outcome := c.finished, c.ws, c.pending, c.outcome
 				c.mu.Unlock()
-				if !finished || ws != nil {
+				if !finished || ws != nil || pending != nil {
 					t.Fatal("transport attachment resurrected an aborted client")
+				}
+				if diff := gocmp.Diff("transport-aborted", outcome); diff != "" {
+					t.Fatal(diff)
+				}
+				if err := f.h.Close(t.Context()); err != nil {
+					t.Fatal(err)
 				}
 			},
 		},
@@ -191,10 +198,13 @@ func testAdmission(t *testing.T) {
 			close(release)
 			dial := await(t, result)
 			var p *testPeer
-			if tt.reject {
+			if tt.reject || tt.abort {
 				if dial.err == nil {
 					_ = dial.conn.Close()
-					t.Fatal("invalid pending header upgraded successfully")
+					t.Fatal("rejected or aborted pending client upgraded successfully")
+				}
+				if tt.abort && !errors.Is(dial.err, io.EOF) && !errors.Is(dial.err, io.ErrUnexpectedEOF) && !errors.Is(dial.err, net.ErrClosed) {
+					t.Fatalf("pending abort dial error = %v, want a closed-connection error", dial.err)
 				}
 			} else {
 				if dial.err != nil {

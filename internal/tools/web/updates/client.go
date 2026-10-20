@@ -31,6 +31,7 @@ const (
 type client struct {
 	hub             *Hub
 	ws              *gows.Conn
+	pending         net.Conn // Owned until the HTTP upgrade attaches ws.
 	queue           chan []byte
 	wake            chan struct{}
 	terminalReady   chan struct{}
@@ -104,9 +105,13 @@ func (c *client) abort() {
 		c.outcome = "transport-aborted"
 	}
 	c.signalLocked()
-	ws := c.ws
+	ws, pending := c.ws, c.pending
+	c.pending = nil
 	c.mu.Unlock()
 	if ws == nil {
+		if pending != nil {
+			_ = pending.Close()
+		}
 		return
 	}
 	// Interrupt a blocked reader without releasing its borrowed buffers, then

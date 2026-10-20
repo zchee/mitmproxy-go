@@ -4,9 +4,11 @@
 package updates
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -114,8 +116,10 @@ func (h *Hub) Close(ctx context.Context) error {
 
 // ServeHTTP authenticates outside dispatch and admits the client under dispatch
 // before writing the HTTP upgrade with validated pending response headers.
-// Updates queue while the transport is pending; the reader and writer start only
-// after attachment. It owns its handler lifetime until both have joined.
+// A client that has observed the 101 receives every later update, subject to the
+// bounded queue's overflow policy. Updates queue while the transport is pending;
+// the reader and writer start only after attachment. It owns its handler lifetime
+// until both have joined.
 // Do not wrap it in a second authentication or compression middleware.
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	open := false
@@ -156,7 +160,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.afterAdmission()
 	}
 	u := gows.Upgrader{ForwardResponseHeaders: true, OriginCheck: func([]byte) bool { return sameOrigin(r) }}
-	conn, hs, err := u.UpgradeHTTP(w, r)
+	conn, hs, err := u.UpgradeHTTP(upgradeWriter{ResponseWriter: w, client: c}, r)
 	if err != nil {
 		// gows already answered the HTTP failure or closed the hijacked socket.
 		return
@@ -168,9 +172,36 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = ws.Abort()
 		return
 	}
+	c.pending = nil
 	c.ws = ws
 	c.mu.Unlock()
 	c.run(r.Context())
+}
+
+// Capture the hijacked transport before the upgrader writes the 101, so Close
+// can interrupt that write even before a WebSocket reader or writer exists.
+type upgradeWriter struct {
+	http.ResponseWriter
+	client *client
+}
+
+func (w upgradeWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (w upgradeWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, buffered, err := http.NewResponseController(w.ResponseWriter).Hijack()
+	if err != nil {
+		return nil, nil, err
+	}
+	w.client.mu.Lock()
+	finished := w.client.finished
+	if !finished {
+		w.client.pending = conn
+	}
+	w.client.mu.Unlock()
+	if finished {
+		_ = conn.Close()
+	}
+	return conn, buffered, nil
 }
 
 // Tornado 6.5.10 compares lowercased Origin netloc to raw Host, including ports.

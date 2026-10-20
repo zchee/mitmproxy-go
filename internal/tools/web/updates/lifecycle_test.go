@@ -151,6 +151,7 @@ func TestWebUpdateLifecycle(t *testing.T) {
 			}
 		}},
 		"admission_before_upgrade":          {run: testAdmission},
+		"close_during_upgrade":              {run: testUpgradeClose},
 		"peer_close_while_data_is_pending":  {run: testPendingPeerClose},
 		"shutdown_during_inbound_fragments": {run: testInboundAbort},
 		"missing_dependencies_fail_fast": {run: func(t *testing.T) {

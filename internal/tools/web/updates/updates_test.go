@@ -70,9 +70,11 @@ func TestWebUpdates(t *testing.T) {
 		"test_websocket_filter_command_error/unknown_command": {run: func(t *testing.T) { testBadCommand(t, `{"type":"unknownCommand"}`) }},
 		"test_websocket_filter_command_error/invalid_json":    {run: func(t *testing.T) { testBadCommand(t, "invalid json") }},
 	}
-	for name, tt := range tests {
-		t.Run(name, tt.run)
-	}
+	t.Run("upstream", func(t *testing.T) {
+		for name, tt := range tests {
+			t.Run(name, tt.run)
+		}
+	})
 }
 
 func testBadCommand(t *testing.T, body string) {

@@ -570,15 +570,59 @@ func TestWebStaticViewer(t *testing.T) {
 				t.Fatal(err)
 			}
 		}},
+		"repeated_flow_id": {run: func(t *testing.T) {
+			first, last := testflow.TFlow(), testflow.TFlow()
+			last.ID = first.ID
+			first.Request.SetContent([]byte("first"))
+			last.Request.SetContent([]byte("last"))
+			files := viewerTestFiles(t, []flow.Flow{first, last})
+			e := viewerTestStage(t, files)
+			if err := e.write(t.Context(), files); err != nil {
+				t.Fatal(err)
+			}
+			var rows []struct {
+				ID      string `json:"id"`
+				Request struct {
+					ContentLength int `json:"contentLength"`
+				} `json:"request"`
+			}
+			if err := json.Unmarshal(viewerRead(t, e.stage, "flows.json"), &rows); err != nil {
+				t.Fatal(err)
+			}
+			if len(rows) != 2 {
+				t.Fatalf("repeated records were removed: %d", len(rows))
+			}
+			if diff := gocmp.Diff([]string{first.ID, first.ID}, []string{rows[0].ID, rows[1].ID}); diff != "" {
+				t.Fatal(diff)
+			}
+			if diff := gocmp.Diff([]int{5, 4}, []int{rows[0].Request.ContentLength, rows[1].Request.ContentLength}); diff != "" {
+				t.Fatal(diff)
+			}
+			if body := viewerRead(t, e.stage, "flows/"+first.ID+"/request/content.data"); string(body) != "last" {
+				t.Fatal("repeated flow ID did not retain the last payload")
+			}
+		}},
 		"invalid_flow_path": {run: func(t *testing.T) {
 			f := testflow.TFlow()
-			f.ID = "../../outside"
-			dest := filepath.Join(t.TempDir(), "viewer")
-			if err := exportViewer(t.Context(), dest, []flow.Flow{f}, ""); err == nil {
-				t.Fatal("unsafe flow ID exported")
+			for _, id := range []string{"42", "opaque-id"} {
+				f.ID = id
+				if _, err := viewerFiles(t.Context(), []flow.Flow{f}, ""); err != nil {
+					t.Fatalf("safe flow ID %q refused: %v", id, err)
+				}
 			}
-			if _, err := os.Lstat(dest); !errors.Is(err, fs.ErrNotExist) {
-				t.Fatalf("invalid flow left destination: %v", err)
+			for _, id := range []string{"", ".", "..", "../../outside", "nested/child", `nested\child`, "invalid\x00id"} {
+				f.ID = id
+				dest := filepath.Join(t.TempDir(), "viewer")
+				if err := exportViewer(t.Context(), dest, []flow.Flow{f}, ""); err == nil {
+					t.Fatalf("unsafe flow ID %q exported", id)
+				}
+				if _, err := os.Lstat(dest); !errors.Is(err, fs.ErrNotExist) {
+					t.Fatalf("invalid flow %q left destination: %v", id, err)
+				}
+				entries, err := os.ReadDir(filepath.Dir(dest))
+				if err != nil || len(entries) != 0 {
+					t.Fatalf("invalid flow %q left staging: %v %v", id, entries, err)
+				}
 			}
 		}},
 		"escaping_symlink": {run: func(t *testing.T) {

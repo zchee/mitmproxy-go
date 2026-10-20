@@ -9,11 +9,11 @@ import (
 	json "encoding/json/v2"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-	"uuid"
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/contentviews"
@@ -332,14 +332,11 @@ func viewerFiles(ctx context.Context, flows []flow.Flow, definitions string) (ma
 		if !ok {
 			return nil, errors.New("static viewer requires HTTP flows")
 		}
-		id, err := uuid.Parse(httpFlow.ID)
-		if err != nil || id.String() != httpFlow.ID {
-			return nil, errors.New("static viewer requires canonical flow IDs")
+		id := httpFlow.ID
+		if !fs.ValidPath(id) || strings.ContainsAny(id, `/\`) || strings.ContainsRune(id, 0) {
+			return nil, errors.New("static viewer requires a single safe flow ID path component")
 		}
-		prefix := "flows/" + httpFlow.ID + "/"
-		if _, exists := files[prefix+"request/content.data"]; exists {
-			return nil, errors.New("static viewer contains duplicate flow IDs")
-		}
+		prefix := "flows/" + id + "/"
 		value, err := flowjson.Flow(f)
 		if err != nil {
 			return nil, err

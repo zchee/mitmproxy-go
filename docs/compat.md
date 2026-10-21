@@ -463,6 +463,41 @@ DTLS sniffing also follows upstream's ordered record concatenation (`mitmproxy/p
 records are read in arrival order and the first handshake header's fragment length is used. The ClientHello sniffer
 does not reorder fragments or deduplicate retransmissions; pion handles retransmissions in the subsequent handshake.
 
+## internal/tools/console
+
+| Upstream behaviour | Go behaviour | Reason |
+|---|---|---|
+| urwid widgets run on the Python event loop (`mitmproxy/tools/console/master.py`, `window.py`). | One Bubble Tea program renders owned snapshots. Live flow/option access and mutations run through the master dispatcher; widgets do not retain borrowed flow pointers outside dispatch. | Keep proxy hooks independent of terminal redraws and avoid data races. |
+| Console commands update event-loop state synchronously (`consoleaddons.py`). | Command-visible pane, tab, option and binding state changes synchronously under dispatch; immutable, sequence-numbered effects install later in the UI. A shared 256-credit pool bounds pending effects and returns a busy error when admission is unavailable. | Preserve same-dispatch read-after-write behaviour without waiting on terminal input or rendering under the dispatch lock. |
+| Display options are consumed by widgets on the event loop (`consoleaddons.py`, `window.py`). | The options store owns layout/header/mouse values; a queued display effect rebuilds panes and updates derived control mirrors. An option update can commit before presentation capacity is available: the latest pending display request is retained until credit release or the next successful command admission. An ordinary busy error does not roll back committed option values. | Do not lose a configured display change or make the UI a second option owner. |
+| Redraw signals refresh the event-loop widgets (`signals.py`). | One background snapshot is in flight, with retained dirty generations. Background traversals start at least 16 ms apart; viewport requests share the admission credit. The ordered view traversal is O(n); row rendering and hit-testing are bounded by the viewport. | Coalesce notifications without losing updates or starting a traversal/goroutine for every flow. |
+| `keys.yaml` is loaded through the Python keymap loader (`keymap.py`). | The whole file is validated before bindings are replaced atomically. Limits are 1 MiB input, depth 32, 65,536 expanded logical nodes including aliases and 4,096 bindings. Cycles, invalid contexts/UTF-8 and accounting overflow fail before installation. Missing/nonregular paths remain no-ops. | Bound configuration work before YAML composition and prevent partially applied keymaps. |
+| External editor/viewer and grid work is invoked through the console (`master.py`, `grideditor/`). | File and child-process work runs outside dispatch. A fresh dispatch checks the captured stable flow ID, message part and field fingerprint before committing; a changed/removed target reports a conflict rather than overwriting newer data. | Do not hold proxy dispatch during operator input or overwrite concurrent hook changes. |
+| Editor/viewer commands come from the environment (`master.py`). | Configured argv is parsed and launched directly, without implicit shell expansion. Private temporary files and owned child processes are cleaned up; viewer results do not commit edits. Edited final components must be regular, nonsymlink files; explicit grid outputs use the existing owner-only private-file policy. | Retain operator-selected tools without turning captured content into shell syntax or redirecting private output. |
+| Widgets render message and status text (`common.py`, `statusbar.py`). | Untrusted controls are escaped before trusted styling is attached. Width/cursor operations respect grapheme boundaries. Highlighter refusal falls back to escaped, unstyled content rather than dropping it. | Keep captured traffic from controlling the terminal while preserving readable content. |
+| Request/response newline trimming is configurable (`consoleaddons.py`). | `console_strip_trailing_newlines` retains that behaviour; the source's separate URL and stream-message final-newline rules remain separate. | Do not turn an editing option into an unrelated byte rewrite. |
+| Startup requires interactive output and checks the console encoding (`master.py`). | Nonterminal stdout is refused. A non-UTF Unix locale warns and continues using UTF-8. Windows has compile-only evidence pending native terminal acceptance. | Preserve startup diagnostics and state the tested platform boundary explicitly. |
+| The Python main loop owns terminal shutdown (`master.py`). | With terminal ownership, the assembled master requests orderly program Quit and joins it before cancelling the bridge and its senders; a five-second last-resort Kill is exceptional, not normal cleanup. `Master.NewModel` and `Master.NewProgram` are mutually exclusive presentation selections; a NewModel harness owns its own program Quit/join. Standalone `NewProgram` defaults to the bridge context, whose cancellation uses Bubble Tea's kill path; callers should Quit and join before closing that lifetime. | Avoid racing the terminal input reader during ordinary shutdown and keep owned command/process joins outside dispatch. |
+| `--set` values/configuration are applied before metadata exits (`mitmproxy/tools/main.py:24–26,85–103`); TLS configuration opens the CA store in the selected confdir (`mitmproxy/addons/tlsconfig.py:471–486`). | Constructing the console master itself performs no I/O. Applying explicit configuration can initialize CA files in the selected confdir before `--version`, `--options` or `--commands` output. | Preserve configuration ordering without incorrectly describing metadata paths as never initializing a CA. |
+| urwid invalidates its cached dimensions on resize and queries the current size when that cache is absent (`urwid/event_loop/main_loop.py`, version 4.0.13). | Known startup-size deviation: Bubble Tea v2.1.0 captures startup dimensions and sends them asynchronously. A stale startup size can arrive after a newer resize; the console installs sizes in delivered order and the next real resize corrects them. | Startup size messages have no freshness sequence; frozen frame tests do not prove that this race is fixed. |
+| Upstream Python can upgrade the console integration fixture `dumpfile-7.mitm`, which uses flow format 11. | The Go reader supports formats 18–21, not 11. Console integration uses a reproducibly transcoded current-format copy with pinned input/output digests; no legacy reader support was added. | Preserve the existing codec compatibility boundary rather than implying that the console extends it. |
+| Bindings can invoke clipboard and script commands. | Clipboard uses the existing optional build tag, without an OSC52 fallback. The script prompt binding is retained, but scripting is not implemented yet. | Avoid automatic clipboard execution or implying that the script engine already exists. |
+
+### Renderer and terminal evidence boundary
+
+The live pinned-Python text-oracle contract covers flowlist, flowview and commander at 80×24 only. Both runtimes
+receive the same generated flow file, fixed IDs/timestamps/listen values, UTC timezone, options and keystrokes.
+Only CRLF-to-LF transport conversion and removal of trusted renderer controls are permitted; content spacing,
+line count, truncation, headers, bodies and hints remain exact. The 200×50 Go frames require independently reviewed
+frozen expectations; they are not live-Python 200×50 comparisons. Colour encoding, cursor negotiation/blink and
+alternate-screen behaviour have separate style/cursor/terminal observations. Native captured macOS/Linux tmux QA
+is distinct from in-memory teatest frames and from compile-only Windows evidence.
+
+Teatest's pinned process-scoped SIGINT listener (`NewTestModel.func2`, blocked at `teatest.go:168`) is the only
+explicit third-party allowance in frame-test goroutine checks, counted once per constructor. Product-owned
+senders, commands and child processes must still join. The Linux timed-storm helper exits as an owned PTY process;
+no process-wide SIGINT is used to clean up in-memory tests.
+
 ## internal/tools/web
 
 | Upstream behaviour | Go behaviour | Reason |

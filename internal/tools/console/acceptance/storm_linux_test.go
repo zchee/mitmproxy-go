@@ -10,11 +10,13 @@ import (
 	"crypto/sha256"
 	json "encoding/json/v2"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -37,6 +39,9 @@ import (
 )
 
 type stormReceipt struct {
+	ChildArgv             []string `json:"child_argv"`
+	ChildCPU              string   `json:"child_cpu"`
+	ChildGOMAXPROCS       int      `json:"child_gomaxprocs"`
 	ProducedIDs           []string `json:"produced_ids"`
 	PresentedIDs          []string `json:"presented_ids"`
 	EntryNS               int64    `json:"entry_ns"`
@@ -161,7 +166,7 @@ func runStormProcess(t *testing.T) {
 	requireNoError(t, err)
 	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, executable, "-test.run=^TestConsoleStorm$/^update_blocked_two_seconds$", "-test.count=1", "-test.timeout=40s", "-test.v") //nolint:gosec // Re-executes this exact test binary with a fixed selector.
+	cmd := exec.CommandContext(ctx, executable, "-test.run=^TestConsoleStorm$/^update_blocked_two_seconds$", "-test.count=1", "-test.cpu=1", "-test.timeout=40s", "-test.v") //nolint:gosec // Re-executes this exact test binary with a fixed selector.
 	cmd.Env = append(os.Environ(), "MITMPROXY_CONSOLE_STORM_HELPER=1", "TERM=xterm-256color", "TZ=UTC")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
 	cmd.ExtraFiles = []*os.File{reportWriter}
@@ -236,6 +241,9 @@ func runStormProcess(t *testing.T) {
 	}
 	var receipt stormReceipt
 	requireNoError(t, json.Unmarshal(data, &receipt, json.RejectUnknownMembers(true)))
+	if receipt.ChildCPU != "1" || receipt.ChildGOMAXPROCS != 1 || !slices.Equal(receipt.ChildArgv, cmd.Args) {
+		t.Fatalf("child CPU profile or argv differs: cpu=%q GOMAXPROCS=%d argv=%q; artifacts=%s", receipt.ChildCPU, receipt.ChildGOMAXPROCS, receipt.ChildArgv, out)
+	}
 	if !receipt.Passed || !receipt.Joined || receipt.ProducedAtRelease != 10_000 || receipt.ProductionNS >= receipt.ReleaseNS || receipt.BlockNS < int64(2*time.Second) {
 		t.Fatalf("helper violated fixed hold/count/join contract: %+v; artifacts=%s", receipt, out)
 	}
@@ -247,7 +255,10 @@ func runStormProcess(t *testing.T) {
 
 func runStormHelper(t *testing.T) {
 	t.Helper()
-	var receipt stormReceipt
+	receipt := stormReceipt{ChildArgv: slices.Clone(os.Args), ChildGOMAXPROCS: runtime.GOMAXPROCS(0)}
+	if cpu := flag.Lookup("test.cpu"); cpu != nil {
+		receipt.ChildCPU = cpu.Value.String()
+	}
 	report := os.NewFile(3, "console-storm-report")
 	defer func() {
 		data, err := json.Marshal(receipt)

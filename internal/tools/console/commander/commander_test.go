@@ -344,6 +344,7 @@ func TestConsoleCommander(t *testing.T) {
 					"interior":          {"pick 'be old' tail", 8, "beta value", "pick 'beta value' tail"},
 					"tab_before_token":  {"pick\t'be old' tail", 8, "beta value", "pick\t'beta value' tail"},
 					"tab_inside_prefix": {"pick 'be\told' tail", 9, "be        value", "pick 'be        value' tail"},
+					"multibyte_tab":     {"pick '日本\told' tail", 9, "日本        value", "pick '日本        value' tail"},
 				}
 				for name, tt := range registryTests {
 					f := newFixture(t, tt.text)

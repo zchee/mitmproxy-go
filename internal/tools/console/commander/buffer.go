@@ -148,7 +148,7 @@ func (b *Buffer) Complete(result contract.Completion, forward bool) {
 		var quote rune
 		if len(fragment) > 0 && (fragment[0] == '\'' || fragment[0] == '"') {
 			quote = rune(fragment[0])
-			prefix = strings.TrimPrefix(fragment, string(quote))
+			prefix = strings.TrimPrefix(prefix, string(quote))
 			prefix = strings.TrimSuffix(prefix, string(quote))
 		}
 		end := b.cursor

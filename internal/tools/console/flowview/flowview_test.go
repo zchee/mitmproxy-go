@@ -4,6 +4,7 @@
 package flowview
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
@@ -77,6 +78,16 @@ func contains(t *testing.T, text, want string) {
 	}
 }
 
+type tabHost struct {
+	contract.Host
+	actions []contract.Action
+}
+
+func (h *tabHost) Dispatch(_ context.Context, action contract.Action) error {
+	h.actions = append(h.actions, action)
+	return nil
+}
+
 func TestConsoleFlowView(t *testing.T) {
 	t.Run("upstream", func(t *testing.T) {
 		tests := map[string]struct{ run func(*testing.T) }{
@@ -88,6 +99,51 @@ func TestConsoleFlowView(t *testing.T) {
 					if m.View() == "" {
 						t.Fatal("empty tab")
 					}
+				}
+				host := &tabHost{}
+				m = New(t.Context(), host)
+				m.SetSnapshot(contract.Snapshot{Focused: fixture(t)})
+				for range 2 {
+					cmd, consumed := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+					if !consumed || cmd == nil || cmd() != nil {
+						t.Fatal("tab input did not dispatch successfully")
+					}
+				}
+				want := []contract.Action{{Kind: "tab", Value: "next", Index: -1}, {Kind: "tab", Value: "next", Index: -1}}
+				if diff := gocmp.Diff(want, host.actions); diff != "" {
+					t.Fatal(diff)
+				}
+				if m.tab != 0 {
+					t.Fatal("queued tab inputs advanced presentation state")
+				}
+				if cmd, consumed := m.Update(contract.Action{Kind: "tab", Value: "Detail", Index: 2}); !consumed || cmd != nil || m.tab != 2 {
+					t.Fatal("installed tab effect did not set the presentation index")
+				}
+				if len(host.actions) != 2 {
+					t.Fatal("installed tab effect was dispatched again")
+				}
+				tests := map[string]struct {
+					key  rune
+					want contract.Action
+				}{
+					"right": {tea.KeyRight, contract.Action{Kind: "tab", Value: "next", Index: -1}},
+					"left":  {tea.KeyLeft, contract.Action{Kind: "tab", Value: "prev", Index: -1}},
+				}
+				for name, tt := range tests {
+					cmd, consumed := m.Update(tea.KeyPressMsg{Code: tt.key})
+					if !consumed || cmd == nil || cmd() != nil || m.tab != 2 {
+						t.Fatal(name, "directional input changed presentation state")
+					}
+					if diff := gocmp.Diff(tt.want, host.actions[len(host.actions)-1]); diff != "" {
+						t.Fatal(name, diff)
+					}
+				}
+				cmd, consumed := m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 0, Y: 0})
+				if !consumed || cmd == nil || cmd() != nil || m.tab != 2 {
+					t.Fatal("mouse input changed presentation state before installation")
+				}
+				if diff := gocmp.Diff(contract.Action{Kind: "tab", Value: "Request", Index: 0}, host.actions[len(host.actions)-1]); diff != "" {
+					t.Fatal(diff)
 				}
 			}},
 			"test_edit": {func(t *testing.T) {

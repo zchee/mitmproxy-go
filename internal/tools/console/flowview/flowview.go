@@ -327,18 +327,23 @@ func dnsLines(message *dns.Message, part string, palette style.Palette) []string
 	return lines
 }
 
-// Update handles only local tab, search and scrolling input.
+// Update installs tab effects and handles local search and scrolling input.
 func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
 	tabs := Tabs(m.snapshot.Focused)
 	if len(tabs) == 0 {
 		return nil, false
+	}
+	if action, ok := msg.(contract.Action); ok && action.Kind == "tab" {
+		m.selectTab(action.Index)
+		return nil, true
 	}
 	if mouse, ok := msg.(tea.MouseClickMsg); ok {
 		if mouse.Button != tea.MouseLeft || mouse.Y != 0 || mouse.X < 0 || mouse.X >= m.width {
 			return nil, false
 		}
 		width := max(1, (m.width-len(tabs)+1)/len(tabs))
-		return m.selectTab(min(mouse.X/(width+1), len(tabs)-1)), true
+		index := min(mouse.X/(width+1), len(tabs)-1)
+		return m.dispatchTab(contract.Action{Kind: "tab", Value: tabName(tabs[index]), Index: index}), true
 	}
 	key, isKey := msg.(tea.KeyPressMsg)
 	name := key.String()
@@ -374,11 +379,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
 	}
 	switch name {
 	case "tab", "right", "left":
-		next := (m.tab + 1) % len(tabs)
+		direction := "next"
 		if name == "left" {
-			next = (m.tab + len(tabs) - 1) % len(tabs)
+			direction = "prev"
 		}
-		return m.selectTab(next), true
+		return m.dispatchTab(contract.Action{Kind: "tab", Value: direction, Index: -1}), true
 	case "/":
 		m.searching = true
 		m.input = ""
@@ -410,13 +415,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
 	return nil, false
 }
 
-func (m *Model) selectTab(index int) tea.Cmd {
-	if m.host == nil {
+func (m *Model) selectTab(index int) {
+	if index >= 0 && index < len(Tabs(m.snapshot.Focused)) {
 		m.tab = index
 		m.render()
+	}
+}
+
+func (m *Model) dispatchTab(action contract.Action) tea.Cmd {
+	if m.host == nil {
+		index := action.Index
+		if index < 0 {
+			delta := 1
+			if action.Value == "prev" {
+				delta = -1
+			}
+			tabs := len(Tabs(m.snapshot.Focused))
+			index = (m.tab + tabs + delta) % tabs
+		}
+		m.selectTab(index)
 		return nil
 	}
-	action := contract.Action{Kind: "tab", Value: tabName(Tabs(m.snapshot.Focused)[index]), Index: index}
 	return func() tea.Msg {
 		if err := m.host.Dispatch(m.ctx, action); err != nil {
 			return contract.ErrorMsg{Source: "flow view", Err: err}

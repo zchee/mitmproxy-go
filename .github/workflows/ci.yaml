@@ -79,6 +79,120 @@ jobs:
             grep -Eq "^--- PASS: ${name} " _test/platform/pf.log
           done
 
+      - name: Verify frozen console frames
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/console/goldens"
+          mkdir -p "$OUT"
+          printf 'checkout=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/frames.receipt"
+          finish() {
+            result=$?
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/frames.receipt"
+            exit "$result"
+          }
+          trap finish EXIT
+          go version >| "$OUT/go-version.txt"
+          go env GOROOT >| "$OUT/goroot.txt"
+          timeout --signal=QUIT --kill-after=15s 5m go test -race -timeout=3m -list '^TestConsoleGoldens$' ./internal/tools/console/acceptance >| "$OUT/parents.txt"
+          diff -u <(printf '%s\n' TestConsoleGoldens) <(grep '^Test' "$OUT/parents.txt")
+          timeout --signal=QUIT --kill-after=15s 5m go test -race -count=1 -cpu=1 -timeout=3m -json -run '^TestConsoleGoldens$/^frames$/^(flowlist|flowview|commander)$/^(80x24|200x50)$' ./internal/tools/console/acceptance >| "$OUT/frames.jsonl" 2>| "$OUT/frames.stderr"
+          jq -se '
+            . as $rows
+            | ["TestConsoleGoldens", "TestConsoleGoldens/frames"] +
+              [ ["flowlist", "flowview", "commander"][] as $state
+                | "TestConsoleGoldens/frames/" + $state,
+                  ("TestConsoleGoldens/frames/" + $state + "/80x24"),
+                  ("TestConsoleGoldens/frames/" + $state + "/200x50") ] as $expected
+            | (reduce ($rows[] | select(.Test? != null and (.Action == "run" or .Action == "pass" or .Action == "fail" or .Action == "skip"))) as $event
+                ({}; .[$event.Test][$event.Action] = ((.[$event.Test][$event.Action] // 0) + 1))) as $counts
+            | if (($counts | keys | sort) == ($expected | sort))
+                and all($counts[]; .run == 1 and .pass == 1 and (.fail // 0) == 0 and (.skip // 0) == 0)
+                and ([ $rows[] | select(.Test? == null and .Action == "pass") ] | length) == 1
+                and ([ $rows[] | select(.Action == "fail" or .Action == "skip") ] | length) == 0
+              then $counts else error("console frame identity/count mismatch") end
+          ' "$OUT/frames.jsonl" >| "$OUT/tallies.json"
+      - name: Verify timed console storm
+        if: matrix.os == 'ubuntu-26.04'
+        run: |
+          set -euo pipefail
+          # The local gate wrapper is a cross-worker mutex, not needed on a dedicated runner.
+          OUT="$GITHUB_WORKSPACE/_test/console/storm"
+          mkdir -p "$OUT"
+          export MITMPROXY_TEST_CONSOLE_ARTIFACTS="$OUT"
+          go version >| "$OUT/go-version.txt"
+          go env GOROOT >| "$OUT/goroot.txt"
+          printf 'checkout=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/storm.receipt"
+          finish() {
+            result=$?
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/storm.receipt"
+            exit "$result"
+          }
+          trap finish EXIT
+          timeout --signal=QUIT --kill-after=15s 5m go test -tags consolestorm -timeout=3m -list '^TestConsoleStorm$' ./internal/tools/console/acceptance >| "$OUT/parents.txt"
+          diff -u <(printf '%s\n' TestConsoleStorm) <(grep '^Test' "$OUT/parents.txt")
+          for count in 1 5; do
+            pattern='^TestConsoleStorm$'
+            if test "$count" -eq 1; then pattern='^TestConsoleStorm$/^update_blocked_two_seconds$'; fi
+            timeout --signal=QUIT --kill-after=15s 5m go test -tags consolestorm -count="$count" -cpu=1 -timeout=3m -json ./internal/tools/console/acceptance -run "$pattern" >| "$OUT/storm-$count.jsonl" 2>| "$OUT/storm-$count.stderr"
+            jq -se --argjson count "$count" '
+              . as $rows
+              | [ .[] | select(.Test? != null and (.Action == "run" or .Action == "pass" or .Action == "fail" or .Action == "skip")) ] as $events
+              | (reduce $events[] as $event ({}; .[$event.Test][$event.Action] = ((.[$event.Test][$event.Action] // 0) + 1))) as $counts
+              | if (($counts | keys | sort) == (["TestConsoleStorm", "TestConsoleStorm/update_blocked_two_seconds"] | sort))
+                and all($counts[]; .run == $count and .pass == $count and (.fail // 0) == 0 and (.skip // 0) == 0)
+                and ([ $rows[] | select(.Test? == null and .Action == "pass") ] | length) == 1
+                and ([ $rows[] | select(.Action == "fail" or .Action == "skip") ] | length) == 0
+                then $counts else error("console storm identity/count mismatch") end
+            ' "$OUT/storm-$count.jsonl" >| "$OUT/tallies-$count.json"
+          done
+      - name: Provision tagged console quality tools
+        if: matrix.os == 'ubuntu-26.04'
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/console/quality"
+          BINDIR="$RUNNER_TEMP/console-quality-tools"
+          mkdir -p "$BINDIR" "$OUT"
+          printf 'start=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/tools.receipt"
+          finish() {
+            result=$?
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/tools.receipt"
+            exit "$result"
+          }
+          trap finish EXIT
+          GODEBUG=http2client=0 GOBIN="$BINDIR" timeout --signal=QUIT --kill-after=15s 5m go install golang.org/x/tools/gopls@v0.24.0 >| "$OUT/gopls-install.log" 2>&1
+          GODEBUG=http2client=0 GOBIN="$BINDIR" timeout --signal=QUIT --kill-after=15s 5m go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 >| "$OUT/lint-install.log" 2>&1
+          "$BINDIR/gopls" version >| "$OUT/gopls.version"
+          "$BINDIR/golangci-lint" version >| "$OUT/golangci-lint.version"
+          sha256sum "$BINDIR/gopls" "$BINDIR/golangci-lint" >| "$OUT/tools.SHA256SUMS"
+      - name: Verify tagged console diagnostics
+        if: matrix.os == 'ubuntu-26.04'
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/console/quality"
+          BINDIR="$RUNNER_TEMP/console-quality-tools"
+          printf 'checkout=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/diagnostics.receipt"
+          finish() {
+            result=$?
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/diagnostics.receipt"
+            exit "$result"
+          }
+          trap finish EXIT
+          timeout --signal=QUIT --kill-after=15s 5m go vet -tags consolestorm ./internal/tools/console/acceptance >| "$OUT/vet.log" 2>&1
+          timeout --signal=QUIT --kill-after=15s 5m "$BINDIR/golangci-lint" run --allow-parallel-runners --issues-exit-code=1 --build-tags consolestorm ./internal/tools/console/acceptance >| "$OUT/lint.log" 2>&1
+          GOFLAGS=-tags=consolestorm timeout --signal=QUIT --kill-after=15s 5m "$BINDIR/gopls" check internal/tools/console/acceptance/storm_linux_test.go >| "$OUT/gopls.log" 2>| "$OUT/gopls.stderr"
+          test ! -s "$OUT/gopls.log"
+      - name: Upload console terminal evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: console-terminal-evidence-${{ matrix.os }}
+          path: _test/console
+          if-no-files-found: error
+
   proxy-integration:
     name: proxy integration (${{ matrix.os }}, go ${{ matrix.go }})
     strategy:
@@ -502,6 +616,21 @@ jobs:
           ./internal/tools/web FuzzWebJSON
           ./internal/tools/web FuzzWebUpload
           TARGETS
+      - name: Verify required console fuzz targets
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          while read -r pkg target; do
+            listed="$(timeout --signal=QUIT --kill-after=15s 15m go test -timeout=10m -list "^${target}$" "$pkg")"
+            printf '%s\n' "$listed"
+            grep -Fx -- "$target" <<< "$listed"
+          done <<'TARGETS'
+          ./internal/tools/console/keymap FuzzConsoleKeysYAML
+          ./internal/tools/console/grideditor FuzzConsoleGridEscaped
+          ./internal/tools/console/external FuzzConsoleEditorArgv
+          ./internal/tools/console/commander FuzzConsoleCommander
+          ./internal/tools/console/commander FuzzConsoleFilterInput
+          TARGETS
       - name: Run every fuzz target for 30 seconds
         env:
           SHARD: ${{ matrix.shard }}
@@ -659,6 +788,16 @@ jobs:
           mkdir -p _test/web-differential
           timeout --signal=QUIT --kill-after=15s 15m go test -tags difftest -timeout=10m -list '^TestMitmwebDifferential$' ./internal/tools/web/acceptance >| _test/web-differential/inventory.txt
           diff -u <(printf '%s\n' TestMitmwebDifferential) <(grep '^Test' _test/web-differential/inventory.txt)
+      - name: Verify live console oracle inventory
+        run: |
+          set -euo pipefail
+          command -v uv
+          mkdir -p _test/console
+          uv --version >| _test/console/uv-version.txt
+          go env GOROOT >| _test/console/oracle-goroot.txt
+          printf 'MITMPROXY_TEST_CONSOLE_ARTIFACTS=%s\n' "$GITHUB_WORKSPACE/_test/console" >> "$GITHUB_ENV"
+          timeout --signal=QUIT --kill-after=15s 15m go test -tags difftest -timeout=10m -list '^TestConsoleOracle$' ./internal/tools/console/acceptance >| _test/console/oracle-parents.txt
+          diff -u <(printf '%s\n' TestConsoleOracle) <(grep '^Test' _test/console/oracle-parents.txt)
       - name: Differential tests against the pinned Python mitmproxy
         env:
           MITMPROXY_TEST_WEB_ARTIFACTS: ${{ github.workspace }}/_test/web-differential/processes
@@ -683,6 +822,33 @@ jobs:
             finish "${statuses[0]}"
           fi
           finish "${statuses[1]}"
+      - name: Verify complete live console oracle evidence
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/console"
+          printf 'checkout=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/oracle-reader.receipt"
+          jq -se --arg package github.com/zchee/mitmproxy-go/internal/tools/console/acceptance --arg parent TestConsoleOracle --argjson expected '[
+            "TestConsoleOracle",
+            "TestConsoleOracle/oracle",
+            "TestConsoleOracle/oracle/flowlist",
+            "TestConsoleOracle/oracle/flowlist/80x24",
+            "TestConsoleOracle/oracle/flowview",
+            "TestConsoleOracle/oracle/flowview/80x24",
+            "TestConsoleOracle/oracle/commander",
+            "TestConsoleOracle/oracle/commander/80x24"
+          ]' '
+            . as $rows
+            | [ $rows[] | select(.Package == $package and .Test? != null)
+                | select(.Test == $parent or (.Test | startswith($parent + "/")))
+                | select(.Action == "run" or .Action == "pass" or .Action == "fail" or .Action == "skip") ] as $events
+            | (reduce $events[] as $event ({}; .[$event.Test][$event.Action] = ((.[$event.Test][$event.Action] // 0) + 1))) as $counts
+            | if (($counts | keys | sort) == ($expected | sort))
+                and all($counts[]; .run == 1 and .pass == 1 and (.fail // 0) == 0 and (.skip // 0) == 0)
+                and ([ $rows[] | select(.Package == $package and .Test? == null and .Action == "pass") ] | length) == 1
+                and ([ $rows[] | select(.Package == $package and (.Action == "fail" or .Action == "skip")) ] | length) == 0
+              then $counts else error("console oracle identity/count mismatch") end
+          ' "$GITHUB_WORKSPACE/_test/web-differential/all-tagged.jsonl" >| "$OUT/oracle-tallies.json"
+          printf 'end=%s\nreader_exit=0\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$OUT/oracle-reader.receipt"
       - name: Verify complete mitmweb differential evidence
         run: |
           set -euo pipefail
@@ -729,4 +895,34 @@ jobs:
         with:
           name: mitmweb-differential-evidence
           path: _test/web-differential
+          if-no-files-found: error
+      - name: Verify real console tmux checklist
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/console/qa"
+          mkdir -p "$OUT"
+          command -v tmux
+          tmux -V >| "$OUT/tmux-version.txt"
+          command -v uv
+          uv --version >| "$OUT/uv-version.txt"
+          printf 'checkout=%s\nworkflow_head=%s\nstart=%s\n' "$(git rev-parse HEAD)" '${{ github.sha }}' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/qa.receipt"
+          finish() {
+            result=$?
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/qa.receipt"
+            exit "$result"
+          }
+          trap finish EXIT
+          export PYTHONDONTWRITEBYTECODE=1
+          timeout --signal=QUIT --kill-after=15s 5m uv run --script internal/tools/console/acceptance/testdata/test_qa_capture.py -v -p no:cacheprovider --basetemp="$OUT/pytest-output" >| "$OUT/helper-tests.log" 2>| "$OUT/helper-tests.stderr" || exit "$?"
+          timeout --signal=QUIT --kill-after=15s 5m go build -o "$OUT/mitmproxy" ./cmd/mitmproxy >| "$OUT/build.log" 2>| "$OUT/build.stderr" || exit "$?"
+          WORK="$(mktemp -d "$RUNNER_TEMP/console-capture.XXXXXXXX")"
+          timeout --signal=QUIT --kill-after=15s 5m uv run --script internal/tools/console/acceptance/testdata/qa_capture.py capture --expected-sha '${{ github.sha }}' --binary "$OUT/mitmproxy" --tmux "$(command -v tmux)" --out "$OUT/captures" --work-dir "$WORK" >| "$OUT/capture.log" 2>| "$OUT/capture.stderr" || exit "$?"
+          jq -e '.scope == "carrier-preflight" and .final_qa == false and .functional_checks == "PASS"' "$OUT/captures/result.json"
+      - name: Upload console oracle evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: console-oracle-evidence
+          path: _test/console
           if-no-files-found: error

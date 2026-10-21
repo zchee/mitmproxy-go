@@ -355,6 +355,22 @@ func TestConsoleEditor(t *testing.T) {
 				}
 			}},
 			"stale_target": {func(t *testing.T) {
+				tests := map[string]struct{ live bool }{"live": {true}, "archived": {false}}
+				for name, tt := range tests {
+					source := editFixture(t)
+					source.Live = tt.live
+					captured, err := Capture(source, "request-body", contract.DetailOptions{})
+					if err != nil {
+						t.Fatal(name, err)
+					}
+					if captured.Flow.Common() == source.Common() || captured.Flow.Common().ID != source.ID || captured.Flow.Common().Live != tt.live {
+						t.Fatal(name, "capture lost identity/liveness or retained borrowed flow state")
+					}
+					captured.Flow.(*flow.HTTPFlow).Request.RawContent[0] = 'X'
+					if string(source.Request.RawContent) != "original" || source.Live != tt.live {
+						t.Fatal(name, "working-copy edits changed the borrowed source")
+					}
+				}
 				f := editFixture(t)
 				s, err := Capture(f, "request-body", contract.DetailOptions{})
 				if err != nil {

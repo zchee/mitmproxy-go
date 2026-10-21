@@ -29,7 +29,7 @@ type EditSession struct {
 }
 
 // Capture identifies the selected message and fingerprints only affected fields.
-// f must be a detached snapshot captured under dispatch.
+// f may be borrowed under dispatch: Capture copies it synchronously and retains no source pointer.
 func Capture(f flow.Flow, part string, options contract.DetailOptions) (*EditSession, error) {
 	if f == nil {
 		return nil, errors.New("No flow selected.") //nolint:staticcheck // Preserve upstream's operator-facing diagnostic.
@@ -43,6 +43,7 @@ func Capture(f flow.Flow, part string, options contract.DetailOptions) (*EditSes
 	}
 	s := &EditSession{Flow: f.Copy(), Target: contract.EditTarget{FlowID: f.Common().ID, Part: part, Message: -1}, Mode: mode, Options: options}
 	s.Flow.Common().ID = f.Common().ID
+	s.Flow.Common().Live = f.Common().Live
 	switch f := s.Flow.(type) {
 	case *flow.TCPFlow:
 		s.Target.Message = len(f.Messages) - 1

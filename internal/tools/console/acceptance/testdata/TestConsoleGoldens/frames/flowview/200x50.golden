@@ -1,0 +1,50 @@
+Flow Details                                                                                                                                                                                            
+2000-01-01 00:00:01 POST http://example.com/inspect                                                                                                                                                     
+                         ← 200 OK text/plain 22b 125ms                                                                                                                                                  
+                              Request                                                           Response                                                            Detail                              
+host:            example.com                                                                                                                                                                            
+content-type:    text/plain                                                                                                                                                                             
+content-length:  21                                                                                                                                                                                     
+Raw                                                                                                                                                                                              [m:raw]
+console request body                                                                                                                                                                                    
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+⇩  [1/3]   [contentview:raw]                                                                                                                                                                            
+Flow:    e Edit        D Duplicate   r Replay      x Export      d Delete      b Save body   ␣ Next flow   p Prev flow                                                                                  
+Proxy:   ? Help        q Back        E Events      O Options     i Intercept   f Filter      w Save flows  z Clear list  - Layout      ctrl → Switch F Follow new                                       

@@ -53,6 +53,7 @@ _testmain.go
 
 # Python bytecode left by the highlight golden generator's tests
 hack/__pycache__/
+internal/tools/console/acceptance/testdata/__pycache__/
 
 # benchmark
 old.txt

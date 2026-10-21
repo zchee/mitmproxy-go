@@ -1,0 +1,31 @@
+{
+  "format": "mitmproxy-flow-21",
+  "provenance": "generated test input, not copied upstream fixture",
+  "flow_sha256": "ee27209271dd8a99304a426fbda6731ca0a23786e5d4596e168a4d9b6f0eb34e",
+  "ids": [
+    "00000000-0000-0000-0000-000000000001",
+    "00000000-0000-0000-0000-000000000002",
+    "00000000-0000-0000-0000-000000000003"
+  ],
+  "focus_index": 0,
+  "timezone": "UTC",
+  "options": [
+    "console_default_contentview=raw",
+    "console_palette=solarized_dark",
+    "console_palette_transparent=true",
+    "console_flowlist_layout=default",
+    "console_layout=single",
+    "console_layout_headers=true",
+    "console_quickhelp_visible=true",
+    "console_focus_follow=false",
+    "listen_host=127.0.0.1",
+    "listen_port=8080"
+  ],
+  "states": {
+    "flowlist": "",
+    "flowview": "<enter>",
+    "commander": ":console.view.flow "
+  },
+  "golden_sizes": [[80, 24], [200, 50]],
+  "live_python_size": [80, 24]
+}

@@ -1,0 +1,3 @@
+ready	wait	-	capture-ready
+type	text	capture-confirmed	capture-confirmed
+submit	key	Enter	received=capture-confirmed

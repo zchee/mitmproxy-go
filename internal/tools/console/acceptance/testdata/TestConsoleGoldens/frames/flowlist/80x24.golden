@@ -1,0 +1,24 @@
+Flows                                                                           
+>> POST http://example.com/inspect                                              
+        ← 200 text/plain 22b 125ms                                              
+   GET http://example.com/paused                                                
+                                                                                
+   GET http://example.com/unreachable                                           
+       ← Connection refused                                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+⇩  [1/3]   [contentview:raw]                                                    
+Flow:    ⏎ Select      D Duplicate   r Replay      x Export      d Delete       
+Proxy:   ? Help        q Quit        E Events      O Options     i Intercept    

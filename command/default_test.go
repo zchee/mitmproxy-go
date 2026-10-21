@@ -40,11 +40,21 @@ func TestCommandDefaultArguments(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			m := command.NewManager()
+			calls := 0
 			fn := func(_ context.Context, count int, enabled bool, suffix string) string {
+				calls++
 				return fmt.Sprintf("%d:%t:%s", count, enabled, suffix)
 			}
 			if err := m.Register("defaults", fn, command.WithDefault("enabled", true), command.WithDefault("suffix", `\x41`), command.WithParams("count", "enabled", "suffix")); err != nil {
 				t.Fatal(err)
+			}
+			if tt.strings != nil {
+				if err := m.Prepare(t.Context(), "defaults", tt.strings); !errors.Is(err, tt.wantErr) {
+					t.Fatalf("non-executing preparation = %v, want %v", err, tt.wantErr)
+				}
+				if calls != 0 {
+					t.Fatal("argument preparation executed the command body")
+				}
 			}
 			var got any
 			var err error

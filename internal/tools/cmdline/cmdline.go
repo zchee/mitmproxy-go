@@ -179,6 +179,13 @@ func Apply(ctx context.Context, cmd *cobra.Command, opts *options.Manager, do fu
 			passed["flow_detail"] = 2
 		}
 	}
+	if frontend == "console" {
+		for _, name := range []string{"termlog_verbosity", "flow_detail"} {
+			if !opts.Has(name) {
+				delete(passed, name)
+			}
+		}
+	}
 	setSpecs, _ := flags.GetStringArray("set")
 	return do(ctx, func(ctx context.Context) error {
 		if err := opts.LoadAll(ctx, setSpecs, "", passed); err != nil {

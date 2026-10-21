@@ -9,13 +9,33 @@ import (
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/contentviews"
+	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
 	"github.com/zchee/mitmproxy-go/options"
 )
 
 // ConsoleAddon integrates console configuration with the dispatch-owned runtime.
 // A standalone value can register options without starting a terminal.
-type ConsoleAddon struct{ bridge *Bridge } //nolint:revive // Keep upstream's addon name for composed registry consumers.
+type ConsoleAddon struct { //nolint:revive // Keep upstream's addon name for composed registry consumers.
+	bridge *Bridge
+	master *Master
+}
+
+// Running starts the owned terminal asynchronously so addon startup can finish.
+func (a *ConsoleAddon) Running(context.Context) error {
+	if a.master != nil {
+		a.master.startProgram()
+	}
+	return nil
+}
+
+// Update invalidates status even when an update contains no flow values.
+func (a *ConsoleAddon) Update(context.Context, []flow.Flow) error {
+	if a.bridge != nil {
+		a.bridge.Invalidate()
+	}
+	return nil
+}
 
 // Load registers console option metadata, preserving View's focus-follow owner.
 func (a *ConsoleAddon) Load(ctx context.Context, loader *addon.Loader) error {
@@ -45,6 +65,9 @@ func (a *ConsoleAddon) Load(ctx context.Context, loader *addon.Loader) error {
 		if err := loader.AddOption(ctx, spec.name, spec.typ, spec.def, spec.help, spec.choices...); err != nil {
 			return err
 		}
+	}
+	if a.bridge != nil {
+		return a.registerCommands(loader)
 	}
 	return nil
 }

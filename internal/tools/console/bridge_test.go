@@ -318,6 +318,15 @@ func verifyAmendedContract(t *testing.T) {
 	request := contract.GridRequest{Title: "values", Option: "ignore_hosts", Rows: [][]string{{"before"}}}
 	mustConsole(t, b.OpenGrid(ctx, request))
 	request.Rows[0][0] = "after"
+	captured := testflow.TFlow()
+	captured.Request.RawContent = []byte("original")
+	gridAction := contract.Action{Grid: &contract.GridRequest{Flow: captured, Target: contract.EditTarget{FlowID: captured.ID, Part: "request-body"}}}
+	gridClone := gridAction.Clone()
+	captured.Request.RawContent[0] = 'X'
+	copied := gridClone.Grid.Flow.(*flow.HTTPFlow)
+	if copied.ID != captured.ID || string(copied.Request.RawContent) != "original" || gridClone.Grid.Target.FlowID != captured.ID {
+		t.Fatal("grid payload lost source identity or aliases captured flow bytes")
+	}
 	for _, direction := range []string{"start", "end", "next", "select", "up", "down", "pageup", "pagedown", "left", "right"} {
 		mustConsole(t, b.Dispatch(ctx, contract.Action{Kind: "nav", Value: direction}))
 	}
@@ -447,6 +456,35 @@ func verifyModes(t *testing.T) {
 	w, _ = m.state.Current("flowview", false)
 	if w.Mode != "hex" || w.Tabs[1].Mode != "hex" {
 		t.Fatalf("snapshot did not use view-owned mode: %+v", w)
+	}
+	mustConsole(t, b.cfg.Master.Addons.Add(t.Context(), &ConsoleAddon{bridge: b}))
+	other := testflow.TFlow()
+	mustConsole(t, b.Do(t.Context(), func(ctx context.Context) error {
+		b.cfg.View.Add(ctx, []flow.Flow{other})
+		if _, err := b.Call(ctx, "view.settings.setval", []flow.Flow{other}, "flowview_mode_1", "raw"); err != nil {
+			return err
+		}
+		if _, err := b.Call(ctx, "view.focus.next"); err != nil {
+			return err
+		}
+		mode, err := b.Call(ctx, "console.flowview.mode")
+		if err != nil {
+			return err
+		}
+		if mode != "raw" || b.cfg.View.Focus.Flow().Common().ID != other.ID {
+			t.Fatalf("same-Do focus change read the old flow mode: %v", mode)
+		}
+		if err := b.Dispatch(ctx, contract.Action{Kind: "mode", Value: "json"}); err != nil {
+			return err
+		}
+		return nil
+	}))
+	snapshot, err = b.capture(b.generation.Load())
+	mustConsole(t, err)
+	m.applySnapshot(snapshot)
+	w, _ = m.state.Current("flowview", false)
+	if w.FlowID != other.ID || w.Mode != "json" || w.Tabs[1].Mode != "json" {
+		t.Fatalf("flow view did not follow the captured live focus: %+v", w)
 	}
 }
 

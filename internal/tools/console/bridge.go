@@ -214,7 +214,7 @@ func (b *Bridge) Dispatch(ctx context.Context, a contract.Action) error {
 			if !ok {
 				return errors.New("Not viewing a flow.") //nolint:staticcheck // Preserve upstream's command error text.
 			}
-			f := b.cfg.View.GetByID(window.FlowID)
+			f := b.cfg.View.Focus.Flow()
 			if f == nil {
 				return ErrEditConflict
 			}
@@ -240,7 +240,7 @@ func (b *Bridge) Dispatch(ctx context.Context, a contract.Action) error {
 			if !ok {
 				return errors.New("Not viewing a flow.") //nolint:staticcheck // Preserve upstream's command error text.
 			}
-			f := b.cfg.View.GetByID(window.FlowID)
+			f := b.cfg.View.Focus.Flow()
 			if f == nil {
 				return ErrEditConflict
 			}
@@ -555,10 +555,11 @@ func (b *Bridge) capture(generation uint64) (contract.Snapshot, error) {
 				if window.Context != "flowview" {
 					continue
 				}
-				selected := b.cfg.View.GetByID(window.FlowID)
+				selected := focus
 				if selected == nil {
 					continue
 				}
+				window.FlowID = focusID
 				values, err := b.cfg.View.Settings.Values(selected)
 				if err != nil {
 					return err
@@ -603,7 +604,13 @@ func (b *Bridge) Accept(snapshot contract.Snapshot) bool {
 // Drain is a single long-lived tea.Cmd. The program must use b.Context(), so
 // cancellation unblocks Send before Close joins this worker.
 func (b *Bridge) Drain(program *tea.Program) tea.Cmd {
-	return func() tea.Msg { b.drain(func(msg tea.Msg) { program.Send(msg) }); return nil }
+	return b.DrainTo(program.Send)
+}
+
+// DrainTo runs the same owned snapshot worker for an unbound model's sender.
+// The sender must unblock on cancellation of Context, as Program.Send does.
+func (b *Bridge) DrainTo(send func(tea.Msg)) tea.Cmd {
+	return func() tea.Msg { b.drain(send); return nil }
 }
 
 func (b *Bridge) drain(send func(tea.Msg)) {
@@ -673,7 +680,13 @@ func (b *Bridge) drain(send func(tea.Msg)) {
 // DeliverEffects drains external command effects outside dispatch until canceled.
 // Use the same program lifetime as Drain to make its blocked Send cancelable.
 func (b *Bridge) DeliverEffects(program *tea.Program) tea.Cmd {
-	return func() tea.Msg { b.deliverEffects(program.Send); return nil }
+	return b.DeliverEffectsTo(program.Send)
+}
+
+// DeliverEffectsTo uses the owned mailbox runner for an unbound model's sender.
+// The sender must unblock on cancellation of Context, as Program.Send does.
+func (b *Bridge) DeliverEffectsTo(send func(tea.Msg)) tea.Cmd {
+	return func() tea.Msg { b.deliverEffects(send); return nil }
 }
 
 func (b *Bridge) deliverEffects(send func(tea.Msg)) {

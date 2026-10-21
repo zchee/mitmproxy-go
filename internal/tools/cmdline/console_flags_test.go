@@ -13,36 +13,47 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/cobra"
 
-	"github.com/zchee/mitmproxy-go/addons/core"
-	"github.com/zchee/mitmproxy-go/addons/intercept"
-	"github.com/zchee/mitmproxy-go/addons/termlog"
-	"github.com/zchee/mitmproxy-go/addons/view"
 	"github.com/zchee/mitmproxy-go/internal/tools/console"
+	"github.com/zchee/mitmproxy-go/internal/tools/dump"
 	"github.com/zchee/mitmproxy-go/internal/tools/web"
 	"github.com/zchee/mitmproxy-go/master"
-	"github.com/zchee/mitmproxy-go/options"
 )
 
-func consoleProfileMaster(t *testing.T) *master.Master {
+func consoleProfileMaster(t *testing.T, profile string) *master.Master {
 	t.Helper()
-	m := master.New(master.Config{})
+	var base *master.Master
+	var closeFrontend func(context.Context) error
+	switch profile {
+	case "preserve_dump":
+		m, err := dump.New(t.Context(), dump.Config{Stdout: io.Discard, Stderr: io.Discard, WithTermlog: true, WithDumper: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		base, closeFrontend = m.Master, m.Close
+	case "preserve_web":
+		m, err := web.New(t.Context(), web.Config{Stdout: io.Discard, Stderr: io.Discard, WithTermlog: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		base, closeFrontend = m.Master, m.Close
+	default:
+		m, err := console.New(t.Context(), console.Config{Stdout: io.Discard, Stderr: io.Discard})
+		if err != nil {
+			t.Fatal(err)
+		}
+		base, closeFrontend = m.Master, m.Close
+	}
 	t.Cleanup(func() {
-		if err := m.Close(context.WithoutCancel(t.Context())); err != nil {
+		if err := closeFrontend(context.WithoutCancel(t.Context())); err != nil {
 			t.Error(err)
 		}
 	})
-	if err := m.Do(t.Context(), func(ctx context.Context) error {
-		if err := m.Options.Update(ctx, map[string]any{"confdir": t.TempDir()}); err != nil {
-			return err
-		}
-		return m.Options.Add(ctx, "flow_detail", options.TypeInt, 1, "Dump verbosity.")
+	if err := base.Do(t.Context(), func(ctx context.Context) error {
+		return base.Options.Update(ctx, map[string]any{"confdir": t.TempDir()})
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Addons.Add(t.Context(), termlog.New(m.Options, io.Discard, m.ShutdownWithError), core.New(m.Addons), intercept.New(m.Options), view.New(m.Addons), &console.ConsoleAddon{}, &web.WebAddon{}); err != nil {
-		t.Fatal(err)
-	}
-	return m
+	return base
 }
 
 func TestMitmproxyFlags(t *testing.T) {
@@ -50,7 +61,7 @@ func TestMitmproxyFlags(t *testing.T) {
 		tests := map[string]struct{}{"console_flags": {}, "no_positionals": {}, "quiet_verbose": {}, "preserve_dump": {}, "preserve_web": {}}
 		for name := range tests {
 			t.Run(name, func(t *testing.T) {
-				m := consoleProfileMaster(t)
+				m := consoleProfileMaster(t, name)
 				opts := m.Options
 				run := func(cmd *cobra.Command, args ...string) error {
 					cmd.SetOut(io.Discard)
@@ -102,22 +113,19 @@ func TestMitmproxyFlags(t *testing.T) {
 						}
 					}
 				case "quiet_verbose":
-					tests := map[string]struct {
-						args  []string
-						level string
-					}{
-						"quiet":        {[]string{"-q"}, "error"},
-						"verbose":      {[]string{"-v"}, "debug"},
-						"verbose wins": {[]string{"-q", "-v"}, "debug"},
-						"options":      {[]string{"--options"}, "error"},
-						"commands":     {[]string{"--commands"}, "error"},
+					tests := map[string]struct{ args []string }{
+						"quiet":    {[]string{"-q"}},
+						"verbose":  {[]string{"-v"}},
+						"both":     {[]string{"-q", "-v"}},
+						"options":  {[]string{"--options"}},
+						"commands": {[]string{"--commands"}},
 					}
 					for name, test := range tests {
 						if err := run(NewConsole(opts, "test"), test.args...); err != nil {
 							t.Fatalf("%s: %v", name, err)
 						}
-						if opts.Str("termlog_verbosity") != test.level || opts.Int("flow_detail") != 1 {
-							t.Fatalf("%s changed an unrelated dump option: level=%q detail=%d", name, opts.Str("termlog_verbosity"), opts.Int("flow_detail"))
+						if opts.Has("termlog_verbosity") || opts.Has("flow_detail") {
+							t.Fatalf("%s invented a terminal-log or dump-detail option in the console", name)
 						}
 					}
 				case "preserve_dump":
@@ -143,7 +151,7 @@ func TestMitmproxyFlags(t *testing.T) {
 					if err := run(cmd, "--web-port", "9090", "--no-web-open-browser", "--intercept", "~u example", "-v"); err != nil {
 						t.Fatal(err)
 					}
-					if cmd.Name() != "mitmweb" || opts.Int("web_port") != 9090 || opts.Bool("web_open_browser") || opts.Str("termlog_verbosity") != "debug" || opts.Int("flow_detail") != 1 {
+					if cmd.Name() != "mitmweb" || opts.Int("web_port") != 9090 || opts.Bool("web_open_browser") || opts.Str("termlog_verbosity") != "debug" || opts.Has("flow_detail") {
 						t.Fatal("web profile options/quiet behavior changed")
 					}
 					if cmd.Flags().Lookup("console-layout") != nil || cmd.Flags().Lookup("flow-detail") != nil {

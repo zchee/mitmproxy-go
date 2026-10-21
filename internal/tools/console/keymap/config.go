@@ -35,6 +35,9 @@ type Config struct {
 	Submit func(context.Context, string) error
 }
 
+// Name preserves the upstream addon identity in the assembled master.
+func (*Config) Name() string { return "keymapconfig" }
+
 // Load registers the separate keymap-load command with its source signature.
 func (c *Config) Load(_ context.Context, loader *addon.Loader) error {
 	if c.Submit == nil {

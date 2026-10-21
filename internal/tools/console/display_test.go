@@ -74,9 +74,13 @@ func verifyDisplayAdmission(t *testing.T) {
 			t.Fatalf("%s did not update its derived mirror", name)
 		}
 	}
-	original := contract.Action{Kind: "layout", Display: &contract.DisplayConfig{Layout: "vertical"}}
+	original := contract.Action{Kind: "layout", Display: &contract.DisplayConfig{Layout: "vertical"}, Target: &contract.EditTarget{FlowID: "captured-flow", Part: "request-body", Message: -1}}
 	cloned := original.Clone()
 	original.Display.Layout = "single"
+	original.Target.FlowID = "other-flow"
+	if cloned.Target.FlowID != "captured-flow" || cloned.Target.Part != "request-body" || cloned.Target.Message != -1 {
+		t.Fatal("edit target aliases its producer")
+	}
 	if cloned.Display.Layout != "vertical" {
 		t.Fatal("display payload aliases its producer")
 	}

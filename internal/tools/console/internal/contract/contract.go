@@ -243,7 +243,7 @@ type DisplayConfig struct {
 
 // Action requests a validated control transition. Kind is push, pop, pane,
 // layout, overlay, dismiss, tab, mode, option, binding, editor, selection,
-// nav, grid, prompt or prompt_done. Window and Choices are copied on admission.
+// nav, grid, external, prompt or prompt_done. Mutable payloads are copied on admission.
 type Action struct {
 	Kind, Value, Text string
 	Window            Window
@@ -251,11 +251,15 @@ type Action struct {
 	Choices           []Choice
 	Grid              *GridRequest
 	Display           *DisplayConfig
+	Target            *EditTarget
 	Recipe            Recipe
 }
 
 // Clone detaches the action's mutable payload storage.
 func (a Action) Clone() Action {
+	if a.Target != nil {
+		a.Target = new(*a.Target)
+	}
 	if a.Display != nil {
 		a.Display = new(*a.Display)
 	}
@@ -265,6 +269,11 @@ func (a Action) Clone() Action {
 	a.Recipe.ChoiceIndices = slices.Clone(a.Recipe.ChoiceIndices)
 	if a.Grid != nil {
 		g := *a.Grid
+		if g.Flow != nil {
+			original := g.Flow.Common()
+			g.Flow = g.Flow.Copy()
+			g.Flow.Common().ID, g.Flow.Common().Live = original.ID, original.Live
+		}
 		g.Rows = slices.Clone(g.Rows)
 		for i := range g.Rows {
 			g.Rows[i] = slices.Clone(g.Rows[i])
@@ -302,11 +311,16 @@ type Completion struct {
 	Start              int
 }
 
-// GridRequest opens a sequence editor without a child importing the root package.
-// Option names the registry entry committed by the existing option mutation path.
+// GridRequest opens an owned flow or option-sequence editor without root imports.
+// Flow, when set, is detached under the accepting dispatch hold; Target retains
+// its source identity and fingerprint. Option names a sequence registry entry.
 type GridRequest struct {
 	Title, Option string
 	Rows          [][]string
+	Flow          flow.Flow
+	Target        EditTarget
+	Mode          string
+	Detail        DetailOptions
 }
 
 // Host is the console's live boundary. Widget callbacks invoke Do/Call/Dispatch

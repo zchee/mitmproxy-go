@@ -144,11 +144,33 @@ func (m *Manager) CallStrings(ctx context.Context, name string, args []string) (
 	return r(ctx, name, run)
 }
 
-// callStrings is CallStrings inside the Runner's hold.
-func (m *Manager) callStrings(ctx context.Context, name string, args []string) (any, error) {
+// Prepare validates string arguments without invoking the command body.
+// Required/default arity and dynamic type parsing use the same implementation as
+// CallStrings and run in one Runner hold. It refuses a nil context.
+func (m *Manager) Prepare(ctx context.Context, name string, args []string) error {
+	if ctx == nil {
+		return fmt.Errorf("%w: %s: nil context", ErrArgumentMismatch, name)
+	}
+	run := func(ctx context.Context) (any, error) {
+		_, _, err := m.prepareStrings(ctx, name, args)
+		return nil, err
+	}
+	m.mu.RLock()
+	r := m.runner
+	m.mu.RUnlock()
+	if r == nil {
+		_, err := run(ctx)
+		return err
+	}
+	_, err := r(ctx, name, run)
+	return err
+}
+
+// prepareStrings parses inside the Runner hold without executing the command.
+func (m *Manager) prepareStrings(ctx context.Context, name string, args []string) (*Command, []any, error) {
 	c := m.get(name)
 	if c == nil {
-		return nil, fmt.Errorf("%w: %s", ErrUnknownCommand, name)
+		return nil, nil, fmt.Errorf("%w: %s", ErrUnknownCommand, name)
 	}
 
 	n := len(c.Params)
@@ -158,7 +180,7 @@ func (m *Manager) callStrings(ctx context.Context, name string, args []string) (
 		for i, p := range c.Params {
 			params[i] = p.String()
 		}
-		return nil, fmt.Errorf("%w: \n    Expected: %s %s\n    Received: %s",
+		return nil, nil, fmt.Errorf("%w: \n    Expected: %s %s\n    Received: %s",
 			ErrArgumentMismatch, c.Name, strings.Join(params, " "), pyrepr.Value(args))
 	}
 
@@ -166,15 +188,23 @@ func (m *Manager) callStrings(ctx context.Context, name string, args []string) (
 	for i, arg := range args {
 		p := c.Params[min(i, n-1)]
 		if !inRegistry(p.Type) {
-			return nil, fmt.Errorf("%w: %s argument %s: unsupported argument type %s", ErrInvalidArgument, c.Name, p.Name, p.Type.Name())
+			return nil, nil, fmt.Errorf("%w: %s argument %s: unsupported argument type %s", ErrInvalidArgument, c.Name, p.Name, p.Type.Name())
 		}
 		v, err := p.Type.Parse(ctx, m, arg)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s argument %s (%s): %w", ErrInvalidArgument, c.Name, p.Name, pyrepr.Str(arg), err)
+			return nil, nil, fmt.Errorf("%w: %s argument %s (%s): %w", ErrInvalidArgument, c.Name, p.Name, pyrepr.Str(arg), err)
 		}
 		native[i] = v
 	}
+	return c, native, nil
+}
 
+// callStrings is CallStrings inside the Runner's hold.
+func (m *Manager) callStrings(ctx context.Context, name string, args []string) (any, error) {
+	c, native, err := m.prepareStrings(ctx, name, args)
+	if err != nil {
+		return nil, err
+	}
 	ret, err := m.Call(ctx, name, native...)
 	if err != nil {
 		return nil, err

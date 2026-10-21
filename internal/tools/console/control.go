@@ -314,7 +314,7 @@ func reduce(state contract.State, a contract.Action) (contract.State, error) {
 			return state, errors.New("invalid console navigation")
 		}
 	case "grid":
-		if current.Context != "grideditor" {
+		if _, ok := state.Current("grideditor", true); !ok {
 			return state, errors.New("Not in a grideditor.") //nolint:staticcheck // Preserve upstream's command error text.
 		}
 		switch a.Value {
@@ -333,7 +333,7 @@ func reduce(state contract.State, a contract.Action) (contract.State, error) {
 	case "prompt_done":
 		next.Prompt, next.Text, next.Choices = "", "", nil
 		next.Cursor, next.Recipe = 0, contract.Recipe{}
-	case "edited", "keymap_load":
+	case "edited", "keymap_load", "external":
 		// These effects do not change navigation state.
 	default:
 		return state, fmt.Errorf("unknown console transition %q", a.Kind)

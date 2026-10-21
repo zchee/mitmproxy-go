@@ -74,6 +74,34 @@ func testLevels(t *testing.T) {
 	if !strings.Contains(model.View(), "ＦＵＬ") {
 		t.Fatalf("full-width log text lost: %q", model.View())
 	}
+	tests := map[string]struct {
+		message string
+		want    string
+	}{
+		"ascii": {
+			message: strings.Repeat("x", 1<<16),
+			want:    "info:       \nxxxxxxxxxxxx",
+		},
+		"full_width": {
+			message: strings.Repeat("界", 1<<16),
+			want:    "info:       \n界界界界界界",
+		},
+		"line_breaks": {
+			message: strings.Repeat("\n", 1<<16),
+			want:    "info:       \n            ",
+		},
+	}
+	model.Resize(12, 2)
+	for name, test := range tests {
+		record := eventstore.Record{ID: 7, Entry: addon.LogEntry{Level: slog.LevelInfo, Msg: test.message}}
+		model.SetSnapshot(contract.Snapshot{Events: []eventstore.Record{record}, Control: contract.NewState()})
+		if diff := cmp.Diff(test.want, model.View()); diff != "" {
+			t.Fatalf("oversized %s log viewport (-want +got): %s", name, diff)
+		}
+		if diff := cmp.Diff(test.message, model.records[0].Entry.Msg); diff != "" {
+			t.Fatalf("oversized %s log record changed (-want +got): %s", name, diff)
+		}
+	}
 }
 
 func testClear(t *testing.T) {

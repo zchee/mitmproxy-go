@@ -8,6 +8,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -129,7 +130,12 @@ func (m *Model) project(records []eventstore.Record, palette style.Palette) []st
 		record := records[i]
 		level := record.Entry.LevelName()
 		text := style.Escape(level + ": " + record.Entry.Msg)
-		wrapped := strings.Split(ansi.Wrap(text, m.viewport.Width(), ""), "\n")
+		// Bound wrapping even for zero-width text, without splitting UTF-8 runes.
+		limit := min(len(text), m.viewport.Width()*m.viewport.Height()*utf8.UTFMax)
+		for limit > 0 && limit < len(text) && !utf8.RuneStart(text[limit]) {
+			limit--
+		}
+		wrapped := strings.Split(ansi.Wrap(text[:limit], m.viewport.Width(), ""), "\n")
 		remaining := m.viewport.Height() - len(lines)
 		wrapped = wrapped[:min(len(wrapped), remaining)]
 		m.rows = append(m.rows, visibleRow{id: record.ID, index: i, first: len(lines), height: len(wrapped)})

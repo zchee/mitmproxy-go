@@ -125,6 +125,19 @@ func (m *stormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func TestArtifactRootSymlink(t *testing.T) {
+	root := t.TempDir()
+	link := filepath.Join(t.TempDir(), "artifacts")
+	requireNoError(t, os.Symlink(root, link))
+	t.Setenv("MITMPROXY_TEST_CONSOLE_ARTIFACTS", link)
+	out := consoleArtifactDir(t, "symlink-")
+	canonical, err := filepath.EvalSymlinks(root)
+	requireNoError(t, err)
+	if diff := gocmp.Diff(canonical, filepath.Dir(out)); diff != "" {
+		t.Fatalf("symlink artifact parent (-want +got):\n%s", diff)
+	}
+}
+
 func TestConsoleStorm(t *testing.T) {
 	tests := map[string]struct{}{"update_blocked_two_seconds": {}}
 	for name := range tests {
@@ -178,13 +191,7 @@ func runStormProcess(t *testing.T) {
 		}
 		return err
 	}
-	root := os.Getenv("MITMPROXY_TEST_CONSOLE_ARTIFACTS")
-	if root == "" {
-		root = t.TempDir()
-	}
-	requireNoError(t, os.MkdirAll(root, 0o700))
-	out, err := os.MkdirTemp(root, "storm-")
-	requireNoError(t, err)
+	out := consoleArtifactDir(t, "storm-")
 	transcript, err := os.OpenFile(filepath.Join(out, "terminal.ansi"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	requireNoError(t, err)
 	defer closeStormFile(t, transcript)

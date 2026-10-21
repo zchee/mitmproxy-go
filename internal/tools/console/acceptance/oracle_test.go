@@ -45,13 +45,7 @@ func TestConsoleOracle(t *testing.T) {
 					uv, err := exec.LookPath("uv")
 					requireNoError(t, err)
 					inputs := loadFrameInputs(t)
-					root := os.Getenv("MITMPROXY_TEST_CONSOLE_ARTIFACTS")
-					if root == "" {
-						root = t.TempDir()
-					}
-					requireNoError(t, os.MkdirAll(root, 0o700))
-					out, err := os.MkdirTemp(root, "oracle-"+state+"-")
-					requireNoError(t, err)
+					out := consoleArtifactDir(t, "oracle-"+state+"-")
 					adapter, err := filepath.Abs("testdata/oracle.py")
 					requireNoError(t, err)
 					flows, err := filepath.Abs("testdata/console.mitm")

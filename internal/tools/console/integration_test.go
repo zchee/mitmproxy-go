@@ -41,6 +41,8 @@ type integrationFrame struct {
 	interceptedResponses int
 	grid                 [][]grideditor.Cell
 	message              string
+	focusID, focusURL    string
+	focusIndex           int
 }
 
 type integrationQuery struct{ reply chan integrationFrame }
@@ -54,7 +56,10 @@ func (m *integrationModel) Init() tea.Cmd  { return m.model.Init() }
 func (m *integrationModel) View() tea.View { return m.model.View() }
 func (m *integrationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if query, ok := msg.(integrationQuery); ok {
-		frame := integrationFrame{text: ansi.Strip(m.model.View().Content), state: m.model.state.Clone(), generation: m.model.snapshot.Generation, total: m.model.snapshot.Total, message: m.model.message}
+		frame := integrationFrame{text: ansi.Strip(m.model.View().Content), state: m.model.state.Clone(), generation: m.model.snapshot.Generation, total: m.model.snapshot.Total, message: m.model.message, focusID: m.model.snapshot.FocusID, focusIndex: m.model.snapshot.FocusIndex}
+		if f, ok := m.model.snapshot.Focused.(*flow.HTTPFlow); ok && f.Request != nil {
+			frame.focusURL = f.Request.URL()
+		}
 		for _, row := range m.model.snapshot.Rows {
 			if row.Intercepted {
 				frame.intercepted++
@@ -155,7 +160,7 @@ func (h *integrationHarness) wait(t *testing.T, ready func(integrationFrame) boo
 		select {
 		case <-h.model.changed:
 		case <-ctx.Done():
-			t.Fatalf("assembled UI did not settle: %v\nstate=%+v\nmessage=%s\n%s", ctx.Err(), last.state, last.message, last.text)
+			t.Fatalf("assembled UI did not settle: %v\nstate=%+v\nfocus_index=%d focus_id=%s focus_url=%q\nmessage=%s\n%s", ctx.Err(), last.state, last.focusIndex, last.focusID, last.focusURL, last.message, last.text)
 		}
 	}
 }
@@ -211,10 +216,17 @@ func TestConsoleIntegration(t *testing.T) {
 						h.terminal.Send(tea.KeyPressMsg{Code: tea.KeyTab})
 						h.terminal.Send(tea.KeyPressMsg{Code: tea.KeyTab})
 						h.wait(t, func(frame integrationFrame) bool { w, _ := frame.state.Current("flowview", false); return w.Index == 2 })
-						h.terminal.Send(tea.KeyPressMsg{Code: ' ', Text: " "})
+						// Upstream's conftest.py tokenize forwards "<space>" as the literal
+						// name "space"; keymap.py Binding.keyspec maps the binding to " ".
+						// An unbound F12 preserves that inert event in the real tea harness.
+						h.terminal.Send(tea.KeyPressMsg{Code: tea.KeyF12})
 						h.terminal.Send(tea.KeyPressMsg{Code: tea.KeyTab})
 						h.terminal.Send(tea.KeyPressMsg{Code: tea.KeyTab})
-						h.wait(t, func(frame integrationFrame) bool { return strings.Contains(frame.text, "http://example.com/") })
+						h.wait(t, func(frame integrationFrame) bool {
+							w, _ := frame.state.Current("flowview", false)
+							lines := strings.Split(frame.text, "\n")
+							return frame.focusIndex == 0 && frame.focusURL == "http://example.com/" && w.Index == 1 && len(lines) > 1 && strings.Contains(lines[1], "http://example.com/") && strings.Contains(frame.text, "[1/2]")
+						})
 					case "test_options_home_end", "test_keybindings_home_end":
 						key, contextName, label := 'O', "options", "Options"
 						if name == "test_keybindings_home_end" {
@@ -371,4 +383,15 @@ func integrationFilterSave(t *testing.T, h *integrationHarness) {
 	if !slices.Equal(paths, []string{"/keep-one", "/keep-two"}) {
 		t.Fatalf("saved filtered flows=%q", paths)
 	}
+	h.execute(t, "console.view.flow @focus")
+	h.wait(t, func(frame integrationFrame) bool {
+		w, _ := frame.state.Current("", true)
+		return w.Context == "flowview" && frame.focusIndex == 0
+	})
+	// Unlike the upstream harness's symbolic token, a real space navigates flows.
+	h.terminal.Send(tea.KeyPressMsg{Code: ' ', Text: " "})
+	h.wait(t, func(frame integrationFrame) bool {
+		w, _ := frame.state.Current("flowview", false)
+		return frame.focusIndex == 1 && frame.focusURL == "http://example.test/keep-two" && w.Index == 0 && strings.Contains(frame.text, "http://example.test/keep-two")
+	})
 }

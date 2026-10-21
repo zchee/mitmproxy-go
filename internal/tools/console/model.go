@@ -522,6 +522,24 @@ func (m *Model) View() tea.View {
 		lines[i] = m.palette.Style("text").Render(lines[i])
 	}
 	v := tea.NewView(strings.Join(lines, "\n"))
+	if m.state.Prompt != "" && m.width > 0 {
+		text, cursor, leader := m.input.Value(), m.input.Position(), ": "+m.input.Prompt
+		if editor, ok := m.promptWidget().(interface {
+			Text() string
+			Cursor() int
+		}); ok {
+			text, cursor, leader = editor.Text(), editor.Cursor(), ": "
+		}
+		runes := []rune(text)
+		x := style.Width(leader) + style.Width(string(runes[:min(max(cursor, 0), len(runes))]))
+		if m.state.Prompt == "choice" || m.state.Prompt == "confirm" {
+			x = style.Width(style.Escape(m.state.Text))
+		}
+		y := m.height - len(footer) + 1
+		if y >= 0 && y < m.height {
+			v.Cursor = tea.NewCursor(min(max(x, 0), m.width-1), y)
+		}
+	}
 	v.AltScreen = true
 	if m.state.Mouse {
 		v.MouseMode = tea.MouseModeCellMotion

@@ -63,9 +63,9 @@ func NewModel(bridge *Bridge, factories map[string]WidgetFactory) *Model {
 }
 
 // NewProgram binds one terminal program, defaulting to the bridge's lifetime.
-// Cancelling that default context uses Bubble Tea's kill teardown without joining
-// its input read loop. Use Master.NewProgram for orderly shutdown; an owner that
-// joins the program before closing the bridge may override its context.
+// Cancelling that lifetime while the program runs takes Bubble Tea's kill path,
+// which closes the input reader without joining it. The assembled Master overrides
+// the context and stops the program through Quit before closing the bridge.
 func NewProgram(model *Model, options ...tea.ProgramOption) (*tea.Program, error) {
 	if model.bridge == nil {
 		return nil, errors.New("console program requires a live bridge")

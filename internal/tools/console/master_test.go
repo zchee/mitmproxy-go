@@ -51,11 +51,17 @@ func consoleLifecycleChild(scenario string) error {
 	if _, err := m.NewModel(); err == nil {
 		return errors.New("terminal owner allowed a second harness owner")
 	}
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
 	finished := make(chan error, 1)
-	go func() { finished <- m.Run(ctx) }()
+	go func() { finished <- m.Run(runCtx) }()
 	select {
 	case <-m.Ready():
-		m.Shutdown()
+		if scenario == "shutdown" {
+			cancelRun()
+		} else {
+			m.Shutdown()
+		}
 	case err := <-finished:
 		return fmt.Errorf("terminal exited before Init: %w", err)
 	case <-ctx.Done():

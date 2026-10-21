@@ -1,0 +1,73 @@
+{
+  "source_commit": "b6ebd67744082b05a43440e242baf8d80839c890",
+  "upstream_commit": "3368a0a06ae6195aad817a1ece1aaeb6fe0353a1",
+  "fixture_sha256": "ee27209271dd8a99304a426fbda6731ca0a23786e5d4596e168a4d9b6f0eb34e",
+  "reviewer": "lead session 443a0fb5",
+  "review": "Reviewed by the lead on 2026-10-21 against the pinned Python oracle and the upstream layout source.",
+  "oracle": "Live pinned Python cell comparison at 80x24; independent upstream layout-source review at 200x50.",
+  "presentation": "Exact trusted SGR controls, alternate-screen declaration and cursor metadata from the reviewed candidate.",
+  "regeneration": "Regenerate only under independent review; never pass -update in CI.",
+  "frozen_at": "2026-10-21 19:23:01 JST",
+  "files": [
+    {
+      "path": "testdata/TestConsoleGoldens/frames/flowlist/80x24.golden",
+      "sha256": "ed6c37f760a02108b65d03b60906c0051850d1f13bbbef4e573042c2448a9599",
+      "bytes": 1951
+    },
+    {
+      "path": "testdata/presentation/flowlist-80x24.json",
+      "sha256": "f63ff376103ad8b16fc5284888241e3075574e9b42f9e7e4c78d3c9890f6287f",
+      "bytes": 2302
+    },
+    {
+      "path": "testdata/TestConsoleGoldens/frames/flowlist/200x50.golden",
+      "sha256": "aabfa647190a515db92e5993d4b464fdf22004ba9d38cc280fc140877821bd28",
+      "bytes": 10055
+    },
+    {
+      "path": "testdata/presentation/flowlist-200x50.json",
+      "sha256": "788163ca503b18865181228a64938b3bc6e8883004a90f551a587ec5e4c1d902",
+      "bytes": 4616
+    },
+    {
+      "path": "testdata/TestConsoleGoldens/frames/flowview/80x24.golden",
+      "sha256": "62149164225dd302f2cd221ab885910dc10e00cb6e37999a4ac11ad425ea9afc",
+      "bytes": 1947
+    },
+    {
+      "path": "testdata/presentation/flowview-80x24.json",
+      "sha256": "380c3a1cad89af1b8f497ac273d143c7dbfd99571062d6a658bb5e8ff3599797",
+      "bytes": 3360
+    },
+    {
+      "path": "testdata/TestConsoleGoldens/frames/flowview/200x50.golden",
+      "sha256": "65610c5925d5c544b3f482c855fab4c54f8e7773489a17276225cdba844ea8f5",
+      "bytes": 10057
+    },
+    {
+      "path": "testdata/presentation/flowview-200x50.json",
+      "sha256": "201d375ed2803d38fd0a5a488de6569b20f55132010f98d1fb653636fb419c9c",
+      "bytes": 5680
+    },
+    {
+      "path": "testdata/TestConsoleGoldens/frames/commander/80x24.golden",
+      "sha256": "f515ae9b48240190dd774bf1e232c507a57c29e0e2683cc5004e8cbdce887113",
+      "bytes": 1949
+    },
+    {
+      "path": "testdata/presentation/commander-80x24.json",
+      "sha256": "f519c2f70112d887e86ce7115e8b4f1c3e1eae915a36dbd4ee20b150a99561df",
+      "bytes": 2611
+    },
+    {
+      "path": "testdata/TestConsoleGoldens/frames/commander/200x50.golden",
+      "sha256": "85aaff8b9d38eb25cf95f36ed6efe298ca4ffd58cd8543189e8886bb1a97398e",
+      "bytes": 10051
+    },
+    {
+      "path": "testdata/presentation/commander-200x50.json",
+      "sha256": "3b512a3fd89156ae1b8a302745c989ba35eaf9f28728c7918f401acee57b4c3f",
+      "bytes": 4925
+    }
+  ]
+}

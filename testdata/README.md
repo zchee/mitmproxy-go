@@ -17,6 +17,7 @@ path here by prefix:
 | `mitmproxy/contentviews/test_protobuf_data/` | `test/mitmproxy/contentviews/test_protobuf_data/` in mitmproxy; protobuf inputs and historical decoded references, not current Rust-backed YAML expectations |
 | `mitmproxy/contentviews/test_wbxml_data/` | `test/mitmproxy/contentviews/test_wbxml_data/` in mitmproxy; WBXML input and formatted XML expectation |
 | `mitmproxy/contrib/wbxml/GlobalTokens.py` | `mitmproxy/contrib/wbxml/GlobalTokens.py` in mitmproxy; byte-exact global-token reference retaining David P. Shaw's complete MIT notice |
+| `mitmproxy/script/` | Exact upstream-relative paths in mitmproxy for the scripting test modules and all thirty `examples/addons/` sources; per-file provenance below. |
 | `mitmproxy-net/` | `test/mitmproxy/net/data/` in mitmproxy |
 | `wg-test-client/` | `test/wg-test-client/` in mitmproxy |
 | `mitmproxy-rs/contentviews/` | `mitmproxy-contentviews/testdata/` in mitmproxy_rs |
@@ -209,6 +210,58 @@ to this directory and also appear in `SHA256SUMS`.
 | `mitmproxy/tools/console/keymap.py` | `mitmproxy/tools/console/keymap.py` | `514066a9bc605a03ee4bb3812c038c67fa464003` | `100644` | 8157 | `6747e2bdceeed307f996664625e196dca9e55601d5ab1f1c12215ca732a2cff8` |
 | `mitmproxy/tools/console/mitmproxy.png` | `docs/src/static/screenshots/mitmproxy.png` | `3fd14b9d4aa913edc83d9e2806b35e04da4bf48a` | `100644` | 286915 | `694d8f4254e3ff917524974db7ea26f0b31515646f106c050b5cf35e73174018` |
 | `mitmproxy/tools/console/UPSTREAM_LICENSE` | `LICENSE` | `c08a0186d79d45a4647c31f5dfeabfbc4db82daf` | `100644` | 1079 | `cc4ab04ed7180af6c0ede7147f9ec2aa05212c088d7b3c8e38bbffe91c9c8f82` |
+
+## Scripting references
+
+These 33 files are byte-exact references from mitmproxy commit
+`3368a0a06ae6195aad817a1ece1aaeb6fe0353a1`: the three scripting/example
+test modules and all thirty addon examples. They preserve source cases and
+example behavior for the Starlark translations; this repository does not run
+these Python files as tests or addons. Their layout under `mitmproxy/script/`
+retains each full upstream-relative path.
+
+The existing `mitmproxy/addonscripts/` fixtures remain at their original paths;
+they are not duplicated here. Starlark translations and generated expectations
+are not byte-exact upstream files and must not enter this manifest. All copied
+sources below retain their Git blobs and modes, are listed in `SHA256SUMS`, and
+are covered by the complete MIT notice in `UPSTREAM_LICENSE` (upstream
+`LICENSE`, blob `c08a0186d79d45a4647c31f5dfeabfbc4db82daf`, mode `100644`).
+
+| Path | Upstream path | Upstream Git blob | Git mode | Bytes | SHA-256 |
+| --- | --- | --- | --- | ---: | --- |
+| `mitmproxy/script/examples/addons/anatomy.py` | `examples/addons/anatomy.py` | `a03404a91efec0631ff4b2418583dcd29b6c4397` | `100644` | 304 | `f1a0de5e87c39a46dc1cd2dd15311d3296b3801ea1f170a67ede34bcad21ea48` |
+| `mitmproxy/script/examples/addons/anatomy2.py` | `examples/addons/anatomy2.py` | `09814c4861058d855135e59f199d3415f4591224` | `100644` | 123 | `bf4ffaf46f5e351e153d3f6200f31979f3e86ae91b9f83837d71778104b38f1a` |
+| `mitmproxy/script/examples/addons/commands-flows.py` | `examples/addons/commands-flows.py` | `fbe0bebeaa9c6ad4ca105b65fbc8efb125c2b5b5` | `100644` | 514 | `cb383d0f979262f19d2bcb4b215c8f12d26499bdc585c8e1f7d984abe553e4e0` |
+| `mitmproxy/script/examples/addons/commands-paths.py` | `examples/addons/commands-paths.py` | `908d5648087c3d314c951685ac393f6e7f3bdd0d` | `100644` | 814 | `f13036d03a06f74c7988dd9409e5af00fcf12d1b587889a67fa29e51066b4bf3` |
+| `mitmproxy/script/examples/addons/commands-simple.py` | `examples/addons/commands-simple.py` | `4edef09e6087de84cc2ea18eb692da259ea3d36c` | `100644` | 318 | `894563a3e4e8acf033121365992fdd6fd10c1394dfa88a59b3d81e38eecd696e` |
+| `mitmproxy/script/examples/addons/contentview-interactive.py` | `examples/addons/contentview-interactive.py` | `0a25f08a1ed158cc0104335ffceefdfe3a659285` | `100644` | 450 | `c865b53f2102940291471c9c4b3f8c7999dc0bfa2cab39a175c1b2e74716304c` |
+| `mitmproxy/script/examples/addons/contentview.py` | `examples/addons/contentview.py` | `a40bc1a6fbece7f691f049e0c114ca329b42b5fd` | `100644` | 532 | `c51eb9e10c5583876d1c8da16e8f2e7d2bd0a567a71ffb77e914d5adbd4f1b9a` |
+| `mitmproxy/script/examples/addons/dns-simple.py` | `examples/addons/dns-simple.py` | `69c742d7cd50c7fc65c17173e6325e30e46eb30e` | `100644` | 1234 | `1eb6f86073cdeb1aa29963f8376124d9c18aafa0030eb5ff6c615e287b12b874` |
+| `mitmproxy/script/examples/addons/duplicate-modify-replay.py` | `examples/addons/duplicate-modify-replay.py` | `82f4ee408855023ef3ef612bdb25dd4ea7a8b9e0` | `100644` | 560 | `e9bd6a41be76fb2d44b473eeb0a40edaecabd4a28688b6a67e30ee6dada28057` |
+| `mitmproxy/script/examples/addons/filter-flows.py` | `examples/addons/filter-flows.py` | `43d87374921df896d9264f1e785c985f014cd0e4` | `100644` | 697 | `07e80a390b4adeea7d6833481d8932ceff860ec4ef916de2d57251fe83a1be31` |
+| `mitmproxy/script/examples/addons/http-add-header.py` | `examples/addons/http-add-header.py` | `b4a623fbad19e0a08c7606ecf89c182a6c040b61` | `100644` | 250 | `0c13f192216cd46ef58f01a5fa435a12adff00bb4a3c46ab4374cfed83c5a3fe` |
+| `mitmproxy/script/examples/addons/http-modify-form.py` | `examples/addons/http-modify-form.py` | `7586adba7112e3dc8d59275c6b612c07996624ff` | `100644` | 490 | `d98b02e0b4953014f12380b9bedf2f05b76d32dad5ffff9f89b907f04a51b201` |
+| `mitmproxy/script/examples/addons/http-modify-query-string.py` | `examples/addons/http-modify-query-string.py` | `6908b72ce1232565d0a665fae17efe122cb5acfc` | `100644` | 154 | `a578427585c5c44070ff54117568ec9dfe42bc48d5f909f31819a59d0bb296da` |
+| `mitmproxy/script/examples/addons/http-redirect-requests.py` | `examples/addons/http-redirect-requests.py` | `48390d5ad8fe420d57915c5e24ae3fd31202c80e` | `100644` | 378 | `3c0e604e2866979b09ab5629698806403ade94e51a806c414efee661f8443177` |
+| `mitmproxy/script/examples/addons/http-reply-from-proxy.py` | `examples/addons/http-reply-from-proxy.py` | `485fb499b818aae94d2c7bb91be5a7a00ea5b1a8` | `100644` | 429 | `a5ad2d548d67c5d0546602466841052d54e68334ce636ae0f8e88eb7f590f000` |
+| `mitmproxy/script/examples/addons/http-stream-modify.py` | `examples/addons/http-stream-modify.py` | `11c26e4af2012b065b1842df9ab60cab3dba20f3` | `100644` | 923 | `901c47e1615753f9b338fad83d37cdb990e2ef8b1b81ea1ce8c64122afed465a` |
+| `mitmproxy/script/examples/addons/http-stream-simple.py` | `examples/addons/http-stream-simple.py` | `454f4792e58daf5ac710db62ab6900d12711f93d` | `100644` | 368 | `ecf10ca3991b4844a93a9193dab288b15d97ccce591d71f75db4d18571ad5270` |
+| `mitmproxy/script/examples/addons/http-trailers.py` | `examples/addons/http-trailers.py` | `5822389a1b1299dc5dce26c1b6aa11b360e44648` | `100644` | 2076 | `cbedbe25731a83ff86e9e57c105cecdb139f471119f31faeafb07f296297ba86` |
+| `mitmproxy/script/examples/addons/internet-in-mirror.py` | `examples/addons/internet-in-mirror.py` | `e0abf8817740d1a4a4ff21cba5d752cef66987f4` | `100644` | 341 | `e4acbcc6627c0866c6482acf30eca64f6bfb56071e38af465b0130815b4b05aa` |
+| `mitmproxy/script/examples/addons/io-read-saved-flows.py` | `examples/addons/io-read-saved-flows.py` | `9fad123629b02d4fee17ab00a9c1d61eab9f41ce` | `100644` | 592 | `0f49de9637621750878027cafcef2343534f224ae66fab9211c014314ae2b9cd` |
+| `mitmproxy/script/examples/addons/io-write-flow-file.py` | `examples/addons/io-write-flow-file.py` | `76fcbb46e5b1178a3da34b045cbac2821da66527` | `100644` | 972 | `103700a2c7a2ce10bc5a1d04d6385cacfe4aa457e9dc4e9c7eb90a7d901a17e1` |
+| `mitmproxy/script/examples/addons/log-events.py` | `examples/addons/log-events.py` | `08a6225be7a38aba108d8cd87b53bc001638e847` | `100644` | 471 | `2af07917c26316b0c4c5150555e56262d9459cace3d3916261fdb8d1ac69c4ae` |
+| `mitmproxy/script/examples/addons/nonblocking.py` | `examples/addons/nonblocking.py` | `1be8cd7310a395ac4967e51f774e92feebde4cb9` | `100644` | 1103 | `38851ae3433095b9e744a9a5c9f113830d304d3c604bca7b1b072053e335ff14` |
+| `mitmproxy/script/examples/addons/options-configure.py` | `examples/addons/options-configure.py` | `70efbf1e9c862eee7a8d3dd5eb0fd7bdd364948b` | `100644` | 753 | `70200c385753bc205fa03b1c10246d159fa007dde1ab2055b3cfdf395183b86d` |
+| `mitmproxy/script/examples/addons/options-simple.py` | `examples/addons/options-simple.py` | `88ead1ee4e470291ec9f6ba77dfb7e8d360d20f6` | `100644` | 579 | `72b6f2f6186593360c0f214c3e9d79a603cd4109d00697cb719ceab148616616` |
+| `mitmproxy/script/examples/addons/shutdown.py` | `examples/addons/shutdown.py` | `cc8520037c380bfb91ca3767001e799ceac6bec9` | `100644` | 560 | `48b500ec0c787087c2509a94c36f1125467c92cc7283e8f1b032622a6618d8ea` |
+| `mitmproxy/script/examples/addons/tcp-simple.py` | `examples/addons/tcp-simple.py` | `11a464522d386d853c2af84848ec4ba68aa8d7c9` | `100644` | 853 | `c14652317ea8c2a7c9e07d31b782fdfb3ac42c6f83ac18b0f737747ab55e3ded` |
+| `mitmproxy/script/examples/addons/websocket-inject-message.py` | `examples/addons/websocket-inject-message.py` | `9ddab598e8c48b8371125e7d9ada0bcfc6df3b68` | `100644` | 1277 | `a38355c46610016e3d2d87ed52b3db030c420e851a453d2b1a8e1080ca79730e` |
+| `mitmproxy/script/examples/addons/websocket-simple.py` | `examples/addons/websocket-simple.py` | `9ec1e6b956c24c5f34f2763ed7fbb16861724164` | `100644` | 760 | `06a1065c10b51138b5c52c682f3529811bb9c71d925aeb4e6a7413edece09379` |
+| `mitmproxy/script/examples/addons/wsgi-flask-app.py` | `examples/addons/wsgi-flask-app.py` | `01da441dea9691b91f17c7191dcbb38a7459bba7` | `100644` | 970 | `3bd8aa193790a95bba29917518cd5c9d9b55d2bf15ad6c9b94784b052b244454` |
+| `mitmproxy/script/test/examples/test_examples.py` | `test/examples/test_examples.py` | `3e0b75557ad640ebc22f67dad9c10ae510e92dee` | `100644` | 2503 | `3b74f9eb28d7a50ecde0de4328ed70fb69a9dca450becb7ff4199cf9cb30ad0d` |
+| `mitmproxy/script/test/mitmproxy/addons/test_script.py` | `test/mitmproxy/addons/test_script.py` | `e2dfc0b2b9b64207b165353d763294c607afe916` | `100644` | 11268 | `ff4f4faabfa92f5f32675ccacdfe653ccc8c1280e4dfde1d7a747ffcaedb4f41` |
+| `mitmproxy/script/test/mitmproxy/script/test_concurrent.py` | `test/mitmproxy/script/test_concurrent.py` | `446fbb8d96165ad95f3e168dcd0cf64323edcdd1` | `100644` | 1176 | `e269ba45f6c181015e147a4a572479e69336870eec9f31fbc9b0a04703e53a59` |
 
 ## Generated highlighting expectations
 

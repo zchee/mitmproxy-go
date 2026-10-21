@@ -80,6 +80,7 @@ jobs:
           done
 
       - name: Verify frozen console frames
+        timeout-minutes: 6
         run: |
           set -euo pipefail
           OUT="$GITHUB_WORKSPACE/_test/console/goldens"
@@ -94,9 +95,9 @@ jobs:
           trap finish EXIT
           go version >| "$OUT/go-version.txt"
           go env GOROOT >| "$OUT/goroot.txt"
-          timeout --signal=QUIT --kill-after=15s 5m go test -race -timeout=3m -list '^TestConsoleGoldens$' ./internal/tools/console/acceptance >| "$OUT/parents.txt"
+          go test -race -timeout=3m -list '^TestConsoleGoldens$' ./internal/tools/console/acceptance >| "$OUT/parents.txt"
           diff -u <(printf '%s\n' TestConsoleGoldens) <(grep '^Test' "$OUT/parents.txt")
-          timeout --signal=QUIT --kill-after=15s 5m go test -race -count=1 -cpu=1 -timeout=3m -json -run '^TestConsoleGoldens$/^frames$/^(flowlist|flowview|commander)$/^(80x24|200x50)$' ./internal/tools/console/acceptance >| "$OUT/frames.jsonl" 2>| "$OUT/frames.stderr"
+          go test -race -count=1 -cpu=1 -timeout=3m -json -run '^TestConsoleGoldens$/^frames$/^(flowlist|flowview|commander)$/^(80x24|200x50)$' ./internal/tools/console/acceptance >| "$OUT/frames.jsonl" 2>| "$OUT/frames.stderr"
           jq -se '
             . as $rows
             | ["TestConsoleGoldens", "TestConsoleGoldens/frames"] +

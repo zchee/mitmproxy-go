@@ -326,7 +326,7 @@ func runStormHelper(t *testing.T) {
 		receipt.SnapshotSendHighWater, receipt.SnapshotSends = highWater.Load(), sends.Load()
 		receipt.OutstandingHighWater = observed.outstandingMax.Load()
 		receipt.WakeCapacity = 1
-		receipt.WakeProof = "wake capacity is 1 by design with a nonblocking send; ROOT TestConsoleBridge/deterministic/{dirty_race,saturated_no_state_change,update_blocked} proves coalescing"
+		receipt.WakeProof = "wake capacity is 1 by design with a nonblocking send; internal/tools/console TestConsoleBridge/deterministic/{dirty_race,saturated_no_state_change,update_blocked} proves coalescing"
 		// Presentation-owned fields are read only after the UI and senders have joined.
 		if receipt.Joined {
 			receipt.EntryGeneration, receipt.FinalGeneration = observed.entryGeneration, observed.last.Generation

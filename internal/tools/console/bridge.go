@@ -673,18 +673,28 @@ func (b *Bridge) drain(send func(tea.Msg)) {
 // DeliverEffects drains external command effects outside dispatch until canceled.
 // Use the same program lifetime as Drain to make its blocked Send cancelable.
 func (b *Bridge) DeliverEffects(program *tea.Program) tea.Cmd {
-	return func() tea.Msg {
-		if !b.deliveryStarted.CompareAndSwap(false, true) {
-			return nil
-		}
-		defer close(b.deliveryDone)
-		for {
-			select {
-			case <-b.ctx.Done():
-				return nil
-			case effect := <-b.Control.Mailbox():
-				program.Send(contract.EffectsMsg{effect})
+	return func() tea.Msg { b.deliverEffects(program.Send); return nil }
+}
+
+func (b *Bridge) deliverEffects(send func(tea.Msg)) {
+	if !b.deliveryStarted.CompareAndSwap(false, true) {
+		return
+	}
+	defer close(b.deliveryDone)
+	for {
+		select {
+		case <-b.ctx.Done():
+			return
+		case <-b.Control.creditReleased:
+			// Retirement only signals; pending layout admission needs a fresh hold.
+			err := b.Do(b.ctx, func(ctx context.Context) error { return b.Control.flushLayout(ctx) })
+			if err != nil {
+				if _, busy := errors.AsType[*BusyError](err); !busy && b.ctx.Err() == nil {
+					send(contract.ErrorMsg{Source: "layout", Err: err})
+				}
 			}
+		case effect := <-b.Control.Mailbox():
+			send(contract.EffectsMsg{effect})
 		}
 	}
 }

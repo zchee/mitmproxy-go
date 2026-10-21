@@ -227,9 +227,11 @@ func TestConsoleBridge(t *testing.T) {
 					}
 					if name == "sequence_installation" {
 						verifyAmendedContract(t)
+						verifyInstallerRecovery(t)
 					}
 				case "same_do_read_after_write":
 					verifyModes(t)
+					verifyDisplayAdmission(t)
 					mustConsole(t, b.Do(t.Context(), func(ctx context.Context) error {
 						mustConsole(t, b.Dispatch(ctx, contract.Action{Kind: "push", Window: contract.Window{Name: "options", Context: "options", Option: "showhost"}}))
 						w, ok := b.Control.State().Current("options", false)

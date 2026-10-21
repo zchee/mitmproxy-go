@@ -180,6 +180,8 @@ type Pane struct {
 }
 
 // State is authoritative under dispatch, never in a widget's Update method.
+// Layout describes pane structure; Headers and Mouse mirror option-owned values
+// installed by a layout action, not independent configuration owners.
 type State struct {
 	Panes                      [2]Pane
 	Pane                       int
@@ -233,6 +235,12 @@ func (s State) Current(keyContext string, overlays bool) (Window, bool) {
 	return Window{}, false
 }
 
+// DisplayConfig carries the option-owned values for one derived layout effect.
+type DisplayConfig struct {
+	Layout         string
+	Headers, Mouse bool
+}
+
 // Action requests a validated control transition. Kind is push, pop, pane,
 // layout, overlay, dismiss, tab, mode, option, binding, editor, selection,
 // nav, grid, prompt or prompt_done. Window and Choices are copied on admission.
@@ -242,11 +250,15 @@ type Action struct {
 	Index, Column     int
 	Choices           []Choice
 	Grid              *GridRequest
+	Display           *DisplayConfig
 	Recipe            Recipe
 }
 
-// Clone detaches the action's choice storage.
+// Clone detaches the action's mutable payload storage.
 func (a Action) Clone() Action {
+	if a.Display != nil {
+		a.Display = new(*a.Display)
+	}
 	a.Choices = slices.Clone(a.Choices)
 	a.Window.Tabs = slices.Clone(a.Window.Tabs)
 	a.Recipe.Arguments = slices.Clone(a.Recipe.Arguments)

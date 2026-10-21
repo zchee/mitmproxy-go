@@ -5,9 +5,11 @@ package console
 
 import (
 	"context"
+	"errors"
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/contentviews"
+	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
 	"github.com/zchee/mitmproxy-go/options"
 )
 
@@ -43,6 +45,35 @@ func (a *ConsoleAddon) Load(ctx context.Context, loader *addon.Loader) error {
 		if err := loader.AddOption(ctx, spec.name, spec.typ, spec.def, spec.help, spec.choices...); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// Configure projects option-owned display settings without re-entering Apply.
+func (a *ConsoleAddon) Configure(ctx context.Context, updated map[string]struct{}) error {
+	if a.bridge == nil {
+		return nil
+	}
+	_, layout := updated["console_layout"]
+	_, headers := updated["console_layout_headers"]
+	_, mouse := updated["console_mouse"]
+	if !layout && !headers && !mouse {
+		return nil
+	}
+	opts := a.bridge.cfg.Master.Options
+	for _, name := range []string{"console_layout", "console_layout_headers", "console_mouse"} {
+		if !opts.Has(name) {
+			return nil
+		}
+	}
+	// A subscriber error can stop later observers even though Busy keeps values.
+	a.bridge.Invalidate()
+	display := contract.DisplayConfig{Layout: opts.Str("console_layout"), Headers: opts.Bool("console_layout_headers"), Mouse: opts.Bool("console_mouse")}
+	if err := a.bridge.Control.requestLayout(ctx, display); err != nil {
+		if _, busy := errors.AsType[*BusyError](err); busy {
+			return err
+		}
+		return &options.OptionsError{Msg: err.Error(), Err: err}
 	}
 	return nil
 }

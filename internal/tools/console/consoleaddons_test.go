@@ -48,6 +48,9 @@ func TestConsoleOptions(t *testing.T) {
 				if diff := cmp.Diff(test.def, option.Default()); diff != "" {
 					t.Fatal("default mismatch (-want +got): " + diff)
 				}
+				if name == "console_layout" {
+					verifyDisplayAdmission(t)
+				}
 				choices := test.choices
 				if name == "console_default_contentview" {
 					choices = b.cfg.Registry.AvailableViews()

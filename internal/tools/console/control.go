@@ -45,17 +45,21 @@ func BeginInvocation(ctx context.Context) (context.Context, func() contract.Effe
 // Controller owns command-visible state. State and Apply require dispatch;
 // Retire and Mailbox may be used by the presentation goroutine without Do.
 type Controller struct {
-	state    contract.State
-	sequence uint64
-	mailbox  chan contract.Effect
-	credits  chan struct{}
-	mu       sync.Mutex
-	pending  map[uint64]struct{}
+	state          contract.State
+	sequence       uint64
+	mailbox        chan contract.Effect
+	credits        chan struct{}
+	creditReleased chan struct{}
+	mu             sync.Mutex
+	pending        map[uint64]struct{}
+	applyDepth     int
+	pendingLayout  *contract.DisplayConfig
+	layoutCredit   bool
 }
 
 // NewController constructs two base stacks and an empty shared admission pool.
 func NewController() *Controller {
-	return &Controller{state: contract.NewState(), mailbox: make(chan contract.Effect, EffectCapacity), credits: make(chan struct{}, EffectCapacity), pending: make(map[uint64]struct{})}
+	return &Controller{state: contract.NewState(), mailbox: make(chan contract.Effect, EffectCapacity), credits: make(chan struct{}, EffectCapacity), creditReleased: make(chan struct{}, 1), pending: make(map[uint64]struct{})}
 }
 
 // State returns a detached copy of the authoritative state under dispatch.
@@ -83,12 +87,39 @@ func (c *Controller) Apply(ctx context.Context, action contract.Action, mutate f
 		<-c.credits
 		return errors.New("console effect sequence exhausted")
 	}
+	if err := c.reserveLayout(); err != nil {
+		<-c.credits
+		return err
+	}
+	c.applyDepth++
+	defer func() { c.applyDepth-- }()
 	if mutate != nil {
 		if err := mutate(ctx); err != nil {
 			<-c.credits
+			if c.applyDepth == 1 && c.layoutCredit {
+				if layoutErr := c.flushLayout(ctx); layoutErr != nil {
+					return errors.Join(err, layoutErr)
+				}
+			}
 			return err
 		}
 	}
+	if c.pendingLayout != nil && !c.layoutCredit {
+		<-c.credits
+		return &BusyError{}
+	}
+	if c.sequence == ^uint64(0) {
+		<-c.credits
+		return errors.New("console effect sequence exhausted")
+	}
+	c.emit(ctx, action, next)
+	if c.applyDepth == 1 {
+		return c.flushLayout(ctx)
+	}
+	return nil
+}
+
+func (c *Controller) emit(ctx context.Context, action contract.Action, next contract.State) {
 	c.sequence++
 	c.state = next
 	effect := contract.Effect{Sequence: c.sequence, Action: action.Clone(), State: next.Clone()}
@@ -101,6 +132,71 @@ func (c *Controller) Apply(ctx context.Context, action contract.Action, mutate f
 		// Total outstanding credits bound the mailbox even with retained batches.
 		c.mailbox <- effect
 	}
+}
+
+func (c *Controller) clearLayout() {
+	if c.layoutCredit {
+		<-c.credits
+	}
+	c.layoutCredit, c.pendingLayout = false, nil
+}
+
+func (c *Controller) reserveLayout() error {
+	if c.pendingLayout == nil {
+		return nil
+	}
+	if *c.pendingLayout == (contract.DisplayConfig{Layout: c.state.Layout, Headers: c.state.Headers, Mouse: c.state.Mouse}) {
+		c.clearLayout()
+		return nil
+	}
+	if c.layoutCredit {
+		return nil
+	}
+	select {
+	case c.credits <- struct{}{}:
+		c.layoutCredit = true
+		return nil
+	default:
+		return &BusyError{}
+	}
+}
+
+// requestLayout records option-owned values without re-entering Apply from Configure.
+func (c *Controller) requestLayout(ctx context.Context, display contract.DisplayConfig) error {
+	if display == (contract.DisplayConfig{Layout: c.state.Layout, Headers: c.state.Headers, Mouse: c.state.Mouse}) {
+		c.clearLayout()
+		return nil
+	}
+	if _, err := reduce(c.state, contract.Action{Kind: "layout", Display: &display}); err != nil {
+		return err
+	}
+	c.pendingLayout = new(display)
+	if c.applyDepth > 0 {
+		if c.sequence >= ^uint64(0)-1 {
+			return errors.New("console effect sequence exhausted")
+		}
+		return c.reserveLayout()
+	}
+	return c.flushLayout(ctx)
+}
+
+func (c *Controller) flushLayout(ctx context.Context) error {
+	if err := c.reserveLayout(); err != nil || c.pendingLayout == nil {
+		return err
+	}
+	if c.sequence == ^uint64(0) {
+		<-c.credits
+		c.layoutCredit = false
+		return errors.New("console effect sequence exhausted")
+	}
+	action := contract.Action{Kind: "layout", Display: c.pendingLayout}.Clone()
+	next, err := reduce(c.state, action)
+	if err != nil {
+		c.clearLayout()
+		return err
+	}
+	c.pendingLayout, c.layoutCredit = nil, false
+	c.emit(ctx, action, next)
 	return nil
 }
 
@@ -113,6 +209,11 @@ func (c *Controller) Retire(sequence uint64) bool {
 	}
 	delete(c.pending, sequence)
 	<-c.credits
+	// Dispatch-owned layout work is retried by the frontend runner, never here.
+	select {
+	case c.creditReleased <- struct{}{}:
+	default:
+	}
 	return true
 }
 
@@ -144,11 +245,18 @@ func reduce(state contract.State, a contract.Action) (contract.State, error) {
 			next.Pane = 1 - next.Pane
 		}
 	case "layout":
-		if a.Value != "single" && a.Value != "vertical" && a.Value != "horizontal" {
+		layout := a.Value
+		if a.Display != nil {
+			layout = a.Display.Layout
+			next.Headers, next.Mouse = a.Display.Headers, a.Display.Mouse
+		}
+		if layout != "single" && layout != "vertical" && layout != "horizontal" {
 			return state, errors.New("invalid console layout")
 		}
-		next.Layout = a.Value
-		if a.Value == "single" {
+		// Geometry changes preserve each pane's independent navigation stack.
+		next.Layout = layout
+		next.Pane = min(max(next.Pane, 0), len(next.Panes)-1)
+		if layout == "single" {
 			next.Pane = 0
 		}
 	case "overlay":
@@ -247,10 +355,12 @@ func NewInstaller(c *Controller) *Installer {
 	return &Installer{controller: c, pending: make(map[uint64]contract.Effect), state: contract.NewState()}
 }
 
-// Install returns only the contiguous, newly installed effects in call order.
+// Install returns contiguous, newly installed accepted effects in call order.
+// An effect never issued by the controller advances the cursor without changing
+// presentation state. Accepted effects keep their credit until their gap closes.
 func (i *Installer) Install(batch contract.EffectsMsg) []contract.Effect {
 	for _, effect := range batch {
-		if effect.Sequence <= i.sequence || effect.Sequence-i.sequence > EffectCapacity {
+		if effect.Sequence <= i.sequence {
 			continue
 		}
 		if _, exists := i.pending[effect.Sequence]; !exists {
@@ -264,10 +374,10 @@ func (i *Installer) Install(batch contract.EffectsMsg) []contract.Effect {
 			break
 		}
 		delete(i.pending, effect.Sequence)
-		if !i.controller.Retire(effect.Sequence) {
-			break
-		}
 		i.sequence = effect.Sequence
+		if !i.controller.Retire(effect.Sequence) {
+			continue
+		}
 		i.state = effect.State.Clone()
 		installed = append(installed, effect)
 	}

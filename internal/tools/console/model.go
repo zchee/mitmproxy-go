@@ -456,7 +456,11 @@ func (m *Model) footer() []string {
 	footer := []string{StatusLine(m.snapshot, m.width)}
 	if m.state.Prompt != "" {
 		if w := m.promptWidget(); w != nil {
-			return append(footer, strings.Split(w.View(), "\n")...)
+			rows := strings.Split(w.View(), "\n")
+			if m.state.Prompt == "command" {
+				rows = []string{rows[0], strings.Repeat(" ", m.width)}
+			}
+			return append(footer, rows...)
 		}
 		if m.state.Prompt == "choice" || m.state.Prompt == "confirm" {
 			return append(footer, style.Fit(style.Escape(m.state.Text), m.width), strings.Repeat(" ", m.width))

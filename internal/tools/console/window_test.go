@@ -12,12 +12,15 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	teatest "github.com/charmbracelet/x/exp/teatest/v2"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/addons/core"
+	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
+	"github.com/zchee/mitmproxy-go/internal/tools/console/commander"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/keymap"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/style"
@@ -78,14 +81,54 @@ func TestConsoleWindow(t *testing.T) {
 						if i == state.Pane {
 							tag = "heading"
 						}
-						title := state.Panes[i].Stack[0].Name
+						title := []string{"Flows", "Events"}[i]
 						if !strings.Contains(frame, m.palette.Style(tag).Render(style.Fit(title, rect.Width))) {
 							t.Fatalf("%s pane %d missing %s header styling: %q", name, i, tag, strings.Split(frame, "\n")[rect.Y-1])
 						}
 					}
+					if name == "single" {
+						b, _ := testBridge(t)
+						mustConsole(t, b.cfg.Master.Addons.Add(t.Context(), &ConsoleAddon{bridge: b}))
+						f := testflow.TFlow()
+						mustConsole(t, b.Do(t.Context(), func(ctx context.Context) error { b.cfg.View.Add(ctx, []flow.Flow{f}); return nil }))
+						views := map[string]struct{ title string }{
+							"flow": {"Flow Details"}, "eventlog": {"Events"}, "options": {"Options"},
+							"help": {"Help"}, "commands": {"Command Reference"}, "keybindings": {"Key Bindings"},
+						}
+						for view, tt := range views {
+							var args []any
+							if view == "flow" {
+								args = []any{f}
+							}
+							_, err := b.Call(t.Context(), "console.view."+view, args...)
+							mustConsole(t, err)
+							current := b.Control.State()
+							if got, _, _ := strings.Cut(Compose(current, nil, 80, 24, nil), "\n"); got != style.Fit(tt.title, 80) {
+								t.Fatalf("%s display title (-want +got): %s", view, cmp.Diff(style.Fit(tt.title, 80), got))
+							}
+						}
+						editors := map[string]struct{ title string }{
+							"query": {"Edit Query"}, "request-headers": {"Edit Request Headers"}, "response-headers": {"Edit Response Headers"},
+							"multipart form": {"Edit Multipart Form"}, "urlencoded form": {"Edit UrlEncoded Form"}, "path": {"Edit Path Components"},
+							"comment": {"Edit Comment"}, "cookies": {"Edit Cookies"}, "set-cookies": {"Edit SetCookie Header"},
+						}
+						for part, tt := range editors {
+							_, err := b.Call(t.Context(), "console.edit.focus", part)
+							mustConsole(t, err)
+							window, _ := b.Control.State().Current("grideditor", false)
+							if diff := cmp.Diff(tt.title, window.Title); diff != "" {
+								t.Fatalf("%s editor title (-want +got): %s", part, diff)
+							}
+						}
+						mustConsole(t, b.OpenGrid(t.Context(), contract.GridRequest{Title: "column label", Option: "option"}))
+						window, _ := b.Control.State().Current("grideditor", false)
+						if window.Title != "" {
+							t.Fatal("sequence column label became a pane title")
+						}
+					}
 				case "overlay_stack":
 					var err error
-					state, err = reduce(state, contract.Action{Kind: "push", Window: contract.Window{Name: "options", Context: "options"}})
+					state, err = reduce(state, contract.Action{Kind: "push", Window: contract.Window{Name: "options", Title: "Options", Context: "options"}})
 					mustConsole(t, err)
 					state, err = reduce(state, contract.Action{Kind: "overlay", Window: contract.Window{Name: "chooser", Context: "chooser"}})
 					mustConsole(t, err)
@@ -94,6 +137,15 @@ func TestConsoleWindow(t *testing.T) {
 					}
 					if _, ok := state.Current("options", false); !ok {
 						t.Fatal("overlay hid current window")
+					}
+					frame := Compose(state, nil, 80, 24, nil)
+					if !strings.HasPrefix(frame, style.Fit("Options", 80)+"\n") {
+						t.Fatal("overlay changed the underlying pane title")
+					}
+					state.Panes[0].Stack[1].Title = "Editor\x1b]52;c;payload\a"
+					frame = Compose(state, nil, 80, 24, nil)
+					if strings.ContainsAny(frame, "\x1b\a") || !strings.HasPrefix(frame, style.Fit(style.Escape("Editor\x1b]52;c;payload\a"), 80)) {
+						t.Fatal("pane title leaked terminal controls")
 					}
 					state, err = reduce(state, contract.Action{Kind: "pop"})
 					mustConsole(t, err)
@@ -184,7 +236,8 @@ func TestConsoleQuickHelp(t *testing.T) {
 					if tt.overlay {
 						state.Panes[0].Overlay = &contract.Window{Name: "choice", Context: "chooser"}
 					}
-					snapshot := contract.Snapshot{Bindings: keymap.NewDefault(nil).Snapshot()}
+					keys := keymap.NewDefault(nil)
+					snapshot := contract.Snapshot{Bindings: keys.Snapshot(), HelpBindings: keys.HelpSnapshot()}
 					if tt.focused {
 						f := testflow.TFlow()
 						f.Backup()
@@ -197,7 +250,7 @@ func TestConsoleQuickHelp(t *testing.T) {
 					if !strings.Contains(rows[0]+rows[1], tt.want) {
 						t.Fatalf("missing %q: %q", tt.want, rows)
 					}
-					if tt.nested && !strings.Contains(rows[1], "Back") {
+					if tt.nested && !strings.Contains(rows[1], "q Back") {
 						t.Fatal("nested help lost Back")
 					}
 				})
@@ -205,7 +258,39 @@ func TestConsoleQuickHelp(t *testing.T) {
 		})
 		t.Run("test_make_rows", func(t *testing.T) {
 			items := []helpItem{{short: "bound", help: "Select"}, {short: "unbound", help: "missing"}, {short: "basic", key: "↓"}}
-			row := helpRow("test", items, keymap.NewDefault(nil).Snapshot(), 9, 80)
+			keys := keymap.NewDefault(nil)
+			b, _ := testBridge(t)
+			snapshot, err := b.capture(b.generation.Load())
+			mustConsole(t, err)
+			copy := snapshot.Clone()
+			copy.HelpBindings[0].Contexts[0] = "changed"
+			if snapshot.HelpBindings[0].Contexts[0] == "changed" {
+				t.Fatal("help bindings share mutable contexts across snapshots")
+			}
+			rows := QuickHelp(contract.NewState(), snapshot, 80)
+			// Pinned quickhelp.py fixed columns and the sealed upstream 80-column frame.
+			want := "Proxy:   ? Help        q Quit        E Events      O Options     i Intercept    "
+			if diff := cmp.Diff(want, rows[1]); diff != "" {
+				t.Fatal("upstream proxy help (-want +got): " + diff)
+			}
+			widths := map[string]struct {
+				width int
+				want  string
+			}{
+				"empty": {0, ""}, "label clipped": {3, "tes"}, "no item fits": {22, "test" + strings.Repeat(" ", 18)},
+				"one item fits": {23, "test     ⏎ bound       "}, "second item omitted": {36, "test     ⏎ bound" + strings.Repeat(" ", 20)},
+				"two items fit": {37, "test     ⏎ bound       ↓ basic       "},
+			}
+			for name, tt := range widths {
+				if diff := cmp.Diff(tt.want, helpRow("test", items, keys.HelpSnapshot(), 9, tt.width)); diff != "" {
+					t.Fatalf("%s whole-column clipping (-want +got): %s", name, diff)
+				}
+			}
+			long := helpRow("test", []helpItem{{short: "abcdefghijklmnop", key: "x"}}, nil, 9, 23)
+			if diff := cmp.Diff("test     x abcdefghijkl", long); diff != "" {
+				t.Fatal("cell must clip without ellipsis (-want +got): " + diff)
+			}
+			row := helpRow("test", items, keys.HelpSnapshot(), 9, 80)
 			if !strings.Contains(row, "⏎ bound") || !strings.Contains(row, "↓ basic") || strings.Contains(row, "unbound") {
 				t.Fatalf("wrong help resolution: %q", row)
 			}
@@ -272,6 +357,12 @@ func TestConsoleStatusBar(t *testing.T) {
 							t.Fatalf("status missing %q: %q", want, line)
 						}
 					}
+					m.snapshot.Total, m.snapshot.FocusIndex = 10000, 0
+					m.snapshot.Status = contract.Status{Indicators: "[Headers]"}
+					want := "⇩  [1/10000][Headers]" + strings.Repeat(" ", 59)
+					if diff := cmp.Diff(want, m.footer()[0]); diff != "" {
+						t.Fatal("large flow count must be padded, not truncated (-want +got): " + diff)
+					}
 				case "test_shorten_message_narrow":
 					if ShortenMessage("error", 4) != "…(more in eventlog)" {
 						t.Fatal("narrow shortening lost prompt")
@@ -319,6 +410,23 @@ func TestConsoleStatusBar(t *testing.T) {
 						m.state.Prompt = prompt
 						if len(m.footer()) != 3 {
 							t.Fatalf("suppressed %s prompt", prompt)
+						}
+					}
+					m.factories = map[string]WidgetFactory{"commander": func(host contract.Host) contract.Widget { return commander.New(t.Context(), host) }}
+					for _, width := range []int{80, 200} {
+						m.width = width
+						m.state.Prompt, m.state.Text = "command", "console.view.flow "
+						m.refreshWidgets()
+						footer := m.footer()
+						if len(footer) != 3 || footer[2] != strings.Repeat(" ", width) {
+							t.Fatalf("command footer at width %d: %q", width, footer)
+						}
+						frame := strings.Split(ansi.Strip(m.View().Content), "\n")
+						if diff := cmp.Diff(footer[0], frame[21]); diff != "" {
+							t.Fatal("command moved status row (-want +got): " + diff)
+						}
+						if !strings.HasPrefix(frame[22], ":") || strings.TrimSpace(frame[23]) != "" {
+							t.Fatalf("command and empty rows not in final two positions: %q", frame[22:])
 						}
 					}
 					m.state.Prompt = ""

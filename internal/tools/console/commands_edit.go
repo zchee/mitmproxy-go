@@ -191,8 +191,13 @@ func (a *ConsoleAddon) editFocus(ctx context.Context, part string) error {
 	if session.Mode != "" || strings.HasSuffix(part, "-body") || strings.HasSuffix(part, "-message") || part == "url" {
 		return a.bridge.Dispatch(ctx, contract.Action{Kind: "external", Value: "edit", Text: part, Target: &session.Target})
 	}
-	request := &contract.GridRequest{Flow: session.Flow, Target: session.Target, Mode: session.Mode, Detail: session.Options}
-	return a.bridge.Dispatch(ctx, contract.Action{Kind: "push", Window: contract.Window{Name: "edit_" + session.Target.Part, Context: "grideditor", FlowID: session.Target.FlowID, Editor: session.Target.Part}, Text: part, Target: &session.Target, Grid: request})
+	title := map[string]string{
+		"query": "Edit Query", "request-headers": "Edit Request Headers", "response-headers": "Edit Response Headers",
+		"multipart form": "Edit Multipart Form", "urlencoded form": "Edit UrlEncoded Form", "path": "Edit Path Components",
+		"comment": "Edit Comment", "cookies": "Edit Cookies", "set-cookies": "Edit SetCookie Header",
+	}[part]
+	request := &contract.GridRequest{Title: title, Flow: session.Flow, Target: session.Target, Mode: session.Mode, Detail: session.Options}
+	return a.bridge.Dispatch(ctx, contract.Action{Kind: "push", Window: contract.Window{Name: "edit_" + session.Target.Part, Title: title, Context: "grideditor", FlowID: session.Target.FlowID, Editor: session.Target.Part}, Text: part, Target: &session.Target, Grid: request})
 }
 
 func messageContent(f flow.Flow, part string, index int) ([]byte, contentviews.Metadata, error) {

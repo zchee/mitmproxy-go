@@ -36,14 +36,15 @@ const FrameInterval = 16 * time.Millisecond
 // BridgeConfig supplies dispatch-owned stores and a list-owned projector.
 // Ticks permits deterministic admission tests; nil uses a real frame ticker.
 type BridgeConfig struct {
-	Master    *master.Master
-	View      *view.View
-	Events    *eventstore.EventStore
-	Registry  *contentviews.Registry
-	Project   contract.Projector
-	Bindings  func() []contract.Binding
-	Listeners func() []string
-	Ticks     <-chan time.Time
+	Master       *master.Master
+	View         *view.View
+	Events       *eventstore.EventStore
+	Registry     *contentviews.Registry
+	Project      contract.Projector
+	Bindings     func() []contract.Binding
+	HelpBindings func() []contract.Binding
+	Listeners    func() []string
+	Ticks        <-chan time.Time
 }
 
 // Bridge owns one snapshot worker and the nonblocking dirty generation.
@@ -89,6 +90,12 @@ func NewBridge(ctx context.Context, cfg BridgeConfig) (*Bridge, error) {
 	b.Keys = keymap.NewDefault(b.Invalidate)
 	if b.cfg.Bindings == nil {
 		b.cfg.Bindings = b.Keys.Snapshot
+		if b.cfg.HelpBindings == nil {
+			b.cfg.HelpBindings = b.Keys.HelpSnapshot
+		}
+	}
+	if b.cfg.HelpBindings == nil {
+		b.cfg.HelpBindings = b.cfg.Bindings
 	}
 	b.stopParent = context.AfterFunc(ctx, cancel)
 	if err := cfg.Master.Do(ctx, func(context.Context) error {
@@ -527,6 +534,7 @@ func (b *Bridge) CommitEdit(ctx context.Context, edit contract.Edit) error {
 
 // OpenGrid requests the sequence-grid service through the ordered effect stream.
 func (b *Bridge) OpenGrid(ctx context.Context, request contract.GridRequest) error {
+	// The sequence editor has no pane title; request.Title labels its column.
 	return b.Dispatch(ctx, contract.Action{Kind: "push", Window: contract.Window{Name: "sequence", Context: "grideditor", Option: request.Option}, Grid: &request})
 }
 
@@ -609,6 +617,7 @@ func (b *Bridge) capture(generation uint64) (contract.Snapshot, error) {
 		if b.cfg.Bindings != nil {
 			snapshot.Bindings = b.cfg.Bindings()
 		}
+		snapshot.HelpBindings = b.cfg.HelpBindings()
 		return nil
 	})
 	return snapshot, err

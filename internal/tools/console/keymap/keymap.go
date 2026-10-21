@@ -170,6 +170,15 @@ func (k *Keymap) Snapshot() []contract.Binding {
 	return result
 }
 
+// HelpSnapshot returns owned metadata in registration order for help resolution.
+func (k *Keymap) HelpSnapshot() []contract.Binding {
+	result := make([]contract.Binding, len(k.bindings))
+	for i, b := range k.bindings {
+		result[i] = contract.Binding{Key: b.Key, Command: b.Command, Help: b.Help, Contexts: slices.Clone(b.Contexts)}
+	}
+	return result
+}
+
 // Install applies a completely validated configuration atomically under dispatch.
 func (k *Keymap) Install(bindings []Binding) error {
 	for _, b := range bindings {

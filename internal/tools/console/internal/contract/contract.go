@@ -84,6 +84,7 @@ type Edit struct {
 // Snapshot is captured under dispatch. Its recipient owns all slices and the
 // focused flow copy, including its identity. Widgets must not mutate another
 // widget's snapshot; Clone creates an independent copy when sharing is needed.
+// Bindings is sorted for reference views; HelpBindings retains registration order.
 type Snapshot struct {
 	Generation                                uint64
 	Viewport                                  Viewport
@@ -98,6 +99,7 @@ type Snapshot struct {
 	Status                                    Status
 	Detail                                    DetailOptions
 	Bindings                                  []Binding
+	HelpBindings                              []Binding
 	Commands                                  []Command
 	ViewSettings                              map[string]string
 	RegistryGeneration                        uint64
@@ -113,6 +115,10 @@ func (s Snapshot) Clone() Snapshot {
 	s.Events = slices.Clone(s.Events)
 	s.Control = s.Control.Clone()
 	s.Status.Listeners = slices.Clone(s.Status.Listeners)
+	s.HelpBindings = slices.Clone(s.HelpBindings)
+	for i := range s.HelpBindings {
+		s.HelpBindings[i].Contexts = slices.Clone(s.HelpBindings[i].Contexts)
+	}
 	s.Bindings = slices.Clone(s.Bindings)
 	for i := range s.Bindings {
 		s.Bindings[i].Contexts = slices.Clone(s.Bindings[i].Contexts)
@@ -168,9 +174,9 @@ type TabState struct {
 
 // Window identifies a pane's current view and command-visible selection.
 type Window struct {
-	Name, Context, FlowID, Tab, Mode, Option, Binding, Editor string
-	Index, Column                                             int
-	Tabs                                                      []TabState
+	Name, Title, Context, FlowID, Tab, Mode, Option, Binding, Editor string
+	Index, Column                                                    int
+	Tabs                                                             []TabState
 }
 
 // Pane owns one navigation stack and its optional overlay.
@@ -195,7 +201,7 @@ type State struct {
 
 // NewState returns the two upstream base views.
 func NewState() State {
-	return State{Panes: [2]Pane{{Stack: []Window{{Name: "flowlist", Context: "flowlist"}}}, {Stack: []Window{{Name: "eventlog", Context: "eventlog"}}}}, Layout: "single", Headers: true, Mouse: true}
+	return State{Panes: [2]Pane{{Stack: []Window{{Name: "flowlist", Title: "Flows", Context: "flowlist"}}}, {Stack: []Window{{Name: "eventlog", Title: "Events", Context: "eventlog"}}}}, Layout: "single", Headers: true, Mouse: true}
 }
 
 // Clone returns a value with no shared mutable storage.

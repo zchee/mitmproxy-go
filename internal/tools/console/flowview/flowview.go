@@ -7,6 +7,7 @@ package flowview
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -29,7 +30,7 @@ type Model struct {
 	snapshot           contract.Snapshot
 	palette            style.Palette
 	width, height, tab int
-	lines              []string
+	header, lines      []string
 	search             []Search
 	searching          bool
 	input, status      string
@@ -139,7 +140,7 @@ func (m *Model) mode() string {
 }
 
 func (m *Model) render() {
-	m.lines, m.errs = nil, nil
+	m.header, m.lines, m.errs = nil, nil, nil
 	defer func() {
 		// A newline-free body can exceed the formatter's logical-line cutoff.
 		for i, line := range m.lines {
@@ -153,6 +154,17 @@ func (m *Model) render() {
 	tabs := Tabs(f)
 	if len(tabs) == 0 {
 		return
+	}
+	showHost := false
+	for _, option := range m.snapshot.Options {
+		if option.Name() == "showhost" {
+			showHost, _ = option.Current().(bool)
+			break
+		}
+	}
+	row := style.FormatFlow(f, "detailview", showHost, m.width, false)
+	for line := range strings.SplitSeq(row.Text, "\n") {
+		m.header = append(m.header, m.palette.Style("text").Render(style.Fit(line, m.width)))
 	}
 	if tabs[m.tab] == "Detail" {
 		m.lines = Detail(f, m.palette)
@@ -342,7 +354,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 	}
 	if mouse, ok := msg.(tea.MouseClickMsg); ok {
-		if mouse.Button != tea.MouseLeft || mouse.Y != 0 || mouse.X < 0 || mouse.X >= m.width {
+		if mouse.Button != tea.MouseLeft || mouse.Y != len(m.header) || mouse.Y >= m.height || mouse.X < 0 || mouse.X >= m.width {
 			return nil, false
 		}
 		width := max(1, (m.width-len(tabs)+1)/len(tabs))
@@ -404,10 +416,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
 		search.Focus = max(0, search.Focus-1)
 		return nil, true
 	case "pageup":
-		search.Focus = max(0, search.Focus-max(1, m.height-1))
+		search.Focus = max(0, search.Focus-max(1, m.height-len(m.header)-1))
 		return nil, true
 	case "pagedown":
-		search.Focus = min(max(0, len(m.lines)-1), search.Focus+max(1, m.height-1))
+		search.Focus = min(max(0, len(m.lines)-1), search.Focus+max(1, m.height-len(m.header)-1))
 		return nil, true
 	case "g", "home":
 		search.Focus = 0
@@ -463,7 +475,8 @@ func (m *Model) View() string {
 		}
 		headers[i] = m.palette.Style(tag).Render(style.Fit(style.Escape(tab), width))
 	}
-	output := []string{strings.Join(headers, " ")}
+	output := slices.Clone(m.header)
+	output = append(output, strings.Join(headers, " "))
 	start := m.search[m.tab].Focus
 	for i := start; i < len(m.lines) && len(output) < m.height; i++ {
 		line := m.lines[i]
@@ -481,5 +494,5 @@ func (m *Model) View() string {
 	} else if m.status != "" {
 		output = append(output, style.Escape(m.status))
 	}
-	return strings.Join(output, "\n")
+	return strings.Join(output[:min(len(output), m.height)], "\n")
 }

@@ -35,6 +35,18 @@ type Model struct {
 	searching          bool
 	input, status      string
 	errs               []error
+	rendered           bool
+	renderKey          bodyRenderKey
+	wrapped            map[int][]string
+}
+
+type bodyRenderKey struct {
+	flow                           flow.Flow
+	generation, registryGeneration uint64
+	width, height, tab             int
+	mode, palette                  string
+	detail                         contract.DetailOptions
+	transparent, showHost          bool
 }
 
 var _ contract.Widget = (*Model)(nil)
@@ -52,6 +64,9 @@ func (m *Model) SetSnapshot(s contract.Snapshot) {
 		m.tab = 0
 		m.searching, m.input, m.status = false, "", ""
 	}
+	// A fresh snapshot may replace contentview registrations without changing
+	// the detached flow identity, so it always invalidates retained body lines.
+	m.rendered = false
 	m.snapshot = s
 	name, transparent := "solarized_dark", true
 	for _, option := range s.Options {
@@ -140,6 +155,22 @@ func (m *Model) mode() string {
 }
 
 func (m *Model) render() {
+	showHost := false
+	for _, option := range m.snapshot.Options {
+		if option.Name() == "showhost" {
+			showHost, _ = option.Current().(bool)
+			break
+		}
+	}
+	key := bodyRenderKey{
+		flow: m.snapshot.Focused, generation: m.snapshot.Generation, registryGeneration: m.snapshot.RegistryGeneration,
+		width: m.width, height: m.height, tab: m.tab, mode: m.mode(), detail: m.snapshot.Detail,
+		palette: m.palette.Name, transparent: m.palette.Transparent, showHost: showHost,
+	}
+	if m.rendered && m.renderKey == key {
+		return
+	}
+	m.renderKey, m.rendered, m.wrapped = key, true, nil
 	m.header, m.lines, m.errs = nil, nil, nil
 	defer func() {
 		// A newline-free body can exceed the formatter's logical-line cutoff.
@@ -154,13 +185,6 @@ func (m *Model) render() {
 	tabs := Tabs(f)
 	if len(tabs) == 0 {
 		return
-	}
-	showHost := false
-	for _, option := range m.snapshot.Options {
-		if option.Name() == "showhost" {
-			showHost, _ = option.Current().(bool)
-			break
-		}
 	}
 	row := style.FormatFlow(f, "detailview", showHost, m.width, false)
 	for line := range strings.SplitSeq(row.Text, "\n") {
@@ -526,12 +550,19 @@ func (m *Model) View() string {
 	output = append(output, strings.Join(headers, " "))
 	start := m.search[m.tab].Focus
 	for i := start; i < len(m.lines) && len(output) < m.height; i++ {
-		line := m.lines[i]
-		if m.search[m.tab].Matched && i == start {
-			line = m.palette.Render("focusfield", ansi.Strip(line))
+		parts, ok := m.wrapped[i]
+		if !ok {
+			parts = strings.Split(ansi.Hardwrap(m.lines[i], m.width, true), "\n")
+			if m.wrapped == nil {
+				m.wrapped = make(map[int][]string)
+			}
+			m.wrapped[i] = parts
 		}
-		for part := range strings.SplitSeq(ansi.Hardwrap(line, m.width, true), "\n") {
+		for _, part := range parts {
 			if len(output) < m.height {
+				if m.search[m.tab].Matched && i == start {
+					part = m.palette.Render("focusfield", ansi.Strip(part))
+				}
 				output = append(output, part)
 			}
 		}

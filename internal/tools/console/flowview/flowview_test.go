@@ -448,12 +448,16 @@ func TestConsoleFlowView(t *testing.T) {
 type customView struct {
 	text     string
 	metadata *contentviews.Metadata
+	renders  *int
 }
 
 func (v customView) Name() string                                         { return "Custom" }
 func (v customView) SyntaxHighlight() string                              { return "yaml" }
 func (v customView) RenderPriority([]byte, contentviews.Metadata) float64 { return 99 }
 func (v customView) Prettify(_ []byte, m contentviews.Metadata) (string, error) {
+	if v.renders != nil {
+		(*v.renders)++
+	}
 	if v.metadata != nil {
 		*v.metadata = m
 	}
@@ -565,6 +569,7 @@ func TestConsoleContentView(t *testing.T) {
 				}
 			}},
 			"fallback_cutoff": {func(t *testing.T) {
+				verifyBodyCache(t)
 				r := &contentviews.Registry{}
 				r.Register(customView{text: strings.Repeat("x", 300000)})
 				f := fixture(t)

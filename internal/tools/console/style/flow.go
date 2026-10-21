@@ -71,7 +71,7 @@ func FormatFlow(f flow.Flow, layout string, showHost bool, width int, focused bo
 				r.Duration = max(0, *f.Response.TimestampEnd-q.TimestampStart)
 			}
 		}
-		r.Text = formatHTTPRow(r, layout, width, focused)
+		r.Text = formatHTTPRow(r, layout, width, focused, nil)
 	case *flow.TCPFlow:
 		for _, message := range f.Messages {
 			if message != nil {
@@ -134,11 +134,16 @@ func flowText(text string) string {
 // flowColumn mirrors a fixed or weighted source column without retaining widgets.
 type flowColumn struct {
 	text   string
+	tag    string
 	weight float64
 	right  bool
 }
 
 func flowColumns(width, minimum int, columns []flowColumn) string {
+	return renderFlowColumns(width, minimum, columns, nil)
+}
+
+func renderFlowColumns(width, minimum int, columns []flowColumn, palette *Palette) string {
 	width = max(0, width)
 	used, weights := 0, 0.0
 	visible := len(columns)
@@ -171,15 +176,16 @@ func flowColumns(width, minimum int, columns []flowColumn) string {
 			remaining -= extra
 			weights -= c.weight
 		}
+		value := c.text
 		if c.right {
-			value := c.text
 			if Width(value) > n {
 				value = truncateRight(value, n)
 			}
-			text.WriteString(strings.Repeat(" ", max(0, n-Width(value))) + value)
+			text.WriteString(strings.Repeat(" ", max(0, n-Width(value))))
 		} else {
-			text.WriteString(Fit(c.text, n))
+			value = Fit(value, n)
 		}
+		writeFlowColumn(&text, value, c.tag, palette)
 	}
 	return Fit(text.String(), width)
 }
@@ -223,46 +229,78 @@ func rowDuration(duration float64) string {
 	return fmt.Sprintf("%5s", truncateRight(human.PrettyDuration(duration), 5))
 }
 
-func formatHTTPRow(r contract.Row, layout string, width int, focused bool) string {
-	content, _, _ := strings.Cut(r.ContentType, ";")
+func formatHTTPRow(r contract.Row, layout string, width int, focused bool, palette *Palette) string {
+	content, contentTag := flowContentType(r.ContentType)
+	methodTag, schemeTag, statusTag, durationTag, sizeTag := "", "", "", "", ""
+	if palette != nil {
+		methodTag, schemeTag = flowMethodTag(r.Method), flowSchemeTag(r.Scheme)
+		statusTag = flowStatusTag(r.StatusCode)
+		_, durationTag = FormatDuration(r.Duration)
+		sizeTag = flowSizeTag(r.Size)
+	}
+	if r.Intercepted {
+		if r.HasResponse {
+			statusTag, sizeTag, durationTag = "intercept", "intercept", "intercept"
+			if r.Size != 0 && content != "" {
+				contentTag = "intercept"
+			}
+		} else {
+			methodTag, schemeTag = "intercept", "intercept"
+		}
+	}
+	if r.PushPromise && layout == "table" {
+		methodTag = "method_http2_push"
+	}
 	if layout == "table" {
 		status, size := "", "     "
 		if r.HasResponse {
 			status = fmt.Sprint(r.StatusCode)
 			if r.ContentMissing {
-				content = "[content missing]"
+				content, contentTag = "[content missing]", "content_none"
 			} else if r.Size == 0 {
-				content = "[no content]"
+				content, contentTag = "[no content]", "content_none"
 			}
 		} else if r.Error != "" {
 			status, content = "err", r.Error
+			statusTag, contentTag = "error", "error"
+		} else {
+			statusTag = "text"
 		}
 		if r.Size != 0 {
 			size = fmt.Sprintf("%5s", truncateRight(human.PrettySize(r.Size), 5))
 		}
-		return flowColumns(width, 15, []flowColumn{{text: leftIndicator(r, layout, focused)}, {text: Fit(strings.ToUpper(r.Scheme), 5)}, {text: Fit(r.Method, 4)}, {text: r.Host, weight: .25, right: true}, {text: r.Path, weight: 1}, {text: Fit(status, 3)}, {text: content, weight: .15, right: true}, {text: size}, {text: rowDuration(r.Duration)}, {text: rightIndicator(r)}})
+		return renderFlowColumns(width, 15, []flowColumn{{text: flowLeftIndicator(r, layout, focused, palette)}, {text: Fit(strings.ToUpper(r.Scheme), 5), tag: schemeTag}, {text: Fit(r.Method, 4), tag: methodTag}, {text: r.Host, tag: "host", weight: .25, right: true}, {text: r.Path, tag: "path", weight: 1}, {text: Fit(status, 3), tag: statusTag}, {text: content, tag: contentTag, weight: .15, right: true}, {text: size, tag: sizeTag}, {text: rowDuration(r.Duration), tag: durationTag}, {text: flowRightIndicator(r, palette)}}, palette)
 	}
-	prefix := leftIndicator(r, "list", focused)
+	prefix := flowLeftIndicator(r, "list", focused, palette)
 	if layout == "detailview" {
-		prefix = human.FormatTimestamp(r.Timestamp, time.Local)
+		prefix = flowPaint(palette, "highlight", human.FormatTimestamp(r.Timestamp, time.Local))
 	}
-	preamble := prefix + " " + r.Method
+	preamble := prefix + " " + flowPaint(palette, flowMethodTag(r.Method), r.Method)
 	if r.PushPromise {
-		preamble += " PUSH_PROMISE"
+		preamble += " " + flowPaint(palette, "method_http2_push", "PUSH_PROMISE")
 	}
 	url := r.URL
 	if r.HTTPVersion != "HTTP/1.0" && r.HTTPVersion != "HTTP/1.1" {
 		url += " " + r.HTTPVersion
 	}
-	request := flowColumns(width, 1, []flowColumn{{text: preamble}, {text: url, weight: 1}, {text: rightIndicator(r)}})
+	urlTag := "title"
+	if r.Intercepted && !r.HasResponse {
+		urlTag = "intercept"
+	} else if r.HasResponse || r.Error != "" {
+		urlTag = "text"
+	}
+	request := renderFlowColumns(width, 1, []flowColumn{{text: preamble}, {text: url, tag: urlTag, weight: 1}, {text: flowRightIndicator(r, palette)}}, palette)
 	response := ""
 	if r.HasResponse {
-		response = fmt.Sprintf("← %d", r.StatusCode)
+		response = flowPaint(palette, statusTag, fmt.Sprintf("← %d", r.StatusCode))
 		if layout == "detailview" && r.Reason != "" {
-			response += " " + r.Reason
+			response += " " + flowPaint(palette, statusTag, r.Reason)
 		}
 		if content != "" {
-			response += " " + content
+			if r.Intercepted {
+				contentTag = "intercept"
+			}
+			response += " " + flowPaint(palette, contentTag, content)
 		}
 		size := human.PrettySize(r.Size)
 		if r.ContentMissing {
@@ -270,12 +308,15 @@ func formatHTTPRow(r contract.Row, layout string, width int, focused bool) strin
 		} else if r.Size == 0 {
 			size = "[no content]"
 		}
-		response += " " + size
+		if (r.ContentMissing || r.Size == 0) && !r.Intercepted {
+			sizeTag = "text"
+		}
+		response += " " + flowPaint(palette, sizeTag, size)
 		if r.Duration != 0 {
-			response += " " + human.PrettyDuration(r.Duration)
+			response += " " + flowPaint(palette, durationTag, human.PrettyDuration(r.Duration))
 		}
 	} else if r.Error != "" {
-		response = "← " + r.Error
+		response = flowPaint(palette, "error", "← "+r.Error)
 	}
 	return request + "\n" + Fit(strings.Repeat(" ", Width(preamble)+1)+response, width)
 }

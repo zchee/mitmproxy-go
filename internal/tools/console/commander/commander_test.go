@@ -21,7 +21,9 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/tools/console"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/commander"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
+	"github.com/zchee/mitmproxy-go/internal/tools/console/style"
 	"github.com/zchee/mitmproxy-go/master"
+	"github.com/zchee/mitmproxy-go/options"
 )
 
 type fixture struct {
@@ -272,6 +274,7 @@ func TestConsoleCommander(t *testing.T) {
 					}
 				},
 				"test_render": func(t *testing.T) {
+					testPromptPalettes(t)
 					f := newFixture(t, "foo")
 					run(t, f.model, key("end"))
 					if f.model.View() == "" {
@@ -333,6 +336,36 @@ func TestConsoleCommander(t *testing.T) {
 				}
 			},
 			"quoted_partial": func(t *testing.T) {
+				registryTests := map[string]struct {
+					text         string
+					cursor       int
+					choice, want string
+				}{
+					"interior":          {"pick 'be old' tail", 8, "beta value", "pick 'beta value' tail"},
+					"tab_before_token":  {"pick\t'be old' tail", 8, "beta value", "pick\t'beta value' tail"},
+					"tab_inside_prefix": {"pick 'be\told' tail", 9, "be        value", "pick 'be        value' tail"},
+				}
+				for name, tt := range registryTests {
+					f := newFixture(t, tt.text)
+					if err := f.master.Commands.Register("available", func(context.Context) []string { return []string{tt.choice} }); err != nil {
+						t.Fatal(err)
+					}
+					if err := f.master.Commands.Register("pick", func(_ context.Context, _, _ string) {}, command.WithParams("choice", "suffix"), command.WithArgument("choice", command.Choice("available"))); err != nil {
+						t.Fatal(err)
+					}
+					completion, err := f.bridge.Complete(t.Context(), string([]rune(tt.text)[:tt.cursor]), tt.text)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if completion.Start != 5 {
+						t.Fatalf("%s raw rune token start: got %d, want 5", name, completion.Start)
+					}
+					f.model.SetSnapshot(contract.Snapshot{Control: contract.State{Prompt: "command", Text: tt.text, Cursor: tt.cursor}})
+					run(t, f.model, key("tab"))
+					if diff := gocmp.Diff(tt.want, f.model.Text()); diff != "" {
+						t.Fatalf("%s real-registry quoted completion (-want +got):\n%s", name, diff)
+					}
+				}
 				tests := map[string]struct {
 					text          string
 					cursor, start int
@@ -412,6 +445,42 @@ func TestConsoleCommander(t *testing.T) {
 	})
 }
 
+func testPromptPalettes(t *testing.T) {
+	t.Helper()
+	tests := map[string]struct {
+		text, token, tag, hint string
+	}{
+		"command":  {"set", "set", "commander_command", "option *value "},
+		"invalid":  {"missing_cmd", "missing_cmd", "commander_invalid", ""},
+		"argument": {"set showhost", "showhost", "text", "*value "},
+	}
+	for _, name := range style.Names() {
+		for _, transparent := range []bool{false, true} {
+			for label, tt := range tests {
+				f := newFixture(t, tt.text)
+				if err := f.master.Options.Add(t.Context(), "console_palette", options.TypeStr, name, "palette"); err != nil {
+					t.Fatal(err)
+				}
+				if err := f.master.Options.Add(t.Context(), "console_palette_transparent", options.TypeBool, transparent, "transparent"); err != nil {
+					t.Fatal(err)
+				}
+				paletteOption, _ := f.master.Options.Lookup("console_palette")
+				transparentOption, _ := f.master.Options.Lookup("console_palette_transparent")
+				f.model.SetSnapshot(contract.Snapshot{Control: contract.State{Prompt: "command", Text: tt.text, Cursor: utf8.RuneCountInString(tt.text)}, Options: []options.Option{paletteOption, transparentOption}})
+				run(t, f.model, key("end"))
+				palette, err := style.NewPalette(name, transparent)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got := f.model.View()
+				if !strings.Contains(got, palette.Render(tt.tag, tt.token)) || tt.hint != "" && !strings.Contains(got, palette.Render("commander_hint", tt.hint)) {
+					t.Fatalf("%s %s transparent=%v semantic command style missing: %q", label, name, transparent, got)
+				}
+			}
+		}
+	}
+}
+
 func testCompletionOrdering(t *testing.T) {
 	t.Helper()
 	f := newFixture(t, "zz")
@@ -459,8 +528,8 @@ func testResultHandoff(t *testing.T) {
 		"bytes":       {handler: func(context.Context) []byte { return data }, want: contract.Result{Kind: "bytes", Bytes: []byte("bytes")}, mutate: func() { data[0] = 'X' }},
 		"lines":       {handler: func(context.Context) []string { return lines }, want: contract.Result{Kind: "lines", Lines: []string{"line"}}, mutate: func() { lines[0] = "changed" }},
 		"table":       {handler: func(context.Context) command.Data { return table }, want: contract.Result{Kind: "table", Table: [][]string{{"cell"}}}, mutate: func() { table[0][0] = "changed" }},
-		"flow":        {handler: func(context.Context) flow.Flow { return live }, want: contract.Result{Kind: "flow", Flows: []contract.Row{{ID: "original"}}}, mutate: func() { live.ID = "changed" }},
-		"flows":       {handler: func(context.Context) []flow.Flow { return []flow.Flow{live} }, want: contract.Result{Kind: "flows", Flows: []contract.Row{{ID: "original"}}}, mutate: func() { live.ID = "changed" }},
+		"flow":        {handler: func(context.Context) flow.Flow { return live }, want: contract.Result{Kind: "flow", Flows: []contract.Row{{ID: "original", Type: "http"}}}, mutate: func() { live.ID = "changed" }},
+		"flows":       {handler: func(context.Context) []flow.Flow { return []flow.Flow{live} }, want: contract.Result{Kind: "flows", Flows: []contract.Row{{ID: "original", Type: "http"}}}, mutate: func() { live.ID = "changed" }},
 		"empty_flows": {handler: func(context.Context) []flow.Flow { return nil }, want: contract.Result{Kind: "flows", Flows: []contract.Row{}}},
 	}
 	for name, tt := range tests {

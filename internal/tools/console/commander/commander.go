@@ -32,6 +32,8 @@ type Model struct {
 	err                        error
 	width, height              int
 	choice                     int
+	currentChoice              string
+	hasCurrentChoice           bool
 	palette                    style.Palette
 }
 
@@ -66,6 +68,15 @@ func (m *Model) SetSnapshot(snapshot contract.Snapshot) {
 		m.pending = nil
 		m.hints = contract.Completion{}
 		m.filterActive, m.filter, m.choice = false, "", 0
+		m.currentChoice, m.hasCurrentChoice = "", false
+		if s.Prompt == "choice" && s.Recipe.Command == "set" && len(s.Recipe.Arguments) > 0 && s.Text == s.Recipe.Arguments[0] {
+			for _, option := range snapshot.Options {
+				if option.Name() == s.Text {
+					m.currentChoice, m.hasCurrentChoice = option.Current().(string)
+					break
+				}
+			}
+		}
 		m.err = nil
 	}
 	m.state = s
@@ -349,11 +360,19 @@ func (m *Model) View() string {
 		}
 		lines := []string{style.Escape(title)}
 		for i, choice := range m.state.Choices {
-			prefix := "  "
+			prefix, tag := "  ", "text"
+			if m.hasCurrentChoice && choice.Value == m.currentChoice {
+				tag = "option_active"
+			}
 			if i == m.choice {
 				prefix = "> "
+				if tag == "option_active" {
+					tag = "option_active_selected"
+				} else {
+					tag = "option_selected"
+				}
 			}
-			lines = append(lines, style.Truncate(prefix+style.Escape(choice.Label), m.width))
+			lines = append(lines, style.Truncate(prefix+m.palette.Render(tag, choice.Label), m.width))
 		}
 		return strings.Join(lines[:min(len(lines), m.height)], "\n")
 	}

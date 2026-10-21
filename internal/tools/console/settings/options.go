@@ -31,6 +31,7 @@ type Options struct {
 	editName             string
 	pending              []tea.Msg
 	err                  error
+	palette              style.Palette
 }
 
 type optionResult struct {
@@ -42,7 +43,8 @@ var _ contract.Widget = (*Options)(nil)
 
 // NewOptions returns an options viewer whose live work uses the frontend lifetime.
 func NewOptions(ctx context.Context, host contract.Host) *Options {
-	return &Options{ctx: ctx, host: host, width: 80, height: 24}
+	palette, _ := style.NewPalette("solarized_dark", true)
+	return &Options{ctx: ctx, host: host, width: 80, height: 24, palette: palette}
 }
 
 // SetSnapshot installs detached option metadata and dispatch-authoritative focus.
@@ -60,6 +62,25 @@ func (o *Options) SetSnapshot(s contract.Snapshot) {
 		}
 	}
 	o.index = min(max(0, o.index), max(0, len(o.options)-1))
+	if o.editing && (o.editName != o.CurrentName() || o.help) {
+		o.editing = false
+		o.editName = ""
+		o.err = nil
+	}
+	name, transparent := "solarized_dark", true
+	for _, option := range o.options {
+		switch option.Name() {
+		case "console_palette":
+			name, _ = option.Current().(string)
+		case "console_palette_transparent":
+			transparent, _ = option.Current().(bool)
+		}
+	}
+	if palette, err := style.NewPalette(name, transparent); err == nil {
+		o.palette = palette
+	} else {
+		o.err = err
+	}
 }
 
 // Resize changes the option list's available dimensions.
@@ -273,12 +294,17 @@ func (o *Options) View() string {
 	lines := []string{style.Fit("Options", o.width)}
 	for i := start; i < min(len(o.options), start+rows); i++ {
 		option := o.options[i]
-		prefix := "  "
+		prefix, tag := "  ", "text"
 		if i == o.index {
-			prefix = "> "
+			prefix, tag = "> ", "option_selected"
 		}
 		if option.HasChanged() {
 			prefix = prefix[:1] + "*"
+			if i == o.index {
+				tag = "option_active_selected"
+			} else {
+				tag = "option_active"
+			}
 		}
 		value := displayValue(option.Current())
 		if option.Type() == options.TypeSeq {
@@ -287,7 +313,7 @@ func (o *Options) View() string {
 		if o.editing && option.Name() == o.editName {
 			value = o.editor.Text()
 		}
-		lines = append(lines, style.Fit(prefix+style.Fit(style.Escape(option.Name()), nameWidth)+"  "+style.Escape(value), o.width))
+		lines = append(lines, style.Fit(prefix+o.palette.Style("title").Render(style.Fit(style.Escape(option.Name()), nameWidth))+"  "+o.palette.Render(tag, value), o.width))
 	}
 	if o.err != nil {
 		lines = append(lines, style.Fit(style.Escape(o.err.Error()), o.width))

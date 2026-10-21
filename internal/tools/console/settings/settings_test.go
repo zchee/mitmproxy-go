@@ -23,6 +23,7 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/keymap"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/settings"
+	"github.com/zchee/mitmproxy-go/internal/tools/console/style"
 	"github.com/zchee/mitmproxy-go/master"
 	"github.com/zchee/mitmproxy-go/options"
 )
@@ -136,6 +137,7 @@ func TestConsoleOptionsEditor(t *testing.T) {
 	t.Run("options", func(t *testing.T) {
 		tests := map[string]func(*testing.T){
 			"bool": func(t *testing.T) {
+				testOptionPalettes(t)
 				f := newFixture(t)
 				o := f.options(t, "showhost")
 				update(t, o, key("enter"))
@@ -155,6 +157,24 @@ func TestConsoleOptionsEditor(t *testing.T) {
 				update(t, o, key("enter"))
 				if got := f.m.Options.Str("listen_host"); got != "127.0.0.7" {
 					t.Fatal(got)
+				}
+				update(t, o, key("enter"))
+				update(t, o, tea.PasteMsg{Content: "discarded"})
+				if err := f.bridge.Dispatch(t.Context(), contract.Action{Kind: "option", Value: "listen_port"}); err != nil {
+					t.Fatal(err)
+				}
+				o.SetSnapshot(f.snapshot(t))
+				if o.CurrentName() != "listen_port" {
+					t.Fatal("authoritative focus was not installed")
+				}
+				if _, consumed := o.Update(tea.PasteMsg{Content: "ignored"}); consumed {
+					t.Fatal("new option focus retained the old inline editor")
+				}
+				update(t, o, key("enter"))
+				update(t, o, tea.PasteMsg{Content: "1234"})
+				update(t, o, key("enter"))
+				if got := f.m.Options.OptInt("listen_port"); got == nil || *got != 1234 || f.m.Options.Str("listen_host") != "127.0.0.7" {
+					t.Fatalf("focus change committed stale inline edits: port=%v host=%q", got, f.m.Options.Str("listen_host"))
 				}
 			},
 			"optional": func(t *testing.T) {
@@ -176,6 +196,9 @@ func TestConsoleOptionsEditor(t *testing.T) {
 				if err := f.m.Options.Add(t.Context(), "choice_value", options.TypeStr, "a", "choice", options.WithChoices("a", "b")); err != nil {
 					t.Fatal(err)
 				}
+				if err := f.m.Options.Set(t.Context(), "choice_value=b"); err != nil {
+					t.Fatal(err)
+				}
 				o := f.options(t, "choice_value")
 				update(t, o, key("enter"))
 				s := f.snapshot(t)
@@ -183,8 +206,16 @@ func TestConsoleOptionsEditor(t *testing.T) {
 					t.Fatal("missing choices")
 				}
 				prompt := commander.New(t.Context(), f.bridge)
+				prompt.Resize(80, 24)
 				prompt.SetSnapshot(s)
+				palette, _ := style.NewPalette("solarized_dark", true)
+				if got := prompt.View(); !strings.Contains(got, "> "+palette.Render("option_selected", "a")) || !strings.Contains(got, "  "+palette.Render("option_active", "b")) {
+					t.Fatalf("choice focus and current option were conflated: %q", got)
+				}
 				update(t, prompt, key("down"))
+				if got := prompt.View(); !strings.Contains(got, "> "+palette.Render("option_active_selected", "b")) {
+					t.Fatalf("focused current option lost its active style: %q", got)
+				}
 				update(t, prompt, key("enter"))
 				if got := f.m.Options.Str("choice_value"); got != "b" {
 					t.Fatal(got)
@@ -293,6 +324,35 @@ func TestConsoleOptionsEditor(t *testing.T) {
 			t.Run(name, test)
 		}
 	})
+}
+
+func testOptionPalettes(t *testing.T) {
+	t.Helper()
+	for _, name := range style.Names() {
+		for _, transparent := range []bool{false, true} {
+			f := newFixture(t)
+			if err := f.m.Options.Add(t.Context(), "console_palette", options.TypeStr, name, "palette"); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.m.Options.Add(t.Context(), "console_palette_transparent", options.TypeBool, transparent, "transparent"); err != nil {
+				t.Fatal(err)
+			}
+			o := f.options(t, "showhost")
+			o.Resize(200, 50)
+			palette, err := style.NewPalette(name, transparent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := o.View(); !strings.Contains(got, palette.Render("option_selected", "false")) {
+				t.Fatalf("%s transparent=%v default option style missing: %q", name, transparent, got)
+			}
+			update(t, o, key("enter"))
+			o.SetSnapshot(f.snapshot(t))
+			if got := o.View(); !strings.Contains(got, palette.Render("option_active_selected", "true")) {
+				t.Fatalf("%s transparent=%v changed option style missing: %q", name, transparent, got)
+			}
+		}
+	}
 }
 
 func TestConsoleKeybindings(t *testing.T) {

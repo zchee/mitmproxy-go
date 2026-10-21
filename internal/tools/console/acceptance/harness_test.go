@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -98,7 +99,17 @@ type runningProbe struct{ ready chan struct{} }
 
 func (p *runningProbe) Running(context.Context) error { close(p.ready); return nil }
 
-var teatestConstructors atomic.Int64
+var (
+	teatestConstructors atomic.Int64
+	listenerWaitHeader  = regexp.MustCompile(`^goroutine [0-9]+ \[chan receive(?:, [0-9]+ minutes)?\]:$`)
+)
+
+func isSignalListener(block string) bool {
+	header, _, _ := strings.Cut(block, "\n")
+	return listenerWaitHeader.MatchString(header) &&
+		strings.Contains(block, "github.com/charmbracelet/x/exp/teatest/v2.NewTestModel.func2()") &&
+		strings.Contains(block, "teatest.go:168 ")
+}
 
 func signalListeners(t *testing.T) int64 {
 	t.Helper()
@@ -112,7 +123,7 @@ func signalListeners(t *testing.T) int64 {
 		if !strings.Contains(block, "github.com/charmbracelet/x/exp/teatest/v2.NewTestModel.func2()") {
 			continue
 		}
-		if !strings.Contains(block, "[chan receive]") || !strings.Contains(block, "teatest.go:168") {
+		if !isSignalListener(block) {
 			t.Fatalf("unexpected teatest listener function/wait site:\n%s", block)
 		}
 		count++

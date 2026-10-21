@@ -81,6 +81,27 @@ func TestConsoleGoldens(t *testing.T) {
 				sizes := map[string]struct{ width, height int }{"80x24": {80, 24}, "200x50": {200, 50}}
 				for size, dimensions := range sizes {
 					t.Run(size, func(t *testing.T) {
+						if state == "commander" && size == "80x24" {
+							tests := map[string]struct {
+								header string
+								want   bool
+							}{
+								"short wait":       {header: "goroutine 1 [chan receive]:", want: true},
+								"long wait":        {header: "goroutine 1 [chan receive, 1 minutes]:", want: true},
+								"longer wait":      {header: "goroutine 1 [chan receive, 12 minutes]:", want: true},
+								"different state":  {header: "goroutine 1 [chan send, 1 minutes]:"},
+								"unknown duration": {header: "goroutine 1 [chan receive, unknown]:"},
+							}
+							for name, test := range tests {
+								stack := test.header + "\ngithub.com/charmbracelet/x/exp/teatest/v2.NewTestModel.func2()\n\t/module/teatest.go:168 +0x0"
+								if got := isSignalListener(stack); got != test.want {
+									t.Errorf("listener header %s: got %v, want %v", name, got, test.want)
+								}
+								if isSignalListener(strings.Replace(stack, "teatest.go:168", "teatest.go:169", 1)) || isSignalListener(strings.Replace(stack, "NewTestModel.func2()", "NewTestModel.func1()", 1)) {
+									t.Errorf("listener header %s accepted a different function or source site", name)
+								}
+							}
+						}
 						view, transcript := captureFrame(t, state, dimensions.width, dimensions.height)
 						frame := frameCells(t, view, dimensions.width, dimensions.height)
 						styles := presentation(view)

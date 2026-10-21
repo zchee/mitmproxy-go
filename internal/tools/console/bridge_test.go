@@ -530,6 +530,38 @@ func TestConsoleSnapshots(t *testing.T) {
 					if !slices.Contains(completion.Choices, "view.order.options") {
 						t.Fatalf("registry completion missing: %+v", completion)
 					}
+					mustConsole(t, b.Do(t.Context(), func(context.Context) error {
+						if err := b.cfg.Master.Commands.Register("available", func(context.Context) []string {
+							return []string{"beta value", "be        value", "be  value"}
+						}); err != nil {
+							return err
+						}
+						for _, name := range []string{"pick", "選択"} {
+							if err := b.cfg.Master.Commands.Register(name, func(_ context.Context, _, _ string) {}, command.WithParams("choice", "suffix"), command.WithArgument("choice", command.Choice("available"))); err != nil {
+								return err
+							}
+						}
+						return nil
+					}))
+					tests := map[string]struct {
+						prefix, full string
+						start        int
+					}{
+						"tab-free control":        {"pick 'be", "pick 'be old' tail", 5},
+						"tab before token":        {"pick\t'be", "pick\t'be old' tail", 5},
+						"tab inside quoted token": {"pick 'be\t", "pick 'be\told' tail", 5},
+						"multibyte before token":  {"選択 'be\t", "選択 'be\told' tail", 3},
+					}
+					for name, test := range tests {
+						got, err := b.Complete(t.Context(), test.prefix, test.full)
+						mustConsole(t, err)
+						if got.Start != test.start {
+							t.Errorf("%s raw rune token start = %d, want %d (prefix %q)", name, got.Start, test.start, test.prefix)
+						}
+						if diff := cmp.Diff([]string{"be        value", "be  value", "beta value"}, got.Choices); diff != "" {
+							t.Error("raw choice mismatch (-want +got): " + diff)
+						}
+					}
 					result, err := b.Execute(t.Context(), "view.order.options")
 					mustConsole(t, err)
 					if len(result.Lines) == 0 {

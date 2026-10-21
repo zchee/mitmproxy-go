@@ -318,7 +318,30 @@ func (b *Bridge) Complete(ctx context.Context, text, full string) (contract.Comp
 		}
 		if len(parsed) > 0 && parsed[len(parsed)-1].Type != command.SpaceType {
 			last := parsed[len(parsed)-1]
-			typ, result.Prefix, result.Start = last.Type, command.Unquote(last.Value), utf8.RuneCountInString(text)-utf8.RuneCountInString(last.Value)
+			typ, result.Prefix = last.Type, command.Unquote(last.Value)
+			expandedStart := 0
+			for _, token := range parsed[:len(parsed)-1] {
+				expandedStart += utf8.RuneCountInString(token.Value)
+			}
+			// Lex expands tabs, while the editable buffer uses original rune indices.
+			column, expanded := 0, 0
+			for _, r := range text {
+				if expanded >= expandedStart {
+					break
+				}
+				width := 1
+				switch r {
+				case '\t':
+					width = 8 - column%8
+					column += width
+				case '\n', '\r':
+					column = 0
+				default:
+					column++
+				}
+				expanded += width
+				result.Start++
+			}
 		} else {
 			result.Start = utf8.RuneCountInString(text)
 			if len(remaining) > 0 {

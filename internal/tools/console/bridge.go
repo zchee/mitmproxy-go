@@ -99,7 +99,7 @@ func NewBridge(ctx context.Context, cfg BridgeConfig) (*Bridge, error) {
 	}
 	b.stopParent = context.AfterFunc(ctx, cancel)
 	if err := cfg.Master.Do(ctx, func(context.Context) error {
-		b.unsubscribe = append(b.unsubscribe, cfg.View.Observe(func(view.Event) { b.Invalidate() }), cfg.Events.Observe(func(eventstore.Event) { b.Invalidate() }))
+		b.unsubscribe = append(b.unsubscribe, cfg.View.Notify(b.Invalidate), cfg.Events.Observe(func(eventstore.Event) { b.Invalidate() }))
 		b.unsubscribe = append(b.unsubscribe, cfg.Master.Options.Subscribe(func(context.Context, map[string]struct{}) error { b.Invalidate(); return nil }))
 		return nil
 	}); err != nil {

@@ -6,6 +6,7 @@ package grideditor
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/user"
@@ -16,15 +17,28 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/strutil"
 )
 
+// maxFileBytes bounds grid cell input to prevent operator-selected files exhausting memory.
+const maxFileBytes = 1 << 20
+
+var errFileTooLarge = errors.New("grid input file too large")
+
 // ReadFile reads an operator-selected file, optionally decoding Python escapes.
 func ReadFile(path string, escaped bool) ([]byte, error) {
 	path, err := expandHome(path)
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path) //nolint:gosec // The operator explicitly selects this grid input file.
+	file, err := os.Open(path) //nolint:gosec // The operator explicitly selects this grid input file.
 	if err != nil {
 		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(io.LimitReader(file, maxFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxFileBytes {
+		return nil, fmt.Errorf("%w: limit is %d bytes (1 MiB)", errFileTooLarge, maxFileBytes)
 	}
 	if escaped {
 		return DecodeEscaped(string(data))

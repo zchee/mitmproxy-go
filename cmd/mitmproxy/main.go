@@ -62,8 +62,8 @@ func run(ctx context.Context, args []string, stdin io.ReadCloser, stdout, stderr
 		if _, err := m.NewProgram(); err != nil {
 			return err
 		}
-		stop := cmdline.Signals(m.Shutdown)
-		defer stop()
+		// The console owns interrupt confirmation and orderly termination.
+		cmdline.IgnoreBrokenPipe()
 		return m.Run(ctx)
 	}
 	if err := cmd.ExecuteContext(ctx); err != nil {

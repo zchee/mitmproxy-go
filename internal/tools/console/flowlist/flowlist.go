@@ -32,7 +32,7 @@ func formatRow(f flow.Flow, request contract.ProjectionRequest, focused bool) co
 func project(flows []flow.Flow, request contract.ProjectionRequest, format rowFormatter) contract.Projection {
 	result := contract.Projection{Total: len(flows), FocusIndex: -1, IDs: make([]string, len(flows))}
 	for index, f := range flows {
-		id := f.Common().ID
+		id := strings.Clone(f.Common().ID)
 		result.IDs[index] = id
 		if id == request.FocusID {
 			result.FocusIndex, result.FocusID = index, id

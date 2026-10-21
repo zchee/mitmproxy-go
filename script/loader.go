@@ -302,6 +302,11 @@ func (l *Loader) replace(ctx context.Context, e *scriptEntry, src source) {
 		return
 	}
 	if err = l.master.Addons.Register(ctx, mod.addon()); err != nil {
+		// Deferred option processing may fail after publishing the addon.
+		// Do not remove a different instance that already owned the name.
+		if l.master.Addons.Get(mod.Name()) == mod.addon() {
+			err = errors.Join(err, l.master.Addons.Remove(ctx, mod.addon()))
+		}
 		l.loadError(ctx, e, err)
 		return
 	}

@@ -26,7 +26,9 @@ func (f *scriptFixture) requestScript(body string) {
 	var code strings.Builder
 	code.WriteString("def request(f):\n")
 	for line := range strings.SplitSeq(body, "\n") {
-		code.WriteString("    " + line + "\n")
+		code.WriteString("    ")
+		code.WriteString(line)
+		code.WriteByte('\n')
 	}
 	f.load(f.file("binding.star", code.String()))
 }

@@ -309,6 +309,35 @@ func TestScriptLoader(t *testing.T) {
 					t.Fatal("failed load retained command")
 				}
 			}
+			deferred := newFixture(t)
+			if err := deferred.master.Do(t.Context(), func(ctx context.Context) error {
+				return deferred.master.Options.UpdateDeferred(ctx, map[string]any{"deferred_custom": "invalid-bool"})
+			}); err != nil {
+				t.Fatal(err)
+			}
+			deferredPath := deferred.file("deferred.star", "def command():\n    ctx.options.listen_host = \"recovered\"\ndef on_load(loader):\n    loader.add_option(\"deferred_custom\", \"bool\", False, \"Deferred value.\")\n    loader.add_command(\"owned.deferred\", command)\ndef done():\n    ctx.log(\"deferred-cleanup-done\")\n")
+			deferred.load(deferredPath)
+			if deferred.master.Addons.Get("script:"+deferredPath) != nil {
+				t.Fatal("deferred option failure retained the registered script")
+			}
+			for name := range deferred.master.Commands.Commands() {
+				if name == "owned.deferred" {
+					t.Fatal("deferred option failure retained an owned command")
+				}
+			}
+			deferred.wantLog("deferred-cleanup-done", 1)
+			deferred.wantLog("error in script", 1)
+			deferred.updateSource(deferredPath, "def command():\n    ctx.options.listen_host = \"recovered\"\ndef on_load(loader):\n    loader.add_option(\"deferred_custom\", \"str\", \"\", \"Deferred value.\")\n    loader.add_command(\"owned.deferred\", command)\n", time.Second)
+			deferred.poll()
+			if deferred.master.Addons.Get("script:"+deferredPath) == nil {
+				t.Fatalf("same-name reload failed after deferred cleanup: %s", deferred.logs.String())
+			}
+			if _, err := deferred.master.Call(t.Context(), "owned.deferred"); err != nil {
+				t.Fatal(err)
+			}
+			if deferred.master.Options.Str("listen_host") != "recovered" {
+				t.Fatal("reloaded owned command did not run")
+			}
 			if err := f.loader.Close(); err != nil {
 				t.Fatal(err)
 			}

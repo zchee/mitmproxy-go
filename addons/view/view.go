@@ -64,6 +64,8 @@ type View struct {
 	nextSubscriber uint64
 	observers      map[uint64]func(Event)
 	nextObserver   uint64
+	notifiers      map[uint64]func()
+	nextNotifier   uint64
 }
 
 // New constructs a View. A nil manager permits standalone store use; commands
@@ -129,9 +131,32 @@ func (v *View) Observe(fn func(Event)) func() {
 	}
 }
 
+// Notify registers a synchronous payload-free callback for the same event
+// sequence as Observe, without copying flows. Callbacks may only mark dirty or wake a
+// consumer nonblocking; they must not mutate the view, perform I/O or wait for
+// another dispatch. Registration, notification and the idempotent unsubscribe
+// require addon dispatch. Unsubscribe affects later emissions, not the captured
+// callback set of an in-flight emission. A nil callback is ignored. Notify starts
+// no goroutines. Use Observe when the consumer needs detached event payloads.
+func (v *View) Notify(fn func()) func() {
+	if fn == nil {
+		return func() {}
+	}
+	if v.notifiers == nil {
+		v.notifiers = make(map[uint64]func())
+	}
+	v.nextNotifier++
+	id := v.nextNotifier
+	v.notifiers[id] = fn
+	return func() {
+		delete(v.notifiers, id)
+	}
+}
+
 // Done releases synchronous observers without changing the bounded Subscribe API.
 func (v *View) Done(context.Context) error {
 	clear(v.observers)
+	clear(v.notifiers)
 	return nil
 }
 
@@ -187,6 +212,9 @@ func (v *View) emit(e Event) {
 			snapshot.Flow.Common().Live = e.Flow.Common().Live
 		}
 		observer(snapshot)
+	}
+	for _, notify := range maps.Clone(v.notifiers) {
+		notify()
 	}
 }
 

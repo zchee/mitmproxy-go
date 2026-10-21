@@ -88,11 +88,7 @@ func (a *ConsoleAddon) captureEdit(f flow.Flow, part string) (*external.EditSess
 	if f == nil {
 		return nil, errors.New("No flow selected.") //nolint:staticcheck // Preserve upstream's command error text.
 	}
-	session, err := external.Capture(f, part, a.detailOptions())
-	if err == nil {
-		session.Flow.Common().Live = f.Common().Live
-	}
-	return session, err
+	return external.Capture(f, part, a.detailOptions())
 }
 
 func (a *ConsoleAddon) detailOptions() contract.DetailOptions {

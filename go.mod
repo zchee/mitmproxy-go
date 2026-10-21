@@ -34,6 +34,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/zchee/gows v0.1.1-0.20261020041032-e4efa103c7d4
+	go.starlark.net v0.0.0-20261021141710-4f4267fb140d
 	go.uber.org/goleak v1.3.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.design/x/clipboard v0.11.0

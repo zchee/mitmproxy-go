@@ -142,6 +142,8 @@ github.com/zchee/gows v0.1.1-0.20261020041032-e4efa103c7d4 h1:lmpICPEY+wHG8r+d1M
 github.com/zchee/gows v0.1.1-0.20261020041032-e4efa103c7d4/go.mod h1:f/0jC7oW5N7QtdvGiP9RhUhirCiNSNLPioinw27r4J8=
 github.com/zchee/yaml-go-yaml/v4 v4.0.0-rc.6.0.20261016233001-98da9bfb2950 h1:xXgx1GAVSNTRu2cGIRq197sVb5XcPlq9nuQXgBQ455o=
 github.com/zchee/yaml-go-yaml/v4 v4.0.0-rc.6.0.20261016233001-98da9bfb2950/go.mod h1:aZqd9kCMsGL7AuUv/m/PvWLdg5sjJsZ4oHDEnfPPfY0=
+go.starlark.net v0.0.0-20261021141710-4f4267fb140d h1:wmJ4xTYwnBup3nwA+3OtmpaCwd90YXVyyCHZQoiD0+0=
+go.starlark.net v0.0.0-20261021141710-4f4267fb140d/go.mod h1:Iue6g6iirlfLoVi/DYCi5/x0h/bAOuWF3dULTKpt2Vo=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 go.uber.org/mock v0.5.2 h1:LbtPTcP8A5k9WPXj54PPPbjcI4Y6lhyOZXn+VS7wNko=

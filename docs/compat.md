@@ -475,6 +475,7 @@ does not reorder fragments or deduplicate retransmissions; pion handles retransm
 | External editor/viewer and grid work is invoked through the console (`master.py`, `grideditor/`). | File and child-process work runs outside dispatch. A fresh dispatch checks the captured stable flow ID, message part and field fingerprint before committing; a changed/removed target reports a conflict rather than overwriting newer data. | Do not hold proxy dispatch during operator input or overwrite concurrent hook changes. |
 | Editor/viewer commands come from the environment (`master.py`). | Configured argv is parsed and launched directly, without implicit shell expansion. Private temporary files and owned child processes are cleaned up; viewer results do not commit edits. Edited final components must be regular, nonsymlink files; explicit grid outputs use the existing owner-only private-file policy. | Retain operator-selected tools without turning captured content into shell syntax or redirecting private output. |
 | Widgets render message and status text (`common.py`, `statusbar.py`). | Untrusted controls are escaped before trusted styling is attached. Width/cursor operations respect grapheme boundaries. Highlighter refusal falls back to escaped, unstyled content rather than dropping it. | Keep captured traffic from controlling the terminal while preserving readable content. |
+| Protocol flow summaries carry per-token method, status, URL, content-type, focus, interception and error palette attributes (`common.py`). | Flow-list rows and the flow-view header currently render in the text colour. Headings, status, quick-help keys and commander tokens retain palette styles. | Per-token flow styling is a named follow-up; the six frozen frame expectations are regenerated under independent review when it lands, never automatically in CI. |
 | Request/response newline trimming is configurable (`consoleaddons.py`). | `console_strip_trailing_newlines` retains that behaviour; the source's separate URL and stream-message final-newline rules remain separate. | Do not turn an editing option into an unrelated byte rewrite. |
 | Startup requires interactive output and checks the console encoding (`master.py`). | Nonterminal stdout is refused. A non-UTF Unix locale warns and continues using UTF-8. Windows has compile-only evidence pending native terminal acceptance. | Preserve startup diagnostics and state the tested platform boundary explicitly. |
 | The Python main loop owns terminal shutdown (`master.py`). | With terminal ownership, the assembled master requests orderly program Quit and joins it before cancelling the bridge and its senders; a five-second last-resort Kill is exceptional, not normal cleanup. `Master.NewModel` and `Master.NewProgram` are mutually exclusive presentation selections; a NewModel harness owns its own program Quit/join. Standalone `NewProgram` defaults to the bridge context, whose cancellation uses Bubble Tea's kill path; callers should Quit and join before closing that lifetime. | Avoid racing the terminal input reader during ordinary shutdown and keep owned command/process joins outside dispatch. |
@@ -497,6 +498,16 @@ Teatest's pinned process-scoped SIGINT listener (`NewTestModel.func2`, blocked a
 explicit third-party allowance in frame-test goroutine checks, counted once per constructor. Product-owned
 senders, commands and child processes must still join. The Linux timed-storm helper exits as an owned PTY process;
 no process-wide SIGINT is used to clean up in-memory tests.
+
+The timed Linux acceptance uses an owned PTY process and an explicit child CPU profile of one. Its deciding Debian
+campaign retains one terminal inventory and five repetitions with all 10,000 distinct flow IDs presented in order,
+a complete visible counter, first/last/deep navigation and strict lifecycle joins. Measured flow production took
+1,843,930,097–1,861,754,579 ns inside measured update holds of 2,000,052,602–2,001,043,909 ns. These are Debian
+measurements, not a hosted-runner timing guarantee. The local cross-worker gate's original SHA256 is
+`864ef17f2961971d126405f9f8db6804a4d2ed0f7a45a27cd3f0235b116b85b4`; the Linux wrapper's is
+`2caca1f31c087abbc5fd9adb929e625a8f3a62f27dcdf2691eae87fa9db3e85e`, differing only in the lock path.
+Dedicated hosted runners do not need that local cross-worker mutex; their own first-pass timing and artifacts
+must pass independently before the carrier is relied on.
 
 ## internal/tools/web
 

@@ -5,6 +5,7 @@ package grideditor
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -180,17 +181,40 @@ func TestConsoleGridEditor(t *testing.T) {
 	t.Run("files", func(t *testing.T) {
 		tests := map[string]struct{ run func(*testing.T) }{
 			"read": {func(t *testing.T) {
-				path := filepath.Join(t.TempDir(), "bytes")
-				want := []byte{0, 0xff, '\n'}
-				if err := os.WriteFile(path, want, 0o600); err != nil {
-					t.Fatal(err)
+				underLimit := bytes.Repeat([]byte("a"), maxFileBytes-1)
+				atLimit := bytes.Repeat([]byte("b"), maxFileBytes)
+				tests := map[string]struct {
+					input   []byte
+					want    []byte
+					escaped bool
+					missing bool
+					wantErr error
+					message string
+				}{
+					"raw bytes":         {input: []byte{0, 0xff, '\n'}, want: []byte{0, 0xff, '\n'}},
+					"under cap":         {input: underLimit, want: underLimit},
+					"exactly at cap":    {input: atLimit, want: atLimit},
+					"over cap":          {input: bytes.Repeat([]byte("c"), maxFileBytes+1), wantErr: errFileTooLarge, message: "1048576 bytes (1 MiB)"},
+					"escaped under cap": {input: []byte(`\x00\xff\n`), want: []byte{0, 0xff, '\n'}, escaped: true},
+					"missing file":      {missing: true, wantErr: os.ErrNotExist},
 				}
-				got, err := ReadFile(path, false)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if diff := gocmp.Diff(want, got); diff != "" {
-					t.Fatal(diff)
+				for name, tt := range tests {
+					path := filepath.Join(t.TempDir(), "bytes")
+					if !tt.missing {
+						if err := os.WriteFile(path, tt.input, 0o600); err != nil {
+							t.Fatalf("%s: write file: %v", name, err)
+						}
+					}
+					got, err := ReadFile(path, tt.escaped)
+					if !errors.Is(err, tt.wantErr) {
+						t.Fatalf("%s: ReadFile error = %v, want %v", name, err, tt.wantErr)
+					}
+					if tt.message != "" && !strings.Contains(err.Error(), tt.message) {
+						t.Fatalf("%s: error %q does not name cap %q", name, err, tt.message)
+					}
+					if diff := gocmp.Diff(tt.want, got); diff != "" {
+						t.Fatalf("%s: ReadFile mismatch (-want +got):\n%s", name, diff)
+					}
 				}
 			}},
 			"escaped": {func(t *testing.T) {

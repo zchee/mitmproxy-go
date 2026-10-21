@@ -70,7 +70,7 @@ func Compose(state contract.State, panes []string, width, height int, footer []s
 			p := state.Panes[i]
 			title := ""
 			if len(p.Stack) > 0 {
-				title = p.Stack[len(p.Stack)-1].Name
+				title = p.Stack[len(p.Stack)-1].Title
 			}
 			lines = append([]string{style.Fit(style.Escape(title), r.Width)}, lines...)
 		}

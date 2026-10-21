@@ -74,15 +74,15 @@ func (a *ConsoleAddon) registerCommands(loader *addon.Loader) error {
 			return err
 		}
 	}
-	for _, spec := range []struct{ name, help string }{
-		{"keybindings", "View the commands list."},
-		{"commands", "View the commands list."},
-		{"options", "View the options editor."},
-		{"eventlog", "View the event log."},
-		{"help", "View help."},
+	for _, spec := range []struct{ name, title, help string }{
+		{"keybindings", "Key Bindings", "View the commands list."},
+		{"commands", "Command Reference", "View the commands list."},
+		{"options", "Options", "View the options editor."},
+		{"eventlog", "Events", "View the event log."},
+		{"help", "Help", "View help."},
 	} {
 		if err := loader.AddCommand("console.view."+spec.name, func(ctx context.Context) error {
-			window := contract.Window{Name: spec.name, Context: spec.name}
+			window := contract.Window{Name: spec.name, Title: spec.title, Context: spec.name}
 			if spec.name == "options" {
 				keys := a.bridge.cfg.Master.Options.Keys()
 				slices.Sort(keys)
@@ -176,7 +176,7 @@ func (a *ConsoleAddon) viewFlow(ctx context.Context, f flow.Flow) error {
 	if f == nil {
 		return errors.New("No flow selected.") //nolint:staticcheck // Preserve upstream's command error text.
 	}
-	return a.bridge.Dispatch(ctx, contract.Action{Kind: "push", Window: contract.Window{Name: "flowview", Context: "flowview", FlowID: f.Common().ID}})
+	return a.bridge.Dispatch(ctx, contract.Action{Kind: "push", Window: contract.Window{Name: "flowview", Title: "Flow Details", Context: "flowview", FlowID: f.Common().ID}})
 }
 
 func (a *ConsoleAddon) exit(ctx context.Context) error {

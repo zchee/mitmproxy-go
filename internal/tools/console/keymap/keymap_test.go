@@ -51,6 +51,26 @@ func TestConsoleKeymap(t *testing.T) {
 					if _, ok := k.Handle("options", "glob", true); ok {
 						t.Fatal("handle_only used global")
 					}
+					for _, key := range []string{"q", "esc"} {
+						mustKeymap(t, k.Add(Binding{Key: key, Command: "console.view.pop", Help: "Exit the current view", Contexts: []string{"global"}}))
+					}
+					help := k.HelpSnapshot()
+					if help[len(help)-2].Key != "q" || help[len(help)-1].Key != "esc" {
+						t.Fatalf("help snapshot lost registration order: %+v", help)
+					}
+					if k.Snapshot()[0].Key != "esc" || k.List("all")[0].Key != "esc" {
+						t.Fatal("keybindings display lost sorted order")
+					}
+					help[len(help)-2].Contexts[0] = "changed"
+					binding, ok := k.BindingForHelp("Exit the current view")
+					if !ok || binding.Key != "q" || binding.Contexts[0] != "global" {
+						t.Fatal("help snapshot aliased bindings or changed first-match resolution")
+					}
+					mustKeymap(t, k.Remove("q", []string{"global"}))
+					help = k.HelpSnapshot()
+					if help[len(help)-1].Key != "esc" {
+						t.Fatal("help snapshot retained a removed binding")
+					}
 				case "test_join":
 					mustKeymap(t, k.Add(Binding{Key: "key", Command: "str", Help: "help1", Contexts: []string{"options"}}))
 					mustKeymap(t, k.Add(Binding{Key: "key", Command: "str", Contexts: []string{"commands"}}))

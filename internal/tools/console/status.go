@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/keymap"
@@ -103,13 +105,22 @@ func QuickHelp(state contract.State, snapshot contract.Snapshot, width int) [2]s
 	}
 	bottom = append(bottom, helpItem{short: "Layout", help: "Cycle to next layout"}, helpItem{short: "Switch", help: "Focus next layout pane"}, helpItem{short: "Follow new", help: "Set focus follow"})
 	labelWidth := max(style.Width(label), 9)
-	return [2]string{helpRow(label, items, snapshot.Bindings, labelWidth, width), helpRow("Proxy:", bottom, snapshot.Bindings, labelWidth, width)}
+	bindings := snapshot.HelpBindings
+	if bindings == nil {
+		bindings = snapshot.Bindings
+	}
+	return [2]string{helpRow(label, items, bindings, labelWidth, width), helpRow("Proxy:", bottom, bindings, labelWidth, width)}
 }
 
 func helpRow(label string, items []helpItem, bindings []contract.Binding, labelWidth, width int) string {
+	width = max(0, width)
+	used := min(max(0, labelWidth), width)
 	var row strings.Builder
-	row.WriteString(style.Fit(label, labelWidth))
+	row.WriteString(style.Fit(ansi.Truncate(style.Escape(label), used, ""), used))
 	for _, item := range items {
+		if width-used < 14 {
+			break
+		}
 		key := item.key
 		if key == "" {
 			for _, b := range bindings {
@@ -120,10 +131,12 @@ func helpRow(label string, items []helpItem, bindings []contract.Binding, labelW
 			}
 		}
 		if key != "" {
-			row.WriteString(style.Fit(style.Escape(key+" "+item.short), 14))
+			row.WriteString(style.Fit(ansi.Truncate(style.Escape(key+" "+item.short), 14, ""), 14))
+			used += 14
 		}
 	}
-	return style.Fit(row.String(), width)
+	row.WriteString(strings.Repeat(" ", width-used))
+	return row.String()
 }
 
 // StatusLine renders only captured values; it never reads a live store or option.
@@ -137,7 +150,7 @@ func StatusLine(snapshot contract.Snapshot, width int) string {
 		marked = "M"
 	}
 	left := fmt.Sprintf("%s %s [%d/%d]", arrow, marked, max(snapshot.FocusIndex+1, 0), snapshot.Total)
-	left = style.Fit(left, 11) + style.Escape(snapshot.Status.Indicators)
+	left += strings.Repeat(" ", max(0, 11-style.Width(left))) + style.Escape(snapshot.Status.Indicators)
 	right := ""
 	if len(snapshot.Status.Listeners) > 0 {
 		right = "[" + style.Escape(strings.Join(snapshot.Status.Listeners, ", ")) + "]"

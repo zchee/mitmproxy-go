@@ -3,9 +3,9 @@
 def request(flow):
     if flow.request.trailers:
         ctx.log.info("HTTP Trailers detected! Request contains: %s" % flow.request.trailers)
-    if flow.request.path != "/inject_trailers" or flow.request.is_http10:
+    if flow.request.path != "/inject_trailers" or flow.request.http_version == "HTTP/1.0":
         return
-    if flow.request.is_http11:
+    if flow.request.http_version == "HTTP/1.1":
         if not flow.request.content:
             return
         flow.request.headers["transfer-encoding"] = "chunked"
@@ -16,9 +16,9 @@ def request(flow):
 def response(flow):
     if flow.response.trailers:
         ctx.log.info("HTTP Trailers detected! Response contains: %s" % flow.response.trailers)
-    if flow.request.path != "/inject_trailers" or flow.request.is_http10:
+    if flow.request.path != "/inject_trailers" or flow.request.http_version == "HTTP/1.0":
         return
-    if flow.request.is_http11:
+    if flow.request.http_version == "HTTP/1.1":
         if not flow.response.content:
             return
         flow.response.headers["transfer-encoding"] = "chunked"

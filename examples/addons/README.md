@@ -13,19 +13,31 @@ The translations remain covered by that notice.
 ```sh
 mitmdump -s examples/addons/http-add-header.star
 mitmdump -s examples/addons/options-simple.star --set addheader=true
+mitmdump -s examples/addons/commands-simple.star
 mitmdump --tcp-hosts '.*' -s examples/addons/tcp-simple.star
 ```
 
-The same `-s` option is intended for mitmproxy and mitmweb. These sources are
-currently drafts: constructor spellings and built-binary behavior have not yet
-been validated against the scripting runtime. Do not infer working-example or
-timing acceptance from their presence.
+The same `-s` option is intended for mitmproxy and mitmweb. The seventeen
+ordinary examples have been loaded and their hooks executed against the
+scripting runtime, including HTTP/DNS constructors, registered commands and
+options. This is model-level validation, not built-binary or network acceptance:
+frontend script wiring and the executable acceptance suite are still pending.
+`nonblocking.star` additionally requires the concurrent runtime, which is not
+yet installed; the ordinary runtime rejects its undefined `concurrent` name.
+Its hook and timing behavior remain unvalidated.
 
 Scripts use module-level functions and dictionaries, not Python classes,
 imports, decorators or async functions. `on_load(loader)` replaces Python's
-`load` hook. The runtime supplies `ctx`, `concurrent`, `byteops`, `module`, and
-HTTP/DNS constructors. Binary content stays bytes: `byteops.replace` and
-`byteops.startswith` avoid UTF-8 conversion.
+`load` hook. The runtime supplies `ctx`, `byteops`, `module`, and HTTP/DNS
+constructors; `concurrent` is supplied by the concurrent runtime. Binary content
+stays bytes: `byteops.replace` and `byteops.startswith` avoid UTF-8 conversion.
+
+`http-trailers.star` compares `http_version` strings (`"HTTP/1.0"`,
+`"HTTP/1.1"`, `"HTTP/2.0"`, `"HTTP/3"`), not Python's boolean `is_http1x`
+properties. `dns-simple.star` uses
+`dns.ResourceRecord.AAAA("example.com", "::1")`: address input is textual,
+class is IN and the default TTL is 60; `dns.ResourceRecord` itself is not a
+callable constructor.
 
 `commands-simple.star` registers the real zero-argument `myaddon.inc` command
 and additionally invokes it through `ctx.master.commands.call` for each

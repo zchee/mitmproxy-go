@@ -6,13 +6,7 @@ def dns_request(flow):
         ctx.log.info("Spoofing IPv6 records for %s..." % question.name)
         if question.name == "example.com":
             flow.response = flow.request.succeed([
-                dns.ResourceRecord(
-                    name="example.com",
-                    type=dns.types.AAAA,
-                    class_=dns.classes.IN,
-                    ttl=dns.ResourceRecord.DEFAULT_TTL,
-                    data=b"\x00" * 15 + b"\x01",
-                ),
+                dns.ResourceRecord.AAAA("example.com", "::1"),
             ])
         elif question.name == "example.org":
             flow.response = flow.request.fail(dns.response_codes.NXDOMAIN)

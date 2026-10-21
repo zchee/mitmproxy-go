@@ -11,6 +11,15 @@ import (
 	"syscall"
 )
 
+// IgnoreBrokenPipe ignores SIGPIPE on Unix and does nothing on Windows.
+// The console master owns SIGINT and SIGTERM, so its entry point uses this
+// instead of Signals.
+func IgnoreBrokenPipe() {
+	if runtime.GOOS != "windows" {
+		signal.Ignore(syscall.SIGPIPE)
+	}
+}
+
 // Signals calls shutdown when SIGINT or SIGTERM arrives and ignores SIGPIPE
 // on Unix, as mitmdump does. The returned function unregisters the handlers
 // and waits for the signal goroutine to exit; it must not be called from

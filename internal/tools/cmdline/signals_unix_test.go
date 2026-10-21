@@ -21,15 +21,19 @@ import (
 
 func TestSignals(t *testing.T) {
 	if os.Getenv("MITMPROXY_GO_SIGNAL_TEST_CHILD") == "1" {
+		IgnoreBrokenPipe()
+		if !signal.Ignored(syscall.SIGPIPE) {
+			t.Fatal("SIGPIPE must be ignored without installing shutdown handlers")
+		}
+		fmt.Println("ready")
+		if _, err := bufio.NewReader(os.Stdin).ReadString('\n'); err != nil {
+			t.Fatal(err)
+		}
 		fired := make(chan struct{})
 		stop := Signals(sync.OnceFunc(func() { close(fired) }))
 		defer stop()
 		if !signal.Ignored(syscall.SIGPIPE) {
 			t.Fatal("SIGPIPE must be ignored after installing handlers")
-		}
-		fmt.Println("ready")
-		if _, err := bufio.NewReader(os.Stdin).ReadString('\n'); err != nil {
-			t.Fatal(err)
 		}
 		fmt.Println("pong")
 		<-fired

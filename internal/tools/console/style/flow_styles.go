@@ -30,7 +30,7 @@ func RenderFlowRow(row contract.Row, layout string, width int, focused bool, pal
 }
 
 func flowPaint(palette *Palette, tag, text string) string {
-	if palette == nil || tag == "" {
+	if text == "" || palette == nil || tag == "" {
 		return text
 	}
 	return palette.Style(tag).Render(text)

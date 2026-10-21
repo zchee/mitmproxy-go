@@ -31,6 +31,9 @@ func verifyFlowRowStyles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if got := flowPaint(&palette, "text", ""); got != "" {
+			t.Fatalf("%s emitted a zero-width style span: %q", name, got)
+		}
 		for label, test := range tests {
 			candidate := row
 			candidate.Method, candidate.ContentType = test.method, test.content

@@ -2,7 +2,7 @@
   "source_commit": "b6ebd67744082b05a43440e242baf8d80839c890",
   "upstream_commit": "3368a0a06ae6195aad817a1ece1aaeb6fe0353a1",
   "fixture_sha256": "ee27209271dd8a99304a426fbda6731ca0a23786e5d4596e168a4d9b6f0eb34e",
-  "reviewer": "lead session 443a0fb5",
+  "reviewer": "independent review by the round lead",
   "review": "Reviewed by the lead on 2026-10-21 against the pinned Python oracle and the upstream layout source.",
   "oracle": "Live pinned Python cell comparison at 80x24; independent upstream layout-source review at 200x50.",
   "presentation": "Exact trusted SGR controls, alternate-screen declaration and cursor metadata from the reviewed candidate.",

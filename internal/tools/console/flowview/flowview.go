@@ -141,6 +141,10 @@ func (m *Model) mode() string {
 func (m *Model) render() {
 	m.lines, m.errs = nil, nil
 	defer func() {
+		// A newline-free body can exceed the formatter's logical-line cutoff.
+		for i, line := range m.lines {
+			m.lines[i] = ansi.Truncate(line, m.width*m.height, "…")
+		}
 		if m.tab < len(m.search) {
 			m.search[m.tab].Focus = min(m.search[m.tab].Focus, max(0, len(m.lines)-1))
 		}

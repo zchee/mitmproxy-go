@@ -381,6 +381,42 @@ func TestConsoleContentView(t *testing.T) {
 				if len(plain(lines)) != 300000 {
 					t.Fatal("refusal truncated data")
 				}
+				tests := map[string]struct {
+					body string
+					full bool
+				}{
+					"newline-free": {strings.Repeat("x", 300000), false},
+					"wide text":    {strings.Repeat("日", 100000), false},
+					"full content": {strings.Repeat("x", 300000), true},
+				}
+				for name, tt := range tests {
+					f.Request.RawContent = []byte(tt.body)
+					m := New(t.Context(), nil)
+					m.Resize(40, 6)
+					m.SetSnapshot(contract.Snapshot{Focused: f, Detail: contract.DetailOptions{DefaultContentView: "raw", LineCutoff: 512, FullContents: tt.full}})
+					truncated := false
+					for _, line := range m.lines {
+						if width := ansi.StringWidth(line); width > m.width*m.height {
+							t.Fatal(name, "retained body exceeds viewport cell budget", width)
+						}
+						truncated = truncated || strings.HasSuffix(ansi.Strip(line), "…")
+					}
+					if !truncated {
+						t.Fatal(name, "bounded presentation did not indicate truncation")
+					}
+					output := m.View()
+					if strings.Count(output, "\n")+1 > m.height {
+						t.Fatal(name, "hardwrapped output exceeds viewport height")
+					}
+					for line := range strings.SplitSeq(output, "\n") {
+						if ansi.StringWidth(line) > m.width {
+							t.Fatal(name, "hardwrapped output exceeds viewport width")
+						}
+					}
+					if string(f.Request.RawContent) != tt.body {
+						t.Fatal(name, "presentation cap changed the source body")
+					}
+				}
 			}},
 		}
 		for name, tt := range tests {

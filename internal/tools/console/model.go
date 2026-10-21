@@ -62,7 +62,10 @@ func NewModel(bridge *Bridge, factories map[string]WidgetFactory) *Model {
 	return m
 }
 
-// NewProgram binds one terminal program to the bridge's cancelable lifetime.
+// NewProgram binds one terminal program, defaulting to the bridge's lifetime.
+// Cancelling that default context uses Bubble Tea's kill teardown without joining
+// its input read loop. Use Master.NewProgram for orderly shutdown; an owner that
+// joins the program before closing the bridge may override its context.
 func NewProgram(model *Model, options ...tea.ProgramOption) (*tea.Program, error) {
 	if model.bridge == nil {
 		return nil, errors.New("console program requires a live bridge")
@@ -70,7 +73,7 @@ func NewProgram(model *Model, options ...tea.ProgramOption) (*tea.Program, error
 	if model.program != nil {
 		return nil, errors.New("console model already has a program")
 	}
-	options = append(options, tea.WithContext(model.bridge.Context()))
+	options = append([]tea.ProgramOption{tea.WithContext(model.bridge.Context())}, options...)
 	model.program = tea.NewProgram(model, options...)
 	return model.program, nil
 }

@@ -149,7 +149,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
 	}
 	m.ProxyServer, m.View = ps, view.New(base.Addons)
-	m.Bridge, err = NewBridge(ctx, BridgeConfig{Master: base, View: m.View, Events: m.Events, Project: flowlist.Project, Listeners: func() []string {
+	m.Bridge, err = NewBridge(context.WithoutCancel(ctx), BridgeConfig{Master: base, View: m.View, Events: m.Events, Project: flowlist.Project, Listeners: func() []string {
 		var listeners []string
 		for _, address := range ps.ListenAddrs() {
 			listeners = append(listeners, fmt.Sprint(address))
@@ -194,7 +194,7 @@ func (m *Master) NewProgram() (*tea.Program, error) {
 		return nil, errors.New("console presentation is already selected or closed")
 	}
 	model := m.makeModel()
-	program, err := NewProgram(model, tea.WithInput(m.stdin), tea.WithOutput(m.stdout))
+	program, err := NewProgram(model, tea.WithContext(context.WithoutCancel(m.Bridge.Context())), tea.WithInput(m.stdin), tea.WithOutput(m.stdout))
 	if err != nil {
 		return nil, err
 	}
@@ -286,21 +286,16 @@ func (m *Master) Run(ctx context.Context) (err error) {
 			return err
 		}
 	}
-	stop := context.AfterFunc(ctx, m.Bridge.cancel)
-	defer stop()
 	return m.Master.Run(ctx)
 }
 
 func (m *Master) startProgram() {
 	m.mu.Lock()
-	terminal := m.owner == terminalPresentation
+	if m.closed || m.owner != terminalPresentation || !m.uiStarted.CompareAndSwap(false, true) {
+		m.mu.Unlock()
+		return
+	}
 	m.mu.Unlock()
-	if !terminal {
-		return
-	}
-	if !m.uiStarted.CompareAndSwap(false, true) {
-		return
-	}
 	go func() {
 		defer close(m.uiDone)
 		_, err := m.Program.Run()
@@ -312,13 +307,8 @@ func (m *Master) startProgram() {
 	}()
 }
 
-// Shutdown cancels the frontend and requests lifecycle shutdown without waiting.
-func (m *Master) Shutdown() {
-	if m.Bridge != nil {
-		m.Bridge.cancel()
-	}
-	m.Master.Shutdown()
-}
+// Shutdown requests lifecycle shutdown without waiting for the terminal join.
+func (m *Master) Shutdown() { m.Master.Shutdown() }
 
 // ShutdownWithError retains the first fatal error and stops the frontend.
 func (m *Master) ShutdownWithError(err error) { m.Master.ShutdownWithError(err); m.Shutdown() }
@@ -348,11 +338,21 @@ func (m *Master) closeFrontend(ctx context.Context) error {
 	defer cancel()
 	var err error
 	if m.uiStarted.Load() {
+		quitDone := make(chan struct{})
+		go func() {
+			m.Program.Quit()
+			close(quitDone)
+		}()
 		select {
 		case <-m.uiDone:
 		case <-drain.Done():
 			err = drain.Err()
+			// Bubble Tea's kill path can race its input reader. Use it only if
+			// an orderly Quit has not completed within the five-second drain bound.
+			m.Program.Kill()
+			<-m.uiDone
 		}
+		<-quitDone
 	}
 	if m.Bridge != nil {
 		err = errors.Join(err, m.Bridge.Close(drain))

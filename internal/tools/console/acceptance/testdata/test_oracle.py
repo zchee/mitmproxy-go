@@ -30,7 +30,7 @@ FIXTURES = orjson.loads(Path(__file__).with_name("fixtures.json").read_bytes())
     [
         ("flowlist", "Flows"),
         ("flowview", "Flow Details"),
-        ("commander", "console.view."),
+        ("commander", ": console.view.flow flow "),
     ],
 )
 def test_render(tmp_path: Path, name: str, expected: str) -> None:

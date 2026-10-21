@@ -91,7 +91,7 @@ def main() -> None:
         "states": {
             "flowlist": "",
             "flowview": "<enter>",
-            "commander": ":console.view.",
+            "commander": ":console.view.flow ",
         },
         "golden_sizes": [[80, 24], [200, 50]],
         "live_python_size": [80, 24],

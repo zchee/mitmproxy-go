@@ -2,7 +2,7 @@ module github.com/zchee/mitmproxy-go
 
 replace go.yaml.in/yaml/v4 => github.com/zchee/yaml-go-yaml/v4 v4.0.0-rc.6.0.20261016233001-98da9bfb2950
 
-go 1.27.2
+go 1.27.3
 
 require (
 	charm.land/bubbles/v2 v2.2.1

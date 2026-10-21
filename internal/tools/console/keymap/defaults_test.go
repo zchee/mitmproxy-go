@@ -1,19 +1,65 @@
 // Copyright 2026 The mitmproxy-go Authors.
 // SPDX-License-Identifier: MIT
 
-package keymap
+package keymap_test
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"unicode"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/zchee/mitmproxy-go/command"
+	"github.com/zchee/mitmproxy-go/flow"
+	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
+	"github.com/zchee/mitmproxy-go/internal/tools/console"
+	"github.com/zchee/mitmproxy-go/internal/tools/console/keymap"
 )
 
 func TestConsoleDefaultBindings(t *testing.T) {
+	t.Run("upstream", func(t *testing.T) {
+		t.Run("test_commands_exist", func(t *testing.T) {
+			m, err := console.New(t.Context(), console.Config{Stdout: io.Discard, Stderr: io.Discard})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := m.Close(context.WithoutCancel(t.Context())); err != nil {
+					t.Error(err)
+				}
+			})
+			if err := m.Do(t.Context(), func(ctx context.Context) error {
+				m.View.Add(ctx, []flow.Flow{testflow.TFlow()})
+				bindings := keymap.Defaults()
+				if len(bindings) != 80 {
+					t.Fatalf("binding count=%d, want 80", len(bindings))
+				}
+				for _, binding := range bindings {
+					parsed, _ := m.Commands.ParsePartial(ctx, strings.TrimSpace(binding.Command))
+					if len(parsed) == 0 {
+						t.Fatalf("empty binding: %q", binding.Command)
+					}
+					var args []string
+					for _, token := range parsed[1:] {
+						if token.Type != command.SpaceType {
+							args = append(args, command.Unquote(token.Value))
+						}
+					}
+					if err := m.Commands.Prepare(ctx, command.Unquote(parsed[0].Value), args); err != nil {
+						t.Fatalf("invalid real-registry binding %q: %v", binding.Command, err)
+					}
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	})
 	// Fingerprints were extracted from the pinned Python AST, not the Go table.
 	expected := map[string]string{
 		"commonkey_global/colon":      "56564bdc5b2ad9c73e777848fbcecefe42531921078a9023d7fc4f530c2f7ecc",
@@ -97,13 +143,13 @@ func TestConsoleDefaultBindings(t *testing.T) {
 		"keybindings/x":               "aa2be66d03137996b34374cb2634ace53b1a3cc63814b85707b01eed95546475",
 		"keybindings/enter":           "eeef7ac1902e0426e6e071d3bf467d5553a109e1a2c622920fbf2d14c33092de",
 	}
-	bindings := Defaults()
+	bindings := keymap.Defaults()
 	if len(bindings) != 80 || len(expected) != 80 {
 		t.Fatal("default binding cardinality changed")
 	}
-	k := NewDefault(nil)
+	k := keymap.NewDefault(nil)
 	tests := map[string]struct {
-		binding     Binding
+		binding     keymap.Binding
 		fingerprint string
 	}{}
 	for _, b := range bindings {
@@ -132,7 +178,7 @@ func TestConsoleDefaultBindings(t *testing.T) {
 			t.Fatalf("unexpected binding %s", name)
 		}
 		tests[name] = struct {
-			binding     Binding
+			binding     keymap.Binding
 			fingerprint string
 		}{b, fingerprint}
 	}

@@ -95,6 +95,11 @@ func (w *resultWidget) View() string {
 	if w.width <= 0 {
 		return ""
 	}
-	box := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(w.palette.Style("heading").GetForeground()).Render(w.view.View())
-	return lipgloss.PlaceHorizontal(w.width, lipgloss.Center, box)
+	border := lipgloss.NormalBorder()
+	box := lipgloss.NewStyle().Border(border).BorderForeground(w.palette.Style("heading").GetForeground()).Render(w.view.View())
+	lines := strings.Split(box, "\n")
+	title := " Data viewer "
+	title = style.Fit(title, min(style.Width(title), w.view.Width()))
+	lines[0] = w.palette.Style("heading").Render(border.TopLeft + title + strings.Repeat(border.Top, max(0, w.view.Width()-style.Width(title))) + border.TopRight)
+	return lipgloss.PlaceHorizontal(w.width, lipgloss.Center, strings.Join(lines, "\n"))
 }

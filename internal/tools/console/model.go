@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -37,6 +38,8 @@ type Model struct {
 	prompt        contract.Widget
 	palette       style.Palette
 	lastEvent     uint64
+	processes     sync.Map
+	ready         func()
 }
 
 type resultMsg struct {
@@ -59,7 +62,10 @@ func NewModel(bridge *Bridge, factories map[string]WidgetFactory) *Model {
 	return m
 }
 
-// NewProgram binds one terminal program to the bridge's cancelable lifetime.
+// NewProgram binds one terminal program, defaulting to the bridge's lifetime.
+// Cancelling that lifetime while the program runs takes Bubble Tea's kill path,
+// which closes the input reader without joining it. The assembled Master overrides
+// the context and stops the program through Quit before closing the bridge.
 func NewProgram(model *Model, options ...tea.ProgramOption) (*tea.Program, error) {
 	if model.bridge == nil {
 		return nil, errors.New("console program requires a live bridge")
@@ -67,13 +73,16 @@ func NewProgram(model *Model, options ...tea.ProgramOption) (*tea.Program, error
 	if model.program != nil {
 		return nil, errors.New("console model already has a program")
 	}
-	options = append(options, tea.WithContext(model.bridge.Context()))
+	options = append([]tea.ProgramOption{tea.WithContext(model.bridge.Context())}, options...)
 	model.program = tea.NewProgram(model, options...)
 	return model.program, nil
 }
 
 // Init starts the owned snapshot and external-effect consumers outside dispatch.
 func (m *Model) Init() tea.Cmd {
+	if m.ready != nil {
+		m.ready()
+	}
 	if m.program == nil {
 		return nil
 	}
@@ -129,11 +138,12 @@ func (m *Model) applySnapshot(snapshot contract.Snapshot) {
 	for i := range m.state.Panes {
 		for j := range m.state.Panes[i].Stack {
 			window := &m.state.Panes[i].Stack[j]
-			for _, projected := range snapshot.Control.Panes[i].Stack {
-				if window.Context == "flowview" && window.FlowID == projected.FlowID && len(projected.Tabs) > window.Index && window.Index >= 0 {
+			if window.Context == "flowview" && j < len(snapshot.Control.Panes[i].Stack) {
+				projected := snapshot.Control.Panes[i].Stack[j]
+				if projected.Context == "flowview" && len(projected.Tabs) > window.Index && window.Index >= 0 {
+					window.FlowID = projected.FlowID
 					window.Tabs = slices.Clone(projected.Tabs)
 					window.Mode = projected.Tabs[window.Index].Mode
-					break
 				}
 			}
 		}
@@ -204,6 +214,17 @@ func (m *Model) install(effects contract.EffectsMsg) []tea.Cmd {
 	var commands []tea.Cmd
 	for _, effect := range m.installer.Install(effects) {
 		m.state = effect.State.Clone()
+		if effect.Action.Kind == "push" && effect.Action.Grid != nil && m.factories[effect.Action.Window.Name] == nil {
+			if err := m.installGrid(effect.Action); err != nil {
+				m.message = err.Error()
+			}
+		}
+		if effect.Action.Kind == "external" {
+			commands = append(commands, m.externalCommand(effect.Action))
+		}
+		if effect.Action.Kind == "pop" && m.state.QuitPrompt {
+			commands = append(commands, m.confirmExit())
+		}
 		if effect.Action.Kind == "overlay" && effect.Action.Window.Name == "dataviewer" {
 			m.widgets[m.state.Pane]["dataviewer"] = newResultWidget(m.bridge, effect.Action.Text)
 		}
@@ -228,7 +249,28 @@ func (m *Model) install(effects contract.EffectsMsg) []tea.Cmd {
 			})
 		}
 		m.refreshWidgets()
-		if w := m.widget(m.state.Pane); w != nil {
+		targetPane := m.state.Pane
+		if effect.Action.Kind == "grid" {
+			for _, candidate := range [2]int{m.state.Pane, 1 - m.state.Pane} {
+				pane := m.state.Panes[candidate]
+				window := pane.Stack[len(pane.Stack)-1]
+				if pane.Overlay != nil {
+					window = *pane.Overlay
+				}
+				if window.Context == "grideditor" {
+					targetPane = candidate
+					break
+				}
+			}
+		}
+		if w := m.widget(targetPane); w != nil {
+			if effect.Action.Kind == "grid" && effect.Action.Value == "commit" {
+				if committer, ok := w.(interface{ Commit() tea.Cmd }); ok {
+					window, _ := m.state.Current("", true)
+					commands = append(commands, m.commitAndPop(committer.Commit(), window))
+					continue
+				}
+			}
 			cmd, _ := w.Update(effect.Action.Clone())
 			if cmd != nil {
 				commands = append(commands, cmd)
@@ -278,6 +320,10 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		if m.bridge != nil {
 			m.bridge.RequestViewport(contract.Viewport{Width: m.width, Height: max(0, m.height-len(m.footer()))})
 		}
+	case processReadyMsg:
+		return m, msg.command
+	case processFinishedMsg:
+		return m, m.finishProcess(msg)
 	case contract.ErrorMsg:
 		if msg.Err != nil {
 			m.message = msg.Err.Error()

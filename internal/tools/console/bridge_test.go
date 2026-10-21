@@ -7,6 +7,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"sync"
@@ -25,6 +27,7 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
 	"github.com/zchee/mitmproxy-go/master"
+	"github.com/zchee/mitmproxy-go/options"
 )
 
 func testBridge(t *testing.T) (*Bridge, chan time.Time) {
@@ -106,55 +109,124 @@ func (m *heldModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func verifyAssembledUpdateBlocked(t *testing.T) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.WithoutCancel(t.Context()))
+	t.Cleanup(cancel)
+	opts := options.New()
+	mustConsole(t, opts.Update(ctx, map[string]any{"confdir": t.TempDir(), "server": false}))
+	m, err := New(ctx, Config{Options: opts, Stdout: io.Discard, Stderr: io.Discard})
+	mustConsole(t, err)
+	t.Cleanup(func() { mustConsole(t, m.Close(context.WithoutCancel(t.Context()))) })
+	ticks := make(chan time.Time)
+	m.Bridge.cfg.Ticks = ticks
+	model, err := m.NewModel()
+	mustConsole(t, err)
+	probe := &integrationReady{ready: make(chan struct{})}
+	mustConsole(t, m.Addons.Add(ctx, probe))
+	held := &heldModel{model: model, entered: make(chan struct{}), release: make(chan struct{}), frames: make(chan contract.Snapshot, 1), sizes: make(chan tea.WindowSizeMsg, 2)}
+	tm := teatest.NewTestModel(t, held, teatest.WithInitialTermSize(80, 24), teatest.WithProgramOptions(tea.WithContext(m.Bridge.Context())))
+	finished := make(chan error, 1)
+	var releaseOnce sync.Once
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(held.release) })
+		mustConsole(t, tm.Quit())
+		tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+		m.Shutdown()
+		select {
+		case err := <-finished:
+			mustConsole(t, err)
+		case <-time.After(5 * time.Second):
+			t.Error("assembled blocked-update lifecycle did not join")
+		}
+	})
+	go func() { finished <- m.Run(ctx) }()
+	select {
+	case <-probe.ready:
+	case err := <-finished:
+		finished <- err
+		t.Fatalf("assembled lifecycle failed before running: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("assembled lifecycle did not reach running")
+	}
+	// Both startup resizes must precede manually admitted snapshots.
+	for range 2 {
+		select {
+		case size := <-held.sizes:
+			if size.Width != 80 || size.Height != 24 {
+				t.Fatalf("unexpected startup size: %+v", size)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("startup resize was not installed before watchdog")
+		}
+	}
+	go m.Bridge.DrainTo(tm.Send)()
+	go m.Bridge.DeliverEffectsTo(tm.Send)()
+	ticks <- time.Unix(1, 0)
+	awaitConsole(t, held.entered)
+	ids := make([]string, 0, 10_000)
+	for index := range 10_000 {
+		f := testflow.TFlow()
+		f.Live = false
+		f.Request.TimestampStart = float64(index + 1)
+		f.Request.Path = fmt.Sprintf("/blocked/%05d", index)
+		ids = append(ids, f.ID)
+		mustConsole(t, m.LoadFlow(t.Context(), f))
+	}
+	mustConsole(t, m.Do(t.Context(), func(context.Context) error {
+		if m.View.Len() != len(ids) {
+			t.Fatalf("loaded hooks retained %d flows, want %d while Update is held", m.View.Len(), len(ids))
+		}
+		return nil
+	}))
+	// Drain owned log work before admitting the final snapshot, not with a sleep.
+	mustConsole(t, m.Master.LogHandler().Flush(t.Context()))
+	mustConsole(t, m.eventLogs.Flush(t.Context()))
+	releaseOnce.Do(func() { close(held.release) })
+	ticks <- time.Unix(1, int64(FrameInterval))
+	final := awaitConsole(t, held.frames)
+	if final.Total != len(ids) || !slices.Equal(ids, final.IDs) {
+		t.Fatal("assembled blocked Update lost produced flows or order")
+	}
+	tests := map[string]struct{ offset, index int }{
+		"first": {0, 0}, "last": {-1, len(ids) - 1}, "deep": {5678, 5678},
+	}
+	admission := 2
+	for name, test := range tests {
+		_, err := m.Bridge.Call(t.Context(), "view.focus.go", test.offset)
+		mustConsole(t, err)
+		m.Bridge.RequestViewport(contract.Viewport{Offset: test.index, Width: 80, Height: 20})
+		ticks <- time.Unix(1, int64(time.Duration(admission)*FrameInterval))
+		admission++
+		frame := awaitConsole(t, held.frames)
+		if frame.Total != len(ids) || frame.FocusIndex != test.index || frame.FocusID != ids[test.index] || !slices.Equal(frame.IDs, ids) {
+			t.Fatalf("%s navigation lost focus/order: total=%d index=%d id=%q", name, frame.Total, frame.FocusIndex, frame.FocusID)
+		}
+		if !slices.ContainsFunc(frame.Rows, func(row contract.Row) bool {
+			return row.ID == ids[test.index] && strings.Contains(row.Text, fmt.Sprintf("/blocked/%05d", test.index))
+		}) {
+			t.Fatalf("%s navigation did not project the focused flow into the real list rows", name)
+		}
+		if len(frame.Rows) > 20 {
+			t.Fatalf("%s navigation rendered %d rows for a 20-row viewport", name, len(frame.Rows))
+		}
+	}
+}
+
 func TestConsoleBridge(t *testing.T) {
 	tests := map[string]struct{}{"update_blocked": {}, "send_outside_dispatch": {}, "dirty_race": {}, "cancel_join": {}, "command_fifo": {}, "command_busy": {}, "same_do_read_after_write": {}, "mixed_batches_same_do": {}, "saturated_no_state_change": {}, "sequence_installation": {}}
 	t.Run("deterministic", func(t *testing.T) {
 		for name := range tests {
 			t.Run(name, func(t *testing.T) {
+				if name == "update_blocked" {
+					verifyAssembledUpdateBlocked(t)
+					return
+				}
 				b, ticks := testBridge(t)
 				if name == "command_fifo" || name == "sequence_installation" || name == "mixed_batches_same_do" || name == "same_do_read_after_write" {
 					mustConsole(t, b.Do(t.Context(), func(ctx context.Context) error { b.cfg.View.Add(ctx, []flow.Flow{testflow.TFlow()}); return nil }))
 				}
 				switch name {
-				case "update_blocked":
-					held := &heldModel{model: NewModel(b, nil), entered: make(chan struct{}), release: make(chan struct{}), frames: make(chan contract.Snapshot, 1), sizes: make(chan tea.WindowSizeMsg, 2)}
-					tm := teatest.NewTestModel(t, held, teatest.WithProgramOptions(tea.WithContext(b.Context())))
-					var releaseOnce sync.Once
-					t.Cleanup(func() {
-						releaseOnce.Do(func() { close(held.release) })
-						mustConsole(t, tm.Quit())
-						tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
-					})
-					// Both startup resizes must precede manually admitted snapshots.
-					for range 2 {
-						select {
-						case size := <-held.sizes:
-							if size.Width != 80 || size.Height != 24 {
-								t.Fatalf("unexpected startup size: %+v", size)
-							}
-						case <-time.After(5 * time.Second):
-							t.Fatal("startup resize was not installed before watchdog")
-						}
-					}
-					go b.drain(tm.Send)
-					ticks <- time.Unix(1, 0)
-					awaitConsole(t, held.entered)
-					ids := make([]string, 0, 10_000)
-					mustConsole(t, b.Do(t.Context(), func(ctx context.Context) error {
-						for range 10_000 {
-							f := testflow.TFlow()
-							ids = append(ids, f.ID)
-							b.cfg.View.Add(ctx, []flow.Flow{f})
-						}
-						return nil
-					}))
-					mustConsole(t, b.Do(t.Context(), func(context.Context) error { return nil }))
-					releaseOnce.Do(func() { close(held.release) })
-					ticks <- time.Unix(1, int64(FrameInterval))
-					final := awaitConsole(t, held.frames)
-					if final.Total != 10_000 || !slices.Equal(ids, final.IDs) {
-						t.Fatal("blocked Update lost produced flows or order")
-					}
 				case "send_outside_dispatch", "dirty_race":
 					entered, release := make(chan struct{}), make(chan struct{})
 					delivered := make(chan contract.Snapshot, 2)
@@ -227,9 +299,11 @@ func TestConsoleBridge(t *testing.T) {
 					}
 					if name == "sequence_installation" {
 						verifyAmendedContract(t)
+						verifyInstallerRecovery(t)
 					}
 				case "same_do_read_after_write":
 					verifyModes(t)
+					verifyDisplayAdmission(t)
 					mustConsole(t, b.Do(t.Context(), func(ctx context.Context) error {
 						mustConsole(t, b.Dispatch(ctx, contract.Action{Kind: "push", Window: contract.Window{Name: "options", Context: "options", Option: "showhost"}}))
 						w, ok := b.Control.State().Current("options", false)
@@ -316,6 +390,15 @@ func verifyAmendedContract(t *testing.T) {
 	request := contract.GridRequest{Title: "values", Option: "ignore_hosts", Rows: [][]string{{"before"}}}
 	mustConsole(t, b.OpenGrid(ctx, request))
 	request.Rows[0][0] = "after"
+	captured := testflow.TFlow()
+	captured.Request.RawContent = []byte("original")
+	gridAction := contract.Action{Grid: &contract.GridRequest{Flow: captured, Target: contract.EditTarget{FlowID: captured.ID, Part: "request-body"}}}
+	gridClone := gridAction.Clone()
+	captured.Request.RawContent[0] = 'X'
+	copied := gridClone.Grid.Flow.(*flow.HTTPFlow)
+	if copied.ID != captured.ID || string(copied.Request.RawContent) != "original" || gridClone.Grid.Target.FlowID != captured.ID {
+		t.Fatal("grid payload lost source identity or aliases captured flow bytes")
+	}
 	for _, direction := range []string{"start", "end", "next", "select", "up", "down", "pageup", "pagedown", "left", "right"} {
 		mustConsole(t, b.Dispatch(ctx, contract.Action{Kind: "nav", Value: direction}))
 	}
@@ -445,6 +528,59 @@ func verifyModes(t *testing.T) {
 	w, _ = m.state.Current("flowview", false)
 	if w.Mode != "hex" || w.Tabs[1].Mode != "hex" {
 		t.Fatalf("snapshot did not use view-owned mode: %+v", w)
+	}
+	mustConsole(t, b.cfg.Master.Addons.Add(t.Context(), &ConsoleAddon{bridge: b}))
+	other := testflow.TFlow()
+	mustConsole(t, b.Do(t.Context(), func(ctx context.Context) error {
+		b.cfg.View.Add(ctx, []flow.Flow{other})
+		if _, err := b.Call(ctx, "view.settings.setval", []flow.Flow{other}, "flowview_mode_1", "raw"); err != nil {
+			return err
+		}
+		if _, err := b.Call(ctx, "view.focus.next"); err != nil {
+			return err
+		}
+		mode, err := b.Call(ctx, "console.flowview.mode")
+		if err != nil {
+			return err
+		}
+		if mode != "raw" || b.cfg.View.Focus.Flow().Common().ID != other.ID {
+			t.Fatalf("same-Do focus change read the old flow mode: %v", mode)
+		}
+		if err := b.Dispatch(ctx, contract.Action{Kind: "mode", Value: "json"}); err != nil {
+			return err
+		}
+		return nil
+	}))
+	snapshot, err = b.capture(b.generation.Load())
+	mustConsole(t, err)
+	m.applySnapshot(snapshot)
+	w, _ = m.state.Current("flowview", false)
+	if w.FlowID != other.ID || w.Mode != "json" || w.Tabs[1].Mode != "json" {
+		t.Fatalf("flow view did not follow the captured live focus: %+v", w)
+	}
+	ctx, finish = BeginInvocation(t.Context())
+	mustConsole(t, b.Do(ctx, func(ctx context.Context) error {
+		for range 2 {
+			if err := b.Dispatch(ctx, contract.Action{Kind: "tab", Value: "next", Index: -1}); err != nil {
+				return err
+			}
+		}
+		window, _ := b.Control.State().Current("flowview", false)
+		if window.Index != 0 {
+			t.Fatalf("same-Do double tab ended at %d, want 0", window.Index)
+		}
+		mode, err := b.Call(ctx, "console.flowview.mode")
+		if err != nil {
+			return err
+		}
+		if mode != "auto" {
+			t.Fatalf("relative tab query read the old tab mode: %v", mode)
+		}
+		return nil
+	}))
+	tabs := finish()
+	if len(tabs) != 2 || tabs[0].Action.Index != 2 || tabs[0].Action.Value != "Detail" || tabs[1].Action.Index != 0 || tabs[1].Action.Value != "Request" {
+		t.Fatalf("relative tab effects were not resolved to ordered absolute values: %+v", tabs)
 	}
 }
 

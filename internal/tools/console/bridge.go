@@ -209,12 +209,23 @@ func (b *Bridge) Dispatch(ctx context.Context, a contract.Action) error {
 			}
 			b.hydrateWindow(&a.Window, f, values)
 		}
+		if a.Kind == "nav" && (a.Value == "next" || a.Value == "right" || a.Value == "left") {
+			window, _ := b.Control.State().Current("", true)
+			if window.Context == "flowview" {
+				a.Kind, a.Index = "tab", -1
+				if a.Value == "left" {
+					a.Value = "prev"
+				} else {
+					a.Value = "next"
+				}
+			}
+		}
 		if a.Kind == "tab" {
 			window, ok := b.Control.State().Current("flowview", false)
 			if !ok {
 				return errors.New("Not viewing a flow.") //nolint:staticcheck // Preserve upstream's command error text.
 			}
-			f := b.cfg.View.GetByID(window.FlowID)
+			f := b.cfg.View.Focus.Flow()
 			if f == nil {
 				return ErrEditConflict
 			}
@@ -222,8 +233,23 @@ func (b *Bridge) Dispatch(ctx context.Context, a contract.Action) error {
 			if err != nil {
 				return err
 			}
-			window.Tab, window.Index = a.Value, a.Index
 			b.hydrateWindow(&window, f, values)
+			if a.Index == -1 {
+				switch a.Value {
+				case "next":
+					window.Index = (window.Index + 1) % len(window.Tabs)
+				case "prev":
+					window.Index = (window.Index + len(window.Tabs) - 1) % len(window.Tabs)
+				default:
+					return errors.New("invalid relative flowview tab")
+				}
+			} else {
+				if a.Index < 0 || a.Index >= len(window.Tabs) {
+					return errors.New("invalid flowview tab index")
+				}
+				window.Index = a.Index
+			}
+			window.Tab, window.Mode = window.Tabs[window.Index].Name, window.Tabs[window.Index].Mode
 			a.Value, a.Index, a.Text = window.Tab, window.Index, window.Mode
 		}
 		if a.Kind == "binding" && a.Value != "" {
@@ -240,7 +266,7 @@ func (b *Bridge) Dispatch(ctx context.Context, a contract.Action) error {
 			if !ok {
 				return errors.New("Not viewing a flow.") //nolint:staticcheck // Preserve upstream's command error text.
 			}
-			f := b.cfg.View.GetByID(window.FlowID)
+			f := b.cfg.View.Focus.Flow()
 			if f == nil {
 				return ErrEditConflict
 			}
@@ -555,10 +581,11 @@ func (b *Bridge) capture(generation uint64) (contract.Snapshot, error) {
 				if window.Context != "flowview" {
 					continue
 				}
-				selected := b.cfg.View.GetByID(window.FlowID)
+				selected := focus
 				if selected == nil {
 					continue
 				}
+				window.FlowID = focusID
 				values, err := b.cfg.View.Settings.Values(selected)
 				if err != nil {
 					return err
@@ -603,13 +630,22 @@ func (b *Bridge) Accept(snapshot contract.Snapshot) bool {
 // Drain is a single long-lived tea.Cmd. The program must use b.Context(), so
 // cancellation unblocks Send before Close joins this worker.
 func (b *Bridge) Drain(program *tea.Program) tea.Cmd {
-	return func() tea.Msg { b.drain(func(msg tea.Msg) { program.Send(msg) }); return nil }
+	return b.DrainTo(program.Send)
+}
+
+// DrainTo runs the same owned snapshot worker for an unbound model's sender.
+// The sender must unblock on cancellation of Context, as Program.Send does.
+func (b *Bridge) DrainTo(send func(tea.Msg)) tea.Cmd {
+	return func() tea.Msg { b.drain(send); return nil }
 }
 
 func (b *Bridge) drain(send func(tea.Msg)) {
-	if !b.started.CompareAndSwap(false, true) {
+	b.workMu.Lock()
+	if b.closing || !b.started.CompareAndSwap(false, true) {
+		b.workMu.Unlock()
 		return
 	}
+	b.workMu.Unlock()
 	defer close(b.done)
 	ticks := b.cfg.Ticks
 	var timer *time.Timer
@@ -673,18 +709,37 @@ func (b *Bridge) drain(send func(tea.Msg)) {
 // DeliverEffects drains external command effects outside dispatch until canceled.
 // Use the same program lifetime as Drain to make its blocked Send cancelable.
 func (b *Bridge) DeliverEffects(program *tea.Program) tea.Cmd {
-	return func() tea.Msg {
-		if !b.deliveryStarted.CompareAndSwap(false, true) {
-			return nil
-		}
-		defer close(b.deliveryDone)
-		for {
-			select {
-			case <-b.ctx.Done():
-				return nil
-			case effect := <-b.Control.Mailbox():
-				program.Send(contract.EffectsMsg{effect})
+	return b.DeliverEffectsTo(program.Send)
+}
+
+// DeliverEffectsTo uses the owned mailbox runner for an unbound model's sender.
+// The sender must unblock on cancellation of Context, as Program.Send does.
+func (b *Bridge) DeliverEffectsTo(send func(tea.Msg)) tea.Cmd {
+	return func() tea.Msg { b.deliverEffects(send); return nil }
+}
+
+func (b *Bridge) deliverEffects(send func(tea.Msg)) {
+	b.workMu.Lock()
+	if b.closing || !b.deliveryStarted.CompareAndSwap(false, true) {
+		b.workMu.Unlock()
+		return
+	}
+	b.workMu.Unlock()
+	defer close(b.deliveryDone)
+	for {
+		select {
+		case <-b.ctx.Done():
+			return
+		case <-b.Control.creditReleased:
+			// Retirement only signals; pending layout admission needs a fresh hold.
+			err := b.Do(b.ctx, func(ctx context.Context) error { return b.Control.flushLayout(ctx) })
+			if err != nil {
+				if _, busy := errors.AsType[*BusyError](err); !busy && b.ctx.Err() == nil {
+					send(contract.ErrorMsg{Source: "layout", Err: err})
+				}
 			}
+		case effect := <-b.Control.Mailbox():
+			send(contract.EffectsMsg{effect})
 		}
 	}
 }

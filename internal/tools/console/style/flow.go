@@ -19,7 +19,8 @@ import (
 )
 
 // FormatFlow projects a borrowed flow into owned, terminal-safe display values.
-// It must run under dispatch. Layout is default, list, table or detailview;
+// Borrowed flows must be held under dispatch; detached snapshots may be formatted
+// outside dispatch. Layout is default, list, table or detailview;
 // default selects list below 100 columns. Only HTTP list/detail rows have two lines.
 func FormatFlow(f flow.Flow, layout string, showHost bool, width int, focused bool) contract.Row {
 	if f == nil {

@@ -223,14 +223,31 @@ func (m *Model) render() {
 }
 
 func (m *Model) http(message *httpmsg.Message, input any) {
-	for _, h := range message.Headers {
-		m.lines = append(m.lines, m.palette.Render("header", strutil.BytesToEscapedStr(h.Name, false, false)+":")+" "+m.palette.Render("text", strutil.BytesToEscapedStr(h.Value, false, false)))
+	keys := make([]string, len(message.Headers))
+	keyWidth := 0
+	for i, h := range message.Headers {
+		keys[i] = strutil.BytesToEscapedStr(h.Name, false, false) + ":"
+		keyWidth = max(keyWidth, len(keys[i]))
+	}
+	keyWidth = min(keyWidth, 30)
+	for i, h := range message.Headers {
+		keyLines := strings.Split(ansi.Wrap(keys[i], keyWidth, ""), "\n")
+		value := strutil.BytesToEscapedStr(h.Value, false, false)
+		values := strings.Split(ansi.Wrap(value, max(1, m.width-keyWidth-2), ""), "\n")
+		for row := range max(len(keyLines), len(values)) {
+			key, value := "", ""
+			if row < len(keyLines) {
+				key = keyLines[row]
+			}
+			if row < len(values) {
+				value = values[row]
+			}
+			m.lines = append(m.lines, m.palette.Style("header").Render(style.Fit(key, keyWidth))+"  "+m.palette.Render("text", value))
+		}
 	}
 	description, body, errs := Content(m.snapshot.Focused, input, m.mode(), m.snapshot.Detail, m.palette)
 	m.errs = append(m.errs, errs...)
-	if description != "" {
-		m.lines = append(m.lines, m.palette.Render("heading", description+" [m:"+m.mode()+"]"))
-	}
+	m.lines = append(m.lines, m.contentStatus(description))
 	m.lines = append(m.lines, body...)
 }
 
@@ -306,7 +323,14 @@ func (m *Model) finishStream() {
 		i := len(m.lines) - 1
 		m.lines[i] = m.palette.Render("intercept", ansi.Strip(m.lines[i]))
 	}
-	m.lines = append([]string{m.palette.Render("heading", m.mode()+" [m:"+m.mode()+"]")}, m.lines...)
+	m.lines = append([]string{m.contentStatus(m.mode())}, m.lines...)
+}
+
+func (m *Model) contentStatus(description string) string {
+	leftWidth, rightWidth := (m.width+1)/2, m.width/2
+	left := style.Fit(ansi.Truncate(style.Escape(description), leftWidth, ""), leftWidth)
+	right := ansi.Truncate(style.Escape(" [m:"+m.mode()+"]"), rightWidth, "")
+	return m.palette.Style("heading").Render(left + strings.Repeat(" ", rightWidth-ansi.StringWidth(right)) + right)
 }
 
 func dnsLines(message *dns.Message, part string, palette style.Palette) []string {
@@ -357,9 +381,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, bool) {
 		if mouse.Button != tea.MouseLeft || mouse.Y != len(m.header) || mouse.Y >= m.height || mouse.X < 0 || mouse.X >= m.width {
 			return nil, false
 		}
-		width := max(1, (m.width-len(tabs)+1)/len(tabs))
-		index := min(mouse.X/(width+1), len(tabs)-1)
-		return m.dispatchTab(contract.Action{Kind: "tab", Value: tabName(tabs[index]), Index: index}), true
+		start := 0
+		for i, width := range tabWidths(m.width, len(tabs)) {
+			if mouse.X < start {
+				return nil, false
+			}
+			if mouse.X < start+width {
+				return m.dispatchTab(contract.Action{Kind: "tab", Value: tabName(tabs[i]), Index: i}), true
+			}
+			start += width + 1
+		}
+		return nil, false
 	}
 	key, isKey := msg.(tea.KeyPressMsg)
 	name := key.String()
@@ -460,20 +492,35 @@ func (m *Model) dispatchTab(action contract.Action) tea.Cmd {
 	}
 }
 
+func tabWidths(width, count int) []int {
+	count = min(count, (width+1)/2)
+	widths := make([]int, count)
+	remaining := width - max(0, count-1)
+	// Equal-weight columns round half up, then redistribute the remaining cells.
+	for i := range widths {
+		columns := count - i
+		widths[i] = (2*remaining + columns) / (2 * columns)
+		remaining -= widths[i]
+	}
+	return widths
+}
+
 // View renders the selected tab at the current viewport size.
 func (m *Model) View() string {
 	tabs := Tabs(m.snapshot.Focused)
 	if len(tabs) == 0 {
 		return ""
 	}
-	headers := make([]string, len(tabs))
-	width := max(1, (m.width-len(tabs)+1)/len(tabs))
-	for i, tab := range tabs {
+	widths := tabWidths(m.width, len(tabs))
+	headers := make([]string, len(widths))
+	for i, width := range widths {
 		tag := "heading_inactive"
 		if i == m.tab {
 			tag = "heading"
 		}
-		headers[i] = m.palette.Style(tag).Render(style.Fit(style.Escape(tab), width))
+		label := style.Truncate(style.Escape(tabs[i]), width)
+		left := (width - style.Width(label) + 1) / 2
+		headers[i] = m.palette.Style(tag).Render(style.Fit(strings.Repeat(" ", left)+label, width))
 	}
 	output := slices.Clone(m.header)
 	output = append(output, strings.Join(headers, " "))

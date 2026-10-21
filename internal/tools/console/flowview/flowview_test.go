@@ -320,12 +320,13 @@ func TestConsoleFlowView(t *testing.T) {
 		tests := map[string]struct {
 			make func(*testing.T) flow.Flow
 			want []string
+			row  string
 		}{
-			"http":      {func(t *testing.T) flow.Flow { return fixture(t) }, []string{"Request", "Response", "Detail"}},
-			"websocket": {func(t *testing.T) flow.Flow { f := fixture(t); f.WebSocket = &websocket.Data{}; return f }, []string{"Request", "Response", "WebSocket Messages", "Detail"}},
-			"tcp":       {func(*testing.T) flow.Flow { return flow.NewTCPFlow(nil, nil, false) }, []string{"TCP Stream", "Detail"}},
-			"udp":       {func(*testing.T) flow.Flow { return flow.NewUDPFlow(nil, nil, false) }, []string{"UDP Stream", "Detail"}},
-			"dns":       {func(*testing.T) flow.Flow { return flow.NewDNSFlow(nil, nil, false) }, []string{"Request", "Response", "Detail"}},
+			"http":      {func(t *testing.T) flow.Flow { return fixture(t) }, []string{"Request", "Response", "Detail"}, "          Request                   Response                    Detail          "},
+			"websocket": {func(t *testing.T) flow.Flow { f := fixture(t); f.WebSocket = &websocket.Data{}; return f }, []string{"Request", "Response", "WebSocket Messages", "Detail"}, "      Request             Response       WebSocket Messages         Detail      "},
+			"tcp":       {func(*testing.T) flow.Flow { return flow.NewTCPFlow(nil, nil, false) }, []string{"TCP Stream", "Detail"}, "               TCP Stream                                 Detail                "},
+			"udp":       {func(*testing.T) flow.Flow { return flow.NewUDPFlow(nil, nil, false) }, []string{"UDP Stream", "Detail"}, "               UDP Stream                                 Detail                "},
+			"dns":       {func(*testing.T) flow.Flow { return flow.NewDNSFlow(nil, nil, false) }, []string{"Request", "Response", "Detail"}, "          Request                   Response                    Detail          "},
 		}
 		for name, tt := range tests {
 			t.Run(name, func(t *testing.T) {
@@ -336,6 +337,83 @@ func TestConsoleFlowView(t *testing.T) {
 				m := New(t.Context(), nil)
 				m.SetSnapshot(contract.Snapshot{Focused: f})
 				header := plain(m.header)
+				// Pinned urwid Columns, Padding and Text supply these complete rows.
+				if diff := gocmp.Diff(tt.row, strings.Split(ansi.Strip(m.View()), "\n")[len(m.header)]); diff != "" {
+					t.Fatalf("tab alignment (-upstream +actual):\n%s", diff)
+				}
+				if name == "http" {
+					tests := map[string]struct {
+						width int
+						row   string
+					}{
+						"odd smaller": {79, "          Request                   Response                    Detail         "},
+						"odd larger":  {81, "          Request                    Response                    Detail          "},
+						"remainder":   {82, "          Request                     Response                    Detail          "},
+					}
+					for name, tt := range tests {
+						m.Resize(tt.width, 24)
+						if diff := gocmp.Diff(tt.row, strings.Split(ansi.Strip(m.View()), "\n")[len(m.header)]); diff != "" {
+							t.Fatal(name, diff)
+						}
+					}
+					m.Resize(81, 24)
+					for x, want := range map[int]int{25: 0, 27: 1, 53: 1, 55: 2, 80: 2} {
+						m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: x, Y: len(m.header)})
+						if m.tab != want {
+							t.Fatalf("tab click at %d: got %d, want %d", x, m.tab, want)
+						}
+					}
+					for _, x := range []int{26, 54} {
+						if _, consumed := m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: x, Y: len(m.header)}); consumed {
+							t.Fatalf("tab divider at %d consumed the click", x)
+						}
+					}
+					m.Update(contract.Action{Kind: "tab", Index: 0})
+					m.Resize(80, 24)
+					f := f.(*flow.HTTPFlow)
+					f.Request.RawContent = []byte{}
+					f.Request.Headers = httpmsg.Headers{
+						{Name: []byte("Host"), Value: []byte("example.com")},
+						{Name: []byte("User-Agent"), Value: []byte("curl/7.58.0")},
+						{Name: []byte("Accept"), Value: []byte("*/*")},
+						{Name: []byte("Proxy-Connection"), Value: []byte("Keep-Alive")},
+					}
+					m.SetSnapshot(contract.Snapshot{Focused: f, Detail: contract.DetailOptions{DefaultContentView: "auto"}})
+					// These are the sealed upstream integration screen's header/status rows.
+					want := []string{
+						"Host:              example.com",
+						"User-Agent:        curl/7.58.0",
+						"Accept:            */*",
+						"Proxy-Connection:  Keep-Alive",
+						strings.Repeat(" ", 72) + "[m:auto]",
+						"No request content",
+					}
+					if diff := gocmp.Diff(strings.Join(want, "\n"), plain(m.lines)); diff != "" {
+						t.Fatalf("header columns and empty-description marker (-oracle +actual):\n%s", diff)
+					}
+					f.Request.Headers = httpmsg.Headers{
+						{Name: []byte("X"), Value: []byte("short")},
+						{Name: []byte(strings.Repeat("X", 31)), Value: []byte("long")},
+						{Name: []byte{'X', 0x1b}, Value: []byte{0xff, '\t'}},
+					}
+					m.SetSnapshot(contract.Snapshot{Focused: f})
+					want = []string{
+						"X:" + strings.Repeat(" ", 30) + "short",
+						strings.Repeat("X", 30) + "  long",
+						"X:" + strings.Repeat(" ", 30),
+						`X\x1b:` + strings.Repeat(" ", 26) + `\xff\t`,
+					}
+					if diff := gocmp.Diff(strings.Join(want, "\n"), plain(m.lines[:4])); diff != "" {
+						t.Fatalf("capped and escaped header columns (-upstream +actual):\n%s", diff)
+					}
+					m.Resize(81, 24)
+					m.snapshot.Detail.DefaultContentView = "raw"
+					if diff := gocmp.Diff(strings.Repeat("d", 41)+strings.Repeat(" ", 33)+"[m:raw]", ansi.Strip(m.contentStatus(strings.Repeat("d", 60)))); diff != "" {
+						t.Fatalf("clipped description and right-aligned marker:\n%s", diff)
+					}
+					m.Resize(80, 24)
+					header = plain(m.header)
+				}
 				if header == "" {
 					t.Fatal("focused flow header is empty")
 				}
@@ -473,6 +551,16 @@ func TestConsoleContentView(t *testing.T) {
 					}
 					if metadata.TCPMessage != nil && !metadata.TCPMessage.FromClient || metadata.UDPMessage != nil && metadata.UDPMessage.FromClient || metadata.WebSocketMessage != nil && !metadata.WebSocketMessage.FromClient {
 						t.Fatal(name, "message direction lost")
+					}
+					if tt.protocol != "http" {
+						m := New(t.Context(), nil)
+						m.SetSnapshot(contract.Snapshot{Focused: tt.flow, Detail: contract.DetailOptions{DefaultContentView: "raw"}})
+						if tt.protocol == "websocket" {
+							m.Update(contract.Action{Kind: "tab", Index: 2})
+						}
+						if diff := gocmp.Diff("raw"+strings.Repeat(" ", 70)+"[m:raw]", ansi.Strip(m.lines[0])); diff != "" {
+							t.Fatalf("%s: stream marker alignment:\n%s", name, diff)
+						}
 					}
 				}
 			}},

@@ -15,12 +15,14 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
 )
 
-type processReadyMsg struct{ command tea.Cmd }
-type processFinishedMsg struct {
-	session *external.EditSession
-	result  external.Result
-	viewer  bool
-}
+type (
+	processReadyMsg    struct{ command tea.Cmd }
+	processFinishedMsg struct {
+		session *external.EditSession
+		result  external.Result
+		viewer  bool
+	}
+)
 
 func (m *Model) installGrid(action contract.Action) error {
 	action = action.Clone()

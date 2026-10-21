@@ -486,6 +486,30 @@ func verifyModes(t *testing.T) {
 	if w.FlowID != other.ID || w.Mode != "json" || w.Tabs[1].Mode != "json" {
 		t.Fatalf("flow view did not follow the captured live focus: %+v", w)
 	}
+	ctx, finish = BeginInvocation(t.Context())
+	mustConsole(t, b.Do(ctx, func(ctx context.Context) error {
+		for range 2 {
+			if err := b.Dispatch(ctx, contract.Action{Kind: "tab", Value: "next", Index: -1}); err != nil {
+				return err
+			}
+		}
+		window, _ := b.Control.State().Current("flowview", false)
+		if window.Index != 0 {
+			t.Fatalf("same-Do double tab ended at %d, want 0", window.Index)
+		}
+		mode, err := b.Call(ctx, "console.flowview.mode")
+		if err != nil {
+			return err
+		}
+		if mode != "auto" {
+			t.Fatalf("relative tab query read the old tab mode: %v", mode)
+		}
+		return nil
+	}))
+	tabs := finish()
+	if len(tabs) != 2 || tabs[0].Action.Index != 2 || tabs[0].Action.Value != "Detail" || tabs[1].Action.Index != 0 || tabs[1].Action.Value != "Request" {
+		t.Fatalf("relative tab effects were not resolved to ordered absolute values: %+v", tabs)
+	}
 }
 
 func verifyCommandJoin(t *testing.T) {

@@ -17,6 +17,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/zchee/mitmproxy-go/internal/tools/cmdline"
+	"github.com/zchee/mitmproxy-go/internal/tools/console"
+	"github.com/zchee/mitmproxy-go/options"
 )
 
 func TestMitmproxyCLI(t *testing.T) {
@@ -32,10 +36,12 @@ func TestMitmproxyCLI(t *testing.T) {
 		tests := map[string]struct{}{"metadata": {}, "profiles_precedence": {}, "completion": {}, "non_tty": {}, "startup_errors": {}}
 		for name := range tests {
 			t.Run(name, func(t *testing.T) {
+				home := t.TempDir()
 				run := func(args ...string) (string, string, error) {
 					ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 					defer cancel()
 					cmd := exec.CommandContext(ctx, binary, args...) //nolint:gosec // This is the freshly built, test-owned console executable.
+					cmd.Env = append(os.Environ(), "HOME="+home, "USERPROFILE="+home)
 					var stdout, stderr bytes.Buffer
 					cmd.Stdout, cmd.Stderr = &stdout, &stderr
 					err := cmd.Run()
@@ -83,12 +89,14 @@ func TestMitmproxyCLI(t *testing.T) {
 							}
 						}
 					}
-					entries, err := os.ReadDir(directory)
+					// Option application may initialize TLS material in the explicit confdir,
+					// but metadata must not use the default directory beneath HOME.
+					entries, err := os.ReadDir(home)
 					if err != nil {
 						t.Fatal(err)
 					}
 					if len(entries) != 0 {
-						t.Fatalf("metadata created runtime files: %v", entries)
+						t.Fatalf("metadata touched the isolated home outside confdir: %v", entries)
 					}
 				case "profiles_precedence":
 					config := []byte("console_layout: horizontal\nconsole_mouse: false\n")
@@ -101,10 +109,30 @@ func TestMitmproxyCLI(t *testing.T) {
 					if err != nil {
 						t.Fatalf("profile precedence: %v stderr=%s", err, stderr)
 					}
-					for _, want := range []string{"console_layout: vertical", "console_layout_headers: false", "console_mouse: false"} {
+					for _, want := range []string{"console_layout: single", "console_layout_headers: true", "console_mouse: true"} {
 						if !strings.Contains(stdout, want) {
-							t.Fatalf("missing merged option %q in %s", want, stdout)
+							t.Fatalf("missing default option %q in %s", want, stdout)
 						}
+					}
+					opts := options.New()
+					m, err := console.New(t.Context(), console.Config{Options: opts})
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer func() {
+						if err := m.Close(context.WithoutCancel(t.Context())); err != nil {
+							t.Error(err)
+						}
+					}()
+					cmd := cmdline.NewConsole(opts, "test")
+					if err := cmd.ParseFlags(args); err != nil {
+						t.Fatal(err)
+					}
+					if err := cmdline.Apply(t.Context(), cmd, opts, m.Do); err != nil {
+						t.Fatal(err)
+					}
+					if opts.Str("console_layout") != "vertical" || opts.Bool("console_layout_headers") || opts.Bool("console_mouse") {
+						t.Fatalf("current options lost precedence: layout=%q headers=%t mouse=%t", opts.Str("console_layout"), opts.Bool("console_layout_headers"), opts.Bool("console_mouse"))
 					}
 					for _, absent := range []string{"termlog_verbosity:", "flow_detail:", "web_port:"} {
 						if strings.Contains(stdout, absent) {
@@ -112,10 +140,15 @@ func TestMitmproxyCLI(t *testing.T) {
 						}
 					}
 				case "completion":
-					tests := map[string]struct{}{"bash": {}, "zsh": {}, "fish": {}, "powershell": {}}
-					for shell := range tests {
+					tests := map[string]struct{ marker string }{
+						"bash":       {"__start_mitmproxy"},
+						"zsh":        {"compdef _mitmproxy mitmproxy"},
+						"fish":       {"complete -c mitmproxy"},
+						"powershell": {"Register-ArgumentCompleter -CommandName 'mitmproxy'"},
+					}
+					for shell, test := range tests {
 						stdout, stderr, err := run("completion", shell)
-						if err != nil || stderr != "" || !strings.Contains(stdout, "mitmproxy") || !strings.Contains(stdout, "console-layout") {
+						if err != nil || stderr != "" || !strings.Contains(stdout, test.marker) || !strings.Contains(stdout, "__complete") {
 							t.Fatalf("%s completion: %v\nstdout=%s\nstderr=%s", shell, err, stdout, stderr)
 						}
 					}

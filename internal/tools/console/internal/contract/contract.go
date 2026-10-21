@@ -244,6 +244,8 @@ type DisplayConfig struct {
 // Action requests a validated control transition. Kind is push, pop, pane,
 // layout, overlay, dismiss, tab, mode, option, binding, editor, selection,
 // nav, grid, external, prompt or prompt_done. Mutable payloads are copied on admission.
+// A tab request with Index -1 and Value next/prev is relative; Host.Dispatch
+// resolves it under dispatch and emits only an absolute tab name and index.
 type Action struct {
 	Kind, Value, Text string
 	Window            Window

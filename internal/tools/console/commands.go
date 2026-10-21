@@ -61,9 +61,12 @@ func (a *ConsoleAddon) registerCommands(loader *addon.Loader) error {
 		{"end", "Go to the end of a list or scrollable."},
 		{"next", "Go to the next navigatable item."},
 		{"select", "Select a navigable item for viewing or editing."},
-		{"up", "Go up."}, {"down", "Go down."},
-		{"pageup", "Go up."}, {"pagedown", "Go down."},
-		{"left", "Go left."}, {"right", "Go right."},
+		{"up", "Go up."},
+		{"down", "Go down."},
+		{"pageup", "Go up."},
+		{"pagedown", "Go down."},
+		{"left", "Go left."},
+		{"right", "Go right."},
 	} {
 		if err := loader.AddCommand("console.nav."+spec.direction, func(ctx context.Context) error {
 			return a.bridge.Dispatch(ctx, contract.Action{Kind: "nav", Value: spec.direction})

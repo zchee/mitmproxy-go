@@ -10,10 +10,12 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
 	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -194,7 +196,7 @@ func (m *Master) NewProgram() (*tea.Program, error) {
 		return nil, errors.New("console presentation is already selected or closed")
 	}
 	model := m.makeModel()
-	program, err := NewProgram(model, tea.WithContext(context.WithoutCancel(m.Bridge.Context())), tea.WithInput(m.stdin), tea.WithOutput(m.stdout))
+	program, err := NewProgram(model, tea.WithContext(context.WithoutCancel(m.Bridge.Context())), tea.WithInput(m.stdin), tea.WithOutput(m.stdout), tea.WithoutSignalHandler())
 	if err != nil {
 		return nil, err
 	}
@@ -285,6 +287,57 @@ func (m *Master) Run(ctx context.Context) (err error) {
 		if err := m.Do(ctx, func(context.Context) error { return m.Bridge.Keys.Install(bindings) }); err != nil {
 			return err
 		}
+	}
+	if owner == terminalPresentation {
+		signals := make(chan os.Signal, 1)
+		stop, joined := make(chan struct{}), make(chan struct{})
+		signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+		defer func() {
+			signal.Stop(signals)
+			close(stop)
+			<-joined
+			for {
+				select {
+				case <-signals:
+				default:
+					return
+				}
+			}
+		}()
+		go func() {
+			defer close(joined)
+			// Send only after Init, so startup failures cannot strand a sender.
+			var ready <-chan struct{}
+			for {
+				select {
+				case <-stop:
+					return
+				case <-ctx.Done():
+					return
+				case <-m.Bridge.Context().Done():
+					return
+				case received := <-signals:
+					if received == syscall.SIGTERM {
+						m.Shutdown()
+					} else {
+						ready = m.ready
+					}
+				case <-ready:
+					select {
+					case <-stop:
+						return
+					case <-ctx.Done():
+						return
+					case <-m.Bridge.Context().Done():
+						return
+					default:
+					}
+					// Send also selects on the program's own shutdown context.
+					m.Program.Send(quitPromptMsg{})
+					ready = nil
+				}
+			}
+		}()
 	}
 	return m.Master.Run(ctx)
 }

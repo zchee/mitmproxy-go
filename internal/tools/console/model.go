@@ -42,6 +42,8 @@ type Model struct {
 	ready         func()
 }
 
+type quitPromptMsg struct{}
+
 type resultMsg struct {
 	result  contract.Result
 	effects contract.EffectsMsg
@@ -313,6 +315,8 @@ func (m *Model) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		}
 	}()
 	switch msg := msg.(type) {
+	case quitPromptMsg:
+		return m, m.confirmExit()
 	case tea.WindowSizeMsg:
 		m.width, m.height = max(0, msg.Width), max(0, msg.Height)
 		m.input.SetWidth(max(0, m.width-2))

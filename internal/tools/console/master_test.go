@@ -14,10 +14,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/zchee/mitmproxy-go/options"
 )
@@ -57,9 +59,62 @@ func consoleLifecycleChild(scenario string) error {
 	go func() { finished <- m.Run(runCtx) }()
 	select {
 	case <-m.Ready():
-		if scenario == "shutdown" {
+		switch scenario {
+		case "shutdown":
+			process, err := os.FindProcess(os.Getpid())
+			if err != nil {
+				return err
+			}
+			tick := time.NewTicker(time.Millisecond)
+			defer tick.Stop()
+			var sequence uint64
+			for range 2 {
+				if err := process.Signal(syscall.SIGINT); err != nil {
+					return err
+				}
+				for {
+					confirmed := false
+					var current uint64
+					if err := m.Do(ctx, func(context.Context) error {
+						state := m.Bridge.Control.State()
+						current = m.Bridge.Control.sequence
+						confirmed = state.Prompt == "confirm" && state.Text == "Quit" && current > sequence
+						return nil
+					}); err != nil {
+						return err
+					}
+					data, err := os.ReadFile(os.Getenv("MITMPROXY_CONSOLE_TEST_TRANSCRIPT"))
+					if err != nil && !errors.Is(err, os.ErrNotExist) {
+						return err
+					}
+					text := ansi.Strip(string(data))
+					if confirmed && strings.Contains(text, "Quit") && strings.Contains(text, "Yes") && strings.Contains(text, "No") {
+						sequence = current
+						break
+					}
+					select {
+					case err := <-finished:
+						return fmt.Errorf("interrupt exited before confirmation: %w", err)
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-tick.C:
+					}
+				}
+			}
+			if _, err := fmt.Fprintln(os.Stdout, "console interrupt confirmation ready"); err != nil {
+				return err
+			}
+		case "startup":
+			process, err := os.FindProcess(os.Getpid())
+			if err != nil {
+				return err
+			}
+			if err := process.Signal(syscall.SIGTERM); err != nil {
+				return err
+			}
+		case "reuse":
 			cancelRun()
-		} else {
+		default:
 			m.Shutdown()
 		}
 	case err := <-finished:
@@ -144,19 +199,56 @@ func TestConsoleMaster(t *testing.T) {
 				mustConsole(t, err)
 				directory := t.TempDir()
 				transcript := filepath.Join(directory, "terminal.txt")
-				args := []string{"-q", transcript, binary}
+				args := []string{"-q", "-F", transcript, binary}
 				if runtime.GOOS == "linux" {
 					quoted := "'" + strings.ReplaceAll(binary, "'", "'\\''") + "'"
-					args = []string{"-q", "-e", "-c", "exec " + quoted, transcript}
+					args = []string{"-q", "-f", "-e", "-c", "exec " + quoted, transcript}
 				}
 				ctx, cancel := context.WithTimeout(t.Context(), 25*time.Second)
 				defer cancel()
 				cmd := exec.CommandContext(ctx, script, args...) //nolint:gosec // The executable is the current controlled test binary.
-				cmd.Env = append(os.Environ(), "MITMPROXY_CONSOLE_LIFECYCLE_CASE="+name, "MITMPROXY_CONSOLE_TEST_DIR="+directory, "TERM=xterm-256color", "LC_ALL=en_US.UTF-8")
+				cmd.Env = append(os.Environ(), "MITMPROXY_CONSOLE_LIFECYCLE_CASE="+name, "MITMPROXY_CONSOLE_TEST_DIR="+directory, "MITMPROXY_CONSOLE_TEST_TRANSCRIPT="+transcript, "TERM=xterm-256color", "LC_ALL=en_US.UTF-8")
 				if name == "utf8_warning" {
 					cmd.Env = append(cmd.Env, "LC_ALL=C")
 				}
+				var inputDone chan error
+				if name == "shutdown" {
+					input, err := cmd.StdinPipe()
+					mustConsole(t, err)
+					defer input.Close() //nolint:errcheck // The child result and input write retain failures.
+					inputDone = make(chan error, 1)
+					go func() {
+						tick := time.NewTicker(time.Millisecond)
+						defer tick.Stop()
+						for {
+							data, err := os.ReadFile(transcript)
+							if err != nil && !errors.Is(err, os.ErrNotExist) {
+								inputDone <- err
+								return
+							}
+							text := ansi.Strip(string(data))
+							// console/master.py:70-81 offers Quit with yes/no one-key choices.
+							if strings.Contains(text, "console interrupt confirmation ready") && strings.Contains(text, "Quit") && strings.Contains(text, "Yes") && strings.Contains(text, "No") {
+								_, err := io.WriteString(input, "y")
+								inputDone <- err
+								return
+							}
+							select {
+							case <-ctx.Done():
+								inputDone <- ctx.Err()
+								return
+							case <-tick.C:
+							}
+						}
+					}()
+				}
 				output, err := cmd.CombinedOutput()
+				cancel()
+				if inputDone != nil {
+					if inputErr := <-inputDone; inputErr != nil {
+						t.Fatalf("PTY confirmation input: %v\n%s", inputErr, output)
+					}
+				}
 				if err != nil {
 					t.Fatalf("real PTY lifecycle: %v\n%s", err, output)
 				}

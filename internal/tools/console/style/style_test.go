@@ -89,6 +89,7 @@ func TestConsoleFormatting(t *testing.T) {
 		for name := range tests {
 			t.Run(name, func(t *testing.T) {
 				if name == "control_fields" {
+					verifyFlowRowStyles(t)
 					palette, err := NewPalette("solarized_dark", true)
 					if err != nil {
 						t.Fatal(err)

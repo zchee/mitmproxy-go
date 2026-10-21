@@ -94,6 +94,7 @@ type Model struct {
 	rows                []visibleRow
 	first, focus, total int
 	mouse               bool
+	palette             style.Palette
 }
 
 // New constructs a flow-list widget using the frontend's lifetime context.
@@ -116,6 +117,20 @@ func (m *Model) Resize(width, height int) {
 
 // SetSnapshot installs only the visible, already-formatted flow projection.
 func (m *Model) SetSnapshot(snapshot contract.Snapshot) {
+	name, transparent := "solarized_dark", true
+	for _, option := range snapshot.Options {
+		switch option.Name() {
+		case "console_palette":
+			name, _ = option.Current().(string)
+		case "console_palette_transparent":
+			transparent, _ = option.Current().(bool)
+		}
+	}
+	if m.palette.Name != name || m.palette.Transparent != transparent {
+		if palette, err := style.NewPalette(name, transparent); err == nil {
+			m.palette = palette
+		}
+	}
 	m.first, m.focus, m.total = snapshot.FirstIndex, snapshot.FocusIndex, snapshot.Total
 	m.mouse = snapshot.Control.Mouse
 	m.request.Offset = snapshot.FirstIndex
@@ -125,7 +140,8 @@ func (m *Model) SetSnapshot(snapshot contract.Snapshot) {
 		if len(lines) >= m.viewport.Height() {
 			break
 		}
-		parts := strings.Split(row.Text, "\n")
+		text := style.RenderFlowRow(row, "", m.viewport.Width(), snapshot.FirstIndex+index == snapshot.FocusIndex, m.palette)
+		parts := strings.Split(text, "\n")
 		parts = parts[:min(len(parts), m.viewport.Height()-len(lines))]
 		m.rows = append(m.rows, visibleRow{id: row.ID, index: snapshot.FirstIndex + index, first: len(lines), height: len(parts)})
 		for _, line := range parts {

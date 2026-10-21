@@ -138,6 +138,17 @@ func TestConsoleGoldens(t *testing.T) {
 						}
 						teatest.RequireEqualOutput(t, []byte(frame))
 						path := filepath.Join("testdata", "presentation", state+"-"+size+".json")
+						if update := flag.Lookup("update"); update != nil && update.Value.String() == "true" {
+							metadata, err := json.Marshal(styles)
+							requireNoError(t, err)
+							file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o600)
+							requireNoError(t, err)
+							_, writeErr := file.Write(metadata)
+							closeErr := file.Close()
+							requireNoError(t, writeErr)
+							requireNoError(t, closeErr)
+							requireNoError(t, os.Chmod(path, 0o600))
+						}
 						data, err := os.ReadFile(path)
 						requireNoError(t, err)
 						var expected framePresentation

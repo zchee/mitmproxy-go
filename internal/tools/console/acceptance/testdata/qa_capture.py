@@ -359,6 +359,20 @@ def _child_changed(_number: int, _frame: FrameType | None) -> None:
     return
 
 
+def _child_environment(home: Path) -> dict[str, str]:
+    return {
+        **{
+            name: value
+            for name, value in os.environ.items()
+            if name in {"PATH", "TMPDIR"} or name.startswith("LC_")
+        },
+        "HOME": str(home),
+        "TERM": "xterm-256color",
+        "TZ": "UTC",
+        "LANG": "C.UTF-8",
+    }
+
+
 def _launch(args: argparse.Namespace) -> None:
     out = Path(args.out)
     subprocess.run(
@@ -368,13 +382,7 @@ def _launch(args: argparse.Namespace) -> None:
     home, confdir = work / "home", work / "confdir"
     home.mkdir(mode=0o700)
     confdir.mkdir(mode=0o700)
-    env = {
-        **os.environ,
-        "HOME": str(home),
-        "TERM": "xterm-256color",
-        "TZ": "UTC",
-        "LANG": "C.UTF-8",
-    }
+    env = _child_environment(home)
     command = [
         str(args.binary),
         "--mode",

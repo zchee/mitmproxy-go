@@ -52,6 +52,49 @@ def test_prompt_readiness(screen: str, expected: bool) -> None:
     assert qa_capture._prompt_ready(screen) is expected
 
 
+def test_child_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Launch a real child without ambient proxy, certificate or application state."""
+    blocked = (
+        "http_proxy",
+        "HTTPS_PROXY",
+        "SSL_CERT_FILE",
+        "MITMPROXY_EDITOR",
+        "CONSOLE_QA_UNRELATED",
+    )
+    for name in blocked:
+        monkeypatch.setenv(name, "parent-only")
+    monkeypatch.setenv("LC_MESSAGES", "C")
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    home = tmp_path / "home"
+    environment = qa_capture._child_environment(home)
+    assert set(environment) <= {"PATH", "HOME", "TERM", "TZ", "LANG", "TMPDIR"} | {
+        name for name in os.environ if name.startswith("LC_")
+    }
+    assert environment["HOME"] == str(home)
+    assert environment["TERM"] == "xterm-256color"
+    assert environment["TZ"] == "UTC"
+    assert environment["LANG"] == "C.UTF-8"
+    assert environment["LC_MESSAGES"] == "C"
+    assert environment["TMPDIR"] == str(tmp_path)
+    if "PATH" in os.environ:
+        assert environment["PATH"] == os.environ["PATH"]
+    subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            (
+                "import os, sys; "
+                "assert all(name not in os.environ for name in sys.argv[1:])"
+            ),
+            *blocked,
+        ],
+        env=environment,
+        check=True,
+        timeout=10,
+    )
+
+
 def test_exclusive_output(tmp_path: Path) -> None:
     """Retain prior evidence rather than replacing a capture accidentally."""
     output = tmp_path / "record.txt"

@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("- key: x\n  cmd: >-\n    console.command\n    flow.comment @focus 'two words'\n")

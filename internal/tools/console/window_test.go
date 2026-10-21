@@ -210,6 +210,56 @@ func TestConsoleWindow(t *testing.T) {
 					if m.View().MouseMode != tea.MouseModeNone {
 						t.Fatal("disabled mouse requested mouse mode")
 					}
+					tests := map[string]struct {
+						prompt, text, layout string
+						width, height, index int
+						commander            bool
+						want                 *tea.Cursor
+					}{
+						"commander home":      {"command", "abc", "single", 80, 24, 0, true, tea.NewCursor(2, 22)},
+						"commander middle":    {"command", "ab界z", "single", 80, 24, 3, true, tea.NewCursor(6, 22)},
+						"commander end":       {"command", "console.view.flow ", "single", 200, 50, 18, true, tea.NewCursor(20, 48)},
+						"commander combining": {"command", "界éz", "single", 80, 24, 3, true, tea.NewCursor(5, 22)},
+						"text input":          {"text", "界éz", "single", 80, 24, 3, false, tea.NewCursor(7, 22)},
+						"onekey input":        {"onekey", "", "single", 80, 24, 0, false, tea.NewCursor(4, 22)},
+						"narrow":              {"text", "abc", "single", 1, 24, 3, false, tea.NewCursor(0, 22)},
+						"zero width":          {"command", "abc", "single", 0, 24, 3, true, nil},
+						"zero height":         {"command", "abc", "single", 80, 0, 3, true, nil},
+						"choice menu":         {"choice", "abc", "single", 80, 24, 0, false, tea.NewCursor(3, 22)},
+						"confirmation menu":   {"confirm", "Quit (yes,no)? ", "single", 80, 24, 0, false, tea.NewCursor(15, 22)},
+						"commander choice":    {"choice", "選択 (y,n)? ", "single", 80, 24, 0, true, tea.NewCursor(12, 22)},
+						"commander confirm":   {"confirm", "Quit (yes,no)? ", "single", 80, 24, 0, true, tea.NewCursor(15, 22)},
+						"narrow menu":         {"choice", "abc", "single", 2, 24, 0, false, tea.NewCursor(1, 22)},
+					}
+					for name, tt := range tests {
+						m := NewModel(nil, nil)
+						m.width, m.height = tt.width, tt.height
+						m.state.Layout = tt.layout
+						m.state.Prompt, m.state.Text, m.state.Cursor = tt.prompt, tt.text, tt.index
+						if tt.prompt == "choice" || tt.prompt == "confirm" {
+							m.state.Choices = []contract.Choice{{Label: "yes", Value: "y"}}
+						}
+						m.input.SetValue(tt.text)
+						m.input.SetCursor(tt.index)
+						if tt.commander {
+							m.factories = map[string]WidgetFactory{"commander": func(host contract.Host) contract.Widget { return commander.New(t.Context(), host) }}
+						}
+						m.refreshWidgets()
+						if diff := cmp.Diff(tt.want, m.View().Cursor); diff != "" {
+							t.Fatalf("%s cursor (-want +got): %s", name, diff)
+						}
+						if tt.commander && len(m.state.Choices) > 0 {
+							m.state.Choices = append(m.state.Choices, contract.Choice{Label: "no", Value: "n"}, contract.Choice{Label: "cancel", Value: "q"})
+							m.refreshWidgets()
+							if diff := cmp.Diff(tea.NewCursor(tt.want.X, 20), m.View().Cursor); diff != "" {
+								t.Fatalf("%s expanded menu cursor (-want +got): %s", name, diff)
+							}
+						}
+						m.state.Prompt = ""
+						if m.View().Cursor != nil {
+							t.Fatalf("%s retained cursor after prompt closed", name)
+						}
+					}
 				}
 			})
 		}
@@ -411,6 +461,9 @@ func TestConsoleStatusBar(t *testing.T) {
 						if len(m.footer()) != 3 {
 							t.Fatalf("suppressed %s prompt", prompt)
 						}
+						if diff := cmp.Diff(tea.NewCursor(4, 22), m.View().Cursor); diff != "" {
+							t.Fatalf("%s input cursor (-want +got): %s", prompt, diff)
+						}
 					}
 					m.factories = map[string]WidgetFactory{"commander": func(host contract.Host) contract.Widget { return commander.New(t.Context(), host) }}
 					for _, width := range []int{80, 200} {
@@ -421,7 +474,11 @@ func TestConsoleStatusBar(t *testing.T) {
 						if len(footer) != 3 || footer[2] != strings.Repeat(" ", width) {
 							t.Fatalf("command footer at width %d: %q", width, footer)
 						}
-						frame := strings.Split(ansi.Strip(m.View().Content), "\n")
+						view := m.View()
+						if diff := cmp.Diff(tea.NewCursor(2, 22), view.Cursor); diff != "" {
+							t.Fatal("commander cursor (-want +got): " + diff)
+						}
+						frame := strings.Split(ansi.Strip(view.Content), "\n")
 						if diff := cmp.Diff(footer[0], frame[21]); diff != "" {
 							t.Fatal("command moved status row (-want +got): " + diff)
 						}

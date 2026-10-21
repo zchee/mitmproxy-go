@@ -11,12 +11,14 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/addons/core"
 	"github.com/zchee/mitmproxy-go/command"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
+	"github.com/zchee/mitmproxy-go/internal/tools/console/commander"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/internal/contract"
 )
 
@@ -192,6 +194,21 @@ func TestConsoleCommands(t *testing.T) {
 				case name == "console.key.unbind.focus":
 					if _, err := b.binding(current.Binding); err == nil {
 						t.Fatal("focused binding still exists after unbind")
+					}
+				}
+				if name == "console.choose" || name == "console.choose.cmd" || name == "console.command.confirm" {
+					m := NewModel(b, map[string]WidgetFactory{"commander": func(host contract.Host) contract.Widget { return commander.New(t.Context(), host) }})
+					m.state = state.Clone()
+					want := tea.NewCursor(6, 20)
+					if name == "console.command.confirm" {
+						want = tea.NewCursor(8, 21)
+					}
+					for _, layout := range []string{"single", "vertical", "horizontal"} {
+						m.state.Layout = layout
+						m.refreshWidgets()
+						if diff := cmp.Diff(want, m.View().Cursor); diff != "" {
+							t.Fatalf("%s %s caption cursor (-want +got): %s", name, layout, diff)
+						}
 					}
 				}
 				NewInstaller(b.Control).Install(batch)

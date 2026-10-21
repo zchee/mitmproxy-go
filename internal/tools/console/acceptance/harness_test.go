@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -136,6 +137,47 @@ func requireNoError(t *testing.T, err error) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func resolveArtifactRoot(root string) (string, error) {
+	if !filepath.IsAbs(root) {
+		return "", fmt.Errorf("MITMPROXY_TEST_CONSOLE_ARTIFACTS must be an absolute path: %q", root)
+	}
+	canonical, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve console artifact root %q: %w", root, err)
+	}
+	info, err := os.Stat(canonical)
+	if err != nil {
+		return "", fmt.Errorf("stat console artifact root %q: %w", canonical, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("console artifact root %q must be an existing directory", canonical)
+	}
+	if err := checkArtifactRootOwner(info); err != nil {
+		return "", fmt.Errorf("console artifact root %q: %w", canonical, err)
+	}
+	if info.Mode().Perm()&0o022 != 0 {
+		return "", fmt.Errorf("console artifact root %q must not be group- or other-writable", canonical)
+	}
+	return canonical, nil
+}
+
+func consoleArtifactDir(t *testing.T, prefix string) string {
+	t.Helper()
+	configured := os.Getenv("MITMPROXY_TEST_CONSOLE_ARTIFACTS")
+	root := configured
+	if root == "" {
+		root = t.TempDir()
+	}
+	canonical, err := resolveArtifactRoot(root)
+	if err != nil {
+		t.Fatalf("MITMPROXY_TEST_CONSOLE_ARTIFACTS=%q: %v", configured, err)
+	}
+	out, err := os.MkdirTemp(canonical, prefix)
+	requireNoError(t, err)
+	t.Logf("console artifacts: configured=%q canonical=%q output=%q", configured, canonical, out)
+	return out
 }
 
 func loadFrameInputs(t *testing.T) frameInputs {

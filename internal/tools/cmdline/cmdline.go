@@ -1,7 +1,7 @@
 // Copyright 2026 The mitmproxy-go Authors.
 // SPDX-License-Identifier: MIT
 
-// Package cmdline builds mitmdump's flags from its registered options.
+// Package cmdline builds frontend flags from their registered options.
 package cmdline
 
 import (
@@ -18,23 +18,37 @@ import (
 	"github.com/zchee/mitmproxy-go/options"
 )
 
+type toolProfile uint8
+
+const (
+	dumpProfile toolProfile = iota
+	webProfile
+	consoleProfile
+)
+
 // New constructs the mitmdump command with the registered subset of the flags
 // in mitmproxy/tools/cmdline.py. The caller installs RunE to call Apply, handle
 // --options and --commands, and start the master. Help, version and shell
 // completion do not run that handler. Construct a fresh command for each parse;
 // Cobra commands and their flag values are not safe for concurrent execution.
 func New(opts *options.Manager, version string) *cobra.Command {
-	return newCommand(opts, version, false)
+	return newCommand(opts, version, dumpProfile)
 }
 
 // NewWeb constructs the mitmweb profile: common flags, web listener/browser
 // flags and interception, without dump detail or a positional flow filter.
-// Apply uses the same configuration precedence for both profiles.
+// Apply uses the same configuration precedence for all profiles.
 func NewWeb(opts *options.Manager, version string) *cobra.Command {
-	return newCommand(opts, version, true)
+	return newCommand(opts, version, webProfile)
 }
 
-func newCommand(opts *options.Manager, version string, web bool) *cobra.Command {
+// NewConsole constructs the mitmproxy profile with common, layout and filter flags.
+// It has no dump-detail flag, web-listener flags or positional flow filter.
+func NewConsole(opts *options.Manager, version string) *cobra.Command {
+	return newCommand(opts, version, consoleProfile)
+}
+
+func newCommand(opts *options.Manager, version string, profile toolProfile) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:                   "mitmdump [options] [filter]",
 		Short:                 "An interactive, SSL/TLS-capable intercepting proxy",
@@ -47,10 +61,14 @@ func newCommand(opts *options.Manager, version string, web bool) *cobra.Command 
 	flags := cmd.Flags()
 	// argparse.REMAINDER makes every token after the first filter part of it.
 	flags.SetInterspersed(false)
-	if web {
+	if profile != dumpProfile {
 		cmd.Use = "mitmweb [options]"
 		cmd.Args = cobra.NoArgs
 		cmd.Annotations = map[string]string{"frontend": "web"}
+		if profile == consoleProfile {
+			cmd.Use = "mitmproxy [options]"
+			cmd.Annotations["frontend"] = "console"
+		}
 		flags.SetInterspersed(true)
 	}
 	flags.Bool("options", false, "Show all options and their default values")
@@ -60,15 +78,22 @@ func newCommand(opts *options.Manager, version string, web bool) *cobra.Command 
 	flags.BoolP("quiet", "q", false, "Quiet.")
 	flags.BoolP("verbose", "v", false, "Increase log verbosity.")
 	for _, spec := range flagSpecs {
-		if web && spec.name == "flow_detail" {
+		if profile != dumpProfile && spec.name == "flow_detail" {
 			continue
 		}
 		if option, ok := opts.Lookup(spec.name); ok {
 			addFlag(flags, opts, option, spec.short, spec.metavar)
 		}
 	}
-	if web {
+	if profile == webProfile {
 		for _, spec := range []struct{ name, metavar string }{{"web_open_browser", ""}, {"web_port", "PORT"}, {"web_host", "HOST"}, {"intercept", "FILTER"}} {
+			if option, ok := opts.Lookup(spec.name); ok {
+				addFlag(flags, opts, option, "", spec.metavar)
+			}
+		}
+	}
+	if profile == consoleProfile {
+		for _, spec := range []struct{ name, metavar string }{{"console_layout", ""}, {"console_layout_headers", ""}, {"intercept", "FILTER"}, {"view_filter", "FILTER"}} {
 			if option, ok := opts.Lookup(spec.name); ok {
 				addFlag(flags, opts, option, "", spec.metavar)
 			}
@@ -124,7 +149,7 @@ func newCommand(opts *options.Manager, version string, web bool) *cobra.Command 
 // that order, inside do's dispatch hold. Pass Master.Do as do; the context it
 // gives the callback is also passed to option subscribers. Positional filters
 // are applied last, except when --options or --commands requests an early exit.
-// The command must have been parsed and built by New or NewWeb with opts.
+// The command must have been parsed and built by New, NewWeb or NewConsole with opts.
 func Apply(ctx context.Context, cmd *cobra.Command, opts *options.Manager, do func(context.Context, func(context.Context) error) error) error {
 	flags := cmd.Flags()
 	passed := make(map[string]any)
@@ -140,16 +165,17 @@ func Apply(ctx context.Context, cmd *cobra.Command, opts *options.Manager, do fu
 	verbose, _ := flags.GetBool("verbose")
 	dumpOptions, _ := flags.GetBool("options")
 	dumpCommands, _ := flags.GetBool("commands")
-	web := cmd.Annotations["frontend"] == "web"
+	frontend := cmd.Annotations["frontend"]
+	dump := frontend != "web" && frontend != "console"
 	if quiet || dumpOptions || dumpCommands {
 		passed["termlog_verbosity"] = "error"
-		if !web {
+		if dump {
 			passed["flow_detail"] = 0
 		}
 	}
 	if verbose {
 		passed["termlog_verbosity"] = "debug"
-		if !web {
+		if dump {
 			passed["flow_detail"] = 2
 		}
 	}
@@ -158,7 +184,7 @@ func Apply(ctx context.Context, cmd *cobra.Command, opts *options.Manager, do fu
 		if err := opts.LoadAll(ctx, setSpecs, "", passed); err != nil {
 			return err
 		}
-		if args := flags.Args(); len(args) != 0 && !dumpOptions && !dumpCommands && !web {
+		if args := flags.Args(); len(args) != 0 && !dumpOptions && !dumpCommands && dump {
 			filter := strings.Join(args, " ")
 			values := make(map[string]any, 3)
 			for _, name := range []string{"save_stream_filter", "readfile_filter", "dumper_filter"} {

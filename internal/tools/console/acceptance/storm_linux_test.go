@@ -306,6 +306,25 @@ func runStormHelper(t *testing.T) {
 		t.Fatal("PTY model did not acknowledge Init")
 	}
 	var activeSends, highWater, sends atomic.Int64
+	defer func() {
+		receipt.EntryNS, receipt.ReleaseNS = observed.entryNS.Load(), observed.releaseNS.Load()
+		if receipt.EntryNS > 0 && receipt.ReleaseNS > 0 {
+			receipt.BlockNS = receipt.ReleaseNS - receipt.EntryNS
+		}
+		receipt.ProducedAtRelease = observed.atRelease.Load()
+		receipt.SnapshotSendHighWater, receipt.SnapshotSends = highWater.Load(), sends.Load()
+		receipt.OutstandingHighWater = observed.outstandingMax.Load()
+		receipt.WakeCapacity = 1
+		receipt.WakeProof = "wake capacity is 1 by design with a nonblocking send; ROOT TestConsoleBridge/deterministic/{dirty_race,saturated_no_state_change,update_blocked} proves coalescing"
+		// Presentation-owned fields are read only after the UI and senders have joined.
+		if receipt.Joined {
+			receipt.EntryGeneration, receipt.FinalGeneration = observed.entryGeneration, observed.last.Generation
+			receipt.DeliveryNS = observed.deliveredNS
+			receipt.DeliveredSnapshots = observed.deliveries
+			receipt.StoreCount, receipt.ListCount = observed.last.StoreCount, observed.last.Total
+			receipt.PresentedIDs = slices.Clone(observed.last.IDs)
+		}
+	}()
 	go func() {
 		defer close(snapshotDone)
 		master.Bridge.DrainTo(func(msg tea.Msg) {
@@ -389,10 +408,6 @@ func runStormHelper(t *testing.T) {
 		receipt.Navigation = append(receipt.Navigation, name)
 	}
 	join()
-	receipt.DeliveredSnapshots = observed.deliveries
-	receipt.OutstandingHighWater = observed.outstandingMax.Load()
-	receipt.WakeCapacity = 1
-	receipt.WakeProof = "wake capacity is 1 by design with a nonblocking send; ROOT TestConsoleBridge/deterministic/{dirty_race,saturated_no_state_change,update_blocked} proves coalescing"
 	goleak.VerifyNone(t)
 	receipt.Passed = !t.Failed()
 	fingerprint := sha256.Sum256([]byte(strings.Join(receipt.PresentedIDs, "\n")))

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unsafe"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/google/go-cmp/cmp"
@@ -72,6 +73,15 @@ func testVirtualized(t *testing.T) {
 	}
 	if projection.FirstIndex != 8765 || projection.Rows[0].ID != "flow-08765" || projection.Rows[11].ID != "flow-08776" {
 		t.Fatalf("deep viewport: %+v", projection)
+	}
+	for _, index := range []int{0, 8765, len(flows) - 1} {
+		source, projected := flows[index].Common().ID, projection.IDs[index]
+		if diff := cmp.Diff(source, projected); diff != "" {
+			t.Fatalf("projected ID %d (-want +got): %s", index, diff)
+		}
+		if unsafe.StringData(source) == unsafe.StringData(projected) {
+			t.Fatalf("projected ID %d aliases borrowed flow storage", index)
+		}
 	}
 	f := flows[8765].(*flow.HTTPFlow)
 	before := projection.Rows[0]

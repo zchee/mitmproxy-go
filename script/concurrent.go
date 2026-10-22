@@ -4,12 +4,137 @@
 package script
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"runtime"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
+
+	"github.com/zchee/mitmproxy-go/addon"
+	"github.com/zchee/mitmproxy-go/flow"
 )
+
+type concurrentInstance struct {
+	graph *capabilities
+	slots chan struct{}
+}
+
+func (m *moduleAddon) initializeConcurrent(ctx context.Context, program *starlark.Program) error {
+	live, count, err := discoverConcurrent(m.members, nil)
+	if err != nil || count == 0 {
+		return err
+	}
+	graph := &capabilities{entry: m.entry}
+	predeclared := graph.predeclared()
+	var globals starlark.StringDict
+	if err := graph.evaluate(ctx, "init", func(thread *starlark.Thread, _ *invocation) error {
+		var err error
+		globals, err = program.Init(thread, predeclared)
+		return err
+	}); err != nil {
+		return err
+	}
+	frozen, _, err := discoverConcurrent(globals, nil)
+	if err != nil {
+		return err
+	}
+	if err := live.corresponds(frozen, false); err != nil {
+		return err
+	}
+	globals.Freeze()
+	graph.worker = true
+	m.concurrent = &concurrentInstance{graph: graph, slots: make(chan struct{}, min(32, runtime.GOMAXPROCS(0)+4))}
+	m.liveNode, m.workerNode = live, frozen
+	return nil
+}
+
+func (i *invocation) shared(fn func(context.Context) error) error {
+	if err := i.check(); err != nil {
+		return err
+	}
+	if !i.worker {
+		return fn(i.ctx)
+	}
+	return i.graph.entry.owner.master.Do(i.ctx, fn)
+}
+
+func (m *moduleAddon) concurrentHook(ctx context.Context, name string, f flow.Flow) error {
+	if m.retired || m.entry.owner.stopping.Load() {
+		return errors.New("script instance is retired")
+	}
+	if err := m.checkTree(); err != nil {
+		return err
+	}
+	instance := m.concurrent
+	wrapper := m.workerNode.wrappers[name]
+	if wrapper == nil {
+		return fmt.Errorf("%s: concurrent hook %s has no frozen counterpart", m.name, name)
+	}
+	owner := m.entry.owner
+	// Count the whole suspended invocation, including permit admission and merge,
+	// so outside-dispatch Close cannot return between those ownership phases.
+	owner.mu.Lock()
+	if owner.closed.Load() {
+		owner.mu.Unlock()
+		return errors.New("script loader is closed")
+	}
+	owner.wg.Add(1)
+	owner.mu.Unlock()
+	defer owner.wg.Done()
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(owner.ctx, cancel)
+	defer func() { stop(); cancel() }()
+	prior := owner.current.Swap(nil)
+	var merge *flowMerge
+	resumed, err := addon.Concurrent(ctx, func(frameFree context.Context) error {
+		// There is no extra goroutine or large clone while capacity is exhausted.
+		select {
+		case instance.slots <- struct{}{}:
+		case <-frameFree.Done():
+			return frameFree.Err()
+		}
+		defer func() { <-instance.slots }()
+		if err := frameFree.Err(); err != nil {
+			return err
+		}
+		if err := owner.master.Do(frameFree, func(context.Context) error {
+			// Retirement before admission does not start a new evaluation. Already
+			// admitted evaluations retain their graph and can finish after removal.
+			if m.retired || owner.stopping.Load() {
+				return errors.New("script instance is retired")
+			}
+			merge = newFlowMerge(f)
+			return nil
+		}); err != nil {
+			return err
+		}
+		done := make(chan error, 1)
+		go func() {
+			done <- instance.graph.evaluate(frameFree, name, func(thread *starlark.Thread, i *invocation) error {
+				i.merges = map[flow.Flow]*flowMerge{merge.copy: merge}
+				_, err := starlark.Call(thread, wrapper.function, starlark.Tuple{wrapFlow(i, merge.copy)}, nil)
+				merge.checkpoint("")
+				return err
+			})
+		}()
+		return <-done
+	})
+	if resumed.Err() != nil {
+		return resumed.Err()
+	}
+	owner.current.Store(prior)
+	if merge != nil {
+		if mergeErr := merge.apply(resumed, owner.logger()); mergeErr != nil {
+			err = errors.Join(err, mergeErr)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("%s: %s", m.name, diagnostic(err))
+	}
+	return nil
+}
 
 // concurrentValue is callable only so direct calls have a stable diagnostic.
 // The hook adapter, not Starlark Call, selects the frozen counterpart.

@@ -13,6 +13,7 @@ import (
 	"go.starlark.net/syntax"
 
 	"github.com/zchee/mitmproxy-go/addon"
+	"github.com/zchee/mitmproxy-go/flow"
 )
 
 const invocationKey = "mitmproxy.invocation"
@@ -22,10 +23,12 @@ type invocation struct {
 	graph   *capabilities
 	active  bool
 	logging bool
+	worker  bool
+	merges  map[flow.Flow]*flowMerge
 }
 
 func (i *invocation) check() error {
-	if !i.active || i.graph.entry.owner.current.Load() != i {
+	if !i.active || (!i.worker && i.graph.entry.owner.current.Load() != i) {
 		return errors.New("script invocation handle has expired")
 	}
 	return i.ctx.Err()
@@ -34,9 +37,13 @@ func (i *invocation) check() error {
 type capabilities struct {
 	entry   *scriptEntry
 	retired bool // accessed only by ordinary evaluations under dispatch
+	worker  bool // immutable after the frozen instance is published
 }
 
 func (i *invocation) modelCheck() error {
+	if i.worker {
+		return i.check()
+	}
 	if _, err := i.graph.scope(); err != nil {
 		return err
 	}
@@ -57,6 +64,9 @@ type moduleAddon struct {
 	retired         bool
 	scriptConfigure uint64
 	logAdapter      *logAddon
+	concurrent      *concurrentInstance
+	liveNode        *concurrentNode
+	workerNode      *concurrentNode
 }
 
 type logAddon struct{ *moduleAddon }
@@ -100,6 +110,9 @@ func (l *Loader) initialize(ctx context.Context, e *scriptEntry, data []byte) (*
 	if err := validateTree(globals); err != nil {
 		return nil, err
 	}
+	if err := m.initializeConcurrent(ctx, program); err != nil {
+		return nil, err
+	}
 	return m, nil
 }
 
@@ -116,10 +129,13 @@ func (g *capabilities) evaluate(ctx context.Context, name string, fn func(*starl
 	ctx, cancel := context.WithCancel(ctx)
 	stopLoader := context.AfterFunc(g.entry.owner.ctx, cancel)
 	defer func() { stopLoader(); cancel() }()
-	i := &invocation{ctx: ctx, graph: g, active: true, logging: name == "add_log"}
-	prior := owner.current.Swap(i)
+	i := &invocation{ctx: ctx, graph: g, active: true, logging: name == "add_log", worker: g.worker}
+	var prior *invocation
+	if !i.worker {
+		prior = owner.current.Swap(i)
+	}
 	defer func() {
-		if i.active {
+		if !i.worker && i.active {
 			owner.current.Store(prior)
 		}
 		i.active = false
@@ -131,7 +147,12 @@ func (g *capabilities) evaluate(ctx context.Context, name string, fn func(*starl
 	}
 	thread.Print = func(_ *starlark.Thread, text string) {
 		if !i.logging {
-			g.entry.owner.logger().InfoContext(i.ctx, text)
+			if err := i.shared(func(ctx context.Context) error {
+				g.entry.owner.logger().InfoContext(ctx, text)
+				return nil
+			}); err != nil {
+				thread.Cancel(err.Error())
+			}
 		}
 	}
 	if budget := g.entry.owner.master.Options.Int("script_max_steps"); budget > 0 {
@@ -193,6 +214,16 @@ func (m *moduleAddon) Load(ctx context.Context, loader *addon.Loader) error {
 	}
 	m.children = buildChildren(m, m.members)
 	m.loaded = true
+	if m.concurrent != nil {
+		if m.liveNode == nil || m.workerNode == nil {
+			return errors.New("concurrent addons path changed during load")
+		}
+		node, _, err := discoverConcurrent(m.members, m.module)
+		if err != nil {
+			return err
+		}
+		return m.liveNode.corresponds(node, true)
+	}
 	return nil
 }
 
@@ -282,12 +313,30 @@ func buildChildren(parent *moduleAddon, members starlark.StringDict) []*moduleAd
 	children, _ := childrenOf(members) // validated before construction
 	out := make([]*moduleAddon, len(children))
 	for n, child := range children {
-		out[n] = &moduleAddon{entry: parent.entry, graph: parent.graph, members: child.Members, module: child, name: fmt.Sprintf("%s/%d:%s", parent.name, n, child.Name)}
+		out[n] = &moduleAddon{entry: parent.entry, graph: parent.graph, members: child.Members, module: child, name: fmt.Sprintf("%s/%d:%s", parent.name, n, child.Name), concurrent: parent.concurrent}
+		if parent.concurrent != nil {
+			if n < len(parent.liveNode.children) && n < len(parent.workerNode.children) {
+				out[n].liveNode = parent.liveNode.children[n]
+				out[n].workerNode = parent.workerNode.children[n]
+			}
+		}
 	}
 	return out
 }
 
 func (m *moduleAddon) checkTree() error {
+	if m.concurrent != nil {
+		if m.liveNode == nil || m.workerNode == nil {
+			return fmt.Errorf("%s: concurrent addons path changed after load", m.name)
+		}
+		node, _, err := discoverConcurrent(m.members, m.module)
+		if err != nil {
+			return err
+		}
+		if err := m.liveNode.corresponds(node, true); err != nil {
+			return fmt.Errorf("%s: %w", m.name, err)
+		}
+	}
 	if err := validateTree(m.members); err != nil {
 		return err
 	}

@@ -69,15 +69,15 @@ func (v *flowValue) get(name string) (starlark.Value, error) {
 			return wrapFlow(v.i, v.f.Copy()), nil
 		}), nil
 	case "backup":
-		return actionBuiltin("flow.backup", v.i, func() error { v.f.Backup(); return nil }), nil
+		return v.action("backup", func() error { v.f.Backup(); return nil }), nil
 	case "revert":
-		return actionBuiltin("flow.revert", v.i, v.f.Revert), nil
+		return v.action("revert", v.f.Revert), nil
 	case "intercept":
-		return actionBuiltin("flow.intercept", v.i, func() error { b.Intercept(); return nil }), nil
+		return v.action("intercept", func() error { b.Intercept(); return nil }), nil
 	case "resume":
-		return actionBuiltin("flow.resume", v.i, func() error { b.Resume(); return nil }), nil
+		return v.action("resume", func() error { b.Resume(); return nil }), nil
 	case "kill":
-		return actionBuiltin("flow.kill", v.i, b.Kill), nil
+		return v.action("kill", b.Kill), nil
 	case "killable":
 		return builtin("flow.killable", v.i.modelCheck, func(_ *starlark.Thread, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 			if err := starlark.UnpackArgs("flow.killable", args, kwargs); err != nil {

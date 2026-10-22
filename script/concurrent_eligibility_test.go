@@ -4,14 +4,68 @@
 package script
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 
-	"go.starlark.net/starlark"
-	"go.starlark.net/starlarkstruct"
-	"go.starlark.net/syntax"
+	"github.com/zchee/mitmproxy-go/addon"
+	"github.com/zchee/mitmproxy-go/dns"
+	"github.com/zchee/mitmproxy-go/flow"
 )
+
+func concurrentTestHook(name string, f flow.Flow) addon.Hook {
+	switch name {
+	case "requestheaders":
+		return addon.RequestHeadersHook{Flow: f.(*flow.HTTPFlow)}
+	case "request":
+		return addon.RequestHook{Flow: f.(*flow.HTTPFlow)}
+	case "responseheaders":
+		return addon.ResponseHeadersHook{Flow: f.(*flow.HTTPFlow)}
+	case "response":
+		return addon.ResponseHook{Flow: f.(*flow.HTTPFlow)}
+	case "error":
+		return addon.ErrorHook{Flow: f.(*flow.HTTPFlow)}
+	case "http_connect":
+		return addon.HTTPConnectHook{Flow: f.(*flow.HTTPFlow)}
+	case "http_connect_upstream":
+		return addon.HTTPConnectUpstreamHook{Flow: f.(*flow.HTTPFlow)}
+	case "http_connected":
+		return addon.HTTPConnectedHook{Flow: f.(*flow.HTTPFlow)}
+	case "http_connect_error":
+		return addon.HTTPConnectErrorHook{Flow: f.(*flow.HTTPFlow)}
+	case "websocket_start":
+		return addon.WebSocketStartHook{Flow: f.(*flow.HTTPFlow)}
+	case "websocket_message":
+		return addon.WebSocketMessageHook{Flow: f.(*flow.HTTPFlow)}
+	case "websocket_end":
+		return addon.WebSocketEndHook{Flow: f.(*flow.HTTPFlow)}
+	case "tcp_start":
+		return addon.TCPStartHook{Flow: f.(*flow.TCPFlow)}
+	case "tcp_message":
+		return addon.TCPMessageHook{Flow: f.(*flow.TCPFlow)}
+	case "tcp_end":
+		return addon.TCPEndHook{Flow: f.(*flow.TCPFlow)}
+	case "tcp_error":
+		return addon.TCPErrorHook{Flow: f.(*flow.TCPFlow)}
+	case "udp_start":
+		return addon.UDPStartHook{Flow: f.(*flow.UDPFlow)}
+	case "udp_message":
+		return addon.UDPMessageHook{Flow: f.(*flow.UDPFlow)}
+	case "udp_end":
+		return addon.UDPEndHook{Flow: f.(*flow.UDPFlow)}
+	case "udp_error":
+		return addon.UDPErrorHook{Flow: f.(*flow.UDPFlow)}
+	case "dns_request":
+		return addon.DNSRequestHook{Flow: f.(*flow.DNSFlow)}
+	case "dns_response":
+		return addon.DNSResponseHook{Flow: f.(*flow.DNSFlow)}
+	case "dns_error":
+		return addon.DNSErrorHook{Flow: f.(*flow.DNSFlow)}
+	default:
+		panic("unrecognized test hook: " + name)
+	}
+}
 
 func TestScriptConcurrentEligibility(t *testing.T) {
 	tests := map[string]struct{ accepted bool }{
@@ -36,63 +90,39 @@ func TestScriptConcurrentEligibility(t *testing.T) {
 					continue
 				}
 				t.Run(name, func(t *testing.T) {
-					for _, child := range []bool{false, true} {
-						predeclared := starlark.StringDict{"concurrent": starlark.NewBuiltin("concurrent", concurrentBuiltin), "module": starlark.NewBuiltin("module", starlarkstruct.MakeModule)}
-						source := "def _not_the_hook(f):\n    pass\n"
-						if child {
-							source += fmt.Sprintf("addons = [module('child', %s=concurrent(_not_the_hook))]\n", name)
-						} else {
-							source += fmt.Sprintf("%s = concurrent(_not_the_hook)\n", name)
+					f := newFixture(t)
+					f.load(f.file("eligibility.star", fmt.Sprintf("def _not_the_hook(f):\n    f.comment = %q\n%s = concurrent(_not_the_hook)\n", name, name)))
+					if !test.accepted {
+						f.wantLog(fmt.Sprintf("Concurrent decorator not supported for '%s' method.", name), 1)
+						if f.loader.entries[0].module != nil {
+							t.Fatal("invalid binding registered")
 						}
-						_, program, err := starlark.SourceProgramOptions(&syntax.FileOptions{}, "eligibility.star", source, predeclared.Has)
-						if err != nil {
-							t.Fatal(err)
+						return
+					}
+					var model flow.Flow = f.request()
+					switch {
+					case strings.HasPrefix(name, "tcp_"):
+						model = flow.NewTCPFlow(model.Common().ClientConn, model.Common().ServerConn, true)
+					case strings.HasPrefix(name, "udp_"):
+						model = flow.NewUDPFlow(model.Common().ClientConn, model.Common().ServerConn, true)
+					case strings.HasPrefix(name, "dns_"):
+						d := flow.NewDNSFlow(model.Common().ClientConn, model.Common().ServerConn, true)
+						d.Request = &dns.Message{Query: true, Questions: []dns.Question{{Name: "example.test", Type: dns.TypeA, Class: dns.ClassIN}}}
+						model = d
+					}
+					f.hook(concurrentTestHook(name, model))
+					if model.Common().Comment != name {
+						t.Fatalf("hook did not run/merge: %q; logs=%s", model.Common().Comment, f.logs.String())
+					}
+					f.wantLog("Addon error:", 0)
+					if err := f.master.Do(t.Context(), func(context.Context) error {
+						module := f.loader.entries[0].module
+						if module == nil || module.concurrent == nil || !module.concurrent.graph.worker {
+							return fmt.Errorf("missing frozen worker instance")
 						}
-						globals, err := program.Init(&starlark.Thread{}, predeclared)
-						if err != nil {
-							t.Fatal(err)
-						}
-						live, count, err := discoverConcurrent(globals, nil)
-						if !test.accepted {
-							want := fmt.Sprintf("Concurrent decorator not supported for '%s' method.", name)
-							if err == nil || !strings.Contains(err.Error(), want) {
-								t.Fatalf("binding %s child=%v: %v", name, child, err)
-							}
-							continue
-						}
-						if err != nil || count != 1 {
-							t.Fatalf("accepted binding %s child=%v count=%d: %v", name, child, count, err)
-						}
-						frozenGlobals, err := program.Init(&starlark.Thread{}, predeclared)
-						if err != nil {
-							t.Fatal(err)
-						}
-						frozen, _, err := discoverConcurrent(frozenGlobals, nil)
-						if err != nil {
-							t.Fatal(err)
-						}
-						if err := live.corresponds(frozen, false); err != nil {
-							t.Fatal(err)
-						}
-						if err := live.corresponds(live, true); err != nil {
-							t.Fatal(err)
-						}
-						if err := live.corresponds(frozen, true); err == nil {
-							t.Fatal("changed wrapper identity accepted as live path")
-						}
-						frozenGlobals.Freeze()
-						node := frozen
-						if child {
-							node = frozen.children[0]
-						}
-						wrapper := node.wrappers[name]
-						if wrapper.function.Name() != "_not_the_hook" {
-							t.Fatal("eligibility used def name instead of binding")
-						}
-						_, err = starlark.Call(&starlark.Thread{}, wrapper, starlark.Tuple{starlark.None}, nil)
-						if err == nil || !strings.Contains(err.Error(), "concurrent(_not_the_hook) cannot be called directly; it runs only when invoked as a hook") {
-							t.Fatalf("direct wrapper call: %v", err)
-						}
+						return nil
+					}); err != nil {
+						t.Fatal(err)
 					}
 				})
 			}

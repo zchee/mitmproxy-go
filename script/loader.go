@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/zchee/mitmproxy-go/addon"
+	"github.com/zchee/mitmproxy-go/command"
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/master"
 	"github.com/zchee/mitmproxy-go/options"
@@ -43,6 +44,7 @@ type Loader struct {
 	closed              atomic.Bool
 	current             atomic.Pointer[invocation]
 	stopping            atomic.Bool
+	syncRunDepth        atomic.Int32
 	mu                  sync.Mutex
 	wg                  sync.WaitGroup
 	watching            bool
@@ -60,14 +62,15 @@ type Loader struct {
 }
 
 type scriptEntry struct {
-	owner      *Loader
-	path       string
-	fullpath   string
-	generation uint64
-	mtime      time.Time
-	module     *moduleAddon
-	retired    bool
-	httpSlots  chan struct{}
+	owner       *Loader
+	path        string
+	fullpath    string
+	generation  uint64
+	mtime       time.Time
+	module      *moduleAddon
+	retired     bool
+	synchronous bool
+	httpSlots   chan struct{}
 }
 
 // New returns an unregistered scripting addon bound to m. It starts no watcher,
@@ -94,12 +97,15 @@ func (l *Loader) Addons() []any {
 	return out
 }
 
-// Load registers the scripting options with their upstream metadata.
+// Load registers the scripting options and synchronous run command.
 func (l *Loader) Load(ctx context.Context, loader *addon.Loader) error {
 	if err := loader.AddOption(ctx, "scripts", options.TypeSeq, []string{}, "Execute a script."); err != nil {
 		return err
 	}
-	return loader.AddOption(ctx, "script_max_steps", options.TypeInt, 0, "Maximum number of Starlark execution steps per script hook call. 0 means no limit.")
+	if err := loader.AddOption(ctx, "script_max_steps", options.TypeInt, 0, "Maximum number of Starlark execution steps per script hook call. 0 means no limit."); err != nil {
+		return err
+	}
+	return loader.AddCommand("script.run", l.run, command.WithParams("flows", "path"), command.WithHelp("Run a script on the specified flows. The script is configured with the current options and all lifecycle events for each flow are simulated. Note that the load event is not invoked."))
 }
 
 // Configure synchronously loads new scripts and preserves unchanged instances.

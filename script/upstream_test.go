@@ -13,6 +13,8 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/addon"
+	"github.com/zchee/mitmproxy-go/flow"
+	"github.com/zchee/mitmproxy-go/httpmsg"
 )
 
 // These cases translate test/mitmproxy/addons/test_script.py at the repository's
@@ -156,6 +158,24 @@ func TestScriptUpstream(t *testing.T) {
 		})
 		t.Run("TestScriptLoader", func(t *testing.T) {
 			tests := map[string]struct{ run func(*testing.T) }{
+				"test_script_run": {func(t *testing.T) {
+					f := newFixture(t)
+					events := runRecorder(t, f)
+					names := []string{"configure", "running", "requestheaders", "request", "responseheaders", "response"}
+					path := f.file("recorder.star", runRecordingSource(names...))
+					x := f.request()
+					x.Response, _ = httpmsg.MakeResponse(200, nil, nil)
+					invokeRun(t, f, path, []flow.Flow{x}, false)
+					if diff := gocmp.Diff(names, *events); diff != "" {
+						t.Fatal(diff)
+					}
+					f.wantLog("Addon error:", 0)
+				}},
+				"test_script_run_nonexistent": {func(t *testing.T) {
+					f := newFixture(t)
+					invokeRun(t, f, f.dir, []flow.Flow{f.request()}, false)
+					f.wantLog("No such script", 1)
+				}},
 				"test_simple": {func(t *testing.T) {
 					f := newFixture(t)
 					f.hook(addon.RunningHook{})

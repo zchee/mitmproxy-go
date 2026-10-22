@@ -115,4 +115,20 @@
 // identities and owned commands. Retirement never joins under dispatch: admitted
 // workers may finish and merge into a still-waiting flow, but cancellation drops
 // the merge. Close cancels and joins owned work outside dispatch.
+//
+// # Synchronous recorded-flow scripts
+//
+// Registering Loader also registers script.run(flows, path), with native
+// []flow.Flow and command.Path parameters. It initializes a temporary module
+// once, then invokes configure with every option key, running, and each flow's
+// native event sequence on that module and its nested module children only.
+// It never invokes on_load or registers temporary addons or commands. A
+// concurrent wrapper is refused before invocation at every dispatch depth;
+// ordinary blocking builtins stay bounded and inline. The first hook error
+// stops the entire run and is logged once. Nested script.run frames are limited
+// to 16 per Loader; a nesting-limit error stops the chain and is logged once by
+// its outermost run, which still returns success to the external caller. Other
+// nested hook errors retain per-run logging and success semantics. Message
+// iteration reveals messages incrementally, so early termination retains only
+// the revealed prefix.
 package script

@@ -110,6 +110,10 @@ func (l *Loader) initialize(ctx context.Context, e *scriptEntry, data []byte) (*
 	if err := validateTree(globals); err != nil {
 		return nil, err
 	}
+	if e.synchronous {
+		_, _, err := discoverConcurrent(globals, nil)
+		return m, err
+	}
 	if err := m.initializeConcurrent(ctx, program); err != nil {
 		return nil, err
 	}
@@ -185,6 +189,9 @@ func (m *moduleAddon) call(ctx context.Context, name string, arg func(*invocatio
 	if value == nil {
 		return nil
 	}
+	if _, concurrent := value.(*concurrentValue); concurrent && m.entry.synchronous {
+		return fmt.Errorf("Async handler %s (%s) cannot be called from sync context", name, m.entry.path) //nolint:staticcheck // Preserve the upstream synchronous-handler diagnostic.
+	}
 	fn, ok := value.(starlark.Callable)
 	if !ok {
 		return fmt.Errorf("%s: %s is not callable", m.name, name)
@@ -198,6 +205,9 @@ func (m *moduleAddon) call(ctx context.Context, name string, arg func(*invocatio
 		return err
 	})
 	if err != nil {
+		if errors.Is(err, errScriptRunDepth) {
+			return err
+		}
 		return fmt.Errorf("%s: %s", m.name, diagnostic(err))
 	}
 	return nil

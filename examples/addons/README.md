@@ -17,14 +17,22 @@ mitmdump -s examples/addons/commands-simple.star
 mitmdump --tcp-hosts '.*' -s examples/addons/tcp-simple.star
 ```
 
-The same `-s` option is intended for mitmproxy and mitmweb. The seventeen
-ordinary examples have been loaded and their hooks executed against the
-scripting runtime, including HTTP/DNS constructors, registered commands and
-options. This is model-level validation, not built-binary or network acceptance:
-frontend script wiring and the executable acceptance suite are still pending.
-`nonblocking.star` additionally requires the concurrent runtime, which is not
-yet installed; the ordinary runtime rejects its undefined `concurrent` name.
-Its hook and timing behavior remain unvalidated.
+The same `-s` option is available in mitmproxy and mitmweb. The black-box
+`script/acceptance` package builds race-enabled mitmdump and exercises all
+eighteen ports with real owned HTTP, DNS, TCP and WebSocket peers. Its upstream
+HTTP forwarder maps requested destinations to an owned loopback origin without
+resolving or dialing the requested hostname. TCP and DNS use reverse mode with
+owned loopback targets. Domain conditions in the translated scripts are not
+rewritten for tests.
+
+```sh
+go test -race ./script/acceptance
+go test -race -tags scripttiming -count=5 -cpu=1 -run '^TestScriptTiming$' ./script/acceptance
+```
+
+The tagged tests measure real one- and five-second waits, parallel completion,
+hot reload and the watcher. They are separate from default deterministic
+ownership and state assertions.
 
 Scripts use module-level functions and dictionaries, not Python classes,
 imports, decorators or async functions. `on_load(loader)` replaces Python's

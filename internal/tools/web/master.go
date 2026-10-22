@@ -58,6 +58,7 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/version"
 	"github.com/zchee/mitmproxy-go/master"
 	"github.com/zchee/mitmproxy-go/options"
+	"github.com/zchee/mitmproxy-go/script"
 
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/httplayer"
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/modes"
@@ -109,6 +110,7 @@ type Master struct {
 	eventLogs  *addon.LogHandler
 	closeMu    sync.Mutex
 	logsClosed bool
+	scripts    *script.Loader
 }
 
 // logHandler is initialized before addon registration can emit any records.
@@ -146,6 +148,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
 	}
 	m.ProxyServer = ps
+	m.scripts = script.New(base, script.Config{Logger: logger, ListenAddrs: ps.ListenAddrs})
 	m.View = view.New(base.Addons)
 	m.auth = webauth.New(opts)
 	m.StaticViewer = &StaticViewer{master: m, wake: make(chan struct{}, 1)}
@@ -153,7 +156,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		core.New(base.Addons), browser.New(opts, base.Addons), block.New(opts),
 		stripdnshttpsrecords.New(opts), blocklist.New(opts), anticache.New(opts), anticomp.New(opts),
 		clientplayback.New(base), commandhistory.New(opts), comment.New(base.Addons), cut.New(),
-		disableh2c.New(), export.New(opts), onboarding.New(opts), proxyauth.New(opts), ps,
+		disableh2c.New(), export.New(opts), onboarding.New(opts), proxyauth.New(opts), ps, m.scripts,
 		dnsresolver.New(opts, logger), nextlayer.New(opts), serverplayback.New(base),
 		mapremote.New(opts), maplocal.New(opts), modifybody.New(opts), modifyheaders.New(opts),
 		stickyauth.New(opts), stickycookie.New(opts), save.New(opts, m.ShutdownWithError),
@@ -264,8 +267,11 @@ func (m *Master) closeFrontend(ctx context.Context) error {
 		cancel()
 	}
 	var err error
+	if m.scripts != nil {
+		err = m.scripts.Close()
+	}
 	if m.StaticViewer != nil {
-		err = m.StaticViewer.close(drain)
+		err = errors.Join(err, m.StaticViewer.close(drain))
 	}
 	if server != nil {
 		err = errors.Join(err, server.Shutdown(drain))

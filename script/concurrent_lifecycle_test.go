@@ -7,7 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -384,4 +387,99 @@ func testChildTopologyDrift(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+type heldCancellationContext struct {
+	context.Context
+	mu      sync.Mutex
+	next    int
+	pending map[int]func()
+}
+
+// Hide the parent's private cancellation link so context uses AfterFunc.
+func (*heldCancellationContext) Value(any) any { return nil }
+
+func (c *heldCancellationContext) AfterFunc(fn func()) func() bool {
+	c.mu.Lock()
+	c.next++
+	id := c.next
+	if c.pending == nil {
+		c.pending = make(map[int]func())
+	}
+	c.pending[id] = fn
+	c.mu.Unlock()
+	return func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		_, pending := c.pending[id]
+		delete(c.pending, id)
+		return pending
+	}
+}
+
+func (c *heldCancellationContext) releaseNewest() bool {
+	c.mu.Lock()
+	latest := 0
+	for id := range c.pending {
+		latest = max(latest, id)
+	}
+	fn := c.pending[latest]
+	delete(c.pending, latest)
+	c.mu.Unlock()
+	if fn == nil {
+		return false
+	}
+	fn()
+	return true
+}
+
+func (c *heldCancellationContext) releaseAll() {
+	for c.releaseNewest() {
+	}
+}
+
+func testLoaderCancellationOrder(t *testing.T) {
+	t.Helper()
+	f := newFixture(t)
+	owner := &heldCancellationContext{Context: f.loader.ctx}
+	f.loader.ctx = owner
+	started, stopped := make(chan struct{}), make(chan struct{})
+	origin := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+		close(stopped)
+	}))
+	t.Cleanup(func() {
+		f.loader.cancel()
+		owner.releaseAll()
+		if err := f.loader.Close(); err != nil {
+			t.Error(err)
+		}
+		origin.Close()
+	})
+	f.load(loadConcurrent(f, fmt.Sprintf("f.comment = 'must-not-merge'\nctx.http_get(%q)", origin.URL)))
+	x := f.request()
+	joined := make(chan error, 1)
+	go func() { joined <- f.master.Addons.Trigger(t.Context(), addon.RequestHook{Flow: x}) }()
+	awaitConcurrent(t, started)
+	closed := make(chan error, 1)
+	go func() { closed <- f.loader.Close() }()
+	awaitConcurrent(t, owner.Done())
+	// Cancel the inner evaluation first if it independently attached to the loader.
+	if !owner.releaseNewest() {
+		t.Fatal("active worker has no loader cancellation attachment")
+	}
+	err := awaitConcurrent(t, joined)
+	owner.releaseAll()
+	if closeErr := awaitConcurrent(t, closed); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	awaitConcurrent(t, stopped)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("loader cancellation result=%v, want context.Canceled", err)
+	}
+	if x.Comment != "" {
+		t.Fatal("loader cancellation merged worker state")
+	}
+	f.wantLog("Addon error:", 0)
 }

@@ -119,7 +119,9 @@ func (m *moduleAddon) concurrentHook(ctx context.Context, name string, f flow.Fl
 		}
 		done := make(chan error, 1)
 		go func() {
-			done <- instance.graph.evaluate(frameFree, name, func(thread *starlark.Thread, i *invocation) error {
+			// frameFree already has the wrapper's loader cancellation attachment.
+			// A second attachment could cancel the worker while reacquisition stays live.
+			done <- instance.graph.evaluateWithCancellation(frameFree, name, false, func(thread *starlark.Thread, i *invocation) error {
 				i.merges = map[flow.Flow]*flowMerge{merge.copy: merge}
 				_, err := starlark.Call(thread, wrapper.function, starlark.Tuple{wrapFlow(i, merge.copy)}, nil)
 				merge.checkpoint("")

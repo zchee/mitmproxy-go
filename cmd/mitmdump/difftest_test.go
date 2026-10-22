@@ -108,7 +108,7 @@ func TestDifferentialReadDump(t *testing.T) {
 }
 
 // TestDifferentialAddonListings compares the binary registries with DumpMaster,
-// excluding only the default addons not yet implemented and Go-only options.
+// excluding only Go-only options.
 func TestDifferentialAddonListings(t *testing.T) {
 	var reference struct {
 		Options  map[string]any `json:"options"`
@@ -123,10 +123,9 @@ from mitmproxy.tools.dump import DumpMaster
 async def main():
     opts = options.Options()
     master = DumpMaster(opts, with_termlog=True, with_dumper=True)
-    unported = {"scripts"}
     result = {
-        "options": {name: option.default for name, option in opts._options.items() if name not in unported},
-        "commands": sorted(cmd.signature_help().strip() for name, cmd in master.commands.commands.items() if not name.startswith("script.")),
+        "options": {name: option.default for name, option in opts._options.items()},
+        "commands": sorted(cmd.signature_help().strip() for cmd in master.commands.commands.values()),
     }
     print(json.dumps(result))
 

@@ -234,8 +234,6 @@ func adaptWebFixtureMetadata(t *testing.T, values map[string]any, goRuntime bool
 		}
 		return
 	}
-	delete(options, "scripts")
-	delete(commands, "script.run")
 	browser, ok := commands["browser.start"].(map[string]any)
 	if !ok {
 		t.Fatal("pinned Python registry is missing browser.start")

@@ -134,6 +134,10 @@ func (l *Loader) initializeModule(ctx context.Context, e *scriptEntry, data []by
 }
 
 func (g *capabilities) evaluate(ctx context.Context, name string, fn func(*starlark.Thread, *invocation) error) error {
+	return g.evaluateWithCancellation(ctx, name, true, fn)
+}
+
+func (g *capabilities) evaluateWithCancellation(ctx context.Context, name string, attachLoader bool, fn func(*starlark.Thread, *invocation) error) error {
 	owner := g.entry.owner
 	owner.mu.Lock()
 	if owner.closed.Load() {
@@ -144,8 +148,16 @@ func (g *capabilities) evaluate(ctx context.Context, name string, fn func(*starl
 	owner.mu.Unlock()
 	defer owner.wg.Done()
 	ctx, cancel := context.WithCancel(ctx)
-	stopLoader := context.AfterFunc(g.entry.owner.ctx, cancel)
-	defer func() { stopLoader(); cancel() }()
+	var stopLoader func() bool
+	if attachLoader {
+		stopLoader = context.AfterFunc(owner.ctx, cancel)
+	}
+	defer func() {
+		if stopLoader != nil {
+			stopLoader()
+		}
+		cancel()
+	}()
 	i := &invocation{ctx: ctx, graph: g, active: true, logging: name == "add_log", worker: g.worker}
 	var prior *invocation
 	if !i.worker {

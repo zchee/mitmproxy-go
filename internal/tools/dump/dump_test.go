@@ -12,14 +12,10 @@
 //	test_mitmweb                        -> not applicable: the web frontend
 //	                                       is a different binary, not built
 //	                                       yet.
-//	test_mitmdump                       -> the shutdown addon script it
-//	                                       loads needs the scripts option,
-//	                                       which no ported addon registers;
-//	                                       the signal shutdown path is
-//	                                       covered in cmd/mitmdump.
-//	test_options_includes_addon_options -> not applicable: addon scripts
-//	                                       need the scripts option, which no
-//	                                       ported addon registers.
+//	test_mitmdump                       -> covered by the built script CLI
+//	                                       tests in cmd/mitmdump.
+//	test_options_includes_addon_options -> covered by the script metadata
+//	                                       tests in cmd/mitmdump.
 //	test_options_without_scripts        -> covered in cmd/mitmdump, which
 //	                                       owns the --options output.
 package dump
@@ -113,6 +109,7 @@ func TestAddonOrder(t *testing.T) {
 		"*onboarding.Onboarding",
 		"*proxyauth.ProxyAuth",
 		"*proxyserver.ProxyServer",
+		"*script.Loader",
 		"*dnsresolver.DnsResolver",
 		"*nextlayer.NextLayer",
 		"*serverplayback.ServerPlayback",

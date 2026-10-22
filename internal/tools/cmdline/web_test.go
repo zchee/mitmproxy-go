@@ -41,12 +41,20 @@ func TestMitmwebFlags(t *testing.T) {
 		"positional_rejected":          {args: []string{"~u", "example"}, err: true},
 		"dedicated_theme_rejected":     {args: []string{"--web-theme", "dark"}, err: true},
 		"dedicated_password_rejected":  {args: []string{"--web-password", "fixture"}, err: true},
-		"scripts_rejected":             {args: []string{"-s", "addon.py"}, err: true},
+		"scripts_accepted":             {args: []string{"-s", "addon.star"}},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			opts := options.New()
 			confdir := t.TempDir()
+			if name == "scripts_accepted" {
+				path := filepath.Join(confdir, "addon.star")
+				if err := os.WriteFile(path, []byte("def request(f):\n    f.comment = \"loaded\"\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				tt.args = []string{"-s", path}
+				tt.want = map[string]any{"scripts": []string{path}}
+			}
 			if err := opts.Update(t.Context(), map[string]any{"confdir": confdir}); err != nil {
 				t.Fatal(err)
 			}

@@ -355,11 +355,84 @@ func testRetireWorker(t *testing.T, reload, samePath bool) {
 	x := f.request()
 	done := startConcurrent(t, f, t.Context(), addon.RequestHook{Flow: x})
 	awaitConcurrent(t, entered)
+	var queued <-chan error
+	var queuedFlow *flow.HTTPFlow
+	occupied := 0
+	if reload && !samePath {
+		if err := f.master.Do(t.Context(), func(context.Context) error {
+			occupied = cap(old.concurrent.slots) - len(old.concurrent.slots)
+			for range occupied {
+				old.concurrent.slots <- struct{}{}
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		started := make(chan struct{})
+		completed := make(chan error, 1)
+		queued = completed
+		queuedFlow = f.request()
+		go func() {
+			completed <- f.master.Do(t.Context(), func(ctx context.Context) error {
+				close(started)
+				return old.flowHook(ctx, "request", queuedFlow)
+			})
+		}()
+		awaitConcurrent(t, started)
+		// This acquisition completes only after the queued call yields its
+		// dispatch frame while every worker permit remains occupied.
+		if err := f.master.Do(t.Context(), func(context.Context) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if reload {
-		f.updateSource(path, "def request(f):\n    f.comment = 'new-instance'\n", time.Second)
-		f.poll()
+		replacement := "def request(f):\n    f.comment = 'new-instance'\n"
+		if !samePath {
+			hits := make(chan struct{}, 2)
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				hits <- struct{}{}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer origin.Close()
+			initializations := 0
+			if err := f.master.Commands.Register("init.second", func(context.Context) bool {
+				initializations++
+				return initializations == 2
+			}); err != nil {
+				t.Fatal(err)
+			}
+			replacement = fmt.Sprintf("def initialize():\n    if ctx.master.commands.call('init.second'):\n        ctx.http_get(%q)\n        ctx.log('second-init-returned')\ninitialize()\ndef _request(f):\n    f.comment = 'new-instance'\nrequest = concurrent(_request)\n", origin.URL)
+			f.updateSource(path, replacement, time.Second)
+			f.poll()
+			if err := f.master.Do(t.Context(), func(context.Context) error {
+				module := f.loader.entries[0].module
+				if initializations != 2 || len(hits) != 1 || module == nil || module.concurrent == nil {
+					return fmt.Errorf("second init failed: inits=%d HTTP calls=%d; logs=%s", initializations, len(hits), f.logs.String())
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			f.wantLog("second-init-returned", 1)
+			f.wantLog("error in script", 0)
+			f.wantLog("dispatch frame used after", 0)
+		} else {
+			f.updateSource(path, replacement, time.Second)
+			f.poll()
+		}
 	} else {
 		f.load()
+	}
+	if queued != nil {
+		for range occupied {
+			<-old.concurrent.slots
+		}
+		if err := awaitConcurrent(t, queued); err != nil {
+			t.Errorf("queued delivery to retired instance was not a silent no-op: %v", err)
+		}
+		if queuedFlow.Request.Headers.Get("x-retired") != "" || queuedFlow.Comment != "" {
+			t.Error("queued delivery admitted work after retirement")
+		}
 	}
 	if !old.retired {
 		t.Fatal("old instance not retired")
@@ -367,7 +440,11 @@ func testRetireWorker(t *testing.T, reload, samePath bool) {
 	if samePath && f.loader.entries[0].module == old {
 		t.Fatal("same path reused old worker instance")
 	}
-	if err := old.flowHook(t.Context(), "request", f.request()); err == nil {
+	late := f.request()
+	if err := old.flowHook(t.Context(), "request", late); err != nil {
+		t.Errorf("retired hook delivery was not a silent no-op: %v", err)
+	}
+	if late.Comment != "" || late.Request.Headers.Get("x-retired") != "" {
 		t.Fatal("retirement admitted new worker")
 	}
 	if reload {
@@ -387,6 +464,9 @@ func testRetireWorker(t *testing.T, reload, samePath bool) {
 	f.wantLog("retired-worker-finished", 1)
 	if err := f.loader.Close(); err != nil {
 		t.Fatal(err)
+	}
+	if reload && !samePath {
+		testRetiredChildDelivery(t)
 	}
 }
 

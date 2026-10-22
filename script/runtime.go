@@ -36,7 +36,7 @@ func (i *invocation) check() error {
 
 type capabilities struct {
 	entry   *scriptEntry
-	retired bool // accessed only by ordinary evaluations under dispatch
+	retired bool // shared tree lifetime; accessed only under dispatch
 	worker  bool // immutable after the frozen instance is published
 }
 
@@ -91,6 +91,19 @@ func (m *moduleAddon) Addons() []any {
 }
 
 func (l *Loader) initialize(ctx context.Context, e *scriptEntry, data []byte) (*moduleAddon, error) {
+	var mod *moduleAddon
+	// Re-enter dispatch so nested depth makes Concurrent refuse to yield. Both
+	// Init passes run blocking builtins inline, like synchronous upstream module
+	// loading, leaving the caller's frame valid for registration and lifecycle.
+	err := l.master.Do(ctx, func(ctx context.Context) error {
+		var err error
+		mod, err = l.initializeModule(ctx, e, data)
+		return err
+	})
+	return mod, err
+}
+
+func (l *Loader) initializeModule(ctx context.Context, e *scriptEntry, data []byte) (*moduleAddon, error) {
 	graph := &capabilities{entry: e}
 	predeclared := graph.predeclared()
 	_, program, err := starlark.SourceProgramOptions(&syntax.FileOptions{}, e.fullpath, data, predeclared.Has)
@@ -176,8 +189,11 @@ func diagnostic(err error) string {
 
 func (m *moduleAddon) call(ctx context.Context, name string, arg func(*invocation) (starlark.Tuple, error)) error {
 	if name != "done" {
-		if m.retired || m.entry.owner.stopping.Load() {
-			return errors.New("script instance is retired")
+		if m.graph.retired || m.entry.owner.stopping.Load() {
+			// Connections can outlive Done, and reload can retire queued deliveries.
+			// The port's lifecycle boundary skips these hooks; upstream reports
+			// actual handler exceptions, not retirement itself, as addon errors.
+			return nil
 		}
 		if m.loaded {
 			if err := m.checkTree(); err != nil {
@@ -216,6 +232,9 @@ func (m *moduleAddon) call(ctx context.Context, name string, arg func(*invocatio
 func noArgs(*invocation) (starlark.Tuple, error) { return nil, nil }
 
 func (m *moduleAddon) Load(ctx context.Context, loader *addon.Loader) error {
+	if m.graph.retired || m.entry.owner.stopping.Load() {
+		return nil
+	}
 	if err := m.call(ctx, "on_load", func(i *invocation) (starlark.Tuple, error) { return starlark.Tuple{loaderValue(i, loader, m)}, nil }); err != nil {
 		return err
 	}

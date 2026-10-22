@@ -17,6 +17,10 @@ import (
 )
 
 func (m *moduleAddon) flowHook(ctx context.Context, name string, f flow.Flow) error {
+	if m.graph.retired || m.entry.owner.stopping.Load() {
+		// Late deliveries must not inspect a retired module's hook bindings.
+		return nil
+	}
 	if _, ok := m.members[name].(*concurrentValue); ok && m.concurrent != nil {
 		return m.concurrentHook(ctx, name, f)
 	}

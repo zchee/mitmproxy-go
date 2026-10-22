@@ -8,8 +8,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +22,7 @@ import (
 	"go.starlark.net/starlark"
 
 	"github.com/zchee/mitmproxy-go/addon"
+	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/httpmsg"
@@ -200,15 +204,69 @@ func TestScriptLoader(t *testing.T) {
 		}},
 		"lifecycle_reload": {func(t *testing.T) {
 			f := newFixture(t)
-			path := f.file("reload.star", "def request(f):\n    f.comment = \"old\"\n")
-			f.load(path)
-			f.updateSource(path, "def request(f):\n    f.comment = \"new\"\n", time.Second)
-			f.poll()
-			flow := f.request()
-			f.hook(addon.RequestHook{Flow: flow})
-			if flow.Comment != "new" {
-				t.Fatalf("reload effect=%q; logs=%s", flow.Comment, f.logs.String())
+			var mu sync.Mutex
+			var events []string
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				events = append(events, r.URL.Path)
+				mu.Unlock()
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer origin.Close()
+			source := func(label string) string {
+				return fmt.Sprintf(`ctx.http_get(%q + "/%s/init")
+ctx.sleep(0)
+def command():
+    ctx.http_get(%q + "/%s/command")
+    ctx.sleep(0)
+    ctx.options.reload_observed = %q
+def on_load(loader):
+    ctx.http_get(%q + "/%s/load")
+    ctx.sleep(0)
+    loader.add_option("reload_observed", "str", "", "Observed reload.")
+    loader.add_command("reload.observe", command)
+def configure(updated):
+    ctx.http_get(%q + "/%s/configure")
+    ctx.sleep(0)
+def running():
+    ctx.http_get(%q + "/%s/running")
+    ctx.sleep(0)
+def request(f):
+    f.comment = %q
+`, origin.URL, label, origin.URL, label, label, origin.URL, label, origin.URL, label, origin.URL, label, label)
 			}
+			f.hook(addon.RunningHook{})
+			path := f.file("reload.star", source("old"))
+			f.load(path)
+			for _, label := range []string{"old", "new"} {
+				if label == "new" {
+					f.updateSource(path, source(label), time.Second)
+					f.poll()
+				}
+				if f.master.Addons.Get("script:"+path) == nil {
+					t.Fatalf("%s module not registered; logs=%s", label, f.logs.String())
+				}
+				flow := f.request()
+				f.hook(addon.RequestHook{Flow: flow})
+				if flow.Comment != label {
+					t.Fatalf("reload effect=%q, want=%q; logs=%s", flow.Comment, label, f.logs.String())
+				}
+				if _, err := f.master.Call(t.Context(), "reload.observe"); err != nil {
+					t.Fatal(err)
+				}
+				if got := f.master.Options.Str("reload_observed"); got != label {
+					t.Fatalf("registered command used expired scope: got=%q want=%q", got, label)
+				}
+			}
+			mu.Lock()
+			got := slices.Clone(events)
+			mu.Unlock()
+			want := []string{"/old/init", "/old/load", "/old/configure", "/old/running", "/old/command", "/old/configure", "/new/init", "/new/load", "/new/configure", "/new/running", "/new/command", "/new/configure"}
+			if diff := gocmp.Diff(want, got); diff != "" {
+				t.Fatalf("lifecycle events (-want +got):\n%s; logs=%s", diff, f.logs.String())
+			}
+			f.wantLog("error in script", 0)
+			f.wantLog("dispatch frame used after", 0)
 		}},
 		"remove_cancel": {func(t *testing.T) {
 			f := newFixture(t)
@@ -391,12 +449,17 @@ func TestScriptLoader(t *testing.T) {
 		}},
 		"shutdown_join": {func(t *testing.T) {
 			retiring := newFixture(t)
-			path := retiring.file("retire.star", "state = {\"work\": 0, \"done\": 0}\ndef work():\n    state[\"work\"] += 1\ndef on_load(loader):\n    loader.add_command(\"script.afterdone\", work)\ndef request(f):\n    work()\ndef done():\n    state[\"done\"] += 1\n")
+			path := retiring.file("retire.star", "state = {\"work\": 0, \"done\": 0}\ndef work():\n    state[\"work\"] += 1\ndef on_load(loader):\n    loader.add_command(\"script.afterdone\", work)\ndef request(f):\n    work()\ndef server_disconnected(server):\n    work()\ndef client_disconnected(client):\n    work()\ndef websocket_end(f):\n    work()\ndef update(flows):\n    pass\ndef done():\n    state[\"done\"] += 1\n")
 			retiring.load(path)
 			module := retiring.loader.entries[0].module
 			retiring.hook(addon.RequestHook{Flow: retiring.request()})
 			retiring.hook(addon.DoneHook{})
-			retiring.hook(addon.RequestHook{Flow: retiring.request()})
+			late := retiring.request()
+			retiring.hook(addon.RequestHook{Flow: late})
+			retiring.hook(addon.ServerDisconnectedHook{Data: &hookdata.ServerConnection{Server: late.ServerConn, Client: late.ClientConn}})
+			retiring.hook(addon.ClientDisconnectedHook{Client: late.ClientConn})
+			retiring.hook(addon.WebSocketEndHook{Flow: late})
+			retiring.hook(addon.UpdateHook{Flows: []flow.Flow{late}})
 			retiring.hook(addon.DoneHook{})
 			if _, err := retiring.master.Call(t.Context(), "script.afterdone"); err == nil {
 				t.Fatal("Done admitted a new script command")
@@ -427,6 +490,18 @@ func TestScriptLoader(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
+			worker := newFixture(t)
+			worker.load(worker.file("worker-teardown.star", "def _end(f):\n    ctx.log('unexpected-teardown-worker')\n    f.comment = 'unexpected-worker'\nwebsocket_end = concurrent(_end)\ndef update(flows):\n    ctx.log('unexpected-teardown-update')\n"))
+			worker.hook(addon.DoneHook{})
+			workerFlow := worker.request()
+			worker.hook(addon.WebSocketEndHook{Flow: workerFlow})
+			if workerFlow.Comment != "" {
+				t.Error("shutdown admitted a new concurrent worker")
+			}
+			worker.wantLog("unexpected-teardown-worker", 0)
+			worker.wantLog("unexpected-teardown-update", 0)
+			worker.wantLog("Addon error:", 0)
+			retiring.wantLog("Addon error:", 0)
 			if err := retiring.loader.Close(); err != nil {
 				t.Fatal(err)
 			}

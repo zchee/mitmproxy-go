@@ -525,6 +525,7 @@ func testCancelNoMerge(t *testing.T) {
 	if err := f.loader.Close(); err != nil {
 		t.Fatal(err)
 	}
+	testLoaderCancellationOrder(t)
 }
 
 func testInitDirectMode(t *testing.T) {

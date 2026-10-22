@@ -11,6 +11,7 @@ import (
 
 	"go.starlark.net/starlark"
 
+	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/dns"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/flow/state"
@@ -34,9 +35,25 @@ type flowMerge struct {
 
 // Copy's serialized state does not include streaming or connection runtime state.
 // Restore those only on the detached clone, never by copying a flow's mutex.
-func invocationClone(f flow.Flow) flow.Flow {
-	c := f.Copy()
+func invocationClone(f flow.Flow) (flow.Flow, error) {
+	var c flow.Flow
+	switch f.(type) {
+	case *flow.HTTPFlow:
+		c = new(flow.HTTPFlow)
+	case *flow.TCPFlow:
+		c = new(flow.TCPFlow)
+	case *flow.UDPFlow:
+		c = new(flow.UDPFlow)
+	case *flow.DNSFlow:
+		c = new(flow.DNSFlow)
+	default:
+		return nil, fmt.Errorf("unsupported invocation flow %T", f)
+	}
+	if err := setInvocationState(c, f); err != nil {
+		return nil, err
+	}
 	c.Common().ID, c.Common().Live = f.Common().ID, f.Common().Live
+	c.Common().ClientConn, c.Common().ServerConn = nil, nil
 	if f.Common().ClientConn != nil {
 		c.Common().ClientConn = f.Common().ClientConn.Clone()
 	}
@@ -52,7 +69,38 @@ func invocationClone(f flow.Flow) flow.Flow {
 			clone.Response = h.Response.Clone()
 		}
 	}
-	return c
+	return c, nil
+}
+
+// Decode detached state with temporary required fields, then restore absence
+// before publishing the result. The normal decoder preserves private backup and
+// interception state without copying the flow's mutex or changing backups.
+func setInvocationState(f, source flow.Flow) error {
+	snapshot := state.CopyMap(source.GetState())
+	d, dnsFlow := source.(*flow.DNSFlow)
+	requestless := dnsFlow && d.Request == nil
+	if requestless {
+		snapshot.Set("request", new(dns.Message).GetState())
+	}
+	if source.Common().ClientConn == nil {
+		snapshot.Set("client_conn", connection.NewClient(connection.Address{}, connection.Address{}, 0).GetState())
+	}
+	if source.Common().ServerConn == nil {
+		snapshot.Set("server_conn", connection.NewServer(nil).GetState())
+	}
+	if err := f.SetState(snapshot); err != nil {
+		return err
+	}
+	if requestless {
+		f.(*flow.DNSFlow).Request = nil
+	}
+	if source.Common().ClientConn == nil {
+		f.Common().ClientConn = nil
+	}
+	if source.Common().ServerConn == nil {
+		f.Common().ServerConn = nil
+	}
+	return nil
 }
 
 func mergeSnapshot(f flow.Flow) *state.Map {
@@ -67,9 +115,12 @@ func mergeSnapshot(f flow.Flow) *state.Map {
 	return snapshot
 }
 
-func newFlowMerge(live flow.Flow) *flowMerge {
-	copy := invocationClone(live)
-	return &flowMerge{live: live, copy: copy, baseline: mergeSnapshot(copy), messageIndices: make(map[string][]int)}
+func newFlowMerge(live flow.Flow) (*flowMerge, error) {
+	copy, err := invocationClone(live)
+	if err != nil {
+		return nil, err
+	}
+	return &flowMerge{live: live, copy: copy, baseline: mergeSnapshot(copy), messageIndices: make(map[string][]int)}, nil
 }
 
 func (m *flowMerge) checkpoint(action string) {

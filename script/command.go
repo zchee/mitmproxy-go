@@ -65,22 +65,22 @@ func (o *commandOwnership) argument(value any, depth int) (any, error) {
 		if value == nil {
 			return nil, nil
 		}
-		return o.copyFlow(value), nil
+		return o.copyFlow(value)
 	case *flow.TCPFlow:
 		if value == nil {
 			return nil, nil
 		}
-		return o.copyFlow(value), nil
+		return o.copyFlow(value)
 	case *flow.UDPFlow:
 		if value == nil {
 			return nil, nil
 		}
-		return o.copyFlow(value), nil
+		return o.copyFlow(value)
 	case *flow.DNSFlow:
 		if value == nil {
 			return nil, nil
 		}
-		return o.copyFlow(value), nil
+		return o.copyFlow(value)
 	case []flow.Flow:
 		if err := o.conversion.admit(depth, len(value)); err != nil {
 			return nil, err
@@ -159,16 +159,19 @@ func (o *commandOwnership) argument(value any, depth int) (any, error) {
 	}
 }
 
-func (o *commandOwnership) copyFlow(f flow.Flow) flow.Flow {
+func (o *commandOwnership) copyFlow(f flow.Flow) (flow.Flow, error) {
 	if o.flows == nil {
 		o.flows = make(map[flow.Flow]flow.Flow)
 	}
 	if prior := o.flows[f]; prior != nil {
-		return prior
+		return prior, nil
 	}
-	copy := invocationClone(f)
+	copy, err := invocationClone(f)
+	if err != nil {
+		return nil, err
+	}
 	o.flows[f] = copy
-	return copy
+	return copy, nil
 }
 
 func (o *commandOwnership) copyBack() error {
@@ -181,8 +184,12 @@ func (o *commandOwnership) copyBack() error {
 		if h, ok := worker.(*flow.HTTPFlow); ok {
 			request, response = h.Request, h.Response
 		}
-		snapshot := invocationClone(retained)
-		if err := worker.SetState(state.CopyMap(snapshot.GetState())); err != nil {
+		snapshot, err := invocationClone(retained)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if err := setInvocationState(worker, snapshot); err != nil {
 			errs = append(errs, err)
 			continue
 		}

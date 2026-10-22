@@ -105,8 +105,9 @@ func (m *moduleAddon) concurrentHook(ctx context.Context, name string, f flow.Fl
 			if m.retired || owner.stopping.Load() {
 				return errors.New("script instance is retired")
 			}
-			merge = newFlowMerge(f)
-			return nil
+			var err error
+			merge, err = newFlowMerge(f)
+			return err
 		}); err != nil {
 			return err
 		}

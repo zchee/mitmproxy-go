@@ -66,6 +66,9 @@ func (v *flowValue) get(name string) (starlark.Value, error) {
 			if err := starlark.UnpackArgs("flow.copy", args, kwargs); err != nil {
 				return nil, err
 			}
+			if d, ok := v.f.(*flow.DNSFlow); ok && d.Request == nil {
+				return nil, errors.New("flow.copy: cannot copy a DNS flow without a request")
+			}
 			return wrapFlow(v.i, v.f.Copy()), nil
 		}), nil
 	case "backup":

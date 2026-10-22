@@ -21,6 +21,7 @@ import (
 	"github.com/zchee/mitmproxy-go/addons/proxyserver"
 	"github.com/zchee/mitmproxy-go/dns"
 	"github.com/zchee/mitmproxy-go/flow"
+	"github.com/zchee/mitmproxy-go/flow/state"
 	"github.com/zchee/mitmproxy-go/httpmsg"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/tcp"
@@ -95,6 +96,115 @@ func testFieldMerge(t *testing.T) {
 	}
 	if df.Request.ID != 7 || df.Request.Questions[0].Name != "worker.test" || df.Response.ResponseCode != dns.ResponseCodeNXDOMAIN || df.Response.Answers[0].TTL != 123 {
 		t.Fatalf("DNS semantic merge: %s", d.logs.String())
+	}
+	tests := map[string]struct {
+		assignment string
+		request    bool
+	}{
+		"unchanged request":       {},
+		"assign response":         {"f.request = f.response", true},
+		"assign derived response": {"f.request = f.response.succeed([])", true},
+	}
+	for label, test := range tests {
+		probe := newFixture(t)
+		entered, release := concurrentBarrier(t, probe)
+		body := "def _dns(f):\n    if f.request != None or f.client_conn != None or f.server_conn != None:\n        fail('missing fields replaced during clone')\n    f.response.question.name = 'worker.test'\n    " + test.assignment + "\n    ctx.sleep(1)\ndns_response = concurrent(_dns)\n"
+		probe.load(probe.file("requestless-merge.star", body))
+		model := flow.NewDNSFlow(nil, nil, true)
+		model.Response = &dns.Message{ID: 1, Questions: []dns.Question{{Name: "old.test", Type: dns.TypeA, Class: dns.ClassIN}}}
+		done := startConcurrent(t, probe, t.Context(), addon.DNSResponseHook{Flow: model})
+		awaitConcurrent(t, entered)
+		if err := probe.master.Do(t.Context(), func(context.Context) error {
+			model.Response.ID = 9
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		release()
+		if err := awaitConcurrent(t, done); err != nil {
+			t.Fatal(err)
+		}
+		if (model.Request != nil) != test.request || model.ClientConn != nil || model.ServerConn != nil || model.Response.ID != 9 || model.Response.Questions[0].Name != "worker.test" {
+			t.Fatalf("%s: requestless merge failed: flow=%+v logs=%s", label, model, probe.logs.String())
+		}
+		if test.request && (model.Request.ID != 1 || model.Request.Questions[0].Name != "worker.test" || model.Request == model.Response) {
+			t.Fatalf("%s: assigned request lost snapshot or aliases response", label)
+		}
+		probe.wantLog("Addon error:", 0)
+	}
+	// Private backups must retain the original absent request, not the temporary
+	// decode input. An invalid requestless backup still fails its public Revert.
+	original := flow.NewDNSFlow(nil, nil, true)
+	original.Response = &dns.Message{ID: 3}
+	original.Intercept()
+	original.Backup()
+	clone, err := invocationClone(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := gocmp.Diff(original.GetState(), clone.GetState(), gocmp.Comparer(func(a, b *state.Map) bool { return state.Equal(a, b) })); diff != "" {
+		t.Fatal(diff)
+	}
+	if clone.(*flow.DNSFlow).Request != nil || clone.Common().ClientConn != nil || clone.Common().ServerConn != nil || !clone.Common().Intercepted() || clone.Modified() != original.Modified() {
+		t.Fatal("requestless clone lost absence, interception, or backup state")
+	}
+	if err := clone.Revert(); err == nil || clone.(*flow.DNSFlow).Request != nil || clone.Modified() != original.Modified() {
+		t.Fatalf("requestless backup introduced a synthetic request: %v", err)
+	}
+	original.Resume()
+	clone.Common().Resume()
+	probe := newFixture(t)
+	if err := probe.master.Commands.Register("dns.observe", func(_ context.Context, value flow.Flow) error {
+		model := value.(*flow.DNSFlow)
+		if model.Request != nil || model.ClientConn != nil || model.ServerConn != nil || !model.Modified() {
+			return fmt.Errorf("requestless command argument changed absence or backup")
+		}
+		model.Response.ID = 23
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	probe.load(probe.file("requestless-command.star", "def _dns(f):\n    f.backup()\n    if not f.modified():\n        fail('backup semantics changed')\n    ctx.master.commands.call('dns.observe', f)\n    if f.request != None or f.client_conn != None or f.server_conn != None or f.response.id != 23 or not f.modified():\n        fail('command copyback published a required-field substitute')\n    f.comment = 'command-completed'\ndns_response = concurrent(_dns)\n"))
+	requestless := flow.NewDNSFlow(nil, nil, true)
+	requestless.Response = &dns.Message{ID: 4}
+	probe.hook(addon.DNSResponseHook{Flow: requestless})
+	backup, _ := requestless.GetState().Get("backup")
+	if backup == nil {
+		t.Fatal("requestless backup was not replayed")
+	}
+	request, _ := backup.(*state.Map).Get("request")
+	if request != nil || requestless.Request != nil || requestless.ClientConn != nil || requestless.ServerConn != nil || requestless.Response.ID != 23 || requestless.Comment != "command-completed" {
+		t.Fatalf("requestless command/backup published a synthetic value: %s", probe.logs.String())
+	}
+	probe.wantLog("Addon error:", 0)
+	restored := newFixture(t)
+	restored.load(restored.file("requestless-revert.star", "def _dns(f):\n    if f.request != None or not f.modified():\n        fail('backup clone changed')\n    f.revert()\n    if f.request == None or f.request.question.name != 'genuine.test' or f.modified():\n        fail('revert did not restore the genuine backup')\n    f.comment = 'reverted'\ndns_response = concurrent(_dns)\n"))
+	http := restored.request()
+	model := flow.NewDNSFlow(http.ClientConn, http.ServerConn, true)
+	model.Request = &dns.Message{ID: 5, Questions: []dns.Question{{Name: "genuine.test", Type: dns.TypeA, Class: dns.ClassIN}}}
+	model.Response = &dns.Message{ID: 6}
+	model.Backup()
+	model.Request = nil
+	restored.hook(addon.DNSResponseHook{Flow: model})
+	if model.Request == nil || model.Request.Questions[0].Name != "genuine.test" || model.Comment != "reverted" || model.Modified() {
+		t.Fatalf("requestless revert did not preserve genuine backup: %s", restored.logs.String())
+	}
+	restored.wantLog("Addon error:", 0)
+	for _, concurrent := range []bool{false, true} {
+		probe := newFixture(t)
+		binding := "dns_response = _dns\n"
+		if concurrent {
+			binding = "dns_response = concurrent(_dns)\n"
+		}
+		probe.load(probe.file("requestless-copy.star", "def _dns(f):\n    if f.request != None:\n        fail('request became visible')\n    f.comment = 'before-copy'\n    f.copy()\n    f.comment = 'after-copy'\n"+binding))
+		model := flow.NewDNSFlow(nil, nil, true)
+		model.Response = &dns.Message{ID: 2}
+		probe.hook(addon.DNSResponseHook{Flow: model})
+		if model.Request != nil || model.Comment != "before-copy" {
+			t.Fatalf("explicit copy changed requestless flow: %s", probe.logs.String())
+		}
+		probe.wantLog("flow.copy: cannot copy a DNS flow without a request", 1)
+		probe.wantLog("panic", 0)
 	}
 }
 

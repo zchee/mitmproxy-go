@@ -124,6 +124,33 @@ func TestScriptConcurrentEligibility(t *testing.T) {
 					}); err != nil {
 						t.Fatal(err)
 					}
+					if name == "dns_response" {
+						connections := map[string]struct{ client, server bool }{
+							"both": {true, true}, "client": {true, false}, "server": {false, true}, "neither": {},
+						}
+						for _, hook := range []string{"dns_request", "dns_response", "dns_error"} {
+							for label, presence := range connections {
+								probe := newFixture(t)
+								body := fmt.Sprintf("def _dns(f):\n    if f.request != None or (f.client_conn != None) != %s or (f.server_conn != None) != %s:\n        fail('absent fields became visible')\n    if f.modified():\n        fail('unbacked clone is modified')\n    f.revert()\n    if f.request != None:\n        fail('revert introduced a request')\n    f.response.id = 7\n    f.comment = 'requestless-completed'\n%s = concurrent(_dns)\n", map[bool]string{true: "True", false: "False"}[presence.client], map[bool]string{true: "True", false: "False"}[presence.server], hook)
+								probe.load(probe.file("requestless.star", body))
+								h := probe.request()
+								d := flow.NewDNSFlow(h.ClientConn, h.ServerConn, true)
+								if !presence.client {
+									d.ClientConn = nil
+								}
+								if !presence.server {
+									d.ServerConn = nil
+								}
+								d.Response = &dns.Message{ID: 1}
+								id := d.ID
+								probe.hook(concurrentTestHook(hook, d))
+								if d.Request != nil || d.ID != id || !d.Live || d.Response.ID != 7 || d.Comment != "requestless-completed" || (d.ClientConn != nil) != presence.client || (d.ServerConn != nil) != presence.server || d.Modified() {
+									t.Fatalf("requestless %s/%s failed: flow=%+v logs=%s", hook, label, d, probe.logs.String())
+								}
+								probe.wantLog("Addon error:", 0)
+							}
+						}
+					}
 				})
 			}
 		})

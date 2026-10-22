@@ -356,8 +356,40 @@ func testRetireWorker(t *testing.T, reload, samePath bool) {
 	done := startConcurrent(t, f, t.Context(), addon.RequestHook{Flow: x})
 	awaitConcurrent(t, entered)
 	if reload {
-		f.updateSource(path, "def request(f):\n    f.comment = 'new-instance'\n", time.Second)
-		f.poll()
+		replacement := "def request(f):\n    f.comment = 'new-instance'\n"
+		if !samePath {
+			hits := make(chan struct{}, 2)
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				hits <- struct{}{}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer origin.Close()
+			initializations := 0
+			if err := f.master.Commands.Register("init.second", func(context.Context) bool {
+				initializations++
+				return initializations == 2
+			}); err != nil {
+				t.Fatal(err)
+			}
+			replacement = fmt.Sprintf("def initialize():\n    if ctx.master.commands.call('init.second'):\n        ctx.http_get(%q)\n        ctx.log('second-init-returned')\ninitialize()\ndef _request(f):\n    f.comment = 'new-instance'\nrequest = concurrent(_request)\n", origin.URL)
+			f.updateSource(path, replacement, time.Second)
+			f.poll()
+			if err := f.master.Do(t.Context(), func(context.Context) error {
+				module := f.loader.entries[0].module
+				if initializations != 2 || len(hits) != 1 || module == nil || module.concurrent == nil {
+					return fmt.Errorf("second init failed: inits=%d HTTP calls=%d; logs=%s", initializations, len(hits), f.logs.String())
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			f.wantLog("second-init-returned", 1)
+			f.wantLog("error in script", 0)
+			f.wantLog("dispatch frame used after", 0)
+		} else {
+			f.updateSource(path, replacement, time.Second)
+			f.poll()
+		}
 	} else {
 		f.load()
 	}

@@ -91,6 +91,19 @@ func (m *moduleAddon) Addons() []any {
 }
 
 func (l *Loader) initialize(ctx context.Context, e *scriptEntry, data []byte) (*moduleAddon, error) {
+	var mod *moduleAddon
+	// Re-enter dispatch so nested depth makes Concurrent refuse to yield. Both
+	// Init passes run blocking builtins inline, like synchronous upstream module
+	// loading, leaving the caller's frame valid for registration and lifecycle.
+	err := l.master.Do(ctx, func(ctx context.Context) error {
+		var err error
+		mod, err = l.initializeModule(ctx, e, data)
+		return err
+	})
+	return mod, err
+}
+
+func (l *Loader) initializeModule(ctx context.Context, e *scriptEntry, data []byte) (*moduleAddon, error) {
 	graph := &capabilities{entry: e}
 	predeclared := graph.predeclared()
 	_, program, err := starlark.SourceProgramOptions(&syntax.FileOptions{}, e.fullpath, data, predeclared.Has)

@@ -8,8 +8,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -200,15 +203,69 @@ func TestScriptLoader(t *testing.T) {
 		}},
 		"lifecycle_reload": {func(t *testing.T) {
 			f := newFixture(t)
-			path := f.file("reload.star", "def request(f):\n    f.comment = \"old\"\n")
-			f.load(path)
-			f.updateSource(path, "def request(f):\n    f.comment = \"new\"\n", time.Second)
-			f.poll()
-			flow := f.request()
-			f.hook(addon.RequestHook{Flow: flow})
-			if flow.Comment != "new" {
-				t.Fatalf("reload effect=%q; logs=%s", flow.Comment, f.logs.String())
+			var mu sync.Mutex
+			var events []string
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				events = append(events, r.URL.Path)
+				mu.Unlock()
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer origin.Close()
+			source := func(label string) string {
+				return fmt.Sprintf(`ctx.http_get(%q + "/%s/init")
+ctx.sleep(0)
+def command():
+    ctx.http_get(%q + "/%s/command")
+    ctx.sleep(0)
+    ctx.options.reload_observed = %q
+def on_load(loader):
+    ctx.http_get(%q + "/%s/load")
+    ctx.sleep(0)
+    loader.add_option("reload_observed", "str", "", "Observed reload.")
+    loader.add_command("reload.observe", command)
+def configure(updated):
+    ctx.http_get(%q + "/%s/configure")
+    ctx.sleep(0)
+def running():
+    ctx.http_get(%q + "/%s/running")
+    ctx.sleep(0)
+def request(f):
+    f.comment = %q
+`, origin.URL, label, origin.URL, label, label, origin.URL, label, origin.URL, label, origin.URL, label, label)
 			}
+			f.hook(addon.RunningHook{})
+			path := f.file("reload.star", source("old"))
+			f.load(path)
+			for _, label := range []string{"old", "new"} {
+				if label == "new" {
+					f.updateSource(path, source(label), time.Second)
+					f.poll()
+				}
+				if f.master.Addons.Get("script:"+path) == nil {
+					t.Fatalf("%s module not registered; logs=%s", label, f.logs.String())
+				}
+				flow := f.request()
+				f.hook(addon.RequestHook{Flow: flow})
+				if flow.Comment != label {
+					t.Fatalf("reload effect=%q, want=%q; logs=%s", flow.Comment, label, f.logs.String())
+				}
+				if _, err := f.master.Call(t.Context(), "reload.observe"); err != nil {
+					t.Fatal(err)
+				}
+				if got := f.master.Options.Str("reload_observed"); got != label {
+					t.Fatalf("registered command used expired scope: got=%q want=%q", got, label)
+				}
+			}
+			mu.Lock()
+			got := slices.Clone(events)
+			mu.Unlock()
+			want := []string{"/old/init", "/old/load", "/old/configure", "/old/running", "/old/command", "/old/configure", "/new/init", "/new/load", "/new/configure", "/new/running", "/new/command", "/new/configure"}
+			if diff := gocmp.Diff(want, got); diff != "" {
+				t.Fatalf("lifecycle events (-want +got):\n%s; logs=%s", diff, f.logs.String())
+			}
+			f.wantLog("error in script", 0)
+			f.wantLog("dispatch frame used after", 0)
 		}},
 		"remove_cancel": {func(t *testing.T) {
 			f := newFixture(t)

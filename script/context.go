@@ -196,7 +196,10 @@ func (g *capabilities) commandCall(thread *starlark.Thread, _ *starlark.Builtin,
 				return err
 			}
 			if i.worker {
-				converted[n] = owned.argument(converted[n])
+				converted[n], err = owned.argument(converted[n], 0)
+				if err != nil {
+					return err
+				}
 				if key.list != nil {
 					lists[key] = converted[n]
 				}
@@ -207,7 +210,11 @@ func (g *capabilities) commandCall(thread *starlark.Thread, _ *starlark.Builtin,
 			if err := owned.copyBack(); err != nil {
 				return errors.Join(callErr, err)
 			}
-			native = new(commandOwnership).argument(native)
+			var err error
+			native, err = new(commandOwnership).argument(native, 0)
+			if err != nil {
+				return err
+			}
 		}
 		if callErr != nil {
 			return callErr

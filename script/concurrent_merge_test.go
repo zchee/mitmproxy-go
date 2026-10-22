@@ -282,6 +282,21 @@ func testKillActions(t *testing.T, ordering bool) {
 }
 
 func testKillPrecedence(t *testing.T) {
+	tests := map[string]struct{ body string }{
+		"message assignment": {"f.error.msg = 'Connection killed.'"},
+		"error assignment":   {"g = f.copy()\ng.error.msg = 'Connection killed.'\nf.error = g.error"},
+	}
+	for name, test := range tests {
+		f := newFixture(t)
+		f.load(loadConcurrent(f, test.body))
+		x := f.request()
+		x.Error = flow.NewError("ordinary error")
+		f.hook(addon.RequestHook{Flow: x})
+		if !x.Live || !x.Killable() || x.Error == nil || x.Error.Msg != "ordinary error" || x.Intercepted() {
+			t.Fatalf("%s synthesized a killed outcome without Kill: live=%v error=%v logs=%s", name, x.Live, x.Error, f.logs.String())
+		}
+		f.wantLog("Addon error:", 0)
+	}
 	testKilledTransport(t, "f.revert()\nf.intercept()", true, true)
 	testKilledTransport(t, "f.kill()\nf.revert()", true, true)
 	// A naturally non-live flow is not a protected killed outcome and must not

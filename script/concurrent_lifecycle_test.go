@@ -12,6 +12,7 @@ import (
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/addons/clientplayback"
+	"github.com/zchee/mitmproxy-go/command"
 	"github.com/zchee/mitmproxy-go/flow"
 )
 
@@ -79,6 +80,18 @@ func testWorkerCapacity(t *testing.T, cancelWaiter bool) {
 }
 
 func testCommandCopyback(t *testing.T) {
+	cycle := make([]any, 1)
+	cycle[0] = cycle
+	tests := map[string]struct{ value any }{
+		"unsupported pointer":     {new(struct{ Data []byte })},
+		"unsupported nested cell": {command.Data{{new(struct{ Data []byte })}}},
+		"cyclic result":           {cycle},
+	}
+	for name, test := range tests {
+		if value, err := new(commandOwnership).argument(test.value, 0); err == nil || value != nil {
+			t.Fatalf("%s escaped command ownership: value=%T err=%v", name, value, err)
+		}
+	}
 	f := newFixture(t)
 	var retained *flow.HTTPFlow
 	if err := f.master.Commands.Register("worker.mutate", func(_ context.Context, g flow.Flow) error {

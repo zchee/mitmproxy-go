@@ -94,6 +94,34 @@ from the copied-byte manifest; they are not generated expected output.
 | `tcp-simple.star` | `examples/addons/tcp-simple.py` | `11a464522d386d853c2af84848ec4ba68aa8d7c9` |
 | `websocket-simple.star` | `examples/addons/websocket-simple.py` | `9ec1e6b956c24c5f34f2763ed7fbb16861724164` |
 
+### Translation digests
+
+These SHA-256 values identify the translated `.star` source bytes separately
+from the upstream copied-source manifest. They are not generated test
+expectations and do not assert byte equality with the Python originals. The
+source/blob mapping above and the retained upstream notice apply to every row.
+
+| Translation | SHA-256 |
+| --- | --- |
+| `anatomy.star` | `9192370aa424f83ec3afa4b0db05b2ae150cdda25704d3a5ed73c04b6ed90555` |
+| `anatomy2.star` | `469c9fac211083aa5ee9d99a2065bbaea682d1145748036e0a6080561517e289` |
+| `commands-simple.star` | `52d8a5b1675cb416460f0997652a59b1a26d42a91f40dfc2ffa1fc87ed12a5f8` |
+| `dns-simple.star` | `42906b95f3086ce6a8b555e027ca5ac289fa91bf0a12bbdf3fc5f833199f2727` |
+| `http-add-header.star` | `9156ba748c3d7cb992d9158c85bda26d470f5956cc28dd873e65dcc233cfa6de` |
+| `http-modify-form.star` | `cf6722abc89d851d2b9130431b2ad5c1f7c45bf4846a59a64017d605853bfa91` |
+| `http-modify-query-string.star` | `92fdf208b22be4c08d73a762f5f3d64eee89d32f5f40e6cf35065f63a823d2ad` |
+| `http-redirect-requests.star` | `efc67604e032fa8c483e76ff5fc6b7940f7016efdb42d49cf58062d0dcde9772` |
+| `http-reply-from-proxy.star` | `082a27cb50bded30f338a2acc3a155ce5e67df6f391a07360541e9bab13e5c99` |
+| `http-stream-simple.star` | `f7dbc26dcade777928c384fdaa61acd17948e0e252b482b4b157e387da49040c` |
+| `http-trailers.star` | `aee36fd94034e6b38d5876d50289ecb81b7eccb3e35abc80d51ee0e030fb637c` |
+| `internet-in-mirror.star` | `ff7cad529451464b06031f0d53805c12fbba3a682b0c18510d784ea6caf285f1` |
+| `log-events.star` | `773de81c5c4edd66f0ef7ac2ffb7bb827ab839c8ae62985c34a7fd7727ee2fe3` |
+| `nonblocking.star` | `51a5b90e212a13559eac6c3fe4153d8f44f17a69acfbd8cd448d67de6e6cb137` |
+| `options-simple.star` | `33d5f5690b2e6a966d2ab60741e762fc35c02fc14beb108b5dd0c44f096c3135` |
+| `shutdown.star` | `6018347680e9122a2fb5f0686132fd73e5ba1633e6633df7db7836e7d9884f5a` |
+| `tcp-simple.star` | `60e69b24edecf45c20bd119d3cd9a0a4882082e5dce0a39ee5ac8deb3a9396f0` |
+| `websocket-simple.star` | `2d6318e04a33a1dbb90a5a808cb125c6eef7948148d10c2ec05145fc7892e466` |
+
 ## Examples not ported
 
 These twelve files complete the disposition of all thirty upstream examples;

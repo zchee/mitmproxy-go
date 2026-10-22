@@ -220,6 +220,16 @@ example behavior for the Starlark translations; this repository does not run
 these Python files as tests or addons. Their layout under `mitmproxy/script/`
 retains each full upstream-relative path.
 
+Translated `.star` files live under `examples/addons/`, with a separate
+per-file upstream source/blob mapping and translation SHA-256 table in
+[`examples/addons/README.md`](../examples/addons/README.md#translation-digests).
+Their notice references this directory's unchanged `UPSTREAM_LICENSE`.
+The black-box acceptance tests create their recorded-flow playback files in
+owned test directories; those generated files are not copied upstream fixtures
+and are deliberately absent from `SHA256SUMS`. Changing a translation requires
+updating its separate source digest and rerunning its behavior acceptance,
+not relabeling the new bytes as an upstream copy.
+
 The existing `mitmproxy/addonscripts/` fixtures remain at their original paths;
 they are not duplicated here. Starlark translations and generated expectations
 are not byte-exact upstream files and must not enter this manifest. All copied

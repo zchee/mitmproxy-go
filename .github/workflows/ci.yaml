@@ -45,6 +45,14 @@ jobs:
         with:
           go-version: ${{ steps.go.outputs.version }}
           cache-key-prefix: test
+      - name: Record scripting test build context
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/script"
+          mkdir -p "$OUT"
+          printf 'checkout=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/native-context.receipt"
+          go version >| "$OUT/go-version.txt"
+          printf 'host=%s\n' "$(uname -sm)" >> "$OUT/native-context.receipt"
       # go test compiles every package and runs the default vet checks; the
       # explicit vet keeps the full analyzer set that the build job used to run.
       - name: go vet
@@ -196,6 +204,76 @@ jobs:
           timeout --signal=QUIT --kill-after=15s 5m "$BINDIR/golangci-lint" run --allow-parallel-runners --issues-exit-code=1 --build-tags consolestorm ./internal/tools/console/acceptance >| "$OUT/lint.log" 2>&1
           GOFLAGS=-tags=consolestorm timeout --signal=QUIT --kill-after=15s 5m "$BINDIR/gopls" check internal/tools/console/acceptance/storm_linux_test.go >| "$OUT/gopls.log" 2>| "$OUT/gopls.stderr"
           test ! -s "$OUT/gopls.log"
+      - name: Verify scripting timing contracts
+        if: matrix.os == 'ubuntu-26.04'
+        timeout-minutes: 25
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/script/timing"
+          mkdir -p "$OUT"
+          printf 'checkout=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/timing.receipt"
+          finish() {
+            result=$?
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/timing.receipt"
+            exit "$result"
+          }
+          trap finish EXIT
+          go test -race -tags scripttiming -timeout=10m -list '^TestScriptTiming$' ./script/acceptance >| "$OUT/parents.txt" 2>| "$OUT/parents.stderr"
+          diff -u <(printf '%s\n' TestScriptTiming) <(grep '^Test' "$OUT/parents.txt")
+          for count in 1 5; do
+            printf '%q ' go test -race -tags scripttiming -count="$count" -cpu=1 -timeout=20m -json -run '^TestScriptTiming$' ./script/acceptance >| "$OUT/command-$count.txt"
+            printf '\nstart=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$OUT/command-$count.txt"
+            producer=0
+            go test -race -tags scripttiming -count="$count" -cpu=1 -timeout=20m -json -run '^TestScriptTiming$' ./script/acceptance >| "$OUT/timing-$count.jsonl" 2>| "$OUT/timing-$count.stderr" || producer=$?
+            reader=0
+            jq -se --argjson count "$count" '
+              . as $rows
+              | ["TestScriptTiming", "TestScriptTiming/timing"] +
+                (["sleep_other_flow", "concurrent_other_flow", "five_parallel", "reload_inflight", "nonblocking_parallel", "mtime_reload"]
+                  | map("TestScriptTiming/timing/" + .)) as $expected
+              | (reduce ($rows[] | select(.Test? != null and (.Action == "run" or .Action == "pass" or .Action == "fail" or .Action == "skip"))) as $event
+                  ({}; .[$event.Test][$event.Action] = ((.[$event.Test][$event.Action] // 0) + 1))) as $counts
+              | if (($counts | keys | sort) == ($expected | sort))
+                  and all($counts[]; .run == $count and .pass == $count and (.fail // 0) == 0 and (.skip // 0) == 0)
+                  and all($rows[] | select(.Test? != null or .Package? != null); .Package == "github.com/zchee/mitmproxy-go/script/acceptance")
+                  and ([ $rows[] | select(.Package == "github.com/zchee/mitmproxy-go/script/acceptance" and .Test? == null and .Action == "start") ] | length) == 1
+                  and ([ $rows[] | select(.Package == "github.com/zchee/mitmproxy-go/script/acceptance" and .Test? == null and .Action == "pass") ] | length) == 1
+                  and ([ $rows[] | select(.Action == "fail" or .Action == "skip") ] | length) == 0
+                then {terminals: 6, repetitions: $count, counts: $counts}
+                else error("script timing parent/terminal identity or count mismatch") end
+            ' "$OUT/timing-$count.jsonl" >| "$OUT/tallies-$count.json" 2>| "$OUT/reader-$count.stderr" || reader=$?
+            printf 'end=%s\nproducer_exit=%s\nreader_exit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$producer" "$reader" >> "$OUT/command-$count.txt"
+            (( producer == 0 )) || exit "$producer"
+            (( reader == 0 )) || exit "$reader"
+          done
+      - name: Verify tagged scripting diagnostics
+        if: matrix.os == 'ubuntu-26.04'
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/script/quality"
+          BINDIR="$RUNNER_TEMP/console-quality-tools"
+          mkdir -p "$OUT"
+          printf 'checkout=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/diagnostics.receipt"
+          finish() {
+            result=$?
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/diagnostics.receipt"
+            exit "$result"
+          }
+          trap finish EXIT
+          go vet -tags scripttiming ./script/acceptance >| "$OUT/vet.log" 2>| "$OUT/vet.stderr"
+          "$BINDIR/golangci-lint" run --allow-parallel-runners --issues-exit-code=1 --build-tags scripttiming ./script/acceptance >| "$OUT/lint.log" 2>| "$OUT/lint.stderr"
+          GOFLAGS=-tags=scripttiming "$BINDIR/gopls" check script/acceptance/timing_test.go >| "$OUT/gopls.log" 2>| "$OUT/gopls.stderr"
+          test ! -s "$OUT/gopls.log"
+      - name: Upload scripting test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scripting-test-evidence-${{ matrix.os }}
+          path: _test/script
+          if-no-files-found: error
       - name: Upload console terminal evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -642,6 +720,31 @@ jobs:
           ./internal/tools/console/commander FuzzConsoleCommander
           ./internal/tools/console/commander FuzzConsoleFilterInput
           TARGETS
+      - name: Verify required scripting fuzz targets
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/script/fuzz"
+          mkdir -p "$OUT"
+          printf 'checkout=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/discovery.receipt"
+          finish() {
+            result=$?
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/discovery.receipt"
+            exit "$result"
+          }
+          trap finish EXIT
+          for target in FuzzScriptSource FuzzScriptBindings FuzzScriptHTTPGetResponse; do
+            timeout --signal=QUIT --kill-after=15s 15m go test -timeout=10m -list "^${target}$" ./script >| "$OUT/$target-parents.txt" 2>| "$OUT/$target.stderr"
+            diff -u <(printf '%s\n' "$target") <(grep '^Fuzz' "$OUT/$target-parents.txt")
+          done
+      - name: Upload scripting fuzz discovery evidence
+        if: always() && matrix.shard == 0
+        uses: actions/upload-artifact@v7
+        with:
+          name: scripting-fuzz-discovery
+          path: _test/script
+          if-no-files-found: error
       - name: Run every fuzz target for 30 seconds
         env:
           SHARD: ${{ matrix.shard }}
@@ -809,6 +912,17 @@ jobs:
           printf 'MITMPROXY_TEST_CONSOLE_ARTIFACTS=%s\n' "$GITHUB_WORKSPACE/_test/console" >> "$GITHUB_ENV"
           timeout --signal=QUIT --kill-after=15s 15m go test -tags difftest -timeout=10m -list '^TestConsoleOracle$' ./internal/tools/console/acceptance >| _test/console/oracle-parents.txt
           diff -u <(printf '%s\n' TestConsoleOracle) <(grep '^Test' _test/console/oracle-parents.txt)
+      - name: Verify live script addon listing inventory
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/script/differential"
+          mkdir -p "$OUT"
+          command -v uv
+          uv --version >| "$OUT/uv-version.txt"
+          printf 'checkout=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/inventory.receipt"
+          timeout --signal=QUIT --kill-after=15s 15m go test -tags difftest -timeout=10m -list '^TestDifferentialAddonListings$' ./cmd/mitmdump >| "$OUT/parents.txt" 2>| "$OUT/parents.stderr"
+          diff -u <(printf '%s\n' TestDifferentialAddonListings) <(grep '^Test' "$OUT/parents.txt")
+          printf 'end=%s\nexit=0\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$OUT/inventory.receipt"
       - name: Differential tests against the pinned Python mitmproxy
         env:
           MITMPROXY_TEST_WEB_ARTIFACTS: ${{ github.workspace }}/_test/web-differential/processes
@@ -833,6 +947,40 @@ jobs:
             finish "${statuses[0]}"
           fi
           finish "${statuses[1]}"
+      - name: Verify live script addon listing evidence
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/script/differential"
+          printf 'checkout=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/reader.receipt"
+          finish() {
+            result=$?
+            trap - EXIT
+            printf 'end=%s\nreader_exit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/reader.receipt"
+            exit "$result"
+          }
+          trap finish EXIT
+          jq -se '
+            . as $rows
+            | [ $rows[] | select(.Package == "github.com/zchee/mitmproxy-go/cmd/mitmdump" and .Test? != null)
+                | select(.Test == "TestDifferentialAddonListings" or (.Test | startswith("TestDifferentialAddonListings/")))
+                | select(.Action == "run" or .Action == "pass" or .Action == "fail" or .Action == "skip") ] as $events
+            | (reduce $events[] as $event ({}; .[$event.Test][$event.Action] = ((.[$event.Test][$event.Action] // 0) + 1))) as $counts
+            | if (($counts | keys) == ["TestDifferentialAddonListings"])
+                and all($counts[]; .run == 1 and .pass == 1 and (.fail // 0) == 0 and (.skip // 0) == 0)
+                and ([ $rows[] | select(.Package == "github.com/zchee/mitmproxy-go/cmd/mitmdump" and .Test? == null and .Action == "start") ] | length) == 1
+                and ([ $rows[] | select(.Package == "github.com/zchee/mitmproxy-go/cmd/mitmdump" and .Test? == null and .Action == "pass") ] | length) == 1
+                and ([ $rows[] | select(.Package == "github.com/zchee/mitmproxy-go/cmd/mitmdump" and .Test? == null and .Action == "skip") ] | length) == 0
+                and ([ $rows[] | select(.Action == "fail") ] | length) == 0
+              then {terminals: 1, counts: $counts}
+              else error("live script addon listing is absent, skipped or failed") end
+          ' "$GITHUB_WORKSPACE/_test/web-differential/all-tagged.jsonl" >| "$OUT/tallies.json"
+      - name: Upload scripting differential evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scripting-differential-evidence
+          path: _test/script
+          if-no-files-found: error
       - name: Verify complete live console oracle evidence
         run: |
           set -euo pipefail

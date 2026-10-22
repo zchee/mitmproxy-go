@@ -5,8 +5,8 @@ README) on purpose. It is written for a reader who knows mitmproxy. Each table n
 file it lives in, the Go behaviour, and the reason. Paths without a prefix are relative to the upstream repository root
 (`mitmproxy/...`).
 
-The tables cover the code that exists today. The last section lists differences that are already decided for code that
-is not written yet. Where a package reproduces an upstream oddity on purpose, it is listed under "Reproduced on purpose"
+The tables cover the code that exists today and explicitly distinguish reserved options from registered runtime
+behaviour. Where a package reproduces an upstream oddity on purpose, it is listed under "Reproduced on purpose"
 so that it is not mistaken for a port bug.
 
 Anything not listed here is meant to behave as upstream does; a difference that is not on this page is a bug.
@@ -483,7 +483,7 @@ does not reorder fragments or deduplicate retransmissions; pion handles retransm
 | `--set` values/configuration are applied before metadata exits (`mitmproxy/tools/main.py:24–26,85–103`); TLS configuration opens the CA store in the selected confdir (`mitmproxy/addons/tlsconfig.py:471–486`). | Constructing the console master itself performs no I/O. Applying explicit configuration can initialize CA files in the selected confdir before `--version`, `--options` or `--commands` output. | Preserve configuration ordering without incorrectly describing metadata paths as never initializing a CA. |
 | urwid invalidates its cached dimensions on resize and queries the current size when that cache is absent (`urwid/event_loop/main_loop.py`, version 4.0.13). | Known startup-size deviation: Bubble Tea v2.1.0 captures startup dimensions and sends them asynchronously. A stale startup size can arrive after a newer resize; the console installs sizes in delivered order and the next real resize corrects them. | Startup size messages have no freshness sequence; frozen frame tests do not prove that this race is fixed. |
 | Upstream Python can upgrade the console integration fixture `dumpfile-7.mitm`, which uses flow format 11. | The Go reader supports formats 18–21, not 11. Console integration uses a reproducibly transcoded current-format copy with pinned input/output digests; no legacy reader support was added. | Preserve the existing codec compatibility boundary rather than implying that the console extends it. |
-| Bindings can invoke clipboard and script commands. | Clipboard uses the existing optional build tag, without an OSC52 fallback. The script prompt binding is retained, but scripting is not implemented yet. | Avoid automatic clipboard execution or implying that the script engine already exists. |
+| Bindings can invoke clipboard and script commands. | Clipboard uses the existing optional build tag, without an OSC52 fallback. The script prompt targets the registered synchronous `script.run` command of the default Starlark loader. | Clipboard remains optional; scripting is registered by the default addon sets. |
 
 ### Renderer and terminal evidence boundary
 
@@ -627,9 +627,9 @@ a general help, whitespace, empty/null, error-text or content-body normalizer.
 
 | Pinned upstream surface | Named exclusion or adapter | Reason |
 |---|---|---|
-| `/options` dumps the upstream registry (`py:mitmproxy/tools/web/app.py:805-807` at `3368a0a`). | Removes Go-only `content_decode_limit` (decoded-body bound) and `max_client_connections` (client-admission bound) from Go equality when present (`testdata/options-go-only.txt:1,3`, `addons/core/core.go:38-40`, `addons/proxyserver/proxyserver.go:126`, `internal/tools/web/acceptance/differential_unix_test.go:228-234`). | These safety options have no upstream counterpart; they are registered by the current default addon set. |
-| `/options` dumps the upstream registry (`py:mitmproxy/tools/web/app.py:805-807` at `3368a0a`). | The same manifest-only removal names `local_redirector_path` (redirector override), `otel_exporter_endpoint` (telemetry), `pprof_addr` (profiling) and `script_max_steps` (Starlark execution budget), if present (`testdata/options-go-only.txt:2,4-6`, `internal/tools/web/acceptance/differential_unix_test.go:228-234`). | These four names remain reserved, not runtime registrations; the six-entry manifest is not a claim of six active extra options. |
-| Python registers the `scripts` option and `script.run` command (`py:mitmproxy/addons/script.py:163-169` at `3368a0a`). | Removes only Python `scripts` from `/options` and `script.run` from `/commands` (`internal/tools/web/acceptance/differential_unix_test.go:237-238`). | Script-addon loading is not implemented; no other upstream option or command is excluded. |
+| `/options` dumps the upstream registry (`py:mitmproxy/tools/web/app.py:805-807` at `3368a0a`). | Removes Go-only `content_decode_limit` (decoded-body bound), `max_client_connections` (client-admission bound) and `script_max_steps` (Starlark execution budget) from Go equality when present (`testdata/options-go-only.txt`, `internal/tools/web/acceptance/differential_unix_test.go:228-234`). | These three controls have no upstream counterpart and are registered by the current default addon sets. |
+| `/options` dumps the upstream registry (`py:mitmproxy/tools/web/app.py:805-807` at `3368a0a`). | The same manifest-only removal names `local_redirector_path` (redirector override), `otel_exporter_endpoint` (telemetry) and `pprof_addr` (profiling), if present (`testdata/options-go-only.txt`, `internal/tools/web/acceptance/differential_unix_test.go:228-234`). | These three names remain reserved, not runtime registrations; the six-entry manifest is not a claim of six active extra options. |
+| Python registers the `scripts` option and `script.run` command (`py:mitmproxy/addons/script.py:163-169` at `3368a0a`). | Both are registered by mitmweb's default Starlark loader and compared without a scripting-specific exclusion from `/options` or `/commands`. | Scripting metadata is part of the live parity contract; only the Go-only execution-budget option is removed through the separate manifest rule above. |
 | `browser.start(browser: str = "chrome")` has an ordinary parameter (`py:mitmproxy/addons/browser.py:39-40` at `3368a0a`). | Guards exact Python `browser:str` / `POSITIONAL_OR_KEYWORD` and `browser.start browser`, then compares against `arg0:str` / `VAR_POSITIONAL` and `browser.start *arg0` (`internal/tools/web/acceptance/differential_unix_test.go:239-248`). | The existing Go variadic/default API is documented under [addons/browser](#addonsbrowser); this is a guarded metadata adapter, not altered help text. |
 | `export` returns text after backslash replacement (`py:mitmproxy/addons/export.py:218-232` at `3368a0a`). | Guards Python return `str` and `export format f -> str`, then compares as `bytes` and `export format f -> bytes` (`internal/tools/web/acceptance/differential_unix_test.go:249-254`). | The existing Go byte-result contract is documented under [addons/export](#addonsexport); no unrelated signature is adapted. |
 | `/state` includes `version`, `platform`, `localModeUnavailable`, `contentViews` and `servers` (`py:mitmproxy/tools/web/app.py:826-840` at `3368a0a`). | Fixture equality compares only `contentViews` and `servers` (`internal/tools/web/acceptance/differential_unix_test.go:189-200`); it does not compare `version`, `platform` or `localModeUnavailable`. | Version identifies the implementation; platform and availability depend on the host/effective UID. Separate handler and Linux root/nonroot checks cover the availability contract; no native Windows evidence is inferred. |
@@ -972,27 +972,74 @@ arrived or may still be in flight. All 517 cases still run; no `FAILED` or `UNCL
 | Every UDP flow receives `udp_end` or `udp_error`, and a connection-close event emits `udp_end` before clearing `live` (`mitmproxy/proxy/layers/udp.py:44-51,121-126`). | Every captured flow emits exactly one terminal hook, including on shutdown, idle expiry and cancellation: `udp_end` for closure or cancellation, `udp_error` for failure. The hook uses `WithoutCancel`; dispatch then clears `Live`, including on dial failure. An interception retained into or requested during a terminal hook is immediately resumed. | Preserve upstream's terminal-hook lifecycle and release the finished tuple. Unlike upstream's suspended hook coroutine, a terminal interception cannot retain a connection owner after its transport has finished. |
 | UDP lifecycle hook dispatch has no separate cleanup deadline (`mitmproxy/proxy/layers/udp.py`). | Terminal hooks use a detached 30-second budget, independent of idle timeout. Final Resume and `Live=false` dispatch use a fresh independent budget after hook expiry. | An expired hook context cannot admit final cleanup. Dispatch admission is cancellation-aware; arbitrary addon callbacks must still cooperate. |
 
-## Decided for code that is not written yet
+## Additional compatibility decisions
 
-These differences are settled in the work plan ([docs/plans/mitmproxy-go-port.md](plans/mitmproxy-go-port.md): the
-sections "Starlark `concurrent` design", "Defaults set by the plan", the ADR and "Open items") and will appear in the
-tables above when the code lands.
+The scripting behavior below is implemented. Go-only option names that remain reserved are distinguished from
+registered runtime options.
 
 Scripting (Starlark instead of Python):
 
+The default addon sets of **mitmdump, mitmweb and mitmproxy** register the
+script loader, `-s` / `--scripts`, `scripts` (sequence of strings, default
+`[]`) and `script_max_steps` (integer, default `0`). Script custom options
+and zero-argument commands are available in `--options` / `--commands`.
+The interpreter pin and upgrade checks are in [dependencies.md](dependencies.md).
+
+Authenticated mitmweb `PUT /options` requests can also set `scripts`, matching
+upstream. Script paths refer to the proxy host's filesystem and use the same
+trusted-code execution model as `-s`; authenticated configuration access is
+operator authority, not a scripting sandbox.
+
 | Upstream | Go | Reason |
 |---|---|---|
-| Addon scripts are Python modules. | Scripts are Starlark modules. The `load` hook is named `on_load`, because `load` is a Starlark keyword; the other 45 hook names are unchanged. | No embedded Python interpreter. |
-| `@concurrent` decorates a handler. | Starlark has no decorators: a handler is written `def _request(flow): ...` followed by `request = concurrent(_request)` at the top level, and the hook name comes from that global name. | Starlark syntax. |
-| A `@concurrent` handler shares the module's globals and the live flow and connection objects. | Concurrent handlers run from a second, frozen instance of the module, so top-level code runs twice per load, writes to module globals from a handler fail, and the handler works on a copy of the flow that is merged back field by field. `client_conn` and `server_conn` are read-only snapshots. | A Starlark module that several goroutines call at once must be frozen; live connections are owned by their goroutine. |
-| `@concurrent` is accepted on any hook except `load` and `configure`. | `concurrent` is accepted only on the 23 hooks that take a single flow; on any other hook the script fails to load with upstream's message `Concurrent decorator not supported for '<name>' method.` | Only a flow can be copied and merged back. |
-| Calling a `@concurrent` handler directly returns a coroutine that is never awaited, so the handler does not run. | A direct call fails with `concurrent(<fn>) cannot be called directly; it runs only when invoked as a hook`. | Starlark has no coroutine value to return. |
-| `script.run` rejects a concurrent handler with `Async handler <hook> (<module repr>) cannot be called from sync context`. | The message names the script path where upstream prints the module's repr. | A Starlark module has no Python repr. |
+| Addon scripts are Python modules. | Scripts are trusted operator-supplied Starlark modules. The `load` hook is named `on_load`, because `load` is a Starlark keyword; the other 45 hook names are unchanged. Python classes, decorators, `async` functions and Python imports are not interpreted. Module-level functions/dictionaries and bounded `module(name, **handlers)` child addons replace classes. | No embedded Python interpreter or Python package loader. |
+| Ordinary Python hooks may keep mutable module state. | Ordinary Starlark globals remain mutable across hooks. A fresh thread is used for each initialization, hook and registered command; ordinary evaluation runs under addon dispatch. | `Program.Init` is used without implicit global freezing; cancellation and execution budgets are invocation-local. |
+| `@concurrent` decorates a handler. | Write `def _request(flow): ...` followed by `request = concurrent(_request)`. Eligibility comes from every global or child-member binding name, not the function's definition name. Reassigning an already-defined global `request` remains a resolver error. | Starlark has no decorator syntax, and global reassignment is disabled. |
+| A concurrent handler shares module globals and live model objects. | A script with any accepted root or child wrapper is initialized twice per load: ordinary hooks retain the mutable first instance, workers share a separately initialized frozen instance. Top-level effects run twice; a script without wrappers initializes once. A worker receives a detached flow preserving the invocation's original ID/live flag, with read-only connection snapshots. Mutable frozen dictionaries/lists reject writes. | Concurrent Starlark execution requires frozen module state; workers must not borrow dispatch-owned mutable storage. |
+| `@concurrent` is accepted on any hook except `load` and `configure`. | Only the 23 single-flow hooks accept `concurrent`. Other hooks and helper bindings fail loading with `Concurrent decorator not supported for '<name>' method.` Child-only wrappers use the same rule and the same script-owned frozen instance. | Only flow hooks have a defined copy/merge boundary. |
+| Calling a decorated handler directly produces an unawaited coroutine. | A direct call fails with `concurrent(<fn>) cannot be called directly; it runs only when invoked as a hook`; the wrapped function is not invoked. | Starlark has no coroutine value to return. |
+| Workers freely mutate the shared flow and protocol-message lists. | Merge applies changed semantic fields and original message indices, preserving untouched live edits and opposite-direction/live-appended suffixes. Worker appends follow the live suffix; structural deletion/reordering of the original prefix is rejected. Connection fields, timestamps and identity are not worker-writable. Action-generated state is not merged as a generic field delta. | Preserve ownership and avoid applying a changed message to a different live index. |
+| Worker command-argument ownership: Python commands receive shared input objects and may retain them. | Mutable worker arguments are copied into a separate command-owned graph with repeated-reference relationships preserved. Promised immediate mutations are copied back from detached post-call snapshots under the same `master.Do`; returned values are detached there too. Later queue/worker mutations do not cross that boundary. For example, real `replay.client` may retain its command-owned flow without sharing the worker's later request edits. | Intentional asynchronous-sharing difference. `TestScriptConcurrent/contracts/{retained_copy_command,command_copyback,command_argument_aliases}` cover retention, immediate mutation and aliases; no change to the native command implementation. |
+| Public backup/revert and flow actions operate on the shared object immediately. | Workers checkpoint ordinary field deltas around `backup`, `revert`, `intercept`, `resume` and `kill`, then replay each action in order on the live flow through its public methods. A replayed backup captures the live state plus preceding worker edits, not the copy's private backup. Revert otherwise restores the full public backed-up state. | Keep action ordering, live IDs and native backup semantics without installing copied mutex/private state. |
+| Protected killed terminal state: a later action can alter interception or restore backed-up state. | Once a replayed worker kill succeeds or the live flow was killed under `master.Do`, merge preserves the exact killed error and `live=false`, and calls public `Resume` after every later replayed backup/revert/intercept/resume and at completion. A later intercept/revert cannot strand a killed flow. Other backed-up fields still obey public Revert. This normalization applies only to a protected killed outcome, not every naturally non-live flow. | Terminal-state precedence, covered by `action_order` and `kill_precedence`: intercept→backup→kill→revert, an existing intercepted backup followed by kill→revert, and a live kill during a worker followed by worker revert. Each observes waiter release, hook completion and actual transport closure. |
+| Fixed registered child set: upstream re-reads `addons` on every traversal; replacing children after load affects dispatch and can break removal. | Child adapters and wrapper paths are fixed when load, including `on_load`, completes. Dispatch, remove, done and owned-command cleanup use that registered set. Clear/replace/reorder/append or any topology difference fails the affected hook with a logged error rather than silently registering/remapping children. Teardown still removes the registered lookup entries/commands and delivers done once before fresh same-name registration. | Explicit adapter-lifetime difference. `child_topology_drift` covers clear/replace/reorder followed by remove and same-name reload, including command re-registration, no partial/stale residue and joined retired workers. |
+| A worker reads live option attributes directly. | Each `ctx.options.<name>` read uses the copying, locked native option getter at read time, producing a frozen Starlark value. It may see a transient update that is later rolled back. Writes, command calls and logs re-enter the master's dispatch; ordinary aliases remain writable in a valid ordinary invocation. | Avoid a second option publication protocol and preserve native update/rollback behavior. |
+| Blocking work runs in Python's asyncio/executor environment. | `ctx.sleep(seconds)` and `ctx.http_get(url)` release dispatch only at eligible ordinary depth; synchronous/nested calls stay bounded and inline, and concurrent workers wait independently. Admission is cancellable. Active workers are bounded to `min(32, GOMAXPROCS+4)` per loaded instance; this is not a process-wide heap bound across scripts/reloads. Retirement allows already-admitted work to finish/merge into a still-waiting flow; cancellation suppresses merge, and final Close cancels/joins outside dispatch. | Preserve dispatch ownership and avoid joining a worker while holding the lock it needs. |
+| Python scripts can import arbitrary networking, filesystem and package APIs. | No filesystem/network `load()` imports are provided. `ctx.http_get` uses HTTP(S), standard TLS validation, no inherited proxy environment, cookies or authentication, and rejects userinfo and this master's actual proxy-listener dial tuples. Limits are 10s total, 3s dial, 64KiB response headers, 1MiB response body, three redirects and 32 simultaneously admitted HTTP operations per script. Unsupported schemes or missing listener-address capability fail closed. | Explicit builtin safety limits, not Python `requests` compatibility and not a network sandbox. Other owned loopback origins remain supported. |
+| Python source loading and object conversion have no corresponding Starlark adapter bounds. | Source must be an operator-selected regular file and is limited to 1MiB; selected symlinks are deliberately followed and re-resolved at load. Child trees are acyclic, at most 32 levels and 1,024 modules. Converted graphs are bounded to depth 64 and 65,536 container entries, with cycle rejection. Values are validated before mutation; binary content remains bytes through `byteops`. The one-second watcher reloads only a newer mtime, records failed-load mtimes, and cannot revive a removed generation. | Explicit refusal rather than silent truncation; trusted paths are not a pathname sandbox. |
+| Python `script.run` initializes a temporary module and invokes its lifecycle and recorded-flow events synchronously. | `script.run(flows, path)` initializes once, never calls `on_load`, registers no temporary addon/command, and invokes configure(all option names), running and native event sequences only on that module and its children. It rejects root/child wrappers at every dispatch depth, logs once and stops at the first hook error. The sync-context message names the script path instead of Python's module repr. Nested runs are limited to 16 frames per Loader before path resolution/init; exceeding that limit stops the chain with one outermost logged error while the external command caller retains success semantics. | No asynchronous synchronous-run adapter or unrelated-addon dispatch; bound fresh-interpreter recursion that Starlark's ordinary recursion check cannot see. |
+| Explicit copy of a requestless DNS flow raises in Python's state conversion. | Concurrent DNS hooks preserve absent request/client/server snapshots as `None`; no placeholder request is exposed or merged. Explicit `f.copy()` of a requestless DNS flow returns an ordinary Starlark error instead of reaching the native flow-copy panic. | The worker clone is an adapter-owned construct; the underlying DNS state round-trip limitation is a separate native-flow follow-up. |
+| Python scripts execute without Starlark step budgets. | `script_max_steps` is registered in all three tools. Zero is deliberately unlimited; a positive value bounds each fresh initialization/hook/command evaluation, and a negative value is rejected as an option error. Budget failure logs an ordinary error and ends that handler while the proxy continues. Go builtin work is not metered, and the interpreter imposes no heap quota. | Trusted-code execution, not a CPU/memory sandbox. |
+
+The example disposition is explicit rather than a blanket Python-compatibility claim:
+
+| Upstream example | Unsupported behavior / supported alternative |
+|---|---|
+| `commands-flows.py` | Arbitrary typed Python-decorated command registration is not exposed; `loader.add_command` supports zero-argument Starlark commands only. |
+| `commands-paths.py` | Typed Python command registration and direct file I/O are unavailable; native save commands accept explicit paths. |
+| `contentview-interactive.py` | Python contentview class/reencode registration is not exposed. |
+| `contentview.py` | Python contentview class/plugin registration is not exposed; mutating a body is not an equivalent plugin port. |
+| `duplicate-modify-replay.py` | `ctx.master.addons` membership introspection is unavailable; dropping its view-dependent conditional would change the example. |
+| `filter-flows.py` | Python `flowfilter` imports are unavailable; existing native filter options and commands remain callable. |
+| `http-stream-modify.py` | A general Starlark streaming callback has no safe dispatch-frame adapter; boolean streaming remains supported. |
+| `io-read-saved-flows.py` | Standalone Python argv/open/FlowReader program; use Go `flowio` or `script.run` on loaded flows. |
+| `io-write-flow-file.py` | Direct Python random/environment/file-handle APIs are unavailable; use native save options/commands. |
+| `options-configure.py` | Raising Python's typed OptionsError is unavailable; generic Starlark `fail` is not identical rollback behavior. |
+| `websocket-inject-message.py` | The full example requires asyncio periodic task creation; native injection commands do not by themselves port that lifetime. |
+| `wsgi-flask-app.py` | Python Flask/WSGI execution is not embedded; a native apphost is a different integration. |
+
+The other eighteen examples have recognizable `.star` translations and real
+built-mitmdump cases in `script/acceptance`; `nonblocking.star` ports only the
+thread-based alternative, not the active asyncio branch. Source provenance,
+upstream notices and translation digests are in
+[examples/addons/README.md](../examples/addons/README.md) and
+[testdata/README.md](../testdata/README.md#scripting-references). Python-frozen
+ImportError guidance and Python traceback-object slicing have no Starlark
+counterpart; the source-test inventory records those non-ports separately.
 
 Options that only the Go port has (`testdata/options-go-only.txt:1-6`):
-`content_decode_limit` and `max_client_connections` are registered by the default addon set
-(`addons/core/core.go:38-40`, `addons/proxyserver/proxyserver.go:126`).
-`local_redirector_path`, `otel_exporter_endpoint`, `pprof_addr` and `script_max_steps` remain reserved,
+`content_decode_limit`, `max_client_connections` and `script_max_steps` are registered by the default addon sets.
+`local_redirector_path`, `otel_exporter_endpoint` and `pprof_addr` remain reserved,
 not runtime options. The historical four-name description is not the current registry difference.
 
 | Option | Type | Default | Meaning |
@@ -1238,9 +1285,9 @@ Extended CONNECT, HTTP Datagrams, priority scheduling and received-1xx forwardin
 | Handshake ownership/rekey mapping is backend-specific, not a Rust protocol extension. | Indices expire after twice RejectAfterTime (360 s), prune on registration, never receive expired packets; bounded nonblocking queues. Source routes have no TTL but remain only while resident in the listener's shared LRU. | Bound obsolete handshake state and learned-source retention while preserving rekeys and caller-owned stack/shutdown. |
 
 Core encrypted TCP/UDP component tests alone do not prove full CLI-addon or
-privileged/platform acceptance. Script addon loading (`-s`) is not ported. WireGuard acceptance therefore uses
-a subprocess DumpMaster harness with default addons and an uppercasing TCP/UDP addon registered through
-`Manager.Add`; it exercises the same proxyserver/Handler/flow path, not script loading. TUN acceptance uses
+privileged/platform acceptance. Script loading (`-s`) is available in the default frontends, but the retained
+WireGuard acceptance uses a subprocess DumpMaster harness with default addons and an uppercasing TCP/UDP addon
+registered through `Manager.Add`; it exercises the proxyserver/Handler/flow path, not a scripted WireGuard flow. TUN acceptance uses
 the built CLI.
 
 ## internal/tun
@@ -1282,7 +1329,7 @@ native-protocol Unix-datagram subprocess peer and real IPv4/IPv6 TCP/UDP origins
 `TestLocalWindowsPacketIPCTCPNoElevation` and `TestLocalWindowsPacketIPCNoElevation` use a test-only
 Redirector backed by real message-mode named pipes, native protobuf and real sockets, avoiding UAC in
 unattended tests. This fixture is not a production launch seam or evidence of elevated driver activation.
-Script addon loading (`-s`) is still unavailable.
+These controller/IPC fixtures do not exercise the separately available Starlark script-loading path.
 
 Native installed-app/system-extension capture on macOS, UAC/WinDivert process attribution on Windows, and
 sudo/TUN/eBPF capture/reinjection on Linux remain manual acceptance boundaries. Native Windows synthetic

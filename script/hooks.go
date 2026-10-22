@@ -17,7 +17,7 @@ import (
 )
 
 func (m *moduleAddon) flowHook(ctx context.Context, name string, f flow.Flow) error {
-	if m.retired || m.entry.owner.stopping.Load() {
+	if m.graph.retired || m.entry.owner.stopping.Load() {
 		// Late deliveries must not inspect a retired module's hook bindings.
 		return nil
 	}

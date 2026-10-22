@@ -36,7 +36,7 @@ func (i *invocation) check() error {
 
 type capabilities struct {
 	entry   *scriptEntry
-	retired bool // accessed only by ordinary evaluations under dispatch
+	retired bool // shared tree lifetime; accessed only under dispatch
 	worker  bool // immutable after the frozen instance is published
 }
 
@@ -189,7 +189,7 @@ func diagnostic(err error) string {
 
 func (m *moduleAddon) call(ctx context.Context, name string, arg func(*invocation) (starlark.Tuple, error)) error {
 	if name != "done" {
-		if m.retired || m.entry.owner.stopping.Load() {
+		if m.graph.retired || m.entry.owner.stopping.Load() {
 			// Connections can outlive Done, and reload can retire queued deliveries.
 			// The port's lifecycle boundary skips these hooks; upstream reports
 			// actual handler exceptions, not retirement itself, as addon errors.
@@ -232,7 +232,7 @@ func (m *moduleAddon) call(ctx context.Context, name string, arg func(*invocatio
 func noArgs(*invocation) (starlark.Tuple, error) { return nil, nil }
 
 func (m *moduleAddon) Load(ctx context.Context, loader *addon.Loader) error {
-	if m.retired || m.entry.owner.stopping.Load() {
+	if m.graph.retired || m.entry.owner.stopping.Load() {
 		return nil
 	}
 	if err := m.call(ctx, "on_load", func(i *invocation) (starlark.Tuple, error) { return starlark.Tuple{loaderValue(i, loader, m)}, nil }); err != nil {

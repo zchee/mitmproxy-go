@@ -61,7 +61,7 @@ func (i *invocation) shared(fn func(context.Context) error) error {
 }
 
 func (m *moduleAddon) concurrentHook(ctx context.Context, name string, f flow.Flow) error {
-	if m.retired || m.entry.owner.stopping.Load() {
+	if m.graph.retired || m.entry.owner.stopping.Load() {
 		// Teardown and queued hooks can outlive the port's script lifecycle;
 		// retirement is not a handler exception and must not log an addon error.
 		return nil
@@ -104,7 +104,7 @@ func (m *moduleAddon) concurrentHook(ctx context.Context, name string, f flow.Fl
 		if err := owner.master.Do(frameFree, func(context.Context) error {
 			// Retirement before admission does not start a new evaluation. Already
 			// admitted evaluations retain their graph and can finish after removal.
-			if m.retired || owner.stopping.Load() {
+			if m.graph.retired || owner.stopping.Load() {
 				return nil
 			}
 			var err error

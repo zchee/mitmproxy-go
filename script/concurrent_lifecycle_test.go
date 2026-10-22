@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/addons/clientplayback"
@@ -76,6 +77,80 @@ func testWorkerCapacity(t *testing.T, cancelWaiter bool) {
 	}
 	if len(instance.slots) != 0 {
 		t.Fatal("worker capacity leaked")
+	}
+}
+
+func testRetiredChildDelivery(t *testing.T) {
+	t.Helper()
+	tests := map[string]struct{ reload bool }{"reload": {true}, "unload": {false}}
+	for name, test := range tests {
+		f := newFixture(t)
+		var root *moduleAddon
+		bytecode, probes := 0, 0
+		if err := f.master.Commands.Register("tree.bytecode", func(context.Context) error {
+			bytecode++
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.master.Commands.Register("tree.probe", func(ctx context.Context) error {
+			probes++
+			if !root.retired || !root.graph.retired || f.master.Addons.Get(root.Name()) != nil {
+				t.Errorf("%s: child probe did not run after tree removal and parent retirement", name)
+			}
+			for _, child := range root.children {
+				if f.master.Addons.Get(child.Name()) != nil {
+					t.Errorf("%s: removed child still registered: %s", name, child.Name())
+				}
+				x := f.request()
+				if err := child.flowHook(ctx, "request", x); err != nil {
+					t.Errorf("%s: late child hook returned an error: %v", name, err)
+				}
+				if x.Comment != "" {
+					t.Errorf("%s: retired child edited live flow: %q", name, x.Comment)
+				}
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		path := f.file("tree.star", `def ordinary(f):
+    ctx.master.commands.call("tree.bytecode")
+    f.comment = "retired-ordinary"
+def worker(f):
+    ctx.master.commands.call("tree.bytecode")
+    f.comment = "retired-worker"
+def child_done():
+    ctx.master.commands.call("tree.probe")
+addons = [module("ordinary", request=ordinary, done=child_done), module("worker", request=concurrent(worker), done=child_done)]
+`)
+		f.load(path)
+		root = f.loader.entries[0].module
+		if root == nil || len(root.children) != 2 {
+			t.Fatalf("%s: child modules not loaded: %s", name, f.logs.String())
+		}
+		if test.reload {
+			f.updateSource(path, "def request(f):\n    f.comment = 'new-tree'\n", time.Second)
+			f.poll()
+		} else {
+			f.load()
+		}
+		if err := f.master.Do(t.Context(), func(ctx context.Context) error {
+			for _, child := range root.children {
+				x := f.request()
+				if err := child.flowHook(ctx, "request", x); err != nil || x.Comment != "" {
+					t.Errorf("%s: completed removal admitted a child hook: comment=%q err=%v", name, x.Comment, err)
+				}
+			}
+			if probes != 2 || bytecode != 0 {
+				t.Errorf("%s: child retirement probes=%d bytecode effects=%d, want 2 and 0", name, probes, bytecode)
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		f.wantLog("Addon error:", 0)
+		f.wantLog("error in script", 0)
 	}
 }
 

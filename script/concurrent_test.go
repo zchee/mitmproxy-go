@@ -465,6 +465,9 @@ func testRetireWorker(t *testing.T, reload, samePath bool) {
 	if err := f.loader.Close(); err != nil {
 		t.Fatal(err)
 	}
+	if reload && !samePath {
+		testRetiredChildDelivery(t)
+	}
 }
 
 func testCommentSurvives(t *testing.T) {

@@ -44,6 +44,7 @@ type Loader struct {
 	closed              atomic.Bool
 	current             atomic.Pointer[invocation]
 	stopping            atomic.Bool
+	syncRunDepth        atomic.Int32
 	mu                  sync.Mutex
 	wg                  sync.WaitGroup
 	watching            bool

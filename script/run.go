@@ -6,6 +6,7 @@ package script
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/zchee/mitmproxy-go/addon"
@@ -14,9 +15,27 @@ import (
 	"github.com/zchee/mitmproxy-go/flow"
 )
 
+// Every nested run creates a fresh interpreter; its step budget and recursion
+// checks cannot bound the native command stack. Keep script composition small.
+const maxScriptRunDepth = 16
+
+var errScriptRunDepth = fmt.Errorf("script.run nested call exceeds depth %d", maxScriptRunDepth)
+
 func (l *Loader) run(ctx context.Context, flows []flow.Flow, path command.Path) error {
 	if l.closed.Load() || l.stopping.Load() {
 		return errors.New("script loader is closed")
+	}
+	depth := l.syncRunDepth.Add(1)
+	defer l.syncRunDepth.Add(-1)
+	if depth > maxScriptRunDepth {
+		return errScriptRunDepth
+	}
+	fail := func(err error) error {
+		if depth > 1 && errors.Is(err, errScriptRunDepth) {
+			return err
+		}
+		l.logger().ErrorContext(ctx, "Addon error: "+diagnostic(err))
+		return nil
 	}
 	fullpath, err := sourcePath(string(path))
 	if err != nil {
@@ -36,6 +55,9 @@ func (l *Loader) run(ctx context.Context, flows []flow.Flow, path command.Path) 
 	}
 	mod, err := l.initialize(ctx, e, src.data)
 	if err != nil {
+		if errors.Is(err, errScriptRunDepth) {
+			return fail(err)
+		}
 		l.loadError(ctx, e, err)
 		return nil
 	}
@@ -49,24 +71,19 @@ func (l *Loader) run(ctx context.Context, flows []flow.Flow, path command.Path) 
 		}
 	}
 	bindChildren(mod)
-	invoke := func(hook addon.Hook) bool {
-		if err := l.master.Addons.InvokeSync(ctx, mod.addon(), hook); err != nil {
-			l.logger().ErrorContext(ctx, "Addon error: "+diagnostic(err))
-			return false
-		}
-		return true
-	}
 	keys := make(map[string]struct{})
 	for _, key := range l.master.Options.Keys() {
 		keys[key] = struct{}{}
 	}
-	if !invoke(addon.ConfigureHook{Updated: keys}) || !invoke(addon.RunningHook{}) {
-		return nil
+	for _, hook := range []addon.Hook{addon.ConfigureHook{Updated: keys}, addon.RunningHook{}} {
+		if err := l.master.Addons.InvokeSync(ctx, mod.addon(), hook); err != nil {
+			return fail(err)
+		}
 	}
 	for _, f := range flows {
 		for hook := range eventsequence.Iterate(f) {
-			if !invoke(hook) {
-				return nil
+			if err := l.master.Addons.InvokeSync(ctx, mod.addon(), hook); err != nil {
+				return fail(err)
 			}
 		}
 	}

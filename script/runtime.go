@@ -205,6 +205,9 @@ func (m *moduleAddon) call(ctx context.Context, name string, arg func(*invocatio
 		return err
 	})
 	if err != nil {
+		if errors.Is(err, errScriptRunDepth) {
+			return err
+		}
 		return fmt.Errorf("%s: %s", m.name, diagnostic(err))
 	}
 	return nil

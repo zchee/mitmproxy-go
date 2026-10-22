@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -85,7 +86,7 @@ func runRecordingSource(names ...string) string {
 func TestScriptRun(t *testing.T) {
 	tests := map[string]struct{ run func(*testing.T) }{
 		"depth_one":          {func(t *testing.T) { testRunRefusal(t, false, false); testRunInline(t, false) }},
-		"depth_two":          {func(t *testing.T) { testRunRefusal(t, true, false); testRunInline(t, true) }},
+		"depth_two":          {func(t *testing.T) { testRunRefusal(t, true, false); testRunInline(t, true); testRunDepthLimit(t) }},
 		"child_depth_one":    {func(t *testing.T) { testRunRefusal(t, false, true) }},
 		"child_depth_two":    {func(t *testing.T) { testRunRefusal(t, true, true) }},
 		"invalid_binding":    {testRunInvalidBinding},
@@ -107,6 +108,89 @@ func TestScriptRun(t *testing.T) {
 			t.Run(name, test.run)
 		}
 	})
+}
+
+func testRunDepthLimit(t *testing.T) {
+	for _, mode := range []string{"master", "hook", "worker", "parallel"} {
+		f := newFixture(t)
+		events := runRecorder(t, f)
+		path := filepath.Join(f.dir, "recursive.star")
+		f.file("recursive.star", fmt.Sprintf("ctx.master.commands.call('run.record', 'init')\ndef running():\n    ctx.master.commands.call('run.record', 'running')\n    ctx.master.commands.call('script.run', [], %q)\n    ctx.master.commands.call('run.record', 'after-running')\ndef request(f):\n    ctx.master.commands.call('run.record', 'later-request')\n", path))
+		runs := 1
+		switch mode {
+		case "master":
+			invokeRun(t, f, path, []flow.Flow{f.request()}, false)
+		case "hook":
+			invokeRun(t, f, path, []flow.Flow{f.request()}, true)
+		case "worker":
+			caller := f.file("worker-caller.star", fmt.Sprintf("def _request(f):\n    ctx.master.commands.call('script.run', [], %q)\n    f.comment = 'worker-returned'\nrequest = concurrent(_request)\n", path))
+			f.load(caller)
+			x := f.request()
+			f.hook(addon.RequestHook{Flow: x})
+			if x.Comment != "worker-returned" {
+				t.Fatalf("worker command did not receive outer success: %s", f.logs.String())
+			}
+		case "parallel":
+			runs = 4
+			var callers sync.WaitGroup
+			errs := make(chan error, runs)
+			for range runs {
+				callers.Go(func() {
+					_, err := f.master.Commands.Call(t.Context(), "script.run", []flow.Flow{f.request()}, command.Path(path))
+					errs <- err
+				})
+			}
+			callers.Wait()
+			close(errs)
+			for err := range errs {
+				if err != nil {
+					t.Fatalf("outer concurrent caller received failure: %v", err)
+				}
+			}
+		}
+		var want []string
+		for range runs * maxScriptRunDepth {
+			want = append(want, "init", "running")
+		}
+		if diff := gocmp.Diff(want, *events); diff != "" {
+			t.Fatalf("%s: depth boundary launched extra init/hooks or continued after failure: %s", mode, diff)
+		}
+		if depth := f.loader.syncRunDepth.Load(); depth != 0 {
+			t.Fatalf("%s: nesting permits leaked: %d", mode, depth)
+		}
+		f.wantLog("Addon error:", runs)
+		f.wantLog(errScriptRunDepth.Error(), runs)
+		f.wantLog("panic", 0)
+	}
+	f := newFixture(t)
+	events := runRecorder(t, f)
+	inner := f.file("ordinary-error.star", "def running():\n    fail('ordinary-nested-error')\n")
+	outer := f.file("ordinary-caller.star", fmt.Sprintf("def running():\n    ctx.master.commands.call('script.run', [], %q)\n    ctx.master.commands.call('run.record', 'after-inner')\ndef request(f):\n    f.comment = 'outer-continued'\n", inner))
+	x := f.request()
+	invokeRun(t, f, outer, []flow.Flow{x}, false)
+	if diff := gocmp.Diff([]string{"after-inner"}, *events); diff != "" {
+		t.Fatal(diff)
+	}
+	if x.Comment != "outer-continued" || f.loader.syncRunDepth.Load() != 0 {
+		t.Fatal("ordinary nested error changed per-run success or leaked admission")
+	}
+	f.wantLog("Addon error:", 1)
+	f.wantLog("ordinary-nested-error", 1)
+	f.wantLog(errScriptRunDepth.Error(), 0)
+	limit := newFixture(t)
+	if err := limit.master.Do(t.Context(), func(ctx context.Context) error {
+		limit.loader.syncRunDepth.Store(maxScriptRunDepth)
+		defer limit.loader.syncRunDepth.Store(0)
+		_, err := limit.master.Commands.Call(ctx, "script.run", []flow.Flow{}, command.Path(filepath.Join(limit.dir, "does-not-exist.star")))
+		if !errors.Is(err, errScriptRunDepth) || limit.loader.syncRunDepth.Load() != maxScriptRunDepth {
+			return fmt.Errorf("admission did not fail before path processing or unwind: %v", err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	limit.wantLog("No such script:", 0)
+	limit.wantLog("Addon error:", 0)
 }
 
 func testRunRefusal(t *testing.T, nested, child bool) {

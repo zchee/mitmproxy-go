@@ -125,6 +125,10 @@
 // It never invokes on_load or registers temporary addons or commands. A
 // concurrent wrapper is refused before invocation at every dispatch depth;
 // ordinary blocking builtins stay bounded and inline. The first hook error
-// stops the entire run and is logged once. Message iteration reveals messages
-// incrementally, so early termination retains only the revealed prefix.
+// stops the entire run and is logged once. Nested script.run frames are limited
+// to 16 per Loader; a nesting-limit error stops the chain and is logged once by
+// its outermost run, which still returns success to the external caller. Other
+// nested hook errors retain per-run logging and success semantics. Message
+// iteration reveals messages incrementally, so early termination retains only
+// the revealed prefix.
 package script

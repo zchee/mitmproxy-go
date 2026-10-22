@@ -70,6 +70,7 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/version"
 	"github.com/zchee/mitmproxy-go/master"
 	"github.com/zchee/mitmproxy-go/options"
+	"github.com/zchee/mitmproxy-go/script"
 
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/httplayer"
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/modes"
@@ -113,6 +114,7 @@ type Master struct {
 	stdin                  io.Reader
 	owner                  presentationOwner
 	closed, logsClosed     bool
+	scripts                *script.Loader
 }
 
 type consoleLogHandler struct{ slog.Handler }
@@ -151,6 +153,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
 	}
 	m.ProxyServer, m.View = ps, view.New(base.Addons)
+	m.scripts = script.New(base, script.Config{Logger: logger, ListenAddrs: ps.ListenAddrs})
 	m.Bridge, err = NewBridge(context.WithoutCancel(ctx), BridgeConfig{Master: base, View: m.View, Events: m.Events, Project: flowlist.Project, Listeners: func() []string {
 		var listeners []string
 		for _, address := range ps.ListenAddrs() {
@@ -169,7 +172,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		core.New(base.Addons), browser.New(opts, base.Addons), block.New(opts),
 		stripdnshttpsrecords.New(opts), blocklist.New(opts), anticache.New(opts), anticomp.New(opts),
 		clientplayback.New(base), commandhistory.New(opts), comment.New(base.Addons), cut.New(),
-		disableh2c.New(), export.New(opts), onboarding.New(opts), proxyauth.New(opts), ps,
+		disableh2c.New(), export.New(opts), onboarding.New(opts), proxyauth.New(opts), ps, m.scripts,
 		dnsresolver.New(opts, logger), nextlayer.New(opts), serverplayback.New(base),
 		mapremote.New(opts), maplocal.New(opts), modifybody.New(opts), modifyheaders.New(opts),
 		stickyauth.New(opts), stickycookie.New(opts), save.New(opts, m.ShutdownWithError),
@@ -390,6 +393,9 @@ func (m *Master) closeFrontend(ctx context.Context) error {
 	drain, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var err error
+	if m.scripts != nil {
+		err = m.scripts.Close()
+	}
 	if m.uiStarted.Load() {
 		quitDone := make(chan struct{})
 		go func() {

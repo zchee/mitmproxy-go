@@ -51,6 +51,7 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/version"
 	"github.com/zchee/mitmproxy-go/master"
 	"github.com/zchee/mitmproxy-go/options"
+	"github.com/zchee/mitmproxy-go/script"
 
 	// The proxy core resolves protocol layers through a registry that the
 	// factory packages fill from their init functions; without these
@@ -95,14 +96,13 @@ type Master struct {
 
 	logger       *slog.Logger
 	httpFidelity *http1.FidelityCounter
+	scripts      *script.Loader
 }
 
 // New returns a Master whose addons are registered in upstream's
 // order: the terminal logger first, then the ported subset of upstream's
 // default_addons, then the dumper, and last the serving watchdog, the flow
 // file reader and the startup error check.
-//
-// The script addon has no ported counterpart yet.
 func New(ctx context.Context, cfg Config) (*Master, error) {
 	opts := cfg.Options
 	if opts == nil {
@@ -110,7 +110,9 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 	}
 	fan := &fanoutHandler{}
 	logger := slog.New(fan)
-	m := master.New(master.Config{Options: opts, Logger: logger})
+	dm := &Master{logger: logger}
+	m := master.New(master.Config{Options: opts, Logger: logger, BeforeClose: func(context.Context) error { return dm.closeScripts() }})
+	dm.Master = m
 
 	ec := errorcheck.New(errorcheck.Config{Stderr: cfg.Stderr})
 	handlers := []slog.Handler{m.LogHandler(), ec.LogHandler()}
@@ -131,8 +133,10 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		Logger:       logger,
 	})
 	if err != nil {
-		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
+		return nil, errors.Join(err, dm.Close(context.WithoutCancel(ctx)))
 	}
+	dm.httpFidelity = httpFidelity
+	dm.scripts = script.New(m, script.Config{Logger: logger, ListenAddrs: ps.ListenAddrs})
 	addons = append(addons,
 		core.New(m.Addons),
 		browser.New(opts, m.Addons),
@@ -150,6 +154,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		onboarding.New(opts),
 		proxyauth.New(opts),
 		ps,
+		dm.scripts,
 		dnsresolver.New(opts, logger),
 		nextlayer.New(opts),
 		serverplayback.New(m),
@@ -174,9 +179,22 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		ec,
 	)
 	if err := m.Addons.Add(ctx, addons...); err != nil {
-		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
+		return nil, errors.Join(err, dm.Close(context.WithoutCancel(ctx)))
 	}
-	return &Master{Master: m, logger: logger, httpFidelity: httpFidelity}, nil
+	return dm, nil
+}
+
+// Close cancels and joins script work outside dispatch before closing log delivery.
+// It is safe before Run, on failed construction and on repeated calls.
+func (m *Master) Close(ctx context.Context) error {
+	return errors.Join(m.closeScripts(), m.Master.Close(ctx))
+}
+
+func (m *Master) closeScripts() error {
+	if m.scripts == nil {
+		return nil
+	}
+	return m.scripts.Close()
 }
 
 // Logger returns the logger that fans every record out to the add_log

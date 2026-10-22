@@ -72,7 +72,14 @@ func (g *capabilities) scope() (*invocation, error) {
 	}
 	return current, nil
 }
-func (g *capabilities) check() error { _, err := g.scope(); return err }
+
+func (g *capabilities) check() error {
+	if g.worker {
+		return g.entry.owner.ctx.Err()
+	}
+	_, err := g.scope()
+	return err
+}
 
 func stringValue(v starlark.Value) (string, error) {
 	s, ok := starlark.AsString(v)

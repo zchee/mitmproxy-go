@@ -140,6 +140,9 @@ func (i *invocation) blocking(fn func(context.Context) error) error {
 	if err := i.check(); err != nil {
 		return err
 	}
+	if i.worker {
+		return fn(i.ctx)
+	}
 	g := i.graph
 	prior := g.entry.owner.current.Swap(nil)
 	i.active = false

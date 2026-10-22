@@ -25,9 +25,13 @@ func (g *capabilities) predeclared() starlark.StringDict {
 	log := &logValue{graph: g}
 	opts := &object{kind: "options", check: g.check, names: g.entry.owner.master.Options.Keys()}
 	opts.get = func(name string) (starlark.Value, error) {
-		i, err := g.scope()
-		if err != nil {
-			return nil, err
+		i := (*invocation)(nil)
+		if !g.worker {
+			var err error
+			i, err = g.scope()
+			if err != nil {
+				return nil, err
+			}
 		}
 		opt, ok := g.entry.owner.master.Options.Lookup(name)
 		if !ok {
@@ -40,10 +44,6 @@ func (g *capabilities) predeclared() starlark.StringDict {
 		return v, err
 	}
 	opts.set = func(name string, v starlark.Value) error {
-		i, err := g.scope()
-		if err != nil {
-			return err
-		}
 		opt, ok := g.entry.owner.master.Options.Lookup(name)
 		if !ok {
 			return fmt.Errorf("No such option: %s", name) //nolint:staticcheck // Preserve the upstream option-attribute diagnostic.
@@ -52,7 +52,17 @@ func (g *capabilities) predeclared() starlark.StringDict {
 		if err != nil {
 			return err
 		}
-		return g.entry.owner.master.Options.Update(i.ctx, map[string]any{name: x})
+		update := func(ctx context.Context) error {
+			return g.entry.owner.master.Options.Update(ctx, map[string]any{name: x})
+		}
+		if g.worker {
+			return g.entry.owner.master.Do(g.entry.owner.ctx, update)
+		}
+		i, err := g.scope()
+		if err != nil {
+			return err
+		}
+		return update(i.ctx)
 	}
 	commands := &object{kind: "commands", check: g.check, names: []string{"call"}, get: func(name string) (starlark.Value, error) {
 		if name == "call" {
@@ -91,8 +101,9 @@ func (g *capabilities) predeclared() starlark.StringDict {
 		return nil, nil
 	}
 	return starlark.StringDict{
-		"ctx":    ctx,
-		"module": starlark.NewBuiltin("module", starlarkstruct.MakeModule),
+		"concurrent": starlark.NewBuiltin("concurrent", concurrentBuiltin),
+		"ctx":        ctx,
+		"module":     starlark.NewBuiltin("module", starlarkstruct.MakeModule),
 		"byteops": &starlarkstruct.Module{Name: "byteops", Members: starlark.StringDict{
 			"replace":    starlark.NewBuiltin("byteops.replace", byteReplace),
 			"startswith": starlark.NewBuiltin("byteops.startswith", byteStartsWith),
@@ -143,36 +154,76 @@ func (g *capabilities) commandCall(thread *starlark.Thread, _ *starlark.Builtin,
 	if err != nil {
 		return nil, err
 	}
-	var registered *command.Command
-	for key, c := range g.entry.owner.master.Commands.Commands() {
-		if key == name {
-			registered = c
-			break
-		}
-	}
-	if registered == nil {
-		return nil, fmt.Errorf("unknown command: %s", name)
-	}
-	values := args[1:]
-	converted := make([]any, len(values))
-	for n, value := range values {
-		param := n
-		if param >= len(registered.Params) {
-			if len(registered.Params) == 0 || !registered.Params[len(registered.Params)-1].Variadic {
-				return nil, fmt.Errorf("too many arguments for %s", name)
+	var result starlark.Value
+	err = i.shared(func(ctx context.Context) error {
+		var registered *command.Command
+		for key, candidate := range g.entry.owner.master.Commands.Commands() {
+			if key == name {
+				registered = candidate
+				break
 			}
-			param = len(registered.Params) - 1
 		}
-		converted[n], err = commandArgument(registered.Params[param].Type, value)
-		if err != nil {
-			return nil, err
+		if registered == nil {
+			return fmt.Errorf("unknown command: %s", name)
 		}
-	}
-	result, err := g.entry.owner.master.Commands.Call(i.ctx, name, converted...)
-	if err != nil {
-		return nil, err
-	}
-	return new(conversion).value(i, result, 0)
+		values := args[1:]
+		converted := make([]any, len(values))
+		owned := new(commandOwnership)
+		type argumentKey struct {
+			list *starlark.List
+			kind string
+		}
+		lists := make(map[argumentKey]any)
+		for n, value := range values {
+			param := n
+			if param >= len(registered.Params) {
+				if len(registered.Params) == 0 || !registered.Params[len(registered.Params)-1].Variadic {
+					return fmt.Errorf("too many arguments for %s", name)
+				}
+				param = len(registered.Params) - 1
+			}
+			key := argumentKey{kind: registered.Params[param].Type.Name()}
+			if i.worker {
+				key.list, _ = value.(*starlark.List)
+				if prior, ok := lists[key]; key.list != nil && ok {
+					converted[n] = prior
+					continue
+				}
+			}
+			var err error
+			converted[n], err = commandArgument(registered.Params[param].Type, value)
+			if err != nil {
+				return err
+			}
+			if i.worker {
+				converted[n], err = owned.argument(converted[n], 0)
+				if err != nil {
+					return err
+				}
+				if key.list != nil {
+					lists[key] = converted[n]
+				}
+			}
+		}
+		native, callErr := g.entry.owner.master.Commands.Call(ctx, name, converted...)
+		if i.worker {
+			if err := owned.copyBack(); err != nil {
+				return errors.Join(callErr, err)
+			}
+			var err error
+			native, err = new(commandOwnership).argument(native, 0)
+			if err != nil {
+				return err
+			}
+		}
+		if callErr != nil {
+			return callErr
+		}
+		var err error
+		result, err = new(conversion).value(i, native, 0)
+		return err
+	})
+	return result, err
 }
 
 type logValue struct{ graph *capabilities }
@@ -212,8 +263,11 @@ func (v *logValue) log(thread *starlark.Thread, level slog.Level, args starlark.
 	if i.logging {
 		return nil, errors.New("logging inside add_log is not supported")
 	}
-	v.graph.entry.owner.logger().Log(i.ctx, level, text)
-	return starlark.None, nil
+	err = i.shared(func(ctx context.Context) error {
+		v.graph.entry.owner.logger().Log(ctx, level, text)
+		return nil
+	})
+	return starlark.None, err
 }
 
 func loaderValue(i *invocation, loader *addon.Loader, m *moduleAddon) starlark.Value {

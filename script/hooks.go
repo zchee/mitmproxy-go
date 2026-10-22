@@ -17,6 +17,9 @@ import (
 )
 
 func (m *moduleAddon) flowHook(ctx context.Context, name string, f flow.Flow) error {
+	if _, ok := m.members[name].(*concurrentValue); ok && m.concurrent != nil {
+		return m.concurrentHook(ctx, name, f)
+	}
 	return m.call(ctx, name, func(i *invocation) (starlark.Tuple, error) { return starlark.Tuple{wrapFlow(i, f)}, nil })
 }
 

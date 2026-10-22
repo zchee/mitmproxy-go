@@ -115,6 +115,9 @@ func wrapConnection(i *invocation, c *connection.Connection, server *connection.
 		}
 		return nil, nil
 	}, set: func(name string, value starlark.Value) error {
+		if i.worker {
+			return fmt.Errorf("connection.%s is read-only in concurrent handlers", name)
+		}
 		switch name {
 		case "error", "sni":
 			var x *string

@@ -62,7 +62,9 @@ func (i *invocation) shared(fn func(context.Context) error) error {
 
 func (m *moduleAddon) concurrentHook(ctx context.Context, name string, f flow.Flow) error {
 	if m.retired || m.entry.owner.stopping.Load() {
-		return errors.New("script instance is retired")
+		// Teardown and queued hooks can outlive the port's script lifecycle;
+		// retirement is not a handler exception and must not log an addon error.
+		return nil
 	}
 	if err := m.checkTree(); err != nil {
 		return err
@@ -103,13 +105,17 @@ func (m *moduleAddon) concurrentHook(ctx context.Context, name string, f flow.Fl
 			// Retirement before admission does not start a new evaluation. Already
 			// admitted evaluations retain their graph and can finish after removal.
 			if m.retired || owner.stopping.Load() {
-				return errors.New("script instance is retired")
+				return nil
 			}
 			var err error
 			merge, err = newFlowMerge(f)
 			return err
 		}); err != nil {
 			return err
+		}
+		if merge == nil {
+			// Retirement won admission; no clone exists and no worker may start.
+			return nil
 		}
 		done := make(chan error, 1)
 		go func() {

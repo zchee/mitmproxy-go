@@ -190,7 +190,10 @@ func diagnostic(err error) string {
 func (m *moduleAddon) call(ctx context.Context, name string, arg func(*invocation) (starlark.Tuple, error)) error {
 	if name != "done" {
 		if m.retired || m.entry.owner.stopping.Load() {
-			return errors.New("script instance is retired")
+			// Connections can outlive Done, and reload can retire queued deliveries.
+			// The port's lifecycle boundary skips these hooks; upstream reports
+			// actual handler exceptions, not retirement itself, as addon errors.
+			return nil
 		}
 		if m.loaded {
 			if err := m.checkTree(); err != nil {
@@ -229,6 +232,9 @@ func (m *moduleAddon) call(ctx context.Context, name string, arg func(*invocatio
 func noArgs(*invocation) (starlark.Tuple, error) { return nil, nil }
 
 func (m *moduleAddon) Load(ctx context.Context, loader *addon.Loader) error {
+	if m.retired || m.entry.owner.stopping.Load() {
+		return nil
+	}
 	if err := m.call(ctx, "on_load", func(i *invocation) (starlark.Tuple, error) { return starlark.Tuple{loaderValue(i, loader, m)}, nil }); err != nil {
 		return err
 	}

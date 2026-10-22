@@ -22,6 +22,7 @@ import (
 	"go.starlark.net/starlark"
 
 	"github.com/zchee/mitmproxy-go/addon"
+	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/httpmsg"
@@ -448,12 +449,17 @@ def request(f):
 		}},
 		"shutdown_join": {func(t *testing.T) {
 			retiring := newFixture(t)
-			path := retiring.file("retire.star", "state = {\"work\": 0, \"done\": 0}\ndef work():\n    state[\"work\"] += 1\ndef on_load(loader):\n    loader.add_command(\"script.afterdone\", work)\ndef request(f):\n    work()\ndef done():\n    state[\"done\"] += 1\n")
+			path := retiring.file("retire.star", "state = {\"work\": 0, \"done\": 0}\ndef work():\n    state[\"work\"] += 1\ndef on_load(loader):\n    loader.add_command(\"script.afterdone\", work)\ndef request(f):\n    work()\ndef server_disconnected(server):\n    work()\ndef client_disconnected(client):\n    work()\ndef websocket_end(f):\n    work()\ndef update(flows):\n    pass\ndef done():\n    state[\"done\"] += 1\n")
 			retiring.load(path)
 			module := retiring.loader.entries[0].module
 			retiring.hook(addon.RequestHook{Flow: retiring.request()})
 			retiring.hook(addon.DoneHook{})
-			retiring.hook(addon.RequestHook{Flow: retiring.request()})
+			late := retiring.request()
+			retiring.hook(addon.RequestHook{Flow: late})
+			retiring.hook(addon.ServerDisconnectedHook{Data: &hookdata.ServerConnection{Server: late.ServerConn, Client: late.ClientConn}})
+			retiring.hook(addon.ClientDisconnectedHook{Client: late.ClientConn})
+			retiring.hook(addon.WebSocketEndHook{Flow: late})
+			retiring.hook(addon.UpdateHook{Flows: []flow.Flow{late}})
 			retiring.hook(addon.DoneHook{})
 			if _, err := retiring.master.Call(t.Context(), "script.afterdone"); err == nil {
 				t.Fatal("Done admitted a new script command")
@@ -484,6 +490,18 @@ def request(f):
 			}); err != nil {
 				t.Fatal(err)
 			}
+			worker := newFixture(t)
+			worker.load(worker.file("worker-teardown.star", "def _end(f):\n    ctx.log('unexpected-teardown-worker')\n    f.comment = 'unexpected-worker'\nwebsocket_end = concurrent(_end)\ndef update(flows):\n    ctx.log('unexpected-teardown-update')\n"))
+			worker.hook(addon.DoneHook{})
+			workerFlow := worker.request()
+			worker.hook(addon.WebSocketEndHook{Flow: workerFlow})
+			if workerFlow.Comment != "" {
+				t.Error("shutdown admitted a new concurrent worker")
+			}
+			worker.wantLog("unexpected-teardown-worker", 0)
+			worker.wantLog("unexpected-teardown-update", 0)
+			worker.wantLog("Addon error:", 0)
+			retiring.wantLog("Addon error:", 0)
 			if err := retiring.loader.Close(); err != nil {
 				t.Fatal(err)
 			}

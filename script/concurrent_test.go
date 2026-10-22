@@ -355,6 +355,36 @@ func testRetireWorker(t *testing.T, reload, samePath bool) {
 	x := f.request()
 	done := startConcurrent(t, f, t.Context(), addon.RequestHook{Flow: x})
 	awaitConcurrent(t, entered)
+	var queued <-chan error
+	var queuedFlow *flow.HTTPFlow
+	occupied := 0
+	if reload && !samePath {
+		if err := f.master.Do(t.Context(), func(context.Context) error {
+			occupied = cap(old.concurrent.slots) - len(old.concurrent.slots)
+			for range occupied {
+				old.concurrent.slots <- struct{}{}
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		started := make(chan struct{})
+		completed := make(chan error, 1)
+		queued = completed
+		queuedFlow = f.request()
+		go func() {
+			completed <- f.master.Do(t.Context(), func(ctx context.Context) error {
+				close(started)
+				return old.flowHook(ctx, "request", queuedFlow)
+			})
+		}()
+		awaitConcurrent(t, started)
+		// This acquisition completes only after the queued call yields its
+		// dispatch frame while every worker permit remains occupied.
+		if err := f.master.Do(t.Context(), func(context.Context) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if reload {
 		replacement := "def request(f):\n    f.comment = 'new-instance'\n"
 		if !samePath {
@@ -393,13 +423,28 @@ func testRetireWorker(t *testing.T, reload, samePath bool) {
 	} else {
 		f.load()
 	}
+	if queued != nil {
+		for range occupied {
+			<-old.concurrent.slots
+		}
+		if err := awaitConcurrent(t, queued); err != nil {
+			t.Errorf("queued delivery to retired instance was not a silent no-op: %v", err)
+		}
+		if queuedFlow.Request.Headers.Get("x-retired") != "" || queuedFlow.Comment != "" {
+			t.Error("queued delivery admitted work after retirement")
+		}
+	}
 	if !old.retired {
 		t.Fatal("old instance not retired")
 	}
 	if samePath && f.loader.entries[0].module == old {
 		t.Fatal("same path reused old worker instance")
 	}
-	if err := old.flowHook(t.Context(), "request", f.request()); err == nil {
+	late := f.request()
+	if err := old.flowHook(t.Context(), "request", late); err != nil {
+		t.Errorf("retired hook delivery was not a silent no-op: %v", err)
+	}
+	if late.Comment != "" || late.Request.Headers.Get("x-retired") != "" {
 		t.Fatal("retirement admitted new worker")
 	}
 	if reload {

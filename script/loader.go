@@ -1,9 +1,6 @@
 // Copyright 2026 The mitmproxy-go Authors.
 // SPDX-License-Identifier: MIT
 
-// Package script embeds trusted operator-supplied Starlark addons. Ordinary
-// evaluations run inside the master's addon dispatch domain. Source and HTTP
-// limits are safety bounds, not a CPU, memory, filesystem or network sandbox.
 package script
 
 import (

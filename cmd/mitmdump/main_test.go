@@ -7,15 +7,9 @@
 //	test_mitmweb                        -> not applicable: the web frontend
 //	                                       is a different binary, not built
 //	                                       yet.
-//	test_mitmdump                       -> TestSignalShutdown and
-//	                                       TestSignalBinary; the upstream
-//	                                       case shuts the master down from
-//	                                       an addon script, which needs the
-//	                                       scripts option no ported addon
-//	                                       registers.
-//	test_options_includes_addon_options -> not applicable: addon scripts
-//	                                       need the scripts option, which no
-//	                                       ported addon registers.
+//	test_mitmdump                       -> TestScriptCLI plus the signal
+//	                                       shutdown tests.
+//	test_options_includes_addon_options -> TestScriptCLI custom metadata.
 //	test_options_without_scripts        -> TestOptionsListing
 package main
 

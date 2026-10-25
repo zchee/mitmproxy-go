@@ -821,7 +821,7 @@ jobs:
       # setup-uv has published no floating major tag since v8, so this pins
       # the full version and dependabot bumps it. Switch to "@vN" if upstream
       # publishes major tags again.
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
           # The uv cache depends on the pinned mitmproxy commit, which the
           # inline script metadata of the oracle scripts and the difftest

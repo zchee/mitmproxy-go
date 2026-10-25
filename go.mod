@@ -8,7 +8,7 @@ require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.1.0
 	charm.land/lipgloss/v2 v2.0.6
-	codeberg.org/miekg/dns v0.6.118
+	codeberg.org/miekg/dns v0.6.119
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/andybalholm/brotli v1.2.6
 	github.com/bufbuild/protocompile v0.14.1
@@ -16,7 +16,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/charmbracelet/x/exp/teatest/v2 v2.0.0-20261018003744-cb897cb4ed72
 	github.com/charmbracelet/x/term v0.2.2
-	github.com/chromedp/cdproto v0.157.8
+	github.com/chromedp/cdproto v0.158.4
 	github.com/chromedp/chromedp v0.21.0
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/ebitengine/purego v0.11.2
@@ -25,15 +25,15 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/itchyny/timefmt-go v0.1.9
 	github.com/klauspost/compress v1.20.3
-	github.com/pion/dtls/v3 v3.1.14
+	github.com/pion/dtls/v3 v3.1.15
 	github.com/quic-go/qpack v0.6.0
 	github.com/quic-go/quic-go v0.64.1
 	github.com/rivo/uniseg v0.4.7
-	github.com/shamaton/msgpack/v3 v3.2.4
+	github.com/shamaton/msgpack/v3 v3.2.5
 	github.com/shirou/gopsutil/v4 v4.26.9
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	github.com/zchee/gows v0.1.1-0.20261020041032-e4efa103c7d4
+	github.com/zchee/gows v0.1.1
 	go.starlark.net v0.0.0-20261021141710-4f4267fb140d
 	go.uber.org/goleak v1.3.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6

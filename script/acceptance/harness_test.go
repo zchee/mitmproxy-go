@@ -229,14 +229,16 @@ func guardedUpstreamWithReport(t *testing.T, target string, report func(error)) 
 			http.Error(w, "forwarding failed", http.StatusBadGateway)
 			return
 		}
+		// Hijack removes the connection from httptest's shutdown accounting.
+		// Register our join before that ownership transfer.
+		workers.Add(1)
+		defer workers.Done()
 		client, buffered, err := w.(http.Hijacker).Hijack()
 		if err != nil {
 			_ = conn.Close()
 			t.Error(err)
 			return
 		}
-		workers.Add(1)
-		defer workers.Done()
 		defer func() { _ = client.Close(); _ = conn.Close() }()
 		var copies sync.WaitGroup
 		copies.Go(func() { _, _ = io.Copy(conn, buffered); _ = conn.Close(); _ = client.Close() })

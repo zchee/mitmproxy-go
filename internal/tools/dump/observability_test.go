@@ -5,16 +5,21 @@ package dump
 
 import (
 	"context"
+	json "encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	gocmp "github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/addon"
+	"github.com/zchee/mitmproxy-go/internal/debugserver"
 	"github.com/zchee/mitmproxy-go/internal/telemetry"
 	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
 	"github.com/zchee/mitmproxy-go/options"
@@ -28,9 +33,15 @@ func TestObservabilityAssembly(t *testing.T) {
 					t.Fatal("default set does not own the configured telemetry controller")
 				}
 				chain := m.Addons.Chain()
-				got := []string{fmt.Sprintf("%T", chain[len(chain)-2]), fmt.Sprintf("%T", chain[len(chain)-1])}
-				if diff := gocmp.Diff([]string{"*telemetry.Controller", "*errorcheck.ErrorCheck"}, got); diff != "" {
+				got := []string{fmt.Sprintf("%T", chain[len(chain)-3]), fmt.Sprintf("%T", chain[len(chain)-2]), fmt.Sprintf("%T", chain[len(chain)-1])}
+				if diff := gocmp.Diff([]string{"*telemetry.Controller", "*debugserver.Controller", "*errorcheck.ErrorCheck"}, got); diff != "" {
 					t.Fatalf("final addon order (-want +got):\n%s", diff)
+				}
+				if got, ok := m.Addons.Get("debugserver").(*debugserver.Controller); !ok || got != m.debug {
+					t.Fatal("default set does not own the configured diagnostics controller")
+				}
+				if !m.Options.Has("pprof_addr") || m.Options.Str("pprof_addr") != "" {
+					t.Fatal("diagnostics option is absent or enabled by default")
 				}
 				if !m.Options.Has("otel_exporter_endpoint") || m.Options.Str("otel_exporter_endpoint") != "" {
 					t.Fatal("exporter option is absent or enabled by default")
@@ -40,6 +51,10 @@ func TestObservabilityAssembly(t *testing.T) {
 				var requests atomic.Int64
 				collector := observabilityCollector(t, &requests)
 				observabilityEndpoint(t, m, collector.URL)
+				observabilityDebugAddress(t, m, "127.0.0.1:0")
+				if status := m.debug.Status(); status.Enabled || status.Address != "" {
+					t.Fatalf("metadata construction bound diagnostics: %+v", status)
+				}
 				if err := m.telemetry.Sync(t.Context()); err != nil {
 					t.Fatal(err)
 				}
@@ -65,6 +80,64 @@ func TestObservabilityAssembly(t *testing.T) {
 						t.Fatalf("settled exporter enabled = %t for endpoint %q", got, endpoint)
 					}
 				}
+				if err := m.debug.Running(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				observabilityDebugAddress(t, m, "127.0.0.1:0")
+				bound := m.debug.Status()
+				if !bound.Enabled || bound.Address == "" || bound.Requested != "127.0.0.1:0" {
+					t.Fatalf("diagnostics did not bind: %+v", bound)
+				}
+				client := &http.Client{Transport: &http.Transport{}}
+				defer client.CloseIdleConnections()
+				for _, path := range []string{"/debug", "/debug/pprof/"} {
+					req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+bound.Address+path, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					response, err := client.Do(req)
+					if err != nil {
+						t.Fatal(err)
+					}
+					data, readErr := io.ReadAll(response.Body)
+					closeErr := response.Body.Close()
+					if readErr != nil || closeErr != nil || response.StatusCode != http.StatusOK {
+						t.Fatalf("%s response: status=%d read=%v close=%v", path, response.StatusCode, readErr, closeErr)
+					}
+					if path == "/debug" {
+						var document struct {
+							Runtime     []any              `json:"runtime"`
+							Telemetry   telemetry.Status   `json:"telemetry"`
+							Diagnostics debugserver.Status `json:"diagnostics"`
+						}
+						if err := json.Unmarshal(data, &document); err != nil {
+							t.Fatal(err)
+						}
+						if len(document.Runtime) == 0 || document.Diagnostics.Address != bound.Address {
+							t.Fatalf("wrong diagnostics document: %+v", document.Diagnostics)
+						}
+						if diff := gocmp.Diff(m.telemetry.Status(), document.Telemetry); diff != "" {
+							t.Fatalf("instance counters (-want +got):\n%s", diff)
+						}
+					}
+				}
+				observabilityEndpoint(t, m, "http://"+bound.Address)
+				if err := m.telemetry.Sync(t.Context()); err == nil {
+					t.Fatal("exporter accepted its own diagnostics listener")
+				}
+				observabilityEndpoint(t, m, "")
+				if err := m.telemetry.Sync(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				observabilityDebugAddress(t, m, "localhost:0")
+				rebound := m.debug.Status()
+				if !rebound.Enabled || rebound.Requested != "localhost:0" {
+					t.Fatalf("diagnostics rebind did not settle: %+v", rebound)
+				}
+				observabilityDebugAddress(t, m, "")
+				if disabled := m.debug.Status(); disabled.Enabled || disabled.Address != "" {
+					t.Fatalf("diagnostics disable did not join: %+v", disabled)
+				}
 			}},
 			"close_join": {run: func(t *testing.T, m *Master) {
 				var requests atomic.Int64
@@ -83,9 +156,37 @@ func TestObservabilityAssembly(t *testing.T) {
 				if got := m.telemetry.Status().ActiveFlows; got != 1 {
 					t.Fatalf("callback did not observe active flow: %d", got)
 				}
+				if err := m.debug.Running(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				observabilityDebugAddress(t, m, "127.0.0.1:0")
+				conn, err := (&net.Dialer{Timeout: time.Second}).DialContext(t.Context(), "tcp", m.debug.Status().Address)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = conn.Close() }()
+				if _, err := conn.Write([]byte("GET /debug HTTP/1.1\r\n")); err != nil {
+					t.Fatal(err)
+				}
+				started := time.Now()
 				m.Shutdown()
 				if err := m.Run(t.Context()); err != nil {
 					t.Fatalf("BeforeClose join: %v", err)
+				}
+				if elapsed := time.Since(started); elapsed > 10*time.Second {
+					t.Fatalf("observability Close exceeded the shared deadline: %v", elapsed)
+				}
+				if status := m.debug.Status(); !status.Stopped || status.Enabled || status.Address != "" {
+					t.Fatalf("diagnostics did not join: %+v", status)
+				}
+				if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+					t.Fatal(err)
+				}
+				var data [1]byte
+				if _, err := conn.Read(data[:]); err == nil {
+					t.Fatal("diagnostics connection stayed open after join")
+				} else if timeout, ok := errors.AsType[net.Error](err); ok && timeout.Timeout() {
+					t.Fatalf("diagnostics connection did not acknowledge closure: %v", err)
 				}
 				if got := m.telemetry.Status(); !got.Stopped || got.ActiveFlows != 0 || got.Enabled || requests.Load() == 0 {
 					t.Fatalf("Close did not flush and join active telemetry: %+v, exports=%d", got, requests.Load())
@@ -121,6 +222,18 @@ func observabilityEndpoint(t *testing.T, m *Master, endpoint string) {
 	if err := m.Do(t.Context(), func(ctx context.Context) error {
 		return m.Options.Update(ctx, map[string]any{"otel_exporter_endpoint": endpoint})
 	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func observabilityDebugAddress(t *testing.T, m *Master, address string) {
+	t.Helper()
+	if err := m.Do(t.Context(), func(ctx context.Context) error {
+		return m.Options.Update(ctx, map[string]any{"pprof_addr": address})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.debug.Sync(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 }

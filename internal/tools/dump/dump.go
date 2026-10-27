@@ -11,6 +11,8 @@ import (
 	"io"
 	"log/slog"
 	"net/netip"
+	"sync"
+	"time"
 
 	"github.com/zchee/mitmproxy-go/addons/anticache"
 	"github.com/zchee/mitmproxy-go/addons/anticomp"
@@ -47,6 +49,7 @@ import (
 	"github.com/zchee/mitmproxy-go/addons/tlsconfig"
 	"github.com/zchee/mitmproxy-go/addons/updatealtsvc"
 	"github.com/zchee/mitmproxy-go/addons/upstreamauth"
+	"github.com/zchee/mitmproxy-go/internal/debugserver"
 	"github.com/zchee/mitmproxy-go/internal/http1"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/telemetry"
@@ -100,6 +103,10 @@ type Master struct {
 	httpFidelity *http1.FidelityCounter
 	scripts      *script.Loader
 	telemetry    *telemetry.Controller
+
+	debug             *debugserver.Controller
+	observabilityOnce sync.Once
+	observabilityErr  error
 }
 
 // New returns a Master whose addons are registered in upstream's
@@ -126,11 +133,18 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 				}
 			}
 		}
+		if dm.debug != nil {
+			if address, err := netip.ParseAddrPort(dm.debug.Status().Address); err == nil {
+				listeners = append(listeners, address)
+			}
+		}
 		return listeners
 	}})
+	dm.debug = debugserver.New(debugserver.Config{Counters: dm.telemetry.Status, Logger: logger})
 	m := master.New(master.Config{Options: opts, Logger: logger, BeforeClose: dm.closeServices, OnHookComplete: dm.telemetry.OnHookComplete, OnDispatchStart: dm.telemetry.OnDispatchStart, OnDispatchEnd: dm.telemetry.OnDispatchEnd})
 	dm.Master = m
 	dm.telemetry.Bind(m)
+	dm.debug.Bind(m)
 
 	ec := errorcheck.New(errorcheck.Config{Stderr: cfg.Stderr})
 	handlers := []slog.Handler{m.LogHandler(), ec.LogHandler()}
@@ -195,6 +209,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		keepserving.New(m, keepserving.Config{}),
 		readfile.New(m, readfile.Config{Stdin: cfg.Stdin, Logger: logger}),
 		dm.telemetry,
+		dm.debug,
 		ec,
 	)
 	if err := m.Addons.Add(ctx, addons...); err != nil {
@@ -210,7 +225,21 @@ func (m *Master) Close(ctx context.Context) error {
 }
 
 func (m *Master) closeServices(ctx context.Context) error {
-	return errors.Join(m.closeScripts(), m.telemetry.Close(ctx))
+	return errors.Join(m.closeScripts(), m.closeObservability(ctx))
+}
+
+func (m *Master) closeObservability(ctx context.Context) error {
+	m.observabilityOnce.Do(func() {
+		cleanup, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		var telemetryErr, debugErr error
+		var joined sync.WaitGroup
+		joined.Go(func() { telemetryErr = m.telemetry.Close(cleanup) })
+		joined.Go(func() { debugErr = m.debug.Close(cleanup) })
+		joined.Wait()
+		m.observabilityErr = errors.Join(telemetryErr, debugErr)
+	})
+	return m.observabilityErr
 }
 
 func (m *Master) closeScripts() error {

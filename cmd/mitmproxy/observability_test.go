@@ -50,7 +50,7 @@ func TestObservabilityCLI(t *testing.T) {
 					}
 				}()
 				for _, listing := range []string{"--options", "--commands"} {
-					args := []string{"--set", "confdir=" + t.TempDir(), "--set", "mode=regular@" + reserved.Addr().String(), "--set", "otel_exporter_endpoint=" + collector.URL, listing}
+					args := []string{"--set", "confdir=" + t.TempDir(), "--set", "mode=regular@" + reserved.Addr().String(), "--set", "otel_exporter_endpoint=" + collector.URL, "--set", "pprof_addr=" + reserved.Addr().String(), listing}
 					childCtx, stop := context.WithTimeout(t.Context(), 30*time.Second)
 					cmd := exec.CommandContext(childCtx, binary, args...) //nolint:gosec // The path is the executable built into this test's private directory.
 					output, err := cmd.CombinedOutput()
@@ -70,12 +70,18 @@ func TestObservabilityCLI(t *testing.T) {
 				}
 			}},
 			"version_injected": {run: func(t *testing.T) {
+				var exports atomic.Int64
+				collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { exports.Add(1); w.WriteHeader(http.StatusOK) }))
+				defer collector.Close()
 				childCtx, stop := context.WithTimeout(t.Context(), 30*time.Second)
 				defer stop()
-				cmd := exec.CommandContext(childCtx, binary, "--version") //nolint:gosec // The path is the executable built into this test's private directory.
+				cmd := exec.CommandContext(childCtx, binary, "--set", "otel_exporter_endpoint="+collector.URL, "--set", "pprof_addr="+strings.TrimPrefix(collector.URL, "http://"), "--version") //nolint:gosec // The path is the executable built into this test's private directory.
 				output, err := cmd.CombinedOutput()
 				if err != nil {
 					t.Fatalf("version exit: %v\n%s", err, output)
+				}
+				if got := exports.Load(); got != 0 {
+					t.Fatalf("version exit started exporter I/O: %d requests", got)
 				}
 				if !strings.Contains(string(output), "Mitmproxy-go: "+injected) {
 					t.Fatalf("injected version missing from output: %s", output)

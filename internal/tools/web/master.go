@@ -52,6 +52,7 @@ import (
 	"github.com/zchee/mitmproxy-go/addons/updatealtsvc"
 	"github.com/zchee/mitmproxy-go/addons/upstreamauth"
 	"github.com/zchee/mitmproxy-go/addons/view"
+	"github.com/zchee/mitmproxy-go/internal/debugserver"
 	"github.com/zchee/mitmproxy-go/internal/http1"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/telemetry"
@@ -114,6 +115,10 @@ type Master struct {
 	logsClosed bool
 	scripts    *script.Loader
 	telemetry  *telemetry.Controller
+
+	debug             *debugserver.Controller
+	observabilityOnce sync.Once
+	observabilityErr  error
 }
 
 // logHandler is initialized before addon registration can emit any records.
@@ -140,11 +145,18 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 				}
 			}
 		}
+		if m.debug != nil {
+			if address, err := netip.ParseAddrPort(m.debug.Status().Address); err == nil {
+				listeners = append(listeners, address)
+			}
+		}
 		return listeners
 	}})
+	m.debug = debugserver.New(debugserver.Config{Counters: m.telemetry.Status, Logger: logger})
 	base := master.New(master.Config{Options: opts, Logger: logger, BeforeClose: m.closeFrontend, OnHookComplete: m.telemetry.OnHookComplete, OnDispatchStart: m.telemetry.OnDispatchStart, OnDispatchEnd: m.telemetry.OnDispatchEnd})
 	m.Master = base
 	m.telemetry.Bind(base)
+	m.debug.Bind(base)
 	var err error
 	m.Events, err = eventstore.New()
 	if err != nil {
@@ -180,7 +192,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		savehar.New(opts, version.Version), tlsconfig.New(opts), upstreamauth.New(opts), updatealtsvc.New(opts),
 		&WebAddon{master: m}, m.auth, intercept.New(opts),
 		readfile.New(base, readfile.Config{Stdin: cfg.Stdin, Logger: logger}),
-		m.StaticViewer, m.View, m.Events, m.telemetry, ec,
+		m.StaticViewer, m.View, m.Events, m.telemetry, m.debug, ec,
 	)
 	if err := base.Addons.Add(ctx, addons...); err != nil {
 		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
@@ -270,11 +282,25 @@ func (m *Master) Close(ctx context.Context) error {
 	return errors.Join(m.closeFrontend(ctx), m.Master.Close(ctx))
 }
 
+func (m *Master) closeObservability(ctx context.Context) error {
+	m.observabilityOnce.Do(func() {
+		cleanup, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		var telemetryErr, debugErr error
+		var joined sync.WaitGroup
+		joined.Go(func() { telemetryErr = m.telemetry.Close(cleanup) })
+		joined.Go(func() { debugErr = m.debug.Close(cleanup) })
+		joined.Wait()
+		m.observabilityErr = errors.Join(telemetryErr, debugErr)
+	})
+	return m.observabilityErr
+}
+
 func (m *Master) closeFrontend(ctx context.Context) error {
 	m.closeMu.Lock()
 	defer m.closeMu.Unlock()
 	m.Shutdown()
-	telemetryErr := m.telemetry.Close(ctx)
+	observabilityErr := m.closeObservability(ctx)
 	drain, stop := context.WithTimeout(ctx, 5*time.Second)
 	defer stop()
 	m.mu.Lock()
@@ -284,7 +310,7 @@ func (m *Master) closeFrontend(ctx context.Context) error {
 	if cancel != nil {
 		cancel()
 	}
-	err := telemetryErr
+	err := observabilityErr
 	if m.scripts != nil {
 		err = errors.Join(err, m.scripts.Close())
 	}

@@ -58,6 +58,7 @@ import (
 	"github.com/zchee/mitmproxy-go/addons/updatealtsvc"
 	"github.com/zchee/mitmproxy-go/addons/upstreamauth"
 	"github.com/zchee/mitmproxy-go/addons/view"
+	"github.com/zchee/mitmproxy-go/internal/debugserver"
 	"github.com/zchee/mitmproxy-go/internal/http1"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/pyrepr"
@@ -118,6 +119,9 @@ type Master struct {
 	closed, logsClosed     bool
 	scripts                *script.Loader
 	telemetry              *telemetry.Controller
+	debug                  *debugserver.Controller
+	observabilityOnce      sync.Once
+	observabilityErr       error
 }
 
 type consoleLogHandler struct{ slog.Handler }
@@ -152,11 +156,18 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 				}
 			}
 		}
+		if m.debug != nil {
+			if address, err := netip.ParseAddrPort(m.debug.Status().Address); err == nil {
+				listeners = append(listeners, address)
+			}
+		}
 		return listeners
 	}})
+	m.debug = debugserver.New(debugserver.Config{Counters: m.telemetry.Status, Logger: logger})
 	base := master.New(master.Config{Options: opts, Logger: logger, BeforeClose: m.closeFrontend, OnHookComplete: m.telemetry.OnHookComplete, OnDispatchStart: m.telemetry.OnDispatchStart, OnDispatchEnd: m.telemetry.OnDispatchEnd})
 	m.Master = base
 	m.telemetry.Bind(base)
+	m.debug.Bind(base)
 	var err error
 	m.Events, err = eventstore.New()
 	if err != nil {
@@ -194,7 +205,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		mapremote.New(opts), maplocal.New(opts), modifybody.New(opts), modifyheaders.New(opts),
 		stickyauth.New(opts), stickycookie.New(opts), save.New(opts, m.ShutdownWithError),
 		savehar.New(opts, version.Version), tlsconfig.New(opts), upstreamauth.New(opts), updatealtsvc.New(opts),
-		intercept.New(opts), m.View, m.Events, readfile.New(base, readfile.Config{Stdin: cfg.Stdin, Logger: logger}), frontend, keys, m.telemetry, ec,
+		intercept.New(opts), m.View, m.Events, readfile.New(base, readfile.Config{Stdin: cfg.Stdin, Logger: logger}), frontend, keys, m.telemetry, m.debug, ec,
 	); err != nil {
 		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
 	}
@@ -400,6 +411,20 @@ func (m *Master) Close(ctx context.Context) error {
 	return errors.Join(m.closeFrontend(ctx), m.Master.Close(ctx))
 }
 
+func (m *Master) closeObservability(ctx context.Context) error {
+	m.observabilityOnce.Do(func() {
+		cleanup, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		var telemetryErr, debugErr error
+		var joined sync.WaitGroup
+		joined.Go(func() { telemetryErr = m.telemetry.Close(cleanup) })
+		joined.Go(func() { debugErr = m.debug.Close(cleanup) })
+		joined.Wait()
+		m.observabilityErr = errors.Join(telemetryErr, debugErr)
+	})
+	return m.observabilityErr
+}
+
 func (m *Master) closeFrontend(ctx context.Context) error {
 	m.closeMu.Lock()
 	defer m.closeMu.Unlock()
@@ -407,10 +432,10 @@ func (m *Master) closeFrontend(ctx context.Context) error {
 	m.mu.Lock()
 	m.closed = true
 	m.mu.Unlock()
-	telemetryErr := m.telemetry.Close(ctx)
+	observabilityErr := m.closeObservability(ctx)
 	drain, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	err := telemetryErr
+	err := observabilityErr
 	if m.scripts != nil {
 		err = errors.Join(err, m.scripts.Close())
 	}

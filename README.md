@@ -32,7 +32,8 @@ Go 1.27.3 or newer. `mitmproxy` requires an interactive terminal.
 
 Native local-mode installation and manual acceptance: [macOS](docs/runbooks/local-mode-macos.md) and
 [Windows](docs/runbooks/local-mode-windows.md). Cross-compilation is not evidence of native redirector, driver,
-process or terminal behavior; Windows and FreeBSD evidence remains build/vet-only.
+process or terminal behavior. FreeBSD is cross-compiled build-only. Windows has no automatic native acceptance in CI;
+a [manual fixture-evidence workflow](.github/workflows/windows-fixture-evidence.yaml) is available.
 
 ## Build and run
 

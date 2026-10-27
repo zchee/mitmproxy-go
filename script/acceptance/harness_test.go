@@ -179,6 +179,11 @@ func (r *loopbackRoute) destinations() []string {
 
 func guardedUpstream(t *testing.T, target string) (string, *loopbackRoute) {
 	t.Helper()
+	return guardedUpstreamWithReport(t, target, func(err error) { t.Error(err) })
+}
+
+func guardedUpstreamWithReport(t *testing.T, target string, report func(error)) (string, *loopbackRoute) {
+	t.Helper()
 	if target == "" {
 		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Errorf("metadata-only process attempted an upstream request to %s", r.Host)
@@ -207,7 +212,9 @@ func guardedUpstream(t *testing.T, target string) (string, *loopbackRoute) {
 		want := route.wantHost
 		route.mu.Unlock()
 		if req.Host != want {
-			t.Errorf("upstream requested host %q, want %q (mapped to %s)", req.Host, want, u.Host)
+			report(fmt.Errorf("upstream requested host %q, want %q (mapped to %s)", req.Host, want, u.Host))
+			http.Error(w, "unexpected upstream host", http.StatusBadGateway)
+			return
 		}
 		// This is the only dial in the forwarder; the flow cannot supply it.
 		conn, err := (&net.Dialer{}).DialContext(req.Context(), "tcp", u.Host)

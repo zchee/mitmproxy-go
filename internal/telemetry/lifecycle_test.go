@@ -248,9 +248,12 @@ func TestTelemetryAttributes(t *testing.T) {
 				assertAttributes(t, expectedAttributes(kind), spans[i])
 			}
 		}},
-		"fidelity_instance": {func(_ *testing.T, x *memoryFixture, _ *flow.HTTPFlow, want map[string]any) {
+		"fidelity_instance": {func(t *testing.T, x *memoryFixture, _ *flow.HTTPFlow, want map[string]any) {
 			count := uint64(1)<<53 | 7
 			x.c.cfg.Fidelity.Add(count)
+			if x.c.Status().HTTPFidelity != count {
+				t.Fatal("local diagnostic fidelity count lost precision")
+			}
 			want["http_fidelity"] = strconv.FormatUint(count, 10)
 		}},
 		"privacy_bounds": {func(_ *testing.T, _ *memoryFixture, f *flow.HTTPFlow, want map[string]any) {

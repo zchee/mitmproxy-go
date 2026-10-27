@@ -48,14 +48,16 @@ type Config struct {
 
 // Status contains bounded diagnostics, never intercepted flow or option data.
 type Status struct {
-	Enabled           bool
-	ActiveFlows       int64
-	ActiveConnections int64
-	TerminalDisabled  uint64
-	InvalidMetadata   uint64
-	QueuePressure     uint64
-	ExportFailures    uint64
-	Stopped           bool
+	Enabled           bool  `json:"enabled"`
+	ActiveFlows       int64 `json:"active_flows"`
+	ActiveConnections int64 `json:"active_connections"`
+	// HTTPFidelity is the instance's exact cumulative normalization count.
+	HTTPFidelity     uint64 `json:"http_fidelity"`
+	TerminalDisabled uint64 `json:"terminal_disabled"`
+	InvalidMetadata  uint64 `json:"invalid_metadata"`
+	QueuePressure    uint64 `json:"queue_pressure"`
+	ExportFailures   uint64 `json:"export_failures"`
+	Stopped          bool   `json:"stopped"`
 }
 
 // Controller owns scalar lifecycle state and one current exporter generation.
@@ -74,7 +76,6 @@ type Controller struct {
 	disabled       atomic.Uint64
 	invalid        atomic.Uint64
 	queuePressure  atomic.Uint64
-	sinceExport    atomic.Int64
 	exportFailures atomic.Uint64
 	stopping       atomic.Bool
 
@@ -229,7 +230,7 @@ func (c *Controller) reconcile(ctx context.Context) {
 	c.mu.Unlock()
 	candidate, err := c.newGeneration(ctx, value)
 	if err != nil {
-		c.cfg.Logger.Error("telemetry exporter could not be configured")
+		c.cfg.Logger.Warn("telemetry exporter could not be configured")
 		c.notifySettled(value, err)
 		return
 	}
@@ -430,10 +431,14 @@ func (c *Controller) Status() Status {
 	if c.cfg.Connections != nil && !c.stopping.Load() {
 		connections = int64(c.cfg.Connections())
 	}
+	var fidelity uint64
+	if c.cfg.Fidelity != nil {
+		fidelity = c.cfg.Fidelity.Load()
+	}
 	c.admit.Lock()
 	enabled := c.current != nil && !c.admissionStopped
 	c.admit.Unlock()
-	return Status{Enabled: enabled, ActiveFlows: active, ActiveConnections: connections, TerminalDisabled: c.disabled.Load(), InvalidMetadata: c.invalid.Load(), QueuePressure: c.queuePressure.Load(), ExportFailures: c.exportFailures.Load(), Stopped: c.stopping.Load()}
+	return Status{Enabled: enabled, ActiveFlows: active, ActiveConnections: connections, HTTPFidelity: fidelity, TerminalDisabled: c.disabled.Load(), InvalidMetadata: c.invalid.Load(), QueuePressure: c.queuePressure.Load(), ExportFailures: c.exportFailures.Load(), Stopped: c.stopping.Load()}
 }
 
 func (c *Controller) registerMetrics(provider *sdkmetric.MeterProvider) (metric.Float64Histogram, error) {

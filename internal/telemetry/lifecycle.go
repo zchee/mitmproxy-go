@@ -293,9 +293,10 @@ func (c *Controller) materialize(entry *flowState) {
 		c.disabled.Add(1)
 		return
 	}
-	if c.sinceExport.Add(1) == 1025 {
+	if c.current.pending.Add(1) > 1024 && !c.current.pressured {
 		// This is a queue-pressure diagnostic, not a claimed exact loss count.
 		// It remains fixed-cardinality even when the collector is unavailable.
+		c.current.pressured = true
 		c.queuePressure.Add(1)
 	}
 	_, span := c.current.tracer.Start(context.Background(), "proxy.flow."+flowKinds[entry.kind], trace.WithTimestamp(start), trace.WithAttributes(attrs.values[:attrs.count]...))

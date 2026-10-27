@@ -105,6 +105,7 @@ type traceDelegate struct {
 }
 
 func (d *traceDelegate) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+	defer d.pending.Add(-int64(len(spans)))
 	ctx, finish, err := d.life.begin(ctx)
 	if err != nil {
 		return err
@@ -120,8 +121,6 @@ func (d *traceDelegate) ExportSpans(ctx context.Context, spans []sdktrace.ReadOn
 	err = d.exporter.ExportSpans(ctx, bounded)
 	if err != nil {
 		d.failures.Add(1)
-	} else {
-		d.pending.Store(0)
 	}
 	return err
 }
@@ -170,7 +169,10 @@ type generation struct {
 	metricExport *metricDelegate
 	cancel       context.CancelFunc
 	transport    *http.Transport
-	closed       atomic.Bool
+	pending      atomic.Int64
+	// pressured is guarded by the controller's admission lock.
+	pressured bool
+	closed    atomic.Bool
 }
 
 func (c *Controller) newGeneration(ctx context.Context, value string) (*generation, error) {
@@ -232,7 +234,7 @@ func (c *Controller) generationWithExporters(value string, spans sdktrace.SpanEx
 	)
 	genCtx, cancel := context.WithCancel(context.Background())
 	g := &generation{endpoint: value, cancel: cancel}
-	g.spanExport = &traceDelegate{life: newExportLifetime(genCtx), exporter: spans, resource: res, pending: &c.sinceExport, failures: &c.exportFailures}
+	g.spanExport = &traceDelegate{life: newExportLifetime(genCtx), exporter: spans, resource: res, pending: &g.pending, failures: &c.exportFailures}
 	g.metricExport = &metricDelegate{Exporter: metrics, life: newExportLifetime(genCtx), resource: res, failures: &c.exportFailures}
 	bsp := sdktrace.NewBatchSpanProcessor(g.spanExport,
 		sdktrace.WithMaxQueueSize(1024), sdktrace.WithMaxExportBatchSize(128),

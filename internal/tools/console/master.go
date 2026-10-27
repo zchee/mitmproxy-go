@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/netip"
 	"os"
 	"os/signal"
 	"runtime"
@@ -57,9 +58,11 @@ import (
 	"github.com/zchee/mitmproxy-go/addons/updatealtsvc"
 	"github.com/zchee/mitmproxy-go/addons/upstreamauth"
 	"github.com/zchee/mitmproxy-go/addons/view"
+	"github.com/zchee/mitmproxy-go/internal/debugserver"
 	"github.com/zchee/mitmproxy-go/internal/http1"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/pyrepr"
+	"github.com/zchee/mitmproxy-go/internal/telemetry"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/commander"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/eventlog"
 	"github.com/zchee/mitmproxy-go/internal/tools/console/flowlist"
@@ -115,6 +118,10 @@ type Master struct {
 	owner                  presentationOwner
 	closed, logsClosed     bool
 	scripts                *script.Loader
+	telemetry              *telemetry.Controller
+	debug                  *debugserver.Controller
+	observabilityOnce      sync.Once
+	observabilityErr       error
 }
 
 type consoleLogHandler struct{ slog.Handler }
@@ -137,9 +144,30 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 	}
 	handler := new(consoleLogHandler)
 	logger := slog.New(handler)
-	var m *Master
-	base := master.New(master.Config{Options: opts, Logger: logger, BeforeClose: func(ctx context.Context) error { return m.closeFrontend(ctx) }})
-	m = &Master{Master: base, logger: logger, stdin: cfg.Stdin, stdout: cfg.Stdout, stderr: cfg.Stderr, ready: make(chan struct{}), runDone: make(chan struct{}), uiDone: make(chan struct{})}
+	httpFidelity := new(http1.FidelityCounter)
+	connections := new(proxy.Connections)
+	m := &Master{logger: logger, stdin: cfg.Stdin, stdout: cfg.Stdout, stderr: cfg.Stderr, ready: make(chan struct{}), runDone: make(chan struct{}), uiDone: make(chan struct{})}
+	m.telemetry = telemetry.New(telemetry.Config{Fidelity: httpFidelity, Connections: connections.Len, Version: version.Version, Logger: logger, Listeners: func() []netip.AddrPort {
+		var listeners []netip.AddrPort
+		if m.ProxyServer != nil {
+			for _, address := range m.ProxyServer.ListenAddrs() {
+				if ip, err := netip.ParseAddr(address.Host); err == nil && address.Port >= 0 && address.Port <= 65535 {
+					listeners = append(listeners, netip.AddrPortFrom(ip, uint16(address.Port)))
+				}
+			}
+		}
+		if m.debug != nil {
+			if address, err := netip.ParseAddrPort(m.debug.Status().Address); err == nil {
+				listeners = append(listeners, address)
+			}
+		}
+		return listeners
+	}})
+	m.debug = debugserver.New(debugserver.Config{Counters: m.telemetry.Status, Logger: logger})
+	base := master.New(master.Config{Options: opts, Logger: logger, BeforeClose: m.closeFrontend, OnHookComplete: m.telemetry.OnHookComplete, OnDispatchStart: m.telemetry.OnDispatchStart, OnDispatchEnd: m.telemetry.OnDispatchEnd})
+	m.Master = base
+	m.telemetry.Bind(base)
+	m.debug.Bind(base)
 	var err error
 	m.Events, err = eventstore.New()
 	if err != nil {
@@ -148,7 +176,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 	m.eventLogs = m.Events.LogHandler(base.Addons)
 	ec := errorcheck.New(errorcheck.Config{Stderr: cfg.Stderr, RepeatErrorsOnStderr: true})
 	handler.Handler = slog.NewMultiHandler(base.LogHandler(), m.eventLogs, ec.LogHandler())
-	ps, err := proxyserver.New(proxy.Config{Manager: base.Addons, Options: opts, Connections: new(proxy.Connections), HTTPFidelity: new(http1.FidelityCounter), Logger: logger})
+	ps, err := proxyserver.New(proxy.Config{Manager: base.Addons, Options: opts, Connections: connections, HTTPFidelity: httpFidelity, Logger: logger})
 	if err != nil {
 		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
 	}
@@ -177,7 +205,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		mapremote.New(opts), maplocal.New(opts), modifybody.New(opts), modifyheaders.New(opts),
 		stickyauth.New(opts), stickycookie.New(opts), save.New(opts, m.ShutdownWithError),
 		savehar.New(opts, version.Version), tlsconfig.New(opts), upstreamauth.New(opts), updatealtsvc.New(opts),
-		intercept.New(opts), m.View, m.Events, readfile.New(base, readfile.Config{Stdin: cfg.Stdin, Logger: logger}), frontend, keys, ec,
+		intercept.New(opts), m.View, m.Events, readfile.New(base, readfile.Config{Stdin: cfg.Stdin, Logger: logger}), frontend, keys, m.telemetry, m.debug, ec,
 	); err != nil {
 		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
 	}
@@ -383,6 +411,20 @@ func (m *Master) Close(ctx context.Context) error {
 	return errors.Join(m.closeFrontend(ctx), m.Master.Close(ctx))
 }
 
+func (m *Master) closeObservability(ctx context.Context) error {
+	m.observabilityOnce.Do(func() {
+		cleanup, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		var telemetryErr, debugErr error
+		var joined sync.WaitGroup
+		joined.Go(func() { telemetryErr = m.telemetry.Close(cleanup) })
+		joined.Go(func() { debugErr = m.debug.Close(cleanup) })
+		joined.Wait()
+		m.observabilityErr = errors.Join(telemetryErr, debugErr)
+	})
+	return m.observabilityErr
+}
+
 func (m *Master) closeFrontend(ctx context.Context) error {
 	m.closeMu.Lock()
 	defer m.closeMu.Unlock()
@@ -390,11 +432,12 @@ func (m *Master) closeFrontend(ctx context.Context) error {
 	m.mu.Lock()
 	m.closed = true
 	m.mu.Unlock()
+	observabilityErr := m.closeObservability(ctx)
 	drain, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	var err error
+	err := observabilityErr
 	if m.scripts != nil {
-		err = m.scripts.Close()
+		err = errors.Join(err, m.scripts.Close())
 	}
 	if m.uiStarted.Load() {
 		quitDone := make(chan struct{})
@@ -405,7 +448,7 @@ func (m *Master) closeFrontend(ctx context.Context) error {
 		select {
 		case <-m.uiDone:
 		case <-drain.Done():
-			err = drain.Err()
+			err = errors.Join(err, drain.Err())
 			// Bubble Tea's kill path can race its input reader. Use it only if
 			// an orderly Quit has not completed within the five-second drain bound.
 			m.Program.Kill()

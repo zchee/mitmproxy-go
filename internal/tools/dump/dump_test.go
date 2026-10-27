@@ -127,6 +127,8 @@ func TestAddonOrder(t *testing.T) {
 		"*dumper.Dumper",
 		"*keepserving.KeepServing",
 		"*readfile.ReadFile",
+		"*telemetry.Controller",
+		"*debugserver.Controller",
 		"*errorcheck.ErrorCheck",
 	}
 	chain := m.Addons.Chain()

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,8 +52,10 @@ import (
 	"github.com/zchee/mitmproxy-go/addons/updatealtsvc"
 	"github.com/zchee/mitmproxy-go/addons/upstreamauth"
 	"github.com/zchee/mitmproxy-go/addons/view"
+	"github.com/zchee/mitmproxy-go/internal/debugserver"
 	"github.com/zchee/mitmproxy-go/internal/http1"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
+	"github.com/zchee/mitmproxy-go/internal/telemetry"
 	"github.com/zchee/mitmproxy-go/internal/tools/web/updates"
 	"github.com/zchee/mitmproxy-go/internal/tools/web/webauth"
 	"github.com/zchee/mitmproxy-go/internal/version"
@@ -111,6 +114,11 @@ type Master struct {
 	closeMu    sync.Mutex
 	logsClosed bool
 	scripts    *script.Loader
+	telemetry  *telemetry.Controller
+
+	debug             *debugserver.Controller
+	observabilityOnce sync.Once
+	observabilityErr  error
 }
 
 // logHandler is initialized before addon registration can emit any records.
@@ -125,9 +133,30 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 	}
 	handler := new(logHandler)
 	logger := slog.New(handler)
-	var m *Master
-	base := master.New(master.Config{Options: opts, Logger: logger, BeforeClose: func(ctx context.Context) error { return m.closeFrontend(ctx) }})
-	m = &Master{Master: base, logger: logger, ready: make(chan struct{}), runDone: make(chan struct{})}
+	httpFidelity := new(http1.FidelityCounter)
+	connections := new(proxy.Connections)
+	m := &Master{logger: logger, ready: make(chan struct{}), runDone: make(chan struct{})}
+	m.telemetry = telemetry.New(telemetry.Config{Fidelity: httpFidelity, Connections: connections.Len, Version: version.Version, Logger: logger, Listeners: func() []netip.AddrPort {
+		var listeners []netip.AddrPort
+		if m.ProxyServer != nil {
+			for _, address := range m.ProxyServer.ListenAddrs() {
+				if ip, err := netip.ParseAddr(address.Host); err == nil && address.Port >= 0 && address.Port <= 65535 {
+					listeners = append(listeners, netip.AddrPortFrom(ip, uint16(address.Port)))
+				}
+			}
+		}
+		if m.debug != nil {
+			if address, err := netip.ParseAddrPort(m.debug.Status().Address); err == nil {
+				listeners = append(listeners, address)
+			}
+		}
+		return listeners
+	}})
+	m.debug = debugserver.New(debugserver.Config{Counters: m.telemetry.Status, Logger: logger})
+	base := master.New(master.Config{Options: opts, Logger: logger, BeforeClose: m.closeFrontend, OnHookComplete: m.telemetry.OnHookComplete, OnDispatchStart: m.telemetry.OnDispatchStart, OnDispatchEnd: m.telemetry.OnDispatchEnd})
+	m.Master = base
+	m.telemetry.Bind(base)
+	m.debug.Bind(base)
 	var err error
 	m.Events, err = eventstore.New()
 	if err != nil {
@@ -143,7 +172,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		addons = append(addons, tl)
 	}
 	handler.Handler = slog.NewMultiHandler(handlers...)
-	ps, err := proxyserver.New(proxy.Config{Manager: base.Addons, Options: opts, Connections: new(proxy.Connections), HTTPFidelity: new(http1.FidelityCounter), Logger: logger})
+	ps, err := proxyserver.New(proxy.Config{Manager: base.Addons, Options: opts, Connections: connections, HTTPFidelity: httpFidelity, Logger: logger})
 	if err != nil {
 		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
 	}
@@ -163,7 +192,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 		savehar.New(opts, version.Version), tlsconfig.New(opts), upstreamauth.New(opts), updatealtsvc.New(opts),
 		&WebAddon{master: m}, m.auth, intercept.New(opts),
 		readfile.New(base, readfile.Config{Stdin: cfg.Stdin, Logger: logger}),
-		m.StaticViewer, m.View, m.Events, ec,
+		m.StaticViewer, m.View, m.Events, m.telemetry, m.debug, ec,
 	)
 	if err := base.Addons.Add(ctx, addons...); err != nil {
 		return nil, errors.Join(err, m.Close(context.WithoutCancel(ctx)))
@@ -253,10 +282,25 @@ func (m *Master) Close(ctx context.Context) error {
 	return errors.Join(m.closeFrontend(ctx), m.Master.Close(ctx))
 }
 
+func (m *Master) closeObservability(ctx context.Context) error {
+	m.observabilityOnce.Do(func() {
+		cleanup, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		var telemetryErr, debugErr error
+		var joined sync.WaitGroup
+		joined.Go(func() { telemetryErr = m.telemetry.Close(cleanup) })
+		joined.Go(func() { debugErr = m.debug.Close(cleanup) })
+		joined.Wait()
+		m.observabilityErr = errors.Join(telemetryErr, debugErr)
+	})
+	return m.observabilityErr
+}
+
 func (m *Master) closeFrontend(ctx context.Context) error {
 	m.closeMu.Lock()
 	defer m.closeMu.Unlock()
 	m.Shutdown()
+	observabilityErr := m.closeObservability(ctx)
 	drain, stop := context.WithTimeout(ctx, 5*time.Second)
 	defer stop()
 	m.mu.Lock()
@@ -266,9 +310,9 @@ func (m *Master) closeFrontend(ctx context.Context) error {
 	if cancel != nil {
 		cancel()
 	}
-	var err error
+	err := observabilityErr
 	if m.scripts != nil {
-		err = m.scripts.Close()
+		err = errors.Join(err, m.scripts.Close())
 	}
 	if m.StaticViewer != nil {
 		err = errors.Join(err, m.StaticViewer.close(drain))

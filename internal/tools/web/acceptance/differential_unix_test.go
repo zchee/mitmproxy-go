@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	gocmp "github.com/google/go-cmp/cmp"
@@ -213,41 +212,4 @@ func captureWebReply(t *testing.T, client *http.Client, tuple webInputTuple, rou
 		t.Fatalf("endpoint %s: %v", route, err)
 	}
 	return webCapturedReply{Status: status, ContentType: contentType, Body: raw}
-}
-
-func adaptWebFixtureMetadata(t *testing.T, values map[string]any, goRuntime bool) {
-	t.Helper()
-	options, ok := values["/options"].(map[string]any)
-	if !ok {
-		t.Fatal("options must be a JSON object")
-	}
-	commands, ok := values["/commands"].(map[string]any)
-	if !ok {
-		t.Fatal("commands must be a JSON object")
-	}
-	if goRuntime {
-		for line := range strings.Lines(string(testutil.Fixture(t, "options-go-only.txt"))) {
-			name, _, exists := strings.Cut(line, "\t")
-			if exists {
-				delete(options, name)
-			}
-		}
-		return
-	}
-	browser, ok := commands["browser.start"].(map[string]any)
-	if !ok {
-		t.Fatal("pinned Python registry is missing browser.start")
-	}
-	wantParameters := []any{map[string]any{"name": "browser", "type": "str", "kind": "POSITIONAL_OR_KEYWORD"}}
-	if !gocmp.Equal(browser["parameters"], wantParameters) || browser["signature_help"] != "browser.start browser" {
-		t.Fatal("browser.start metadata no longer matches the named compatibility adapter")
-	}
-	browser["parameters"] = []any{map[string]any{"name": "arg0", "type": "str", "kind": "VAR_POSITIONAL"}}
-	browser["signature_help"] = "browser.start *arg0"
-	export, ok := commands["export"].(map[string]any)
-	if !ok || export["return_type"] != "str" || export["signature_help"] != "export format f -> str" {
-		t.Fatal("export metadata no longer matches the named byte-result adapter")
-	}
-	export["return_type"] = "bytes"
-	export["signature_help"] = "export format f -> bytes"
 }

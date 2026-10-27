@@ -4,7 +4,9 @@
 package acceptance_test
 
 import (
+	"context"
 	json "encoding/json/v2"
+	"io"
 	"maps"
 	"slices"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 
 	"github.com/zchee/mitmproxy-go/internal/testutil"
+	"github.com/zchee/mitmproxy-go/internal/tools/web"
 )
 
 func adaptWebFixtureMetadata(t *testing.T, values map[string]any, goRuntime bool) {
@@ -78,10 +81,19 @@ func TestGoOnlyMetadataAdapter(t *testing.T) {
 		tests := map[string]struct {
 			run func(*testing.T, map[string]any, map[string]any)
 		}{
-			"six_present": {run: func(t *testing.T, options, _ map[string]any) {
+			"six_present": {run: func(t *testing.T, _, _ map[string]any) {
+				m, err := web.New(t.Context(), web.Config{Stdout: io.Discard, Stderr: io.Discard})
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() {
+					if err := m.Close(context.WithoutCancel(t.Context())); err != nil {
+						t.Error(err)
+					}
+				})
 				for _, name := range goOnlyMetadataNames(t) {
-					if _, ok := options[name]; !ok {
-						t.Fatalf("missing Go-only input metadata %s", name)
+					if !m.Options.Has(name) {
+						t.Fatalf("assembled web registry is missing Go-only metadata %s", name)
 					}
 				}
 			}},

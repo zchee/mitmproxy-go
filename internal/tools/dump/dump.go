@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/netip"
 
 	"github.com/zchee/mitmproxy-go/addons/anticache"
 	"github.com/zchee/mitmproxy-go/addons/anticomp"
@@ -48,6 +49,7 @@ import (
 	"github.com/zchee/mitmproxy-go/addons/upstreamauth"
 	"github.com/zchee/mitmproxy-go/internal/http1"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
+	"github.com/zchee/mitmproxy-go/internal/telemetry"
 	"github.com/zchee/mitmproxy-go/internal/version"
 	"github.com/zchee/mitmproxy-go/master"
 	"github.com/zchee/mitmproxy-go/options"
@@ -97,6 +99,7 @@ type Master struct {
 	logger       *slog.Logger
 	httpFidelity *http1.FidelityCounter
 	scripts      *script.Loader
+	telemetry    *telemetry.Controller
 }
 
 // New returns a Master whose addons are registered in upstream's
@@ -110,9 +113,24 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 	}
 	fan := &fanoutHandler{}
 	logger := slog.New(fan)
-	dm := &Master{logger: logger}
-	m := master.New(master.Config{Options: opts, Logger: logger, BeforeClose: func(context.Context) error { return dm.closeScripts() }})
+	httpFidelity := new(http1.FidelityCounter)
+	connections := new(proxy.Connections)
+	var ps *proxyserver.ProxyServer
+	dm := &Master{logger: logger, httpFidelity: httpFidelity}
+	dm.telemetry = telemetry.New(telemetry.Config{Fidelity: httpFidelity, Connections: connections.Len, Version: version.Version, Logger: logger, Listeners: func() []netip.AddrPort {
+		var listeners []netip.AddrPort
+		if ps != nil {
+			for _, address := range ps.ListenAddrs() {
+				if ip, err := netip.ParseAddr(address.Host); err == nil && address.Port >= 0 && address.Port <= 65535 {
+					listeners = append(listeners, netip.AddrPortFrom(ip, uint16(address.Port)))
+				}
+			}
+		}
+		return listeners
+	}})
+	m := master.New(master.Config{Options: opts, Logger: logger, BeforeClose: dm.closeServices, OnHookComplete: dm.telemetry.OnHookComplete, OnDispatchStart: dm.telemetry.OnDispatchStart, OnDispatchEnd: dm.telemetry.OnDispatchEnd})
 	dm.Master = m
+	dm.telemetry.Bind(m)
 
 	ec := errorcheck.New(errorcheck.Config{Stderr: cfg.Stderr})
 	handlers := []slog.Handler{m.LogHandler(), ec.LogHandler()}
@@ -124,11 +142,11 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 	}
 	fan.handlers = handlers
 
-	httpFidelity := new(http1.FidelityCounter)
-	ps, err := proxyserver.New(proxy.Config{
+	var err error
+	ps, err = proxyserver.New(proxy.Config{
 		Manager:      m.Addons,
 		Options:      opts,
-		Connections:  new(proxy.Connections),
+		Connections:  connections,
 		HTTPFidelity: httpFidelity,
 		Logger:       logger,
 	})
@@ -176,6 +194,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 	addons = append(addons,
 		keepserving.New(m, keepserving.Config{}),
 		readfile.New(m, readfile.Config{Stdin: cfg.Stdin, Logger: logger}),
+		dm.telemetry,
 		ec,
 	)
 	if err := m.Addons.Add(ctx, addons...); err != nil {
@@ -184,10 +203,14 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 	return dm, nil
 }
 
-// Close cancels and joins script work outside dispatch before closing log delivery.
+// Close joins script and observability work before closing log delivery.
 // It is safe before Run, on failed construction and on repeated calls.
 func (m *Master) Close(ctx context.Context) error {
-	return errors.Join(m.closeScripts(), m.Master.Close(ctx))
+	return errors.Join(m.closeServices(ctx), m.Master.Close(ctx))
+}
+
+func (m *Master) closeServices(ctx context.Context) error {
+	return errors.Join(m.closeScripts(), m.telemetry.Close(ctx))
 }
 
 func (m *Master) closeScripts() error {

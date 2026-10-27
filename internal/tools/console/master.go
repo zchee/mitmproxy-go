@@ -448,7 +448,7 @@ func (m *Master) closeFrontend(ctx context.Context) error {
 		select {
 		case <-m.uiDone:
 		case <-drain.Done():
-			err = drain.Err()
+			err = errors.Join(err, drain.Err())
 			// Bubble Tea's kill path can race its input reader. Use it only if
 			// an orderly Quit has not completed within the five-second drain bound.
 			m.Program.Kill()

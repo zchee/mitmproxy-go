@@ -23,12 +23,13 @@ import (
 
 // tlsPolicy owns wire values and shares only immutable signing material.
 type tlsPolicy struct {
-	alpn           []string
-	certificates   [][]byte
-	privateKey     crypto.PrivateKey
-	serverName     string
-	caFile, caPath *string
-	verify         hookdata.VerifyMode
+	alpn             []string
+	certificates     [][]byte
+	privateKey       crypto.PrivateKey
+	serverName       string
+	caFile, caPath   *string
+	verify           hookdata.VerifyMode
+	verifyConnection func(tls.ConnectionState) error
 }
 
 func startPolicy(ctx context.Context, c *layer.Context, client bool) (tlsPolicy, error) {
@@ -81,6 +82,7 @@ func startPolicy(ctx context.Context, c *layer.Context, client bool) (tlsPolicy,
 			policy.certificates = append(policy.certificates, bytes.Clone(cert.Raw))
 		}
 		policy.privateKey = s.CertificatePrivateKey
+		policy.verifyConnection = s.VerifyConnection
 		return nil
 	})
 	return policy, err
@@ -137,6 +139,9 @@ func (p tlsPolicy) config(client bool) (*tls.Config, error) {
 	} else {
 		conf.RootCAs = roots
 		conf.InsecureSkipVerify = p.verify == hookdata.VerifyNone
+		if !conf.InsecureSkipVerify {
+			conf.VerifyConnection = p.verifyConnection
+		}
 	}
 	return conf, nil
 }

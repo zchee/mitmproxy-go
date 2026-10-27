@@ -43,8 +43,9 @@ import (
 // All methods run inside the addon dispatch domain, so they need no lock of
 // their own; the certificate store synchronises itself.
 type TLSConfig struct {
-	options *options.Manager
-	store   *certs.Store
+	options       *options.Manager
+	store         *certs.Store
+	distrustedCAs certs.CADistrust
 
 	keyLogOnce   sync.Once
 	keyLogWriter io.WriteCloser
@@ -52,7 +53,7 @@ type TLSConfig struct {
 
 // New returns the addon using opts.
 func New(opts *options.Manager) *TLSConfig {
-	return &TLSConfig{options: opts}
+	return &TLSConfig{options: opts, distrustedCAs: certs.DistrustedTLSCAs()}
 }
 
 // Load registers the TLS options, exactly as upstream's tlsconfig addon
@@ -354,6 +355,7 @@ func (t *TLSConfig) TLSStartServer(ctx context.Context, d *hookdata.TLS) error {
 			return err
 		}
 		cfg.RootCAs = pool
+		cfg.VerifyConnection = t.distrustedCAs.VerifyConnection
 		if *server.SNI == "" {
 			return fmt.Errorf("Cannot validate certificate hostname without SNI") //nolint:staticcheck // Preserve upstream's user-facing diagnostic.
 		}

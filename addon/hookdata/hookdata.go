@@ -237,4 +237,7 @@ type QUICTLSSettings struct {
 	CAFile *string
 	// VerifyMode says whether and how the peer certificate is verified.
 	VerifyMode *VerifyMode
+	// VerifyConnection is set by tlsconfig when upstream verification is enabled.
+	// It is immutable after quic_start_server and never called for VerifyNone.
+	VerifyConnection func(tls.ConnectionState) error
 }

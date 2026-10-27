@@ -99,6 +99,7 @@ func (t *TLSConfig) dtlsStartServer(_ context.Context, d *hookdata.TLS) error {
 	}
 	cfg.InsecureSkipVerify = t.options.Bool("ssl_insecure")
 	if !cfg.InsecureSkipVerify {
+		cfg.VerifyPeerCertificate = t.distrustedCAs.VerifyPeerCertificate
 		cfg.RootCAs, err = trustedRoots(t.options.OptStr("ssl_verify_upstream_trusted_ca"), t.options.OptStr("ssl_verify_upstream_trusted_confdir"))
 		if err != nil {
 			return err

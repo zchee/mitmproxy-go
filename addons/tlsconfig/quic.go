@@ -90,6 +90,9 @@ func (t *TLSConfig) QUICStartServer(_ context.Context, d *hookdata.QUICTLS) erro
 		CAPath:     t.options.OptStr("ssl_verify_upstream_trusted_confdir"),
 		CAFile:     t.options.OptStr("ssl_verify_upstream_trusted_ca"),
 	}
+	if mode != hookdata.VerifyNone {
+		settings.VerifyConnection = t.distrustedCAs.VerifyConnection
+	}
 	if server.SNI == nil {
 		sni := server.Address.Host
 		if client.SNI != nil && *client.SNI != "" {

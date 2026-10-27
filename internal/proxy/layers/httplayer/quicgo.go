@@ -504,6 +504,9 @@ func http3OriginTLS(ctx context.Context, c *layer.Context) (*tls.Config, error) 
 			conf.ServerName = c.Data.Server.Address.Host
 		}
 		conf.InsecureSkipVerify = settings.VerifyMode != nil && *settings.VerifyMode == hookdata.VerifyNone
+		if !conf.InsecureSkipVerify {
+			conf.VerifyConnection = settings.VerifyConnection
+		}
 		if settings.Certificate != nil {
 			certificate := tls.Certificate{Certificate: [][]byte{bytes.Clone(settings.Certificate.Raw)}, PrivateKey: settings.CertificatePrivateKey}
 			for _, cert := range settings.CertificateChain {

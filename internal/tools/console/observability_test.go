@@ -125,13 +125,20 @@ func TestObservabilityAssembly(t *testing.T) {
 						}
 					}
 				}
+				failures := m.telemetry.Status().ExportFailures
 				observabilityEndpoint(t, m, "http://"+bound.Address)
-				if err := m.telemetry.Sync(t.Context()); err == nil {
-					t.Fatal("exporter accepted its own diagnostics listener")
+				if err := m.telemetry.Sync(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				if err := m.Addons.Hook(t.Context(), addon.ResponseHook{Flow: testflow.TFlow(testflow.WithResponse)}); err != nil {
+					t.Fatal(err)
 				}
 				observabilityEndpoint(t, m, "")
 				if err := m.telemetry.Sync(t.Context()); err != nil {
 					t.Fatal(err)
+				}
+				if got := m.telemetry.Status().ExportFailures; got <= failures {
+					t.Fatal("self-listener export was not recorded as refused")
 				}
 				observabilityDebugAddress(t, m, "localhost:0")
 				rebound := m.debug.Status()

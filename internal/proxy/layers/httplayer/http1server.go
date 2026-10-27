@@ -26,8 +26,9 @@ type http1Server struct {
 	http1Conn
 
 	// Receive-side state, owned by the receiving goroutine.
-	body  *http1.BodyReader
-	queue []RequestEvent
+	body     *http1.BodyReader
+	queue    []RequestEvent
+	readWake chan struct{}
 	// onReadTermination notifies the driver before queued data can hide an
 	// observed terminal read. It only cancels a context, never waits for hooks.
 	onReadTermination context.CancelFunc
@@ -52,7 +53,7 @@ type http1Server struct {
 }
 
 func newHTTP1Server(conn layer.Conn, wire *wireStore, fidelity *http1.FidelityCounter) *http1Server {
-	return &http1Server{http1Conn: newHTTP1Conn(conn, wire, fidelity), id: 1}
+	return &http1Server{http1Conn: newHTTP1Conn(conn, wire, fidelity), id: 1, readWake: make(chan struct{}, 1)}
 }
 
 func (s *http1Server) streamID() StreamID {
@@ -203,9 +204,11 @@ func (s *http1Server) readBody(ctx context.Context) error {
 	}
 }
 
-// readWait buffers bytes that arrive before the exchange finishes: the next
-// pipelined request, or tunnel bytes sent ahead of a CONNECT response. It
-// returns to the caller only on a state change, a disconnect or an error.
+// readWait buffers bytes that arrive before the exchange finishes. Ordinary
+// keep-alive requests apply backpressure at the buffer bound: the current
+// request is already complete, so the response writer can finish independently.
+// Completion/error notifications and cancellation release the bounded wait.
+// CONNECT, upgrades and non-reusable exchanges retain their overflow refusal.
 func (s *http1Server) readWait(ctx context.Context) error {
 	for {
 		s.mu.Lock()
@@ -214,31 +217,44 @@ func (s *http1Server) readWait(ctx context.Context) error {
 			s.mu.Unlock()
 			return nil
 		}
-		if err := s.drainBuffered(); err != nil {
-			s.state = http1Done
-			id := s.id
+		room := layer.MaxRecordBytes - len(s.waitBuf)
+		reusable := s.request != nil && !strings.EqualFold(s.request.Method, "CONNECT") && !s.request.Headers.Has("Upgrade") &&
+			!http1.ConnectionClose(s.request.HTTPVersion, s.request.Headers) &&
+			(s.response == nil || !shouldMakePipe(s.request, s.response) && !connectionDone(s.request, s.response, false))
+		if room == 0 && reusable {
 			s.mu.Unlock()
-			s.queue = append(s.queue, RequestProtocolError{ID: id, Code: GenericClientError, Message: err.Error()})
-			return nil
+			select {
+			case <-s.readWake:
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 		s.waiting = true
-		room := layer.MaxRecordBytes - len(s.waitBuf) + 1
 		s.mu.Unlock()
 
-		buf := make([]byte, min(http1BodyChunk, room))
-		n, err := s.readCtx(ctx, func() (int, error) { return s.br.Read(buf) })
+		buf := make([]byte, min(http1BodyChunk, max(room, 1)))
+		n, err := s.readCtx(ctx, func() (int, error) {
+			if buffered := s.br.Buffered(); buffered != 0 {
+				return s.br.Read(buf[:min(len(buf), buffered)])
+			}
+			// Avoid bufio prefetch beyond the remaining pre-completion capacity.
+			return s.src.Read(buf)
+		})
 
 		s.mu.Lock()
 		s.waiting = false
 		// A state-change kick can race a successful read. Clear it while
 		// holding mu so no expired deadline survives into the child layer.
 		_ = s.conn.SetReadDeadline(time.Time{})
-		if n > 0 {
-			s.waitBuf = append(s.waitBuf, buf[:n]...)
-		}
-		over := len(s.waitBuf) > layer.MaxRecordBytes
+		over := n > room
 		if over {
 			s.state = http1Done
+		} else if n > 0 {
+			if s.waitBuf == nil {
+				s.waitBuf = make([]byte, 0, layer.MaxRecordBytes)
+			}
+			s.waitBuf = append(s.waitBuf, buf[:n]...)
 		}
 		state := s.state
 		id := s.id
@@ -417,6 +433,10 @@ func (s *http1Server) sendEnd(ctx context.Context) error {
 	s.mu.Lock()
 	s.markDoneLocked(false, true, false)
 	closing := s.state == http1Done && !s.handingOver
+	select {
+	case s.readWake <- struct{}{}:
+	default:
+	}
 	s.mu.Unlock()
 	if closing {
 		s.closeWrite()
@@ -431,6 +451,10 @@ func (s *http1Server) sendError(ctx context.Context, event ResponseProtocolError
 	s.state = http1Done
 	id := s.id
 	s.kick()
+	select {
+	case s.readWake <- struct{}{}:
+	default:
+	}
 	s.mu.Unlock()
 	s.wire.drop(id)
 	if !writable {

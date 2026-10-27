@@ -1,0 +1,162 @@
+name: Release binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: release build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        goos:
+          - linux
+          - darwin
+          - windows
+        goarch:
+          - amd64
+          - arm64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: release-${{ matrix.goos }}-${{ matrix.goarch }}
+      - name: Build and package the three commands
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          EVENT_SHA: ${{ github.sha }}
+          TARGET_GOOS: ${{ matrix.goos }}
+          TARGET_GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EVENT_SHA"
+          VERSION="$(go run ./internal/releasecheck/cmd/releasecheck tag "$RELEASE_TAG")"
+          WORK="$(mktemp -d "$RUNNER_TEMP/release-build.XXXXXXXX")"
+          ROOT="mitmproxy-go_${VERSION}_${TARGET_GOOS}_${TARGET_GOARCH}"
+          STAGE="$WORK/stage/$ROOT"
+          OUT="$WORK/artifacts"
+          mkdir -p "$STAGE" "$OUT"
+          printf 'artifacts=%s\n' "$OUT" >> "$GITHUB_ENV"
+          for binary in mitmdump mitmweb mitmproxy; do
+            suffix=""
+            if test "$TARGET_GOOS" = windows; then suffix=.exe; fi
+            timeout --signal=QUIT --kill-after=15s 30m /usr/bin/env GOOS="$TARGET_GOOS" GOARCH="$TARGET_GOARCH" CGO_ENABLED=0 go build -trimpath -buildvcs=true -ldflags "-s -w -X github.com/zchee/mitmproxy-go/internal/version.Version=$VERSION" -o "$STAGE/$binary$suffix" "./cmd/$binary"
+          done
+          cp LICENSE "$STAGE/LICENSE"
+          go run ./internal/releasecheck/cmd/releasecheck record "$VERSION" "$TARGET_GOOS" "$TARGET_GOARCH" "$STAGE" >| "$OUT/$ROOT.provenance.json"
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          tar -C "$WORK/stage" --sort=name --format=ustar --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" -czf "$OUT/$ROOT.tar.gz" "$ROOT"
+      - name: Upload platform release artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.artifacts }}
+          retention-days: 14
+          if-no-files-found: error
+
+  gather:
+    needs: build
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: release-verification
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/release-gather
+      - name: Verify exact archives, provenance and checksums
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EVENT_SHA"
+          VERSION="$(go run ./internal/releasecheck/cmd/releasecheck tag "$RELEASE_TAG")"
+          OUT="$RUNNER_TEMP/release-gather"
+          go run ./internal/releasecheck/cmd/releasecheck checksums "$OUT" "$VERSION" >| "$RUNNER_TEMP/release-SHA256SUMS"
+          mv "$RUNNER_TEMP/release-SHA256SUMS" "$OUT/SHA256SUMS"
+          go run ./internal/releasecheck/cmd/releasecheck verify "$OUT" "$VERSION"
+      - name: Upload the verified complete release set
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-verified-${{ github.sha }}
+          path: ${{ runner.temp }}/release-gather
+          retention-days: 14
+          if-no-files-found: error
+
+  publish:
+    needs: gather
+    if: github.event_name == 'push' && !startsWith(github.ref_name, 'v0.0.0-test.')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Read the Go version from go.mod
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: release-verification
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-verified-${{ github.sha }}
+          path: ${{ runner.temp }}/release-publish
+      - name: Verify the complete publication set
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EVENT_SHA"
+          VERSION="$(go run ./internal/releasecheck/cmd/releasecheck publish-tag "$RELEASE_TAG")"
+          case "$VERSION" in v0.0.0-test.*) exit 1 ;; esac
+          go run ./internal/releasecheck/cmd/releasecheck verify "$RUNNER_TEMP/release-publish" "$VERSION"
+          printf 'version=%s\n' "$VERSION" >> "$GITHUB_ENV"
+      - name: Publish verified non-test release artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ env.version }}
+        run: |
+          set -euo pipefail
+          case "$VERSION" in v0.0.0-test.*) exit 1 ;; esac
+          files=("$RUNNER_TEMP/release-publish/"*)
+          test "${#files[@]}" -eq 13
+          gh release create "$VERSION" "${files[@]}" --verify-tag --title "$VERSION" --notes 'Cross-built command binaries with source and build provenance. Cross-builds do not establish native platform runtime support.'

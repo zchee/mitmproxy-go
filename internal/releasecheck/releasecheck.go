@@ -148,8 +148,12 @@ func ValidateProvenance(p Provenance, source Source, modules []string) error {
 			return fmt.Errorf("invalid executable provenance: %q", binary.Name)
 		}
 		seen[binary.Name] = true
+		header, _, hasHeader := strings.Cut(binary.BuildInfo, "\n")
+		filename, goVersion, hasVersion := strings.CutLast(header, ": ")
+		if !hasHeader || !hasVersion || path.Base(strings.ReplaceAll(filename, "\\", "/")) != binary.Name || goVersion != source.GoVersion {
+			return fmt.Errorf("invalid build-info header for executable %q", binary.Name)
+		}
 		for _, value := range []string{
-			"\t" + source.GoVersion + "\n",
 			"\tpath\t" + modulePath + "/cmd/" + strings.TrimSuffix(binary.Name, ".exe") + "\n",
 			"\tbuild\t-trimpath=true\n",
 			"\tbuild\tCGO_ENABLED=0\n",

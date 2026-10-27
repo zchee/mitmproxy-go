@@ -131,7 +131,7 @@ func releaseFixture(t *testing.T, target Target) (Provenance, []releaseEntry, [s
 	for _, name := range names {
 		body := []byte("executable fixture: " + name)
 		digest := sha256.Sum256(body)
-		info := fmt.Sprintf("%s\t%s\n\tpath\t%s/cmd/%s\n\tbuild\t-trimpath=true\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOOS=%s\n\tbuild\tGOARCH=%s\n\tbuild\tvcs.revision=%s\n\tbuild\tvcs.modified=false\n", name, source.GoVersion, modulePath, strings.TrimSuffix(name, ".exe"), target.GOOS, target.GOARCH, source.Commit)
+		info := fmt.Sprintf("%s: %s\n\tpath\t%s/cmd/%s\n\tbuild\t-trimpath=true\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOOS=%s\n\tbuild\tGOARCH=%s\n\tbuild\tvcs.revision=%s\n\tbuild\tvcs.modified=false\n", name, source.GoVersion, modulePath, strings.TrimSuffix(name, ".exe"), target.GOOS, target.GOARCH, source.Commit)
 		p.Binaries = append(p.Binaries, Binary{Name: name, SHA256: hex.EncodeToString(digest[:]), BuildInfo: info})
 		entries = append(entries, releaseEntry{header: tar.Header{Name: root + "/" + name, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(body))}, body: body})
 	}
@@ -267,6 +267,15 @@ func releaseProvenance(t *testing.T) {
 	if err := ValidateProvenance(p, p.Source, p.ModuleVersions); err != nil {
 		t.Fatal(err)
 	}
+	experimental := p
+	experimental.GoVersion += "-X:simd,runtimesecret,mapsplitgroup"
+	experimental.Binaries = slices.Clone(p.Binaries)
+	for i := range experimental.Binaries {
+		experimental.Binaries[i].BuildInfo = strings.Replace(experimental.Binaries[i].BuildInfo, ": "+p.GoVersion+"\n", ": "+experimental.GoVersion+"\n", 1)
+	}
+	if err := ValidateProvenance(experimental, experimental.Source, p.ModuleVersions); err != nil {
+		t.Fatalf("experimental runtime version: %v", err)
+	}
 	for _, alter := range []func(*Provenance){
 		func(p *Provenance) { p.Tag = "v9.9.9" },
 		func(p *Provenance) { p.Commit = strings.Repeat("c", 40) },
@@ -280,6 +289,13 @@ func releaseProvenance(t *testing.T) {
 			p.Binaries[0].BuildInfo = strings.ReplaceAll(p.Binaries[0].BuildInfo, "vcs.modified=false", "vcs.modified=true")
 		},
 		func(p *Provenance) { p.Binaries[0].SHA256 = "not a digest" },
+		func(p *Provenance) {
+			p.Binaries[0].BuildInfo = strings.Replace(p.Binaries[0].BuildInfo, ": "+p.GoVersion+"\n", ": go0\n", 1)
+		},
+		func(p *Provenance) {
+			p.Binaries[0].BuildInfo = strings.Replace(p.Binaries[0].BuildInfo, p.Binaries[0].Name+": ", "other: ", 1)
+		},
+		func(p *Provenance) { p.Binaries[0].BuildInfo = "\t" + p.GoVersion + "\n" + p.Binaries[0].BuildInfo },
 	} {
 		changed := p
 		changed.Binaries = slices.Clone(p.Binaries)

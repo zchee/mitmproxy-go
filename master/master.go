@@ -43,6 +43,10 @@ type Config struct {
 	// a connection's idle watchdog, which the proxy's hook runner disarms.
 	OnDispatchStart func()
 	OnDispatchEnd   func()
+
+	// OnHookComplete observes completed lifecycle hooks with the restrictions
+	// documented by addon.Config.OnHookComplete. Nil disables observation.
+	OnHookComplete func(context.Context, addon.Hook)
 }
 
 // Master owns the registries addons share and runs the hooks that start
@@ -79,6 +83,7 @@ func New(cfg Config) *Master {
 		Logger:          cfg.Logger,
 		OnDispatchStart: cfg.OnDispatchStart,
 		OnDispatchEnd:   cfg.OnDispatchEnd,
+		OnHookComplete:  cfg.OnHookComplete,
 	})
 	m.logs = addon.NewLogHandler(func(ctx context.Context, e addon.LogEntry) {
 		// Trigger recovers handler panics and logs handler errors; it

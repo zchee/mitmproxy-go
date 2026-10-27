@@ -62,16 +62,25 @@ type Config struct {
 	// disarms a connection's watchdog in its own hook runner instead.
 	OnDispatchStart func()
 	OnDispatchEnd   func()
+
+	// OnHookComplete observes a successful lifecycle hook after its update
+	// stage and before HookFunc's finish, with a refreshed synchronous frame.
+	// It is not called by Trigger or InvokeSync. It must not mutate flows,
+	// reenter addons, perform network or disk I/O, block on sends, or flush,
+	// shut down or join exporters. It may only copy bounded scalar metadata
+	// and perform nonblocking accounting. Nil preserves ordinary dispatch.
+	OnHookComplete func(context.Context, Hook)
 }
 
 // Manager registers addons and dispatches hooks to them (mitmproxy's
 // AddonManager). All dispatch happens under the manager's dispatch lock; see
 // the package documentation.
 type Manager struct {
-	d       dispatcher
-	options *options.Manager
-	cmds    *command.Manager
-	logger  *slog.Logger
+	d              dispatcher
+	options        *options.Manager
+	cmds           *command.Manager
+	logger         *slog.Logger
+	onHookComplete func(context.Context, Hook)
 
 	// mu guards chain and lookup. Changes happen under the dispatch lock as
 	// well, so that hooks see a consistent set of addons; mu lets Get and
@@ -104,12 +113,13 @@ type Manager struct {
 // hooks to their addons.
 func NewManager(opts *options.Manager, cmds *command.Manager, cfg Config) *Manager {
 	m := &Manager{
-		d:        dispatcher{onStart: cfg.OnDispatchStart, onEnd: cfg.OnDispatchEnd},
-		options:  opts,
-		cmds:     cmds,
-		logger:   cfg.Logger,
-		lookup:   make(map[string]any),
-		commands: make(map[any][]string),
+		d:              dispatcher{onStart: cfg.OnDispatchStart, onEnd: cfg.OnDispatchEnd},
+		options:        opts,
+		cmds:           cmds,
+		logger:         cfg.Logger,
+		onHookComplete: cfg.OnHookComplete,
+		lookup:         make(map[string]any),
+		commands:       make(map[any][]string),
 	}
 	// The Runner goes first, so that a refused registry leaves no option
 	// subscription behind.
@@ -402,11 +412,16 @@ func (m *Manager) hookLocked(ctx context.Context, hook Hook) error {
 	if err := m.trigger(ctx, hook); err != nil {
 		return err
 	}
-	f := HookFlow(hook)
-	if f == nil {
-		return nil
+	if f := HookFlow(hook); f != nil {
+		if err := m.trigger(ctx, UpdateHook{Flows: []flow.Flow{f}}); err != nil {
+			return err
+		}
 	}
-	return m.trigger(ctx, UpdateHook{Flows: []flow.Flow{f}})
+	if m.onHookComplete != nil {
+		ctx = withFrame(ctx, m.d.current(frameFrom(ctx)))
+		m.onHookComplete(inSync(ctx, "lifecycle observation"), hook)
+	}
+	return nil
 }
 
 // HookFlow returns the flow that hook carries, or nil for a hook that does

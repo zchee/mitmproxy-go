@@ -5,8 +5,10 @@
 // mitmproxy/version.py holds mitmproxy's.
 package version
 
-// Version is the mitmproxy-go release.
-const Version = "0.1.0-dev"
+// Version is the mitmproxy-go release. Release builds inject it with
+// -ldflags "-X github.com/zchee/mitmproxy-go/internal/version.Version=<tag>".
+// debug.ReadBuildInfo provides build provenance, not the release version.
+var Version = "0.1.0-dev"
 
 // String returns the program name and version, "mitmproxy-go <Version>",
 // in the place where mitmproxy writes "mitmproxy <VERSION>".

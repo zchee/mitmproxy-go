@@ -288,6 +288,11 @@ Reproduced on purpose (compatibility, not differences):
 | A type error reads `Expected <class 'bool'> for name, but got <class 'int'>.` (`mitmproxy/utils/typecheck.py`). | It reads `Expected bool for name, but got int.`, with the option type names of `--options` and Go type names. | Python class reprs have no Go counterpart. |
 | Integer option strings accept Unicode decimal digits from the running Python's Unicode database (`mitmproxy/optmanager.py`, `_parse_setval`). | They accept decimal digits from Go's `unicode` tables, including digits assigned after the reference Python's Unicode version. | Each runtime supplies its Unicode database; the differential test checks every decimal digit known to the reference Python. |
 
+Startup option precedence is **passed dedicated flags > config.yml > config.yaml > --set > defaults**
+(`options/loadall.go:11-24,29-50`). Only dedicated flags actually passed participate; a missing flag, nil value or
+unregistered flag name does not override configuration. `--set` is loaded before both configuration files, so it does
+not always win. Configuration files are read at startup, not watched for edits.
+
 ## command
 
 | Upstream | Go | Reason |
@@ -629,8 +634,8 @@ a general help, whitespace, empty/null, error-text or content-body normalizer.
 |---|---|---|
 | `/options` dumps the upstream registry (`py:mitmproxy/tools/web/app.py:805-807` at `3368a0a`). | The Go fixture adapter requires all six Go-only names, then removes exactly `content_decode_limit`, `max_client_connections`, `script_max_steps`, `local_redirector_path`, `otel_exporter_endpoint` and `pprof_addr` from equality using `testdata/options-go-only.txt` (`internal/tools/web/acceptance/metadata_adapter_test.go:21-76`). | All six are registered runtime controls without upstream counterparts. A missing control is an error, not silently ignored. The Go-side adapter leaves upstream option and command metadata unchanged. |
 | Python registers the `scripts` option and `script.run` command (`py:mitmproxy/addons/script.py:163-169` at `3368a0a`). | Both are registered by mitmweb's default Starlark loader and compared without a scripting-specific exclusion from `/options` or `/commands`. | Scripting metadata is part of the live parity contract; only the Go-only execution-budget option is removed through the separate manifest rule above. |
-| `browser.start(browser: str = "chrome")` has an ordinary parameter (`py:mitmproxy/addons/browser.py:39-40` at `3368a0a`). | Guards exact Python `browser:str` / `POSITIONAL_OR_KEYWORD` and `browser.start browser`, then compares against `arg0:str` / `VAR_POSITIONAL` and `browser.start *arg0` (`internal/tools/web/acceptance/differential_unix_test.go:239-248`). | The existing Go variadic/default API is documented under [addons/browser](#addonsbrowser); this is a guarded metadata adapter, not altered help text. |
-| `export` returns text after backslash replacement (`py:mitmproxy/addons/export.py:218-232` at `3368a0a`). | Guards Python return `str` and `export format f -> str`, then compares as `bytes` and `export format f -> bytes` (`internal/tools/web/acceptance/differential_unix_test.go:249-254`). | The existing Go byte-result contract is documented under [addons/export](#addonsexport); no unrelated signature is adapted. |
+| `browser.start(browser: str = "chrome")` has an ordinary parameter (`py:mitmproxy/addons/browser.py:39-40` at `3368a0a`). | Guards exact Python `browser:str` / `POSITIONAL_OR_KEYWORD` and `browser.start browser`, then compares against `arg0:str` / `VAR_POSITIONAL` and `browser.start *arg0` (`internal/tools/web/acceptance/metadata_adapter_test.go:43-52`). | The existing Go variadic/default API is documented under [addons/browser](#addonsbrowser); this is a guarded metadata adapter, not altered help text. |
+| `export` returns text after backslash replacement (`py:mitmproxy/addons/export.py:218-232` at `3368a0a`). | Guards Python return `str` and `export format f -> str`, then compares as `bytes` and `export format f -> bytes` (`internal/tools/web/acceptance/metadata_adapter_test.go:53-58`). | The existing Go byte-result contract is documented under [addons/export](#addonsexport); no unrelated signature is adapted. |
 | `/state` includes `version`, `platform`, `localModeUnavailable`, `contentViews` and `servers` (`py:mitmproxy/tools/web/app.py:826-840` at `3368a0a`). | Fixture equality compares only `contentViews` and `servers` (`internal/tools/web/acceptance/differential_unix_test.go:189-200`); it does not compare `version`, `platform` or `localModeUnavailable`. | Version identifies the implementation; platform and availability depend on the host/effective UID. Separate handler and Linux root/nonroot checks cover the availability contract; no native Windows evidence is inferred. |
 | Process/icon results use native host state, and contentview rendering uses the runtime's renderer (`py:mitmproxy/tools/web/app.py:691-755,846-879` at `3368a0a`). | Fixture equality does not compare `/processes`, `/executable-icon` or highlighted `/flows/<id>/<part>/content/<view>` output; it compares flow schemas and raw `content.data` replies instead (`internal/tools/web/acceptance/differential_unix_test.go:135-204`). | Host process/icon results and highlighter output are not portable cross-runtime values. Their handler/native/rendering contracts remain separate; raw bytes and error statuses are not normalized away. |
 
@@ -681,7 +686,7 @@ heads without an original, and messages changed by an addon do not increment it;
 | Upstream | Go | Reason |
 |---|---|---|
 | `make_error_response` sends `Server: mitmproxy <version>` (`mitmproxy/proxy/layers/http/_http1.py`). | The error page sends `Server: mitmproxy-go <version>`; status, the other headers and the body are unchanged. | The proxy is a different program, as in the flow-file error texts above. |
-| Bytes arriving while an HTTP exchange waits for its response, including pipelined requests and early tunnel data, have no explicit buffer limit (`mitmproxy/proxy/layers/http/_http1.py`). | Each endpoint retains at most `layer.MaxRecordBytes` (128 KiB) in this waiting state; excess terminates the exchange with a protocol error. This is separate from body streaming and its configured limits. | Bound memory while the other direction is stalled. |
+| Bytes arriving while an HTTP exchange waits for its response, including pipelined requests and early tunnel data, have no explicit buffer limit (`mitmproxy/proxy/layers/http/_http1.py`). | Each endpoint retains at most `layer.MaxRecordBytes` (128 KiB) in this waiting state. For an ordinary reusable HTTP/1 exchange, reaching the cap pauses client reads until response completion/error or cancellation; the next exchange resumes on the same connection. CONNECT, protocol upgrades and non-reusable exchanges retain the excess-input refusal. This is separate from body streaming and its configured limits. | Bound memory while the other direction is stalled. |
 | Receiving HTTP/1 trailers raises `NotImplementedError`; sending trailer events is not implemented (`mitmproxy/proxy/layers/http/_http1.py`). | Chunked trailers are parsed, exposed to request/response hooks, and emitted after the final transformed body chunk. | The shared message and event contracts represent trailers, so HTTP/1 can preserve them rather than fail. |
 | A non-101 informational response is treated as the response for the exchange (`mitmproxy/proxy/layers/http/_http1.py`). | Informational heads are forwarded without completing the exchange; the final response is still awaited. | Informational responses do not replace the final response. Ordinary response hooks run for the final response only. |
 | The partial-response-head diagnostic includes a Python repr of buffered bytes (`mitmproxy/proxy/layers/http/_http1.py`). | The error identifies the incomplete response head without that buffered-byte repr. | Blocking readers do not expose the same receive-event buffer; parser errors retain their own details. |
@@ -935,9 +940,19 @@ Automatic ALPN offers and selection honor `http2`. The outer TLS hop of a secure
 for CONNECT; the tunneled TLS hop may negotiate HTTP/2. Explicit presets and origin negotiation retain upstream
 precedence.
 
+Upstream verification also applies defensive distrust to the eMudhra/emSign TLS CA identities embedded in
+`certs/distrust_data.go`. The table contains full-certificate SHA-256 fingerprints, not name matches: six affected
+TLS intermediates, their six cross-signs and the withdrawn emSign ECC Root CA - G3. TLS, DTLS, raw QUIC and HTTP/3
+reject a matching certificate in either the peer-supplied chain or a verified path, including a trust anchor omitted
+from the wire (`certs/distrust.go:54-98`). This supplements normal verification regardless of whether trust comes from
+the platform store or `ssl_verify_upstream_trusted_ca` / `ssl_verify_upstream_trusted_confdir`; no bundled certifi root
+list is used. No new option or flag is added. `ssl_insecure=true` disables verification, including this check.
+Unrelated-chain verification, ordinary OCSP/CRL request handling and the existing magic-CRL substitution are unchanged;
+this does not claim new revocation validation. The table's source URLs and retrieval provenance are recorded beside
+its identities. This is a defensive port policy, not an implementation of newer upstream eMudhra interception options.
+
 The legacy cipher suites and DH parameters that the pyOpenSSL stack supports and `crypto/tls` does not are listed under
-["Decided for code that is not written yet"](#decided-for-code-that-is-not-written-yet), because they concern the TLS
-layers as much as this addon.
+[TLS and protocol layers](#tls-and-protocol-layers), because they concern the TLS layers as much as this addon.
 
 ## internal/proxy/layers/websocket
 
@@ -970,6 +985,74 @@ arrived or may still be in flight. All 517 cases still run; no `FAILED` or `UNCL
 |---|---|---|
 | Every UDP flow receives `udp_end` or `udp_error`, and a connection-close event emits `udp_end` before clearing `live` (`mitmproxy/proxy/layers/udp.py:44-51,121-126`). | Every captured flow emits exactly one terminal hook, including on shutdown, idle expiry and cancellation: `udp_end` for closure or cancellation, `udp_error` for failure. The hook uses `WithoutCancel`; dispatch then clears `Live`, including on dial failure. An interception retained into or requested during a terminal hook is immediately resumed. | Preserve upstream's terminal-hook lifecycle and release the finished tuple. Unlike upstream's suspended hook coroutine, a terminal interception cannot retain a connection owner after its transport has finished. |
 | UDP lifecycle hook dispatch has no separate cleanup deadline (`mitmproxy/proxy/layers/udp.py`). | Terminal hooks use a detached 30-second budget, independent of idle timeout. Final Resume and `Live=false` dispatch use a fresh independent budget after hook expiry. | An expired hook context cannot admit final cleanup. Dispatch admission is cancellation-aware; arbitrary addon callbacks must still cooperate. |
+
+## Flow telemetry
+
+All three default tools register `otel_exporter_endpoint` as a string with default `""` and help:
+“OTLP endpoint that OpenTelemetry traces and metrics are exported to. Empty disables the exporter.”
+Empty creates no exporter providers, export workers or collector connection attempts; the running controller still
+owns its option reconciler. OTel environment variables do not enable export. The HTTP/protobuf exporters append
+`/v1/traces` and `/v1/metrics` beneath the validated HTTP(S) base URL. Plaintext HTTP is loopback-only; remote collectors
+require HTTPS with normal certificate validation. Userinfo, query strings, fragments, zones and invalid ports are
+refused. Collector `localhost` is fixed to `127.0.0.1`, without DNS; IPv6 loopback requires `[::1]`. Redirects,
+proxy-environment routing and this instance's proxy/diagnostics listener tuples are refused. Exporter headers are
+explicitly empty (`internal/telemetry/telemetry.go:118-138`, `endpoint.go:25-148`, `export.go:178-205`).
+
+At a flow's terminal the controller creates and ends one span on the exporter generation current at that terminal.
+Valid typed timestamps are preserved; otherwise observation timestamps bound the span without inventing valid flow
+timing attributes. Active flows crossing a collector change finish on the new generation. A terminal while disabled
+is counted locally and is not exported retroactively. Export queues are bounded and admission is nonblocking;
+saturation or collector failure can lose telemetry without blocking addon dispatch. Provider creation, retirement,
+flush and joins run outside dispatch, with no per-flow export worker. Close uses one total ten-second budget and
+reports unacknowledged shutdown rather than treating a deadline return as a successful join.
+
+Only bounded scalar metadata is exported: mode kind, flow kind, permitted host/method/status fields, known sizes and
+valid timings. Bodies, paths, queries, headers, cookies, credentials, certificates, arbitrary flow metadata and
+intercepted trace context are not exported. HTTP/WS size fields describe raw HTTP handshake bodies, not WebSocket
+message payloads. A nil HTTP body is unknown, not zero or Content-Length; a non-nil empty body is known zero. Unknown
+body sizes are omitted with false size-known flags. Timing attributes require usable corresponding typed timestamps;
+`timing_known` describes a valid flow start/end pair. TCP/UDP byte totals are known only while the observed sequence
+remains complete and append-only. Non-HTTP flows omit HTTP method/status fields; DNS query names and substitute HTTP
+statuses are not exported (`internal/telemetry/lifecycle.go:265-307,309-514`).
+
+`http_fidelity` is the existing cumulative emission-normalization counter for the whole proxy instance at observation,
+not per-flow attribution. Other flows can increment it, and normalization after response dispatch appears only in
+later observations. Its span value is an exact decimal string. The OTel observable is float64 and can lose single-unit
+precision above 2^53 (`internal/telemetry/lifecycle.go:321-325`, `telemetry.go:444-477`).
+
+| Policy | Export behavior |
+|---|---|
+| OTel environment policy | OTEL_TRACES_SAMPLER / OTEL_TRACES_SAMPLER_ARG, OTEL_SPAN_ATTRIBUTE_*_LIMIT (including COUNT and VALUE_LENGTH), OTEL_SPAN_EVENT_COUNT_LIMIT, OTEL_SPAN_LINK_COUNT_LIMIT, OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT, OTEL_LINK_ATTRIBUTE_COUNT_LIMIT and OTEL_RESOURCE_ATTRIBUTES are ignored for exported flow telemetry; explicit sampler/limits and the five-key trace+metric resource allowlist govern. Export endpoint/headers remain option-owned, not environment-owned. |
+
+The exported resource is exactly `service.name`, `service.version` and `telemetry.sdk.{name,language,version}` from
+fixed application policy, not environment-derived replacements. Sampling and span limits are explicit; child-process
+hostile-environment tests cover trace and metric exports (`internal/telemetry/export.go:223-249`,
+`policy_cleanup_test.go:17-79`).
+
+## Local diagnostics
+
+All three default tools register `pprof_addr` as a string with default `""` and help:
+“Serve net/http/pprof on this loopback address, for example 127.0.0.1:6060. Empty disables it.”
+A nonempty value requires a loopback host and numeric port in 0–65535. Wildcards, non-loopback addresses, zones and
+arbitrary hostnames are refused; `localhost` maps directly to `127.0.0.1` without DNS, and `[::1]:6060` explicitly
+selects IPv6 (`internal/debugserver/controller.go:80-98`, `address.go:15-35`).
+
+A separate owned listener/private ServeMux serves runtime metrics and low-cardinality service status as JSON at
+`/debug`, plus standard `net/http/pprof` handlers under `/debug/pprof/`. These are not proxy or mitmweb routes. The
+`/debug` snapshot omits flows, option-value dumps, environment and raw resources; that restriction does not apply to
+standard pprof handlers such as `cmdline`, heap and goroutine profiles. Profiling is privileged local process
+introspection. Loopback is a trusted-operator boundary, not authentication; forwarding the port to untrusted users
+defeats it (`internal/debugserver/server.go:29-87`, `snapshot.go`).
+
+Changing `pprof_addr` stops the old listener before attempting replacement; empty disables it. Invalid syntax leaves
+a working configuration unchanged. An occupied address logs an optional-feature warning and leaves diagnostics
+disabled; a later valid change can retry. Reconfiguration permits a one-second graceful cutoff within a five-second
+cleanup budget; Close uses one five-second budget (or the caller's earlier deadline), cancels that grace and forces
+connection close. **This is not a universal handler-join guarantee:** a loopback client that stalls after sending
+headers can keep a handler goroutine alive past the five-second close grace. Deadline expiry reports unacknowledged
+cleanup; it must not be described as proof of zero remaining handlers. The server sets header/idle/write timeouts,
+not a general request-body read deadline (`internal/debugserver/controller.go:160-215,223-249,301-344`,
+`server.go:64-111`).
 
 ## Additional compatibility decisions
 
@@ -1044,7 +1127,7 @@ intentional tool-specific upstream metadata omissions remain unchanged.
 | Option | Type | Default | Meaning |
 |---|---|---|---|
 | `content_decode_limit` | str | `256m` | Upper bound on the decoded size of a message body (parsed as a byte size). A body that would decode to more counts as undecodable: `Content` and `Text` fail and `ContentOrRaw`/`TextOrRaw` return the raw bytes. Upstream decodes without a bound. |
-| `local_redirector_path` | str | `""` | Path to the local mode redirector; empty means it is downloaded into the configuration directory on first use. |
+| `local_redirector_path` | str | `""` | Path to the local-mode redirector; nonempty overrides are validated at launch without downloading a replacement. Changes affect only the next process-lifetime daemon creation, not an existing daemon or restarted mode listeners. Invalid-path errors are deferred until launch. Empty retains platform defaults, including the installed macOS application rather than automatic macOS installation. |
 | `otel_exporter_endpoint` | str | `""` | OTLP endpoint for OpenTelemetry traces and metrics; empty disables the exporter. |
 | `max_client_connections` | int | `0` | Maximum concurrent accepted clients across all proxy modes; 0 means unlimited. Excess clients are closed before connection hooks and registry entry. |
 | `pprof_addr` | str | `""` | Loopback address that serves `net/http/pprof`; empty disables it. |
@@ -1058,7 +1141,7 @@ HTTP/1 + TLS proxy core:
 | `next_layer` host patterns run on Python's `re`, which has no time limit (`mitmproxy/addons/next_layer.py`). | A host match on the `regexp2` fallback that runs past its 100 ms limit is abandoned and logged once with the option, the pattern and the host. An abandoned `ignore_hosts` match counts as a match (the connection stays ignored), while an abandoned `allow_hosts`, `tcp_hosts` or `udp_hosts` match counts as no match. | The match runs under the global dispatch lock, so backtracking must be bounded; failing towards "ignored" never sends traffic through interception that a slow pattern meant to exclude, and failing towards "no match" keeps allow/tcp/udp lists from widening on a timeout. |
 | Message bodies are decoded without a size bound (`mitmproxy/net/encoding.py`). | Decoding on every `Content`/`Text` path is bounded by `content_decode_limit` (table above). The bound is published process-globally (`httpmsg.SetDecodeLimit`): two Masters in one process share it and the last `configure` wins; the `core` addon's `done` restores the 256 MiB default. | A compression bomb decoded under the dispatch lock would stall every hook; the decode paths are package-level functions, so the bound cannot be per-Master. |
 
-TLS and protocol layers:
+### TLS and protocol layers
 
 | Upstream | Go | Reason |
 |---|---|---|

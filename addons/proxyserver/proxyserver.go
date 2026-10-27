@@ -68,6 +68,7 @@ type ProxyServer struct {
 	workers              sync.WaitGroup
 	stopped              chan struct{}
 	closeErr             error
+	localRedirectors     map[string]func(string, string) local.Redirector
 	localDaemon          struct {
 		sync.Mutex
 		redirector local.Redirector
@@ -89,6 +90,11 @@ func New(cfg proxy.Config) (*ProxyServer, error) {
 	// inherit it. SetupServers links its outside-dispatch lifetime separately.
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &ProxyServer{manager: cfg.Manager, opts: cfg.Options, connections: cfg.Connections, logger: logger, lifetime: ctx, cancel: cancel, wake: make(chan struct{}, 1), stopped: make(chan struct{})}
+	p.localRedirectors = map[string]func(string, string) local.Redirector{
+		"linux":   local.NewLinuxRedirector,
+		"darwin":  local.NewMacOSRedirector,
+		"windows": local.NewWindowsRedirector,
+	}
 	p.instances.Store(&serverState{})
 	p.presentationWake = make(chan struct{}, 1)
 	p.stateObservers = make(map[uint64]func(context.Context, ServerSnapshot))
@@ -124,6 +130,7 @@ func (p *ProxyServer) Load(ctx context.Context, loader *addon.Loader) error {
 		{"validate_inbound_headers", options.TypeBool, true, "Make sure that incoming HTTP requests and responses are not malformed. Disabling this option makes mitmproxy vulnerable to HTTP smuggling attacks.", nil},
 		{"connect_addr", options.TypeOptStr, nil, "Set the local IP address that mitmproxy should use when connecting to upstream servers.", nil},
 		{"max_client_connections", options.TypeInt, 0, "Maximum number of concurrent client connections; 0 means unlimited.", nil},
+		{"local_redirector_path", options.TypeStr, "", "Path to the local mode redirector. Empty means it is downloaded into the configuration directory on first use.", nil},
 	} {
 		if err := loader.AddOption(ctx, spec.name, spec.typ, spec.def, spec.help, spec.choices...); err != nil {
 			return err
@@ -276,6 +283,14 @@ func (p *ProxyServer) run() {
 	}
 }
 
+func (p *ProxyServer) newLocalRedirector(goos, dir, path string) (local.Redirector, error) {
+	constructor := p.localRedirectors[goos]
+	if constructor == nil {
+		return nil, errors.New(local.UnavailableReason(goos, 0))
+	}
+	return constructor(dir, path), nil
+}
+
 func (p *ProxyServer) configuredInstances() ([]*modeserver.Instance, error) {
 	cfg := modeserver.Config{Handler: p.handler, ConfDir: p.opts.Str("confdir"), ClientLimiter: &p.limiter, ListenHost: p.opts.Str("listen_host"), ListenPort: p.opts.OptInt("listen_port"), Logger: p.logger, PresentationChanged: p.presentationWake, PresentationRevision: &p.presentationRevision}
 	var instances []*modeserver.Instance
@@ -302,16 +317,11 @@ func (p *ProxyServer) configuredInstances() ([]*modeserver.Instance, error) {
 						}
 						dir = filepath.Join(home, rest)
 					}
-					switch runtime.GOOS {
-					case "linux":
-						p.localDaemon.redirector = local.NewLinuxRedirector(dir, "")
-					case "darwin":
-						p.localDaemon.redirector = local.NewMacOSRedirector(dir, "")
-					case "windows":
-						p.localDaemon.redirector = local.NewWindowsRedirector(dir, "")
-					default:
-						return nil, errors.New(local.UnavailableReason(runtime.GOOS, 0))
+					redirector, err := p.newLocalRedirector(runtime.GOOS, dir, p.opts.Str("local_redirector_path"))
+					if err != nil {
+						return nil, err
 					}
+					p.localDaemon.redirector = redirector
 				}
 				return p.localDaemon.redirector, nil
 			}()

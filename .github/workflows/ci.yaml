@@ -247,6 +247,26 @@ jobs:
             (( producer == 0 )) || exit "$producer"
             (( reader == 0 )) || exit "$reader"
           done
+      - name: Compile scripting timing contracts on macOS
+        if: matrix.os == 'xcode-27'
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/script/timing-compile"
+          mkdir -p "$OUT"
+          printf 'checkout=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/compile.receipt"
+          finish() {
+            result=$?
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/compile.receipt"
+            exit "$result"
+          }
+          trap finish EXIT
+          go version >| "$OUT/go-version.txt"
+          printf '%q ' go test -race -tags scripttiming -c -o "$RUNNER_TEMP/script-timing.test" ./script/acceptance >| "$OUT/command.txt"
+          printf '\n' >> "$OUT/command.txt"
+          go test -race -tags scripttiming -c -o "$RUNNER_TEMP/script-timing.test" ./script/acceptance >| "$OUT/compile.log" 2>| "$OUT/compile.stderr"
+          shasum -a 256 "$RUNNER_TEMP/script-timing.test" >| "$OUT/binary.sha256"
       - name: Verify tagged scripting diagnostics
         if: matrix.os == 'ubuntu-26.04'
         timeout-minutes: 10
@@ -263,9 +283,9 @@ jobs:
             exit "$result"
           }
           trap finish EXIT
-          go vet -tags scripttiming ./script/acceptance >| "$OUT/vet.log" 2>| "$OUT/vet.stderr"
-          "$BINDIR/golangci-lint" run --allow-parallel-runners --issues-exit-code=1 --build-tags scripttiming ./script/acceptance >| "$OUT/lint.log" 2>| "$OUT/lint.stderr"
-          GOFLAGS=-tags=scripttiming "$BINDIR/gopls" check script/acceptance/timing_test.go >| "$OUT/gopls.log" 2>| "$OUT/gopls.stderr"
+          timeout --signal=QUIT --kill-after=15s 3m go vet -tags scripttiming ./script/acceptance >| "$OUT/vet.log" 2>| "$OUT/vet.stderr"
+          timeout --signal=QUIT --kill-after=15s 3m "$BINDIR/golangci-lint" run --allow-parallel-runners --issues-exit-code=1 --build-tags scripttiming ./script/acceptance >| "$OUT/lint.log" 2>| "$OUT/lint.stderr"
+          GOFLAGS=-tags=scripttiming timeout --signal=QUIT --kill-after=15s 3m "$BINDIR/gopls" check script/acceptance/timing_test.go >| "$OUT/gopls.log" 2>| "$OUT/gopls.stderr"
           test ! -s "$OUT/gopls.log"
       - name: Upload scripting test evidence
         if: always()

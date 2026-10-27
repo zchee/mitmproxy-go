@@ -627,8 +627,7 @@ a general help, whitespace, empty/null, error-text or content-body normalizer.
 
 | Pinned upstream surface | Named exclusion or adapter | Reason |
 |---|---|---|
-| `/options` dumps the upstream registry (`py:mitmproxy/tools/web/app.py:805-807` at `3368a0a`). | Removes Go-only `content_decode_limit` (decoded-body bound), `max_client_connections` (client-admission bound) and `script_max_steps` (Starlark execution budget) from Go equality when present (`testdata/options-go-only.txt`, `internal/tools/web/acceptance/differential_unix_test.go:228-234`). | These three controls have no upstream counterpart and are registered by the current default addon sets. |
-| `/options` dumps the upstream registry (`py:mitmproxy/tools/web/app.py:805-807` at `3368a0a`). | The same manifest-only removal names `local_redirector_path` (redirector override), `otel_exporter_endpoint` (telemetry) and `pprof_addr` (profiling), if present (`testdata/options-go-only.txt`, `internal/tools/web/acceptance/differential_unix_test.go:228-234`). | These three names remain reserved, not runtime registrations; the six-entry manifest is not a claim of six active extra options. |
+| `/options` dumps the upstream registry (`py:mitmproxy/tools/web/app.py:805-807` at `3368a0a`). | The Go fixture adapter requires all six Go-only names, then removes exactly `content_decode_limit`, `max_client_connections`, `script_max_steps`, `local_redirector_path`, `otel_exporter_endpoint` and `pprof_addr` from equality using `testdata/options-go-only.txt` (`internal/tools/web/acceptance/metadata_adapter_test.go:21-76`). | All six are registered runtime controls without upstream counterparts. A missing control is an error, not silently ignored. The Go-side adapter leaves upstream option and command metadata unchanged. |
 | Python registers the `scripts` option and `script.run` command (`py:mitmproxy/addons/script.py:163-169` at `3368a0a`). | Both are registered by mitmweb's default Starlark loader and compared without a scripting-specific exclusion from `/options` or `/commands`. | Scripting metadata is part of the live parity contract; only the Go-only execution-budget option is removed through the separate manifest rule above. |
 | `browser.start(browser: str = "chrome")` has an ordinary parameter (`py:mitmproxy/addons/browser.py:39-40` at `3368a0a`). | Guards exact Python `browser:str` / `POSITIONAL_OR_KEYWORD` and `browser.start browser`, then compares against `arg0:str` / `VAR_POSITIONAL` and `browser.start *arg0` (`internal/tools/web/acceptance/differential_unix_test.go:239-248`). | The existing Go variadic/default API is documented under [addons/browser](#addonsbrowser); this is a guarded metadata adapter, not altered help text. |
 | `export` returns text after backslash replacement (`py:mitmproxy/addons/export.py:218-232` at `3368a0a`). | Guards Python return `str` and `export format f -> str`, then compares as `bytes` and `export format f -> bytes` (`internal/tools/web/acceptance/differential_unix_test.go:249-254`). | The existing Go byte-result contract is documented under [addons/export](#addonsexport); no unrelated signature is adapted. |
@@ -974,8 +973,8 @@ arrived or may still be in flight. All 517 cases still run; no `FAILED` or `UNCL
 
 ## Additional compatibility decisions
 
-The scripting behavior below is implemented. Go-only option names that remain reserved are distinguished from
-registered runtime options.
+The scripting behavior below is implemented. All six Go-only controls listed below are registered runtime options;
+tool-specific upstream metadata omissions remain documented separately.
 
 Scripting (Starlark instead of Python):
 
@@ -1038,9 +1037,9 @@ ImportError guidance and Python traceback-object slicing have no Starlark
 counterpart; the source-test inventory records those non-ports separately.
 
 Options that only the Go port has (`testdata/options-go-only.txt:1-6`):
-`content_decode_limit`, `max_client_connections` and `script_max_steps` are registered by the default addon sets.
-`local_redirector_path`, `otel_exporter_endpoint` and `pprof_addr` remain reserved,
-not runtime options. The historical four-name description is not the current registry difference.
+All six names are registered by the default addon sets of mitmdump, mitmweb and mitmproxy.
+The differential adapter requires all six before removing exactly those six from Go-side equality;
+intentional tool-specific upstream metadata omissions remain unchanged.
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|

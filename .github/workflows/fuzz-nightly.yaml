@@ -1,0 +1,137 @@
+name: Fuzz nightly
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: fuzz nightly (shard ${{ matrix.shard }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard:
+          - 0
+          - 1
+          - 2
+          - 3
+          - 4
+          - 5
+          - 6
+          - 7
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Fuzz every assigned target
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_REF: ${{ github.ref }}
+          SOURCE_EVENT: ${{ github.event_name }}
+          SHARD: ${{ matrix.shard }}
+          GOMAXPROCS: 2
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/fuzz-nightly/shard-$SHARD"
+          mkdir -p "$OUT/targets" "$OUT/corpus/source" "$OUT/corpus/cache"
+          printf 'head=%s\nevent=%s\nref=%s\nshard=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$SOURCE_EVENT" "$SOURCE_REF" "$SHARD" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/run.receipt"
+          finish() {
+            result=$1
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/run.receipt"
+            (
+              cd "$OUT"
+              shopt -s globstar nullglob
+              files=()
+              for file in **/*; do
+                if test -f "$file" && test ! -L "$file" && test "$file" != SHA256SUMS; then files+=("$file"); fi
+              done
+              printf '%s\0' "${files[@]}" | LC_ALL=C sort -z | xargs -0 -r sha256sum >| SHA256SUMS
+            )
+            exit "$result"
+          }
+          trap 'finish "$?"' EXIT
+          test "$(git rev-parse HEAD)" = "$EVENT_SHA"
+          if test "$SOURCE_EVENT" = workflow_dispatch; then
+            git ls-remote --exit-code origin "$SOURCE_REF" "$SOURCE_REF^{}" >| "$OUT/selected-ref.txt"
+            ref_sha=""
+            peeled_sha=""
+            while read -r selected_sha selected_ref; do
+              case "$selected_ref" in
+                "$SOURCE_REF") ref_sha="$selected_sha" ;;
+                "$SOURCE_REF^{}") peeled_sha="$selected_sha" ;;
+                *) exit 1 ;;
+              esac
+            done < "$OUT/selected-ref.txt"
+            test "${peeled_sha:-$ref_sha}" = "$EVENT_SHA"
+          fi
+          go version >| "$OUT/go-version.txt"
+          cp hack/fuzz-targets.txt "$OUT/manifest.txt"
+          LC_ALL=C sort -c "$OUT/manifest.txt"
+          test "$(wc -l < "$OUT/manifest.txt")" -eq 57
+          test "$(LC_ALL=C sort -u "$OUT/manifest.txt" | wc -l)" -eq 57
+          GOCACHE="$(mktemp -d "$RUNNER_TEMP/fuzz-gocache.XXXXXXXX")"
+          export GOCACHE
+          printf 'gocache=%s\nfuzzcache=%s\nGOMAXPROCS=2\nparallel=1\n' "$GOCACHE" "$GOCACHE/fuzz" >> "$OUT/run.receipt"
+          module="$(go list -m)"
+          index=0
+          count=0
+          status=0
+          while read -r pkg target; do
+            if test $((index % 8)) -eq "$SHARD"; then
+              dir="$OUT/targets/$index-$target"
+              mkdir -p "$dir"
+              printf 'package=%s\ntarget=%s\nindex=%s\nstart=%s\ncommand:' "$pkg" "$target" "$index" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$dir/target.receipt"
+              printf ' %q' timeout --signal=QUIT --kill-after=15s 12m go test -run '^$' -timeout=11m -fuzz "^${target}$" -fuzztime=10m -parallel=1 "./$pkg" >> "$dir/target.receipt"
+              printf '\n' >> "$dir/target.receipt"
+              discovery=0
+              timeout --signal=QUIT --kill-after=15s 12m go test -timeout=11m -list "^${target}$" "./$pkg" >| "$dir/discovery.log" 2>| "$dir/discovery.stderr" || discovery=$?
+              reader=0
+              grep -Fx -- "$target" "$dir/discovery.log" >| "$dir/discovered-target.txt" || reader=$?
+              producer=0
+              if test "$discovery" -eq 0 && test "$reader" -eq 0; then
+                timeout --signal=QUIT --kill-after=15s 12m go test -run '^$' -timeout=11m -fuzz "^${target}$" -fuzztime=10m -parallel=1 "./$pkg" >| "$dir/search.log" 2>| "$dir/search.stderr" || producer=$?
+              else
+                producer=1
+              fi
+              printf 'end=%s\ndiscovery_exit=%s\nreader_exit=%s\nproducer_exit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$discovery" "$reader" "$producer" >> "$dir/target.receipt"
+              if test "$producer" -ne 0; then status=1; fi
+              for source in "$pkg/testdata/fuzz/$target" "$GOCACHE/fuzz/$module/$pkg/$target"; do
+                if test -d "$source"; then
+                  kind=source
+                  if [[ "$source" == "$GOCACHE/"* ]]; then kind=cache; fi
+                  mkdir -p "$OUT/corpus/$kind/$pkg"
+                  cp -R "$source" "$OUT/corpus/$kind/$pkg/$target"
+                fi
+              done
+              count=$((count + 1))
+            fi
+            index=$((index + 1))
+          done < "$OUT/manifest.txt"
+          expected=7
+          if test "$SHARD" -eq 0; then expected=8; fi
+          printf 'targets=%s\nmanifest_targets=%s\naggregate_exit=%s\n' "$count" "$index" "$status" >> "$OUT/run.receipt"
+          test "$index" -eq 57
+          test "$count" -eq "$expected"
+          finish "$status"
+      - name: Upload fuzz receipts and selected corpus
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-nightly-${{ github.sha }}-shard-${{ matrix.shard }}
+          path: _test/fuzz-nightly/shard-${{ matrix.shard }}
+          retention-days: 14
+          if-no-files-found: error

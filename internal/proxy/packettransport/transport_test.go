@@ -248,9 +248,10 @@ func TestTupleBounds(t *testing.T) {
 		count     int
 		size      int
 		aggregate bool
+		drop      bool
 	}{
-		"tuple count":    {count: layer.PacketQueueCapacity + 1, size: 0},
-		"tuple bytes":    {count: layer.PacketQueueBytes/layer.MaxUDPPacketBytes + 1, size: layer.MaxUDPPacketBytes},
+		"tuple count":    {count: layer.PacketQueueCapacity + 1, size: 0, drop: true},
+		"tuple bytes":    {count: layer.PacketQueueBytes/layer.MaxUDPPacketBytes + 1, size: layer.MaxUDPPacketBytes, drop: true},
 		"listener count": {count: layer.ListenerPacketQueueCapacity, size: 0, aggregate: true},
 		"listener bytes": {count: layer.ListenerPacketQueueBytes / layer.MaxUDPPacketBytes, size: layer.MaxUDPPacketBytes, aggregate: true},
 		"oversized":      {count: 1, size: layer.MaxUDPPacketBytes + 1},
@@ -288,6 +289,15 @@ func TestTupleBounds(t *testing.T) {
 				}
 			}
 			listener.mu.Unlock()
+			if test.drop {
+				if err := conn.Context().Err(); err != nil {
+					t.Fatalf("per-tuple overflow canceled transport: %v", err)
+				}
+				if _, _, err := conn.ReadFrom(nil); err != nil {
+					t.Fatalf("queued packet after drop = %v", err)
+				}
+				return
+			}
 			if _, _, err := conn.ReadFrom(nil); !errors.Is(err, layer.ErrPacketOverflow) {
 				t.Fatalf("overflow read = %v", err)
 			}

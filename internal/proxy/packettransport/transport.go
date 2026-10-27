@@ -196,8 +196,13 @@ func (l *Listener) enqueueLocked(conn *TupleConn, payload []byte) bool {
 	if conn.err != nil {
 		return false
 	}
-	if len(payload) > layer.MaxUDPPacketBytes || len(conn.packets)+conn.writePackets >= layer.PacketQueueCapacity || conn.bytes+conn.writeBytes+len(payload) > layer.PacketQueueBytes || l.queuedPackets+l.writePackets >= layer.ListenerPacketQueueCapacity || l.queuedBytes+l.writeBytes+len(payload) > layer.ListenerPacketQueueBytes {
+	if len(payload) > layer.MaxUDPPacketBytes || l.queuedPackets+l.writePackets >= layer.ListenerPacketQueueCapacity || l.queuedBytes+l.writeBytes+len(payload) > layer.ListenerPacketQueueBytes {
 		l.finishLocked(conn, layer.ErrPacketOverflow)
+		return false
+	}
+	// Ordinary datagram loss lets reliable transports recover without retiring
+	// their live tuple when one peer temporarily exhausts its queue budget.
+	if len(conn.packets)+conn.writePackets >= layer.PacketQueueCapacity || conn.bytes+conn.writeBytes+len(payload) > layer.PacketQueueBytes {
 		return false
 	}
 	conn.packets = append(conn.packets, slices.Clone(payload))
@@ -297,7 +302,7 @@ type TupleConn struct {
 
 var _ layer.PacketTransport = (*TupleConn)(nil)
 
-// Context is canceled when this tuple closes, overflows or the listener ends.
+// Context is canceled when this tuple closes or the listener ends.
 func (c *TupleConn) Context() context.Context { return c.ctx }
 
 // LocalAddr returns the shared socket's fixed local address.
@@ -333,8 +338,10 @@ func (c *TupleConn) ReadFrom(p []byte) (int, net.Addr, error) {
 }
 
 // WriteTo sends one bounded datagram to the fixed peer. A different addr is an
-// error; nil selects the fixed peer. The socket writer is bounded and does not
-// retain the caller's buffer after this method returns.
+// error; nil selects the fixed peer. At the per-tuple queue bound the datagram is
+// dropped and len(p), nil is returned, as for ordinary UDP loss. Listener-wide
+// overflow still closes the tuple. The socket writer does not retain the
+// caller's buffer after this method returns.
 func (c *TupleConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	if addr != nil && (addr.Network() != c.peer.Network() || addr.String() != c.peer.String()) {
 		return 0, &net.OpError{Op: "write", Net: "udp", Addr: addr, Err: errors.New("packet peer differs from fixed tuple")}
@@ -345,10 +352,14 @@ func (c *TupleConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 		l.mu.Unlock()
 		return 0, err
 	}
-	if len(p) > layer.MaxUDPPacketBytes || len(c.packets)+c.writePackets >= layer.PacketQueueCapacity || c.bytes+c.writeBytes+len(p) > layer.PacketQueueBytes || l.queuedPackets+l.writePackets >= layer.ListenerPacketQueueCapacity || l.queuedBytes+l.writeBytes+len(p) > layer.ListenerPacketQueueBytes {
+	if len(p) > layer.MaxUDPPacketBytes || l.queuedPackets+l.writePackets >= layer.ListenerPacketQueueCapacity || l.queuedBytes+l.writeBytes+len(p) > layer.ListenerPacketQueueBytes {
 		l.finishLocked(c, layer.ErrPacketOverflow)
 		l.mu.Unlock()
 		return 0, layer.ErrPacketOverflow
+	}
+	if len(c.packets)+c.writePackets >= layer.PacketQueueCapacity || c.bytes+c.writeBytes+len(p) > layer.PacketQueueBytes {
+		l.mu.Unlock()
+		return len(p), nil
 	}
 	job := &packetWrite{conn: c, payload: slices.Clone(p), result: make(chan writeResult, 1)}
 	if c.pending == nil {

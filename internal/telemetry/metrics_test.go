@@ -46,7 +46,9 @@ func TestTelemetryGauges(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				x.c.admit.Lock()
 				x.g.hold = hold
+				x.c.admit.Unlock()
 				f := httpFlow(t)
 				hook(t, x, addon.RequestHook{Flow: f})
 				wantClients, wantHTTP := int64(7), int64(1)

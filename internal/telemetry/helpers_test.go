@@ -158,6 +158,16 @@ func hook(t *testing.T, fixture *memoryFixture, event addon.Hook) {
 	}
 }
 
+func changeFlow(t *testing.T, m *master.Master, change func()) {
+	t.Helper()
+	if err := m.Do(t.Context(), func(context.Context) error {
+		change()
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func flushed(t *testing.T, fixture *memoryFixture) tracetest.SpanStubs {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -231,18 +241,18 @@ func completeKind(t *testing.T, fixture *memoryFixture, kind string) flow.Flow {
 	case "tcp":
 		f := flow.NewTCPFlow(client, server, true)
 		hook(t, fixture, addon.TCPStartHook{Flow: f})
-		f.Messages = append(f.Messages, tcp.NewMessage(true, []byte("req")))
+		changeFlow(t, fixture.m, func() { f.Messages = append(f.Messages, tcp.NewMessage(true, []byte("req"))) })
 		hook(t, fixture, addon.TCPMessageHook{Flow: f})
-		f.Messages = append(f.Messages, tcp.NewMessage(false, []byte("reply")))
+		changeFlow(t, fixture.m, func() { f.Messages = append(f.Messages, tcp.NewMessage(false, []byte("reply"))) })
 		hook(t, fixture, addon.TCPMessageHook{Flow: f})
 		hook(t, fixture, addon.TCPEndHook{Flow: f})
 		return f
 	case "udp":
 		f := flow.NewUDPFlow(client, server, true)
 		hook(t, fixture, addon.UDPStartHook{Flow: f})
-		f.Messages = append(f.Messages, udp.NewMessage(true, []byte("req")))
+		changeFlow(t, fixture.m, func() { f.Messages = append(f.Messages, udp.NewMessage(true, []byte("req"))) })
 		hook(t, fixture, addon.UDPMessageHook{Flow: f})
-		f.Messages = append(f.Messages, udp.NewMessage(false, []byte("reply")))
+		changeFlow(t, fixture.m, func() { f.Messages = append(f.Messages, udp.NewMessage(false, []byte("reply"))) })
 		hook(t, fixture, addon.UDPMessageHook{Flow: f})
 		hook(t, fixture, addon.UDPEndHook{Flow: f})
 		return f

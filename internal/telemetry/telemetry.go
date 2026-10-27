@@ -69,13 +69,14 @@ type Controller struct {
 	current          *generation
 	admissionStopped bool
 	flows            [5]atomic.Int64
-	dispatchStart    atomic.Int64
-	disabled         atomic.Uint64
-	invalid          atomic.Uint64
-	queuePressure    atomic.Uint64
-	sinceExport      atomic.Int64
-	exportFailures   atomic.Uint64
-	stopping         atomic.Bool
+	// Dispatch serializes the hold callbacks; the metric callback never reads this clock.
+	dispatchStart  time.Time
+	disabled       atomic.Uint64
+	invalid        atomic.Uint64
+	queuePressure  atomic.Uint64
+	sinceExport    atomic.Int64
+	exportFailures atomic.Uint64
+	stopping       atomic.Bool
 
 	mu           sync.Mutex
 	started      bool
@@ -274,6 +275,7 @@ func (c *Controller) retire(g *generation, cleanup context.Context) error {
 		return nil
 	}
 	c.mu.Lock()
+	interruptedReplacement := cleanup == nil && c.closeContext != nil
 	if c.retiring != nil && c.retiring != g {
 		c.mu.Unlock()
 		return errors.New("telemetry: previous retirement has not been acknowledged")
@@ -289,6 +291,9 @@ func (c *Controller) retire(g *generation, cleanup context.Context) error {
 	}
 	grace, cancelGrace := context.WithTimeout(cleanup, 5*time.Second)
 	c.graceCancel = cancelGrace
+	if interruptedReplacement {
+		cancelGrace()
+	}
 	c.mu.Unlock()
 	err := g.stop(cleanup, grace)
 	cancelGrace()
@@ -395,15 +400,16 @@ func (c *Controller) Close(ctx context.Context) error {
 }
 
 // OnDispatchStart begins process-level hold accounting without flow access.
-func (c *Controller) OnDispatchStart() { c.dispatchStart.Store(time.Now().UnixNano()) }
+func (c *Controller) OnDispatchStart() { c.dispatchStart = time.Now() }
 
 // OnDispatchEnd records a bounded SDK histogram sample without export I/O.
 func (c *Controller) OnDispatchEnd() {
-	start := c.dispatchStart.Swap(0)
-	if start == 0 {
+	start := c.dispatchStart
+	c.dispatchStart = time.Time{}
+	if start.IsZero() {
 		return
 	}
-	seconds := float64(time.Now().UnixNano()-start) / float64(time.Second)
+	seconds := time.Since(start).Seconds()
 	if seconds < 0 {
 		return
 	}

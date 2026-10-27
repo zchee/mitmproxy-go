@@ -58,7 +58,7 @@ func TestTelemetryLifecycle(t *testing.T) {
 		}},
 		"response_then_error": {func(t *testing.T, x *memoryFixture) {
 			f := completeKind(t, x, "http").(*flow.HTTPFlow)
-			f.Error = &flow.Error{Msg: "later error", Timestamp: 103}
+			changeFlow(t, x.m, func() { f.Error = &flow.Error{Msg: "later error", Timestamp: 103} })
 			hook(t, x, addon.ErrorHook{Flow: f})
 			span := oneSpan(t, x)
 			assertAttributes(t, expectedAttributes("http"), span)
@@ -70,7 +70,7 @@ func TestTelemetryLifecycle(t *testing.T) {
 			client, server := clientAndServer()
 			f := flow.NewTCPFlow(client, server, true)
 			hook(t, x, addon.TCPStartHook{Flow: f})
-			f.Error = &flow.Error{Msg: "private", Timestamp: 102.75}
+			changeFlow(t, x.m, func() { f.Error = &flow.Error{Msg: "private", Timestamp: 102.75} })
 			hook(t, x, addon.TCPErrorHook{Flow: f})
 			hook(t, x, addon.TCPEndHook{Flow: f})
 			if oneSpan(t, x).Status.Code != codes.Error {
@@ -249,7 +249,6 @@ func TestTelemetryAttributes(t *testing.T) {
 			}
 		}},
 		"fidelity_instance": {func(_ *testing.T, x *memoryFixture, _ *flow.HTTPFlow, want map[string]any) {
-			x.c.cfg.Fidelity = &http1.FidelityCounter{}
 			count := uint64(1)<<53 | 7
 			x.c.cfg.Fidelity.Add(count)
 			want["http_fidelity"] = strconv.FormatUint(count, 10)
@@ -270,7 +269,7 @@ func TestTelemetryAttributes(t *testing.T) {
 	t.Run("contracts", func(t *testing.T) {
 		for name, tt := range tests {
 			t.Run(name, func(t *testing.T) {
-				x := memoryController(t, Config{Version: "test"})
+				x := memoryController(t, Config{Version: "test", Fidelity: &http1.FidelityCounter{}})
 				f := httpFlow(t)
 				want := expectedAttributes("http")
 				tt.run(t, x, f, want)

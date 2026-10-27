@@ -690,6 +690,49 @@ jobs:
         with:
           go-version: ${{ steps.go.outputs.version }}
           cache-key-prefix: fuzz-smoke
+      - name: Verify the complete fuzz manifest
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/_test/fuzz-manifest"
+          mkdir -p "$OUT"
+          printf 'head=%s\nstart=%s\n' "$(git rev-parse HEAD)" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$OUT/discovery.receipt"
+          finish() {
+            result=$?
+            trap - EXIT
+            printf 'end=%s\nexit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/discovery.receipt"
+            exit "$result"
+          }
+          trap finish EXIT
+          cp hack/fuzz-targets.txt "$OUT/expected.txt"
+          LC_ALL=C sort -c "$OUT/expected.txt"
+          test "$(wc -l < "$OUT/expected.txt")" -eq 57
+          test "$(LC_ALL=C sort -u "$OUT/expected.txt" | wc -l)" -eq 57
+          module="$(go list -m)"
+          packages="$(go list ./...)"
+          : >| "$OUT/discovered.txt"
+          for pkg in $packages; do
+            case "$pkg" in
+              "$module/"*) relative="${pkg#"$module/"}" ;;
+              *) printf 'unexpected package: %s\n' "$pkg" >&2; exit 1 ;;
+            esac
+            listed="$(go test -list '^Fuzz' "$pkg")"
+            while IFS= read -r target; do
+              if [[ "$target" =~ ^Fuzz[A-Za-z0-9_]+$ ]]; then
+                printf '%s %s\n' "$relative" "$target" >> "$OUT/discovered.txt"
+              fi
+            done <<< "$listed"
+          done
+          LC_ALL=C sort "$OUT/discovered.txt" >| "$OUT/actual.txt"
+          diff -u "$OUT/expected.txt" "$OUT/actual.txt"
+          sha256sum "$OUT/expected.txt" "$OUT/actual.txt" >| "$OUT/SHA256SUMS"
+      - name: Upload complete fuzz manifest discovery
+        if: always() && matrix.shard == 0
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-manifest-discovery
+          path: _test/fuzz-manifest
+          if-no-files-found: error
       - name: Verify required protocol fuzz targets
         if: matrix.shard == 0
         run: |

@@ -204,6 +204,15 @@ func (s *http1Server) readBody(ctx context.Context) error {
 	}
 }
 
+// notifyReadLocked preserves a wake even before the receiver enters its select.
+// The caller holds mu and has already published the new exchange state.
+func (s *http1Server) notifyReadLocked() {
+	select {
+	case s.readWake <- struct{}{}:
+	default:
+	}
+}
+
 // readWait buffers bytes that arrive before the exchange finishes. Ordinary
 // keep-alive requests apply backpressure at the buffer bound: the current
 // request is already complete, so the response writer can finish independently.
@@ -219,8 +228,9 @@ func (s *http1Server) readWait(ctx context.Context) error {
 		}
 		room := layer.MaxRecordBytes - len(s.waitBuf)
 		reusable := s.request != nil && !strings.EqualFold(s.request.Method, "CONNECT") && !s.request.Headers.Has("Upgrade") &&
-			!http1.ConnectionClose(s.request.HTTPVersion, s.request.Headers) &&
-			(s.response == nil || !shouldMakePipe(s.request, s.response) && !connectionDone(s.request, s.response, false))
+			!headerToken(s.request.Headers, "Connection", "upgrade") && !http1.ConnectionClose(s.request.HTTPVersion, s.request.Headers) &&
+			(s.response == nil || !s.response.Headers.Has("Upgrade") && !headerToken(s.response.Headers, "Connection", "upgrade") &&
+				!shouldMakePipe(s.request, s.response) && !connectionDone(s.request, s.response, false))
 		if room == 0 && reusable {
 			s.mu.Unlock()
 			select {
@@ -333,6 +343,7 @@ func (s *http1Server) finish() {
 	s.mu.Lock()
 	s.state = http1Done
 	id := s.id
+	s.notifyReadLocked()
 	s.mu.Unlock()
 	s.wire.drop(id)
 	if s.onReadTermination != nil {
@@ -411,6 +422,7 @@ func (s *http1Server) sendHead(ctx context.Context, response *httpmsg.Response) 
 	s.sentChunked = chunkedTE(response.Headers)
 	s.mu.Lock()
 	s.response = response.Clone()
+	s.notifyReadLocked()
 	s.mu.Unlock()
 	return nil
 }
@@ -433,10 +445,7 @@ func (s *http1Server) sendEnd(ctx context.Context) error {
 	s.mu.Lock()
 	s.markDoneLocked(false, true, false)
 	closing := s.state == http1Done && !s.handingOver
-	select {
-	case s.readWake <- struct{}{}:
-	default:
-	}
+	s.notifyReadLocked()
 	s.mu.Unlock()
 	if closing {
 		s.closeWrite()
@@ -451,10 +460,7 @@ func (s *http1Server) sendError(ctx context.Context, event ResponseProtocolError
 	s.state = http1Done
 	id := s.id
 	s.kick()
-	select {
-	case s.readWake <- struct{}{}:
-	default:
-	}
+	s.notifyReadLocked()
 	s.mu.Unlock()
 	s.wire.drop(id)
 	if !writable {
@@ -481,6 +487,7 @@ func (s *http1Server) sendError(ctx context.Context, event ResponseProtocolError
 // parser input; only that side may drain it at a pipe switch. The caller
 // holds mu.
 func (s *http1Server) markDoneLocked(request, response, onReceive bool) {
+	defer s.notifyReadLocked()
 	if s.state == http1Done {
 		return
 	}

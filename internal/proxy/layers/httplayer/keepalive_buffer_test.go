@@ -70,6 +70,7 @@ func TestHTTP1KeepAliveBuffer(t *testing.T) {
 			overflow      bool
 			close         bool
 			cancel        bool
+			run           func(*testing.T)
 		}{
 			"early_next_request_within_limit":    {bytes: 1024},
 			"limit_backpressure_same_connection": {bytes: 1 << 20},
@@ -77,9 +78,22 @@ func TestHTTP1KeepAliveBuffer(t *testing.T) {
 			"pipelined_body_completion_order":    {bytes: 1 << 20, responseBytes: 1024},
 			"connection_close_preserved":         {close: true},
 			"bounded_wait_cancellation":          {bytes: 1 << 20, cancel: true},
+			"connection_upgrade_token_refused": {run: func(t *testing.T) {
+				for _, side := range []string{"request", "response"} {
+					t.Logf("Connection upgrade token on %s", side)
+					checkHTTP1LatePolicy(t, side)
+				}
+			}},
+			"late_until_close_response_refused": {run: func(t *testing.T) {
+				checkHTTP1LatePolicy(t, "until-close")
+			}},
 		}
 		for name, tt := range tests {
 			t.Run(name, func(t *testing.T) {
+				if tt.run != nil {
+					tt.run(t)
+					return
+				}
 				conn, peer := layertest.Pipe(t)
 				watch := &bufferWatchConn{Conn: conn, read: make(chan struct{}, 1)}
 				endpoint := newHTTP1Server(watch, newWireStore(), nil)
@@ -231,4 +245,74 @@ func TestHTTP1KeepAliveBuffer(t *testing.T) {
 			})
 		}
 	})
+}
+
+func checkHTTP1LatePolicy(t *testing.T, policy string) {
+	t.Helper()
+	conn, peer := layertest.Pipe(t)
+	watch := &bufferWatchConn{Conn: conn, read: make(chan struct{}, 1)}
+	endpoint := newHTTP1Server(watch, newWireStore(), nil)
+	ctx, cancel := context.WithTimeout(t.Context(), layertest.Timeout)
+	var work sync.WaitGroup
+	defer func() {
+		cancel()
+		_ = conn.Close()
+		_ = peer.Close()
+		work.Wait()
+	}()
+	request := "GET / HTTP/1.1\r\nContent-Length: 0\r\n"
+	if policy == "request" {
+		request += "Connection: keep-alive, UpGrAdE\r\n"
+	}
+	writeAll(t, peer, request+"\r\n")
+	for range 2 {
+		if _, err := endpoint.Receive(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	type received struct {
+		event RequestEvent
+		err   error
+	}
+	next := make(chan received, 1)
+	work.Go(func() { event, err := endpoint.Receive(ctx); next <- received{event, err} })
+	written := make(chan error, 1)
+	work.Go(func() { _, err := io.WriteString(peer, strings.Repeat("b", layer.MaxRecordBytes+1)); written <- err })
+	if policy != "request" {
+		// No response metadata exists yet: prove a full reusable wait is
+		// released when the real response makes this exchange non-reusable.
+		waitForHTTP1Buffer(t, endpoint, watch.read, layer.MaxRecordBytes)
+		response := &httpmsg.Response{HTTPVersion: "HTTP/1.1", StatusCode: 200, Reason: "OK"}
+		if policy == "response" {
+			response.Headers = httpmsg.Headers{
+				{Name: []byte("Content-Length"), Value: []byte("0")},
+				{Name: []byte("Connection"), Value: []byte("keep-alive, UpGrAdE")},
+			}
+		}
+		if err := endpoint.Send(ctx, ResponseHeaders{ID: 1, Response: response}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got received
+	select {
+	case got = <-next:
+	case <-ctx.Done():
+		t.Fatalf("%s policy did not release the bounded waiter: %v", policy, ctx.Err())
+	}
+	failure, ok := got.event.(RequestProtocolError)
+	if got.err != nil || !ok || failure.Code != GenericClientError || !strings.Contains(failure.Message, "buffered more than") || !endpoint.done() {
+		t.Fatalf("%s overflow: event=%#v error=%v done=%t", policy, got.event, got.err, endpoint.done())
+	}
+	if len(endpoint.waitBuf) != layer.MaxRecordBytes || cap(endpoint.waitBuf) > layer.MaxRecordBytes {
+		t.Fatalf("%s retained bytes=%d capacity=%d", policy, len(endpoint.waitBuf), cap(endpoint.waitBuf))
+	}
+	if err := <-written; err != nil {
+		t.Fatal(err)
+	}
+	if err := endpoint.Send(ctx, ResponseProtocolError{ID: 1, Code: GenericClientError, Message: failure.Message}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readToEOF(t, peer); got == "" {
+		t.Fatalf("%s overflow did not finish and close the response", policy)
+	}
 }

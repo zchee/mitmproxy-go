@@ -141,7 +141,8 @@ across eight shards, with at most two shards running concurrently, retaining rec
 The required CI fuzz-smoke jobs remain separate.
 
 The landed [proxy benchmark harness](docs/bench/README.md) covers HTTP/1, HTTP/2, HTTP/3 and WebSocket scenarios.
-A telemetry-enabled benchmark series is not included; no telemetry-on/off performance comparison is claimed.
+A telemetry-enabled benchmark series remains pending. The initial diagnostic was inconclusive; one additional
+bounded diagnostic is pending. No telemetry-on/off performance comparison is claimed.
 
 ## Development
 

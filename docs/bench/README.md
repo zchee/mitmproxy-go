@@ -117,6 +117,9 @@ GOMAXPROCS=8 go test -tags proxybench -run '^$' -bench '^BenchmarkProxyThroughpu
 A telemetry-enabled comparison is a separately named workload, not an environment
 switch; it does not replace the uninstrumented baseline. That series requires the
 owned collector integration and is not supplied by the uninstrumented harness.
+The telemetry-enabled series is pending: the initial diagnostic was inconclusive,
+and one additional bounded diagnostic is pending. No on/off performance result is
+claimed from either diagnostic.
 
 Save raw outputs as `<host>-<date>.txt` and provenance/interpretation as the matching
 `.md`, with host/toolchain/date/source commit but no operational tracking IDs.

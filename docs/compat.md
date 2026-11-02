@@ -496,6 +496,18 @@ does not reorder fragments or deduplicate retransmissions; pion handles retransm
 | Upstream Python can upgrade the console integration fixture `dumpfile-7.mitm`, which uses flow format 11. | The Go reader supports formats 18–21, not 11. Console integration uses a reproducibly transcoded current-format copy with pinned input/output digests; no legacy reader support was added. | Preserve the existing codec compatibility boundary rather than implying that the console extends it. |
 | Bindings can invoke clipboard and script commands. | Clipboard uses the existing optional build tag, without an OSC52 fallback. The script prompt targets the registered synchronous `script.run` command of the default Starlark loader. | Clipboard remains optional; scripting is registered by the default addon sets. |
 
+Console `Run` has one cleanup owner after delegation: the base master's
+`BeforeClose` callback closes the frontend before the base closes its log and
+dispatch services. A guarded outer fallback cleans up only failures that happen
+before entering the base `Run`. Public `Close` and constructor cleanup retain
+their existing behavior.
+
+After delegation, the first run/startup error takes precedence over a later
+cleanup error; a cleanup-only error is returned when there is no earlier error.
+Pre-delegation failures retain joined cleanup diagnostics. The existing frontend
+drain and telemetry shutdown budgets are unchanged. This is an ownership/error
+ordering rule, not an unconditional shutdown-latency guarantee.
+
 ### Renderer and terminal evidence boundary
 
 The live pinned-Python text-oracle contract covers flowlist, flowview and commander at 80×24 only. Both runtimes
@@ -1053,8 +1065,9 @@ defeats it (`internal/debugserver/server.go:29-87`, `snapshot.go`).
 Changing `pprof_addr` stops the old listener before attempting replacement; empty disables it. Invalid syntax leaves
 a working configuration unchanged. An occupied address logs an optional-feature warning and leaves diagnostics
 disabled; a later valid change can retry. Reconfiguration permits a one-second graceful cutoff within a five-second
-cleanup budget; Close uses one five-second budget (or the caller's earlier deadline), cancels that grace and forces
-connection close. **This is not a universal handler-join guarantee:** a loopback client that stalls after sending
+cleanup budget; Close stops the worker and listener under one five-second shutdown budget (or the caller's earlier
+deadline), cancels that grace and forces connection close. Repeated calls share the same result and completion
+acknowledgement. **Expiry does not guarantee that every active HTTP handler has joined:** a loopback client that stalls after sending
 headers can keep a handler goroutine alive past the five-second close grace. Deadline expiry reports unacknowledged
 cleanup; it must not be described as proof of zero remaining handlers. The server sets header/idle/write timeouts,
 not a general request-body read deadline (`internal/debugserver/controller.go:160-215,223-249,301-344`,

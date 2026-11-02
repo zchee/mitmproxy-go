@@ -156,6 +156,9 @@ hack/lint.sh   # go vet, golangci-lint
 go test -race -count=1 ./...
 ```
 
+[Timing-sensitive acceptance cases](docs/runbooks/acceptance-flakes.md) records the unrepaired socket/startup
+boundaries and the failure-retention policy; a green rerun is not a repair claim.
+
 ## Licence
 
 MIT; see [LICENSE](LICENSE). Upstream mitmproxy and mitmproxy-rs are MIT-licensed; fixtures copied from them carry

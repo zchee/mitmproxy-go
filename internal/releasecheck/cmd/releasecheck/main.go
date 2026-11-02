@@ -120,22 +120,33 @@ func sourceMetadata(ctx context.Context, goTool, root string, source releasechec
 	if err := releasecheck.ValidateTag(source.Tag); err != nil {
 		return releasecheck.Source{}, nil, err
 	}
-	status, err := exec.CommandContext(ctx, "git", "-C", root, "status", "--porcelain").Output()
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return releasecheck.Source{}, nil, fmt.Errorf("resolve source root: %w", err)
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return releasecheck.Source{}, nil, fmt.Errorf("read source root: %w", err)
+	}
+	if !info.IsDir() {
+		return releasecheck.Source{}, nil, fmt.Errorf("source root must be a directory")
+	}
+	status, err := exec.CommandContext(ctx, "git", "-C", root, "status", "--porcelain").Output() //nolint:gosec // The absolute existing directory is operator-trusted and passed as one argv to a fixed git operation, without a shell.
 	if err != nil {
 		return releasecheck.Source{}, nil, fmt.Errorf("read source status: %w", err)
 	}
 	if len(status) != 0 {
 		return releasecheck.Source{}, nil, fmt.Errorf("source checkout must be clean")
 	}
-	commit, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "HEAD").Output()
+	commit, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "HEAD").Output() //nolint:gosec // The preceding status verified this operator-trusted directory is clean; its root is one argv to a fixed operation, without a shell.
 	if err != nil {
 		return releasecheck.Source{}, nil, fmt.Errorf("read source commit: %w", err)
 	}
-	tree, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "HEAD^{tree}").Output()
+	tree, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "HEAD^{tree}").Output() //nolint:gosec // The preceding status verified this operator-trusted directory is clean; its root is one argv to a fixed operation, without a shell.
 	if err != nil {
 		return releasecheck.Source{}, nil, fmt.Errorf("read source tree: %w", err)
 	}
-	modules, err := exec.CommandContext(ctx, goTool, "-C", root, "list", "-m", "all").Output() //nolint:gosec // goTool is the validated absolute toolchain executable; all arguments are fixed.
+	modules, err := exec.CommandContext(ctx, goTool, "-C", root, "list", "-m", "all").Output() //nolint:gosec // goTool is the validated absolute executable; the clean operator-trusted root is one argv to a fixed Go operation, without a shell.
 	if err != nil {
 		return releasecheck.Source{}, nil, fmt.Errorf("read module versions: %w", err)
 	}

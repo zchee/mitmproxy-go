@@ -128,6 +128,8 @@ func verifyWrongSource(t *testing.T) {
 		"unicode whitespace in expected compiler": {[]string{"--go-version", "go1.27.3 "}, "requires --go-version"},
 		"wrong expected compiler":                 {[]string{"--go-version", "go1.26.0"}, "source provenance mismatch"},
 		"relative trusted root":                   {[]string{"--go-version", "go1.27.3", "--source-root", "."}, "must be absolute"},
+		"missing trusted root":                    {[]string{"--go-version", "go1.27.3", "--source-root", filepath.Join(family.Root, "missing")}, "read source root"},
+		"trusted root is a file":                  {[]string{"--go-version", "go1.27.3", "--source-root", filepath.Join(family.Root, "go.mod")}, "source root must be a directory"},
 		"unknown option":                          {[]string{"--go-version", "go1.27.3", "--unexpected"}, "flag provided but not defined"},
 		"extra positional argument":               {[]string{"--go-version", "go1.27.3", "extra"}, "requires --go-version"},
 	}

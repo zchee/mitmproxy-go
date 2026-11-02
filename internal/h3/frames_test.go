@@ -13,7 +13,7 @@ import (
 )
 
 func TestFrameParser(t *testing.T) {
-	// quic-go v0.63.0 http3/frames_test.go supplies the wire vectors.
+	// quic-go v0.64.1 http3/frames_test.go:153-186 supplies the HEADERS/DATA length vectors.
 	tests := map[string]struct {
 		wire []byte
 		want frame

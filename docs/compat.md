@@ -1339,6 +1339,16 @@ fires one error hook and answers SERVFAIL; no FORMERR response is fabricated. Ot
 These policy rows are not a claim that every upstream HTTP3 event/hook sequence is independently reproduced.
 Extended CONNECT, HTTP Datagrams, priority scheduling and received-1xx forwarding are not provided by this contract.
 
+## internal/proxy/packettransport
+
+Shared UDP listener queue pressure drops the newest datagram without retiring a
+live tuple, in both directions. Unknown peers are not admitted when aggregate
+capacity is unavailable. Per-tuple and listener queued-payload bounds are
+unchanged; one active socket-write payload remains outside those counters.
+Oversized datagrams and a full new-tuple accept queue keep their existing error
+behavior. See [the exact accounting boundary](bench/README.md#shared-udp-queue-pressure)
+for the limits and the absence of a fairness or established-tuple metadata quota.
+
 ## internal/proxy/layers/quic
 
 | Upstream | Go | Reason |

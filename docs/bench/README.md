@@ -85,6 +85,35 @@ default smoke retains its separate bounded, one-connection HTTP/1 child profile.
 go test -race -tags proxybench -count=1 -cpu=8 -timeout=60m -run '^TestProxyBench(Harness|Matrix)$' ./internal/proxy/bench
 ```
 
+## Shared UDP queue pressure
+
+The shared UDP listener drops the newest datagram at either a per-tuple or an
+aggregate queue bound without retiring an existing live tuple. The same policy
+applies to reads and writes. A pressure-dropped `WriteTo` returns `len(p), nil`,
+as ordinary UDP loss can do; a saturated pending-write channel rolls back that
+new job's accounting rather than cancelling the tuple. Unknown peers are not
+admitted when aggregate capacity is unavailable, so rejected input does not churn
+live tuple identities.
+
+The queued/accounted read-plus-pending-write bounds remain **64 packets / 1 MiB
+per tuple** and **4,096 packets / 64 MiB per listener**. One active socket-write
+payload, at most **65,507 bytes globally**, has already left both counters and
+can still be physically retained. Read scratch space, tuple/job metadata and
+kernel socket buffers are separate. This is not a global bound on established
+tuple metadata or a fairness/delivery guarantee under sustained load.
+
+Oversized datagrams and an actually full new-tuple accept queue retain their
+existing error behavior. Cancellation, deadlines, socket errors and explicit
+close retain their existing ownership/retirement behavior.
+
+### HTTP/3 high-concurrency measurement
+
+The `h3/connections=256/bytes=1048576` measurement remains pending while the packet
+pressure change is unlanded. Its previous failure is not a zero-valued result or
+proof of a causal merge boundary. The row is eligible for a new measurement only
+after the repair lands and its unchanged correctness scenario passes; no new
+throughput number, full-baseline refresh or restored measurement is claimed here.
+
 ## Reproduce a baseline
 
 Never run benchmark campaigns in parallel, including campaigns on different

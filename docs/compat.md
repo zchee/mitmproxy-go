@@ -131,6 +131,12 @@ No differences beyond the message content rule listed under [flow](#flow).
 | DNS wire and expanded record data are parsed through Python helpers (`mitmproxy/dns.py`, `mitmproxy/net/dns/domain_names.py`). | Wire messages are capped at 65,535 bytes; decoded names and RDATA share a 1 MiB expansion budget. Compression pointers are iterative, backward-only and work-bounded. | Bound untrusted decoding. Codec round-trip, malformed-pointer, expansion and fuzz tests verify these limits. |
 | Domain names use Python's IDNA 2003 codec and Unicode 3.2 nameprep tables (`mitmproxy/net/dns/domain_names.py`). | Uses x/net/idna UTS #46 transitional processing. Later assignments can differ: U+1E9E maps to `ss` rather than `xn--kkg`. | Use the maintained Go IDNA implementation; `TestIDNAMappings` records the difference. |
 
+The retained-transaction capacity tests use an owned datagram queue for every UDP
+case, including suppressed replies. They retain the 1,024-ID bound, at-bound ID
+reuse, refusal of a 1,025th ID and flow finalization assertions. This tests DNS
+layer state without depending on socket delivery; it does not certify real UDP
+admission, tuple reuse or kernel buffering.
+
 Test fixtures for socket-backed DNS resolver origins, mode-server DNS listeners
 and origins, DNS-layer UDP sessions, and packet-factory shared-port rows acquire
 live TCP/UDP pairs through `freeport.ListenPair`

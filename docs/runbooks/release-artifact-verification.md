@@ -47,8 +47,8 @@ expected artifact toolchain instead.
 
 The release workflow supplies the expected version from its trusted go.mod-derived
 toolchain step, not from the downloaded provenance or the verifier runtime. The
-source-root selector is verification-only; it does not change recording or
-checksum-generation behavior.
+`--source-root` selector is accepted only by `verify`; `record` and `checksums`
+continue to use the invoking checkout and its toolchain.
 
 ## Deferred release planning
 

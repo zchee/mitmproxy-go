@@ -278,8 +278,11 @@ func (m *Master) Run(ctx context.Context) (err error) {
 		return errors.New("console master already run")
 	}
 	defer close(m.runDone)
+	delegated := false
 	defer func() {
-		err = errors.Join(err, m.closeFrontend(context.WithoutCancel(ctx)), m.Master.Close(context.WithoutCancel(ctx)))
+		if !delegated {
+			err = errors.Join(err, m.closeFrontend(context.WithoutCancel(ctx)), m.Master.Close(context.WithoutCancel(ctx)))
+		}
 	}()
 	m.mu.Lock()
 	closed, owner := m.closed, m.owner
@@ -370,6 +373,7 @@ func (m *Master) Run(ctx context.Context) (err error) {
 			}
 		}()
 	}
+	delegated = true
 	return m.Master.Run(ctx)
 }
 

@@ -298,8 +298,9 @@ func (c *Controller) Status() Status {
 	return status
 }
 
-// Close joins the worker, listener and active HTTP work under one five-second
-// deadline. Repeated calls share the same result and completion acknowledgement.
+// Close stops the worker and listener under one five-second shutdown budget.
+// Expiry does not guarantee that every active HTTP handler has joined.
+// Repeated calls share the same result and completion acknowledgement.
 func (c *Controller) Close(ctx context.Context) error {
 	c.closeOnce.Do(func() {
 		deadline := time.Now().Add(5 * time.Second)

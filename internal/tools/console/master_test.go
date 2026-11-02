@@ -14,13 +14,16 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	gocmp "github.com/google/go-cmp/cmp"
 
+	"github.com/zchee/mitmproxy-go/master"
 	"github.com/zchee/mitmproxy-go/options"
 )
 
@@ -136,6 +139,73 @@ func consoleLifecycleChild(scenario string) error {
 	}
 	_, err = fmt.Fprintln(os.Stdout, "console lifecycle complete")
 	return err
+}
+
+func TestConsoleStartupErrorPreserved(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	opts := options.New()
+	mustConsole(t, opts.Update(ctx, map[string]any{"confdir": t.TempDir(), "server": false}))
+	var stderr bytes.Buffer
+	m, err := New(ctx, Config{Options: opts, Stdout: io.Discard, Stderr: &stderr})
+	mustConsole(t, err)
+	t.Cleanup(func() { mustConsole(t, m.Close(context.WithoutCancel(t.Context()))) })
+	_, err = m.NewModel()
+	mustConsole(t, err)
+
+	var requests atomic.Int64
+	collector := observabilityCollector(t, &requests)
+	observabilityEndpoint(t, m, collector.URL)
+	mustConsole(t, m.telemetry.Running(ctx))
+	mustConsole(t, m.telemetry.Sync(ctx))
+	mustConsole(t, m.debug.Running(ctx))
+	observabilityDebugAddress(t, m, "127.0.0.1:0")
+	if !m.telemetry.Status().Enabled || !m.debug.Status().Enabled {
+		t.Fatal("startup fixture did not start the owned services")
+	}
+
+	frameReady := make(chan struct{})
+	go m.Bridge.DrainTo(func(tea.Msg) { close(frameReady) })()
+	m.Bridge.Invalidate()
+	select {
+	case <-frameReady:
+	case <-ctx.Done():
+		t.Fatalf("presentation worker did not start: %v", ctx.Err())
+	}
+	// Leave the frame unacknowledged so cleanup must release its waiting worker.
+	m.Logger().Error("console startup failure")
+	err = m.Run(ctx)
+	startupErr, ok := errors.AsType[*master.ExitError](err)
+	if !ok || startupErr.ExitCode() != 1 {
+		t.Fatalf("startup error classification = %T (%v), want ExitError with status 1", err, err)
+	}
+	if err != startupErr {
+		t.Fatalf("Run wrapped the original startup error: %T (%v)", err, err)
+	}
+	if diff := gocmp.Diff("Error logged during startup, exiting...", err.Error()); diff != "" {
+		t.Fatalf("startup error (-want +got):\n%s", diff)
+	}
+	if diff := gocmp.Diff("Error logged during startup:\nconsole startup failure\n", stderr.String()); diff != "" {
+		t.Fatalf("startup diagnostic (-want +got):\n%s", diff)
+	}
+	if status := m.telemetry.Status(); !status.Stopped || status.Enabled {
+		t.Fatalf("telemetry did not join after startup failure: %+v", status)
+	}
+	if status := m.debug.Status(); !status.Stopped || status.Enabled || status.Address != "" {
+		t.Fatalf("diagnostics did not join after startup failure: %+v", status)
+	}
+	for name, done := range map[string]<-chan struct{}{"Run": m.runDone, "bridge drain": m.Bridge.done, "bridge work": m.Bridge.workDone} {
+		select {
+		case <-done:
+		default:
+			t.Fatalf("%s did not join before Run returned", name)
+		}
+	}
+	if !errors.Is(m.Bridge.Context().Err(), context.Canceled) {
+		t.Fatal("startup failure left the bridge lifetime open")
+	}
+	mustConsole(t, m.Close(ctx))
+	mustConsole(t, m.Close(ctx))
 }
 
 func TestConsoleMaster(t *testing.T) {

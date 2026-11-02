@@ -9,9 +9,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
+	"debug/buildinfo"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"os"
 	"path"
 	"regexp"
 	"slices"
@@ -123,7 +125,8 @@ func LDFlags(tag string) (string, error) {
 	return "-s -w -X " + modulePath + "/internal/version.Version=" + tag, nil
 }
 
-// ValidateProvenance requires complete metadata matching the expected source.
+// ValidateProvenance requires complete metadata matching the independently asserted source.
+// Toolchain consistency does not establish publisher authenticity.
 func ValidateProvenance(p Provenance, source Source, modules []string) error {
 	if err := ValidateTag(source.Tag); err != nil {
 		return err
@@ -208,7 +211,9 @@ func ValidateChecksums(manifest []byte, digests map[string][sha256.Size]byte, ex
 	return nil
 }
 
-// ValidateArchive checks exact members and hashes without extracting any paths.
+// ValidateArchive checks exact members, hashes and embedded toolchain versions.
+// Executables are inspected in bounded private temporary files, never executed.
+// Matching an independently asserted toolchain does not authenticate the publisher.
 func ValidateArchive(input io.Reader, p Provenance, license [sha256.Size]byte) error {
 	root, err := ArchiveRoot(p.Tag, p.Target)
 	if err != nil {
@@ -263,8 +268,12 @@ func ValidateArchive(input io.Reader, p Provenance, license [sha256.Size]byte) e
 			return fmt.Errorf("release archive exceeds size bound")
 		}
 		hash := sha256.New()
-		if _, err := io.Copy(hash, archive); err != nil {
-			return fmt.Errorf("hash release member: %w", err)
+		if file == "LICENSE" {
+			if _, err := io.Copy(hash, archive); err != nil {
+				return fmt.Errorf("hash release member: %w", err)
+			}
+		} else if err := inspectExecutable(archive, hash, p.GoVersion); err != nil {
+			return fmt.Errorf("inspect archive executable %q: %w", name, err)
 		}
 		if hex.EncodeToString(hash.Sum(nil)) != want {
 			return fmt.Errorf("archive member checksum mismatch: %q", name)
@@ -283,4 +292,26 @@ func ValidateArchive(input io.Reader, p Provenance, license [sha256.Size]byte) e
 		return fmt.Errorf("unexpected data after release tar terminator")
 	}
 	return nil
+}
+
+func inspectExecutable(input io.Reader, hash io.Writer, expectedVersion string) error {
+	file, err := os.CreateTemp("", "releasecheck-executable-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(file.Name()) }()
+	defer func() { _ = file.Close() }()
+	// The caller has already bounded this tar member to 512 MiB. CreateTemp
+	// chooses the private regular file name; archive paths are never extracted.
+	if _, err := io.Copy(io.MultiWriter(file, hash), input); err != nil {
+		return err
+	}
+	info, err := buildinfo.Read(file)
+	if err != nil {
+		return fmt.Errorf("read embedded Go build information: %w", err)
+	}
+	if info.GoVersion != expectedVersion {
+		return fmt.Errorf("embedded Go version %q differs from expected %q", info.GoVersion, expectedVersion)
+	}
+	return file.Close()
 }

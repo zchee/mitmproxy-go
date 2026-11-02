@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	json "encoding/json/v2"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -19,6 +20,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/zchee/mitmproxy-go/internal/releasecheck"
 )
@@ -60,7 +62,7 @@ func toolchainGo() (string, error) {
 
 func run(ctx context.Context, goTool string, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: releasecheck tag VERSION | publish-tag VERSION | record VERSION GOOS GOARCH BIN_DIR | checksums DIR VERSION | verify DIR VERSION")
+		return fmt.Errorf("usage: releasecheck tag VERSION | publish-tag VERSION | record VERSION GOOS GOARCH BIN_DIR | checksums DIR VERSION | verify DIR VERSION --go-version VERSION [--source-root ABSOLUTE_CHECKOUT]")
 	}
 	switch args[0] {
 	case "tag", "publish-tag":
@@ -80,33 +82,65 @@ func run(ctx context.Context, goTool string, args []string) error {
 			return fmt.Errorf("record expects version, GOOS, GOARCH and binary directory")
 		}
 		return record(ctx, goTool, args[1], releasecheck.Target{GOOS: args[2], GOARCH: args[3]}, args[4])
-	case "checksums", "verify":
+	case "checksums":
 		if len(args) != 3 {
-			return fmt.Errorf("%s expects an artifact directory and version", args[0])
+			return fmt.Errorf("checksums expects an artifact directory and version")
 		}
-		return verify(ctx, goTool, args[1], args[2], args[0] == "checksums")
+		return verify(ctx, goTool, args[1], releasecheck.Source{Tag: args[2], GoVersion: runtime.Version()}, ".", true)
+	case "verify":
+		if len(args) < 3 {
+			return fmt.Errorf("verify expects an artifact directory and version, then --go-version and optional --source-root")
+		}
+		flags := flag.NewFlagSet("verify", flag.ContinueOnError)
+		goVersion := flags.String("go-version", "", "required independently asserted Go version, including experiment suffixes; consistency does not prove publisher authenticity")
+		sourceRoot := flags.String("source-root", "", "absolute trusted clean source checkout (default current source root)")
+		if err := flags.Parse(args[3:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || !strings.HasPrefix(*goVersion, "go1.") || strings.ContainsFunc(*goVersion, unicode.IsSpace) {
+			return fmt.Errorf("verify requires --go-version with an independently asserted go-prefixed version without whitespace")
+		}
+		if *sourceRoot == "" {
+			root, err := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel").Output()
+			if err != nil {
+				return fmt.Errorf("locate current source root: %w", err)
+			}
+			*sourceRoot = strings.TrimSpace(string(root))
+		}
+		if !filepath.IsAbs(*sourceRoot) {
+			return fmt.Errorf("verify --source-root must be absolute")
+		}
+		return verify(ctx, goTool, args[1], releasecheck.Source{Tag: args[2], GoVersion: *goVersion}, *sourceRoot, false)
 	default:
 		return fmt.Errorf("unknown releasecheck command %q", args[0])
 	}
 }
 
-func sourceMetadata(ctx context.Context, goTool, tag string) (releasecheck.Source, []string, error) {
-	if err := releasecheck.ValidateTag(tag); err != nil {
+func sourceMetadata(ctx context.Context, goTool, root string, source releasecheck.Source) (releasecheck.Source, []string, error) {
+	if err := releasecheck.ValidateTag(source.Tag); err != nil {
 		return releasecheck.Source{}, nil, err
 	}
-	commit, err := exec.CommandContext(ctx, "git", "rev-parse", "HEAD").Output()
+	status, err := exec.CommandContext(ctx, "git", "-C", root, "status", "--porcelain").Output()
+	if err != nil {
+		return releasecheck.Source{}, nil, fmt.Errorf("read source status: %w", err)
+	}
+	if len(status) != 0 {
+		return releasecheck.Source{}, nil, fmt.Errorf("source checkout must be clean")
+	}
+	commit, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "HEAD").Output()
 	if err != nil {
 		return releasecheck.Source{}, nil, fmt.Errorf("read source commit: %w", err)
 	}
-	tree, err := exec.CommandContext(ctx, "git", "rev-parse", "HEAD^{tree}").Output()
+	tree, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "HEAD^{tree}").Output()
 	if err != nil {
 		return releasecheck.Source{}, nil, fmt.Errorf("read source tree: %w", err)
 	}
-	modules, err := exec.CommandContext(ctx, goTool, "list", "-m", "all").Output() //nolint:gosec // goTool is the validated absolute toolchain executable; all arguments are fixed.
+	modules, err := exec.CommandContext(ctx, goTool, "-C", root, "list", "-m", "all").Output() //nolint:gosec // goTool is the validated absolute toolchain executable; all arguments are fixed.
 	if err != nil {
 		return releasecheck.Source{}, nil, fmt.Errorf("read module versions: %w", err)
 	}
-	source := releasecheck.Source{Tag: tag, Commit: strings.TrimSpace(string(commit)), Tree: strings.TrimSpace(string(tree)), GoVersion: runtime.Version()}
+	source.Commit = strings.TrimSpace(string(commit))
+	source.Tree = strings.TrimSpace(string(tree))
 	return source, strings.Split(strings.TrimSpace(string(modules)), "\n"), nil
 }
 
@@ -140,7 +174,7 @@ func hashFile(root *os.Root, name string, expected []string) ([sha256.Size]byte,
 }
 
 func record(ctx context.Context, goTool, tag string, target releasecheck.Target, dir string) error {
-	source, modules, err := sourceMetadata(ctx, goTool, tag)
+	source, modules, err := sourceMetadata(ctx, goTool, ".", releasecheck.Source{Tag: tag, GoVersion: runtime.Version()})
 	if err != nil {
 		return err
 	}
@@ -198,8 +232,8 @@ func record(ctx context.Context, goTool, tag string, target releasecheck.Target,
 	return err
 }
 
-func verify(ctx context.Context, goTool, dir, tag string, create bool) error {
-	expected, err := releasecheck.ExpectedFiles(tag)
+func verify(ctx context.Context, goTool, dir string, source releasecheck.Source, root string, create bool) error {
+	expected, err := releasecheck.ExpectedFiles(source.Tag)
 	if err != nil {
 		return err
 	}
@@ -239,11 +273,11 @@ func verify(ctx context.Context, goTool, dir, tag string, create bool) error {
 		}
 		digests[name] = digest
 	}
-	source, modules, err := sourceMetadata(ctx, goTool, tag)
+	source, modules, err := sourceMetadata(ctx, goTool, root, source)
 	if err != nil {
 		return err
 	}
-	sourceRoot, err := os.OpenRoot(".")
+	sourceRoot, err := os.OpenRoot(root)
 	if err != nil {
 		return err
 	}
@@ -256,7 +290,7 @@ func verify(ctx context.Context, goTool, dir, tag string, create bool) error {
 		return closeErr
 	}
 	for _, target := range releasecheck.Targets() {
-		stem, err := releasecheck.ArchiveRoot(tag, target)
+		stem, err := releasecheck.ArchiveRoot(source.Tag, target)
 		if err != nil {
 			return err
 		}

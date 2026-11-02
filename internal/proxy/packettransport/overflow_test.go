@@ -6,7 +6,6 @@ package packettransport
 import (
 	"bytes"
 	"context"
-	"errors"
 	"net"
 	"strconv"
 	"testing"
@@ -103,13 +102,13 @@ func TestTupleQueueOverflowDrops(t *testing.T) {
 			kind string
 			size int
 		}{
-			"per_tuple_packets_survive":       {kind: "receive", size: 1},
-			"per_tuple_bytes_survive":         {kind: "receive", size: layer.MaxUDPPacketBytes},
-			"per_tuple_write_packets_survive": {kind: "write", size: 1},
-			"per_tuple_write_bytes_survive":   {kind: "write", size: layer.MaxUDPPacketBytes},
-			"drained_tuple_resumes":           {kind: "drain", size: 1},
-			"listener_bound_still_evicts":     {kind: "listener", size: 1},
-			"accept_full_still_evicts":        {kind: "accept"},
+			"per_tuple_packets_survive":               {kind: "receive", size: 1},
+			"per_tuple_bytes_survive":                 {kind: "receive", size: layer.MaxUDPPacketBytes},
+			"per_tuple_write_packets_survive":         {kind: "write", size: 1},
+			"per_tuple_write_bytes_survive":           {kind: "write", size: layer.MaxUDPPacketBytes},
+			"drained_tuple_resumes":                   {kind: "drain", size: 1},
+			"listener_bound_drops_without_retirement": {kind: "listener", size: 1},
+			"accept_full_still_evicts":                {kind: "accept"},
 		}
 		for name, tt := range tests {
 			t.Run(name, func(t *testing.T) {
@@ -164,14 +163,14 @@ func TestTupleQueueOverflowDrops(t *testing.T) {
 					accepted := listener.enqueueLocked(conn, []byte("overflow"))
 					remaining := listener.queuedPackets
 					listener.mu.Unlock()
-					if accepted || remaining != layer.ListenerPacketQueueCapacity-count {
+					if accepted || remaining != layer.ListenerPacketQueueCapacity {
 						t.Fatalf("listener overflow accepted=%t queued=%d", accepted, remaining)
 					}
-					if _, _, err := conn.ReadFrom(nil); !errors.Is(err, layer.ErrPacketOverflow) {
-						t.Fatalf("listener-wide overflow read=%v", err)
+					if conn.Context().Err() != nil {
+						t.Fatalf("listener-wide overflow retired tuple: %v", context.Cause(conn.Context()))
 					}
-					if !errors.Is(context.Cause(conn.Context()), layer.ErrPacketOverflow) {
-						t.Fatalf("listener-wide overflow cause=%v", context.Cause(conn.Context()))
+					if _, _, err := conn.ReadFrom(nil); err != nil {
+						t.Fatalf("listener-wide overflow discarded retained packet: %v", err)
 					}
 					return
 				}

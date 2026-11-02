@@ -130,6 +130,10 @@ The matrix produces **18 binaries in six archives**: Linux, macOS and Windows ×
 versions, per-binary hashes and `go version -m` output. `SHA256SUMS` covers exactly the six archives and six provenance
 files, not itself. Checksums establish integrity, not publisher signing or notarization.
 
+[Artifact verification](docs/runbooks/release-artifact-verification.md) explains the required independent
+`--go-version` expectation and optional trusted `--source-root`. The verifier checks six provenance documents
+and 18 embedded executable toolchain versions; it proves consistency, not publisher authenticity.
+
 Release builds inject the tag into `--version`; ordinary source builds retain `0.1.0-dev`. Archives do not include
 native local-mode redirectors or establish native platform evidence; follow the runbooks above.
 

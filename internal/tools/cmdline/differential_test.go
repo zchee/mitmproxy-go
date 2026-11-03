@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/zchee/mitmproxy-go/internal/difftest"
+	"github.com/zchee/mitmproxy-go/internal/testutil"
 	"github.com/zchee/mitmproxy-go/options"
 )
 
@@ -42,6 +43,25 @@ func TestDifferentialFlagTable(t *testing.T) {
 	if err := json.Unmarshal(difftest.Python(t, flagTableReference, nil), &reference); err != nil {
 		t.Fatal(err)
 	}
+	policy := testutil.DeferredUpstreamOptions(t)
+	metadata := make(map[string]testutil.DeferredOption, len(reference.Options))
+	for name, row := range reference.Options {
+		metadata[name] = testutil.DeferredOption{Type: row.Type, Default: row.Default}
+	}
+	if _, err := policy.Project(testutil.RawLiveOptions, difftest.PinnedCommit, "DumpMaster", metadata); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range policy.Names() {
+		delete(reference.Options, name)
+	}
+	for _, flag := range policy.FlagNames() {
+		_, present := reference.All[flag]
+		wantPresent := difftest.PinnedCommit == "51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7"
+		if present != wantPresent {
+			t.Fatalf("deferred flag %s presence=%v, want %v", flag, present, wantPresent)
+		}
+		delete(reference.All, flag)
+	}
 	tests := map[string]struct {
 		full bool
 		want map[string]flagRow
@@ -64,6 +84,9 @@ func TestDifferentialFlagTable(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
+			}
+			if err := policy.CheckGoNames(opts.Keys()); err != nil {
+				t.Fatal(err)
 			}
 			cmd := New(opts, "test")
 			got := make(map[string]flagRow)

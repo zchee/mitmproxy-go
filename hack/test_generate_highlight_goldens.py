@@ -415,9 +415,9 @@ def test_provenance_roundtrip(
         )
     if sys.platform == "linux":
         assert companion["archive_verified_files"] == [
-            "mitmproxy_linux-0.12.11.data/scripts/mitmproxy-linux-redirector"
+            "mitmproxy_linux-0.12.15.data/scripts/mitmproxy-linux-redirector"
         ]
-    assert companion["version"] == "0.12.11"
+    assert companion["version"] == "0.12.15"
     assert (
         companion["distribution"]
         == {

@@ -4,7 +4,8 @@
 package contentviews
 
 // The expected values below were produced by the pinned Rust MsgPack view
-// (mitmproxy-rs 51fe2b7, rmp-serde 1.3.1, serde_yaml 0.9.34) through its
+// (mitmproxy-rs 51fe2b7, product source identical at v0.12.15,
+// rmp-serde 1.3.1, serde_yaml 0.9.34) through its
 // public prettify and reencode calls. Error rows keep only the error class.
 // Rows where this port differs on purpose are tested separately.
 

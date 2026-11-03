@@ -21,15 +21,15 @@ import (
 )
 
 const (
-	redirectorVersion     = "0.12.11"
-	macOSWheelURL         = "https://files.pythonhosted.org/packages/fe/7f/7f77310e810ab3ee47357e4ce1bdafc05d429e411bad63c0e546ceef2f2e/mitmproxy_macos-0.12.11-py3-none-any.whl"
-	macOSWheelSHA256      = "63349d9b46514ca679547651f7c0548f9222892edfbcba087b82b3244fbae859"
-	windowsWheelURL       = "https://files.pythonhosted.org/packages/52/c9/969db83d2e72de672e88a4ff556d07763ac2a106ba676f6831ced8c4db4e/mitmproxy_windows-0.12.11-py3-none-any.whl"
-	windowsWheelSHA256    = "59addc8864669a08f8cb48d8b29129efb1ca5f6cba9696e2d91f1f506b21a2d7"
-	linuxARM64WheelURL    = "https://files.pythonhosted.org/packages/f0/2a/ad2ae5e4c6383175c89fbc1c24c9e084a2f5b9325951e91cc3eb4b2e1649/mitmproxy_linux-0.12.11-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl"
-	linuxARM64WheelSHA256 = "3de4f96c11565cca2d051655f8ca23f8f24f4b3220e9ca3b0ad81007f293e9da"
-	linuxAMD64WheelURL    = "https://files.pythonhosted.org/packages/53/db/1a4295e7fc6d6d975ce93a49107514bd2e13873a39c643c75109391fd336/mitmproxy_linux-0.12.11-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
-	linuxAMD64WheelSHA256 = "0e5670a6b82546ebc0f947d79adfcb3c001ba3136a10ce848a2f4e2f336611c4"
+	redirectorVersion     = "0.12.15"
+	macOSWheelURL         = "https://files.pythonhosted.org/packages/63/98/ce0d7feb45bacd086ac387d97b6b7725b5b5a0edf84283fbeebdd3da85e6/mitmproxy_macos-0.12.15-py3-none-any.whl"
+	macOSWheelSHA256      = "ed5693f89b0cbd1d2a8c5a31baed2bd7a74b0aad68672e08444c1868c38f49f8"
+	windowsWheelURL       = "https://files.pythonhosted.org/packages/c9/6b/ba00297f8c5093c9f8b0b1476d68eca196789365d7d5e164929e4dd09840/mitmproxy_windows-0.12.15-py3-none-any.whl"
+	windowsWheelSHA256    = "11774ef89436e38d8a36a267eb14048ada7a155d153767410a90012f0d19f8d3"
+	linuxARM64WheelURL    = "https://files.pythonhosted.org/packages/62/31/538d49c2e4943fac02ae154967b7ed21a952c7650e5835e60e41ac69bab4/mitmproxy_linux-0.12.15-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl"
+	linuxARM64WheelSHA256 = "59e54f1ab8952530333c91b484fad16a3ad4ade35473929d30ca68d6a9267a27"
+	linuxAMD64WheelURL    = "https://files.pythonhosted.org/packages/fa/ef/32bf79a030d7d0775c31d0c866d68030da386d738be284e8527c0ffa230e/mitmproxy_linux-0.12.15-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+	linuxAMD64WheelSHA256 = "b5b1c277980ba37de4af21da19fd67466e0ebdefba7c0c325d6c9d48c32a94f8"
 	maxArtifactBytes      = 64 << 20
 	maxArtifactEntries    = 128
 )
@@ -43,7 +43,7 @@ var artifactAcquisition = make(chan struct{}, 1)
 // AcquireArtifact returns a verified cached redirector payload, or overridePath.
 // Overrides must name regular files, or app directories on macOS, and must not
 // be symlinks. They never trigger network acquisition.
-// Otherwise the pinned wheel is downloaded beneath confdir/redirector/0.12.11,
+// Otherwise the pinned wheel is downloaded beneath confdir/redirector/0.12.15,
 // verified before bounded extraction, and published atomically. macOS returns
 // the application tar; Windows and Linux return their executables. It never
 // installs applications, starts a redirector, or activates an extension.
@@ -66,15 +66,15 @@ func AcquireArtifact(ctx context.Context, confdir, overridePath, goos, goarch st
 	var artifact artifactSpec
 	switch goos {
 	case "darwin":
-		artifact = artifactSpec{"mitmproxy_macos-0.12.11-py3-none-any.whl", macOSWheelURL, macOSWheelSHA256, "mitmproxy_macos/Mitmproxy Redirector.app.tar"}
+		artifact = artifactSpec{"mitmproxy_macos-0.12.15-py3-none-any.whl", macOSWheelURL, macOSWheelSHA256, "mitmproxy_macos/Mitmproxy Redirector.app.tar"}
 	case "windows":
-		artifact = artifactSpec{"mitmproxy_windows-0.12.11-py3-none-any.whl", windowsWheelURL, windowsWheelSHA256, "mitmproxy_windows/windows-redirector.exe"}
+		artifact = artifactSpec{"mitmproxy_windows-0.12.15-py3-none-any.whl", windowsWheelURL, windowsWheelSHA256, "mitmproxy_windows/windows-redirector.exe"}
 	case "linux":
 		switch goarch {
 		case "arm64":
-			artifact = artifactSpec{"mitmproxy_linux-0.12.11-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", linuxARM64WheelURL, linuxARM64WheelSHA256, "mitmproxy_linux-0.12.11.data/scripts/mitmproxy-linux-redirector"}
+			artifact = artifactSpec{"mitmproxy_linux-0.12.15-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", linuxARM64WheelURL, linuxARM64WheelSHA256, "mitmproxy_linux-0.12.15.data/scripts/mitmproxy-linux-redirector"}
 		case "amd64":
-			artifact = artifactSpec{"mitmproxy_linux-0.12.11-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", linuxAMD64WheelURL, linuxAMD64WheelSHA256, "mitmproxy_linux-0.12.11.data/scripts/mitmproxy-linux-redirector"}
+			artifact = artifactSpec{"mitmproxy_linux-0.12.15-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", linuxAMD64WheelURL, linuxAMD64WheelSHA256, "mitmproxy_linux-0.12.15.data/scripts/mitmproxy-linux-redirector"}
 		default:
 			return "", fmt.Errorf("unsupported redirector architecture: %s/%s", goos, goarch)
 		}

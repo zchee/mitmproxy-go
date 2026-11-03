@@ -29,7 +29,7 @@
       "start_line": 41
     }
   ],
-  "input_manifest_sha256": "cfbb7073e43ba8e4468b6aca837c3efe0eed04dc62a5abeaeec7183bbf28536c",
+  "input_manifest_sha256": "4191533cb46bf1309fc6c07790080d504005e85508342eee6ce9f8d9e27fbfff",
   "inputs": [
     {
       "id": "css_debug",
@@ -39,7 +39,7 @@
       "physical_lines": 1,
       "sha256": "5176f0da5299f337c2884103ff71c06a58f699e48da394c68297eb256658aab5",
       "source": {
-        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "commit": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
         "end_line": 48,
         "function": "debug",
         "git_blob": "500829037ae1e5f1606e658ce5f33c4aeb24e039",
@@ -58,7 +58,7 @@
       "physical_lines": 7,
       "sha256": "ecb694f6e002c68e65ca30a0dbf586a231c4af84c61c878fee7b57e091fbc193",
       "source": {
-        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "commit": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
         "end_line": 67,
         "function": "test_highlight",
         "git_blob": "500829037ae1e5f1606e658ce5f33c4aeb24e039",
@@ -77,7 +77,7 @@
       "physical_lines": 1,
       "sha256": "75f19665acb1613443c5e178c53459898f1921ab60e2ce43b55436cfdb007ca5",
       "source": {
-        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "commit": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
         "end_line": 50,
         "function": "debug",
         "git_blob": "4704b8687384b867439533eb57a3e55f8923975c",
@@ -96,7 +96,7 @@
       "physical_lines": 3,
       "sha256": "243b19babfa346f05cae6a02ec407e087b647d98021a444fb2102da7c6fb5064",
       "source": {
-        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "commit": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
         "end_line": 65,
         "function": "test_highlight",
         "git_blob": "4704b8687384b867439533eb57a3e55f8923975c",
@@ -115,7 +115,7 @@
       "physical_lines": 1,
       "sha256": "dc7ce6159db0d24059731bc43c9e8ad665f5692acd6ac9d77de50b2b5d466674",
       "source": {
-        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "commit": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
         "end_line": 46,
         "function": "debug",
         "git_blob": "6566f058f142446e1b19fa78c317437138bf5145",
@@ -134,7 +134,7 @@
       "physical_lines": 1,
       "sha256": "dc7ce6159db0d24059731bc43c9e8ad665f5692acd6ac9d77de50b2b5d466674",
       "source": {
-        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "commit": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
         "end_line": 57,
         "function": "test_highlight",
         "git_blob": "6566f058f142446e1b19fa78c317437138bf5145",
@@ -153,7 +153,7 @@
       "physical_lines": 3,
       "sha256": "83d0551f0186eeb085e7a9a52227373764c7a4929c12eb1be3dae9dbf4682739",
       "source": {
-        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "commit": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
         "end_line": 51,
         "function": "test_highlight",
         "git_blob": "0952041447656f93168a0c430c367734162de687",
@@ -268,7 +268,7 @@
     }
   ],
   "lock_tables": {
-    "51fe2b7c5aa8439c162abb665db61c6669d146d6": {
+    "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8": {
       "entries": [
         {
           "checksum": "83c567a8e18ae93f20982c90370b16fd24023aeaf52f6052b96957ab253a0fec",
@@ -306,15 +306,15 @@
           "version": "0.7.2"
         }
       ],
-      "sha256": "ec0460b0d03626382b9ee1e35ead876c859da1065841ea5409100419cd5460af",
+      "sha256": "2d7dd606ef345af23ffbfcd36b46bda10a04c4a4f28bb7c2d76e1e79567223b0",
       "snapshot": "sources/mitmproxy-rs/lock-tables.json"
     },
-    "v0.12.11": {
+    "v0.12.15": {
       "entries": [
         {
-          "checksum": "af1c71c1c4cc0920b20d6b0f6572e7682cd07a6a2faec71067a31fa394c586df",
+          "checksum": "83c567a8e18ae93f20982c90370b16fd24023aeaf52f6052b96957ab253a0fec",
           "name": "tree-sitter",
-          "version": "0.26.11"
+          "version": "0.26.12"
         },
         {
           "checksum": "a5cbc5e18f29a2c6d6435891f42569525cf95435a3e01c2f1947abcde178686f",
@@ -322,9 +322,9 @@
           "version": "0.25.0"
         },
         {
-          "checksum": "cd7a0c48d503cf4e0a57a2453424eaef2fce4b4269f13e3579e52f0d0c9e5cc8",
+          "checksum": "12bf7c298789885e63e7c1c9c86976875136064d23f541007bae3a02a23a74f9",
           "name": "tree-sitter-highlight",
-          "version": "0.26.11"
+          "version": "0.26.12"
         },
         {
           "checksum": "68204f2abc0627a90bdf06e605f5c470aa26fdcb2081ea553a04bdad756693f5",
@@ -347,7 +347,7 @@
           "version": "0.7.2"
         }
       ],
-      "sha256": "ec0460b0d03626382b9ee1e35ead876c859da1065841ea5409100419cd5460af",
+      "sha256": "2d7dd606ef345af23ffbfcd36b46bda10a04c4a4f28bb7c2d76e1e79567223b0",
       "snapshot": "sources/mitmproxy-rs/lock-tables.json"
     }
   },
@@ -356,36 +356,36 @@
     "companion": {
       "archive_verified_files": [],
       "distribution": "mitmproxy-macos",
-      "filename": "mitmproxy_macos-0.12.11-py3-none-any.whl",
+      "filename": "mitmproxy_macos-0.12.15-py3-none-any.whl",
       "files": [
         {
-          "path": "mitmproxy_macos-0.12.11.dist-info/INSTALLER",
+          "path": "mitmproxy_macos-0.12.15.dist-info/INSTALLER",
           "sha256": "e6184ce10e266134fdcfa401e8f1a95005bcd4f18d16b62b757323e2833fe9a9",
           "size": 2
         },
         {
-          "path": "mitmproxy_macos-0.12.11.dist-info/METADATA",
-          "sha256": "29b317c5310474625898dcb09b9b9a2843767b83d0f7ad12e8f41260bf10f24d",
+          "path": "mitmproxy_macos-0.12.15.dist-info/METADATA",
+          "sha256": "ee69bed34a43785ee2e5a92ab1ed5cf27a361e284e9146aebf3d2d0698daca1c",
           "size": 1179
         },
         {
-          "path": "mitmproxy_macos-0.12.11.dist-info/RECORD",
-          "sha256": "0a85fddd8af1ba1261e6c37652405ef89789781b7f24e873060f89986d070020",
+          "path": "mitmproxy_macos-0.12.15.dist-info/RECORD",
+          "sha256": "9870fafee18e9c66f9b6e001707c5634e9f9cc1302efa624f387ee3b6bbd11c5",
           "size": 948
         },
         {
-          "path": "mitmproxy_macos-0.12.11.dist-info/REQUESTED",
+          "path": "mitmproxy_macos-0.12.15.dist-info/REQUESTED",
           "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "size": 0
         },
         {
-          "path": "mitmproxy_macos-0.12.11.dist-info/WHEEL",
-          "sha256": "942926c567d0b1273d09f20295879abd37507845f6b683eab9f87d808df91100",
+          "path": "mitmproxy_macos-0.12.15.dist-info/WHEEL",
+          "sha256": "5b77e4a649bbfb07fdbc123967eeecd1e5a478cfaca6eefc23c35e6fdf037848",
           "size": 87
         },
         {
           "path": "mitmproxy_macos/Mitmproxy Redirector.app.tar",
-          "sha256": "b8ea49940489560bb76b231a064aa823cf3d3e8a0787eac4a456611f26c96a7f",
+          "sha256": "8c31c6791e8c117c4da261dc138505eaf188c1eb9fae29c69bd1b0c1864cf63e",
           "size": 5823488
         },
         {
@@ -405,51 +405,51 @@
         },
         {
           "path": "version-info.toml",
-          "sha256": "389dafd07ec9737530c54bd0a9dd2ef1eacbdedc312ccab381be3e4c7f4608bf",
+          "sha256": "6906b22202b1a0aa9d88f87df565f6457eace604f08e397af42622a2396932de",
           "size": 3263
         }
       ],
-      "installed_sha256": "4647f71838b5ef514953b3abca72cec8fb15fecb0fbfbd2d77c6ec54b5e72167",
-      "version": "0.12.11",
-      "wheel_sha256": "63349d9b46514ca679547651f7c0548f9222892edfbcba087b82b3244fbae859"
+      "installed_sha256": "27541ea81f5c612d811bf46a7adf8eae3f0081b62d4e832a516970df35e0a357",
+      "version": "0.12.15",
+      "wheel_sha256": "ed5693f89b0cbd1d2a8c5a31baed2bd7a74b0aad68672e08444c1868c38f49f8"
     },
     "distribution": "mitmproxy_rs",
-    "filename": "mitmproxy_rs-0.12.11-cp312-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl",
+    "filename": "mitmproxy_rs-0.12.15-cp312-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl",
     "files": [
       {
-        "path": "mitmproxy_rs-0.12.11.dist-info/INSTALLER",
+        "path": "mitmproxy_rs-0.12.15.dist-info/INSTALLER",
         "sha256": "e6184ce10e266134fdcfa401e8f1a95005bcd4f18d16b62b757323e2833fe9a9",
         "size": 2
       },
       {
-        "path": "mitmproxy_rs-0.12.11.dist-info/METADATA",
-        "sha256": "83fd43fa157b1b14ab3f46373a5689127e75b004f3df41c01011defed0d5eb4e",
+        "path": "mitmproxy_rs-0.12.15.dist-info/METADATA",
+        "sha256": "7acb8cc13bd1cafc84ea06b5eda50dbdf2e58edeacb734029047c5e029f240df",
         "size": 671
       },
       {
-        "path": "mitmproxy_rs-0.12.11.dist-info/RECORD",
-        "sha256": "260ca96d6e49f78bb8fab223d8cdfad397bd384c2192398ee0286e321f0524c1",
+        "path": "mitmproxy_rs-0.12.15.dist-info/RECORD",
+        "sha256": "a4a70ce8d1051d379869561590a9eec4f78d9b2c5de54820f81e41e703d7faaa",
         "size": 2208
       },
       {
-        "path": "mitmproxy_rs-0.12.11.dist-info/REQUESTED",
+        "path": "mitmproxy_rs-0.12.15.dist-info/REQUESTED",
         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "size": 0
       },
       {
-        "path": "mitmproxy_rs-0.12.11.dist-info/WHEEL",
+        "path": "mitmproxy_rs-0.12.15.dist-info/WHEEL",
         "sha256": "77b3e85bd28f0de51dbb04c0e44743ada11d1c72b5f3dc5e95343d174712438a",
         "size": 180
       },
       {
-        "path": "mitmproxy_rs-0.12.11.dist-info/entry_points.txt",
+        "path": "mitmproxy_rs-0.12.15.dist-info/entry_points.txt",
         "sha256": "02d0d59c1210ca41c889b0b92afc9e1d92c2c9ad856035735d4a7435a949b8a8",
         "size": 62
       },
       {
-        "path": "mitmproxy_rs-0.12.11.dist-info/sboms/mitmproxy_rs.cyclonedx.json",
-        "sha256": "dd3c87f06438fdeb20c5754f7df7611fd3eb566fcdec75a150dd47d025488e68",
-        "size": 323312
+        "path": "mitmproxy_rs-0.12.15.dist-info/sboms/mitmproxy_rs.cyclonedx.json",
+        "sha256": "e7ba4e3584b85fa614d4fca142b5156387ca4d069cb246c87b7624808f81d466",
+        "size": 324560
       },
       {
         "path": "mitmproxy_rs/__init__.py",
@@ -508,8 +508,8 @@
       },
       {
         "path": "mitmproxy_rs/mitmproxy_rs.abi3.so",
-        "sha256": "8521fca6525ea772d85b2d2b8f3c0ce6d0046c6b4cec4ecaa9fd6d9810263188",
-        "size": 19333184
+        "sha256": "26b79098b8441bee81ccc62b500e558272364d5e7e11f2cf102ed15e6f2626af",
+        "size": 19321408
       },
       {
         "path": "mitmproxy_rs/process_info.pyi",
@@ -542,14 +542,14 @@
         "size": 751
       }
     ],
-    "installed_sha256": "07693e0111c863f17980ae1e6a161e93202e2d412110c3433999ebdd79449d0b",
-    "version": "0.12.11",
-    "wheel_sha256": "93f86706e779dd4a798c2d53cb82886b8c1f20edac5dee05da35f5c644da3531"
+    "installed_sha256": "71b0aad436047c07eeff9c2d2385ab74336be69d8bd21a9fa4a11ee850ed289c",
+    "version": "0.12.15",
+    "wheel_sha256": "071ac37c407b70caec118ec9e6cb110e7d6b53c5aafcba48d23f74696ae9ae6c"
   },
   "python_version": "3.13.14 (main, Jun 23 2026, 15:20:43) [Clang 22.1.3 ]",
   "schema_version": 1,
   "source_diff": {
-    "from": "v0.12.11",
+    "from": "v0.12.15",
     "paths": [
       "mitmproxy-highlight/src/css.rs",
       "mitmproxy-highlight/src/javascript.rs",
@@ -561,12 +561,12 @@
     ],
     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "snapshot": "sources/mitmproxy-rs/highlighter-source.diff",
-    "to": "51fe2b7c5aa8439c162abb665db61c6669d146d6"
+    "to": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8"
   },
   "source_pins": {
-    "python": "3368a0a06ae6195aad817a1ece1aaeb6fe0353a1",
-    "rust": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
-    "wheel_source": "40f1dfb5dca7b03ff7793d3c90f23b8bdf873889"
+    "python": "51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7",
+    "rust": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
+    "wheel_source": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8"
   },
   "uv_version": "uv 0.12.19 (136ef9733 2026-09-26 aarch64-apple-darwin)"
 }

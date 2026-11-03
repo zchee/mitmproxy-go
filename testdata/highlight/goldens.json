@@ -6958,7 +6958,7 @@
   ],
   "oracle": {
     "distribution": "mitmproxy_rs",
-    "version": "0.12.11"
+    "version": "0.12.15"
   },
   "schema_version": 1,
   "tags": [

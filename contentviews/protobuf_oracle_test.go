@@ -13,7 +13,8 @@ import (
 )
 
 // The rows below were produced by the pinned Rust Protobuf view (mitmproxy-rs
-// 51fe2b7) with testdata/protobuf-oracle/all.proto as its definitions. For
+// 51fe2b7, product source identical at v0.12.15) with
+// testdata/protobuf-oracle/all.proto as its definitions. For
 // each schema-less YAML text, the Rust view encoded the wire bytes, rendered
 // them without and with the definitions, and encoded the rendering with the
 // definitions again.

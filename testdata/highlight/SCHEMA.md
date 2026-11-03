@@ -34,7 +34,7 @@ one newline. Its shape is:
 ```json
 {
   "schema_version": 1,
-  "oracle": {"distribution": "mitmproxy_rs", "version": "0.12.11"},
+  "oracle": {"distribution": "mitmproxy_rs", "version": "0.12.15"},
   "languages": ["css", "javascript", "xml", "yaml", "none", "error"],
   "tags": ["name", "string", "number", "boolean", "comment", "error"],
   "cases": [

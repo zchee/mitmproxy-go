@@ -97,6 +97,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           EVENT_SHA: ${{ github.sha }}
+          EXPECTED_GO_VERSION: ${{ steps.go.outputs.version }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EVENT_SHA"
@@ -104,7 +105,7 @@ jobs:
           OUT="$RUNNER_TEMP/release-gather"
           go run ./internal/releasecheck/cmd/releasecheck checksums "$OUT" "$VERSION" >| "$RUNNER_TEMP/release-SHA256SUMS"
           mv "$RUNNER_TEMP/release-SHA256SUMS" "$OUT/SHA256SUMS"
-          go run ./internal/releasecheck/cmd/releasecheck verify "$OUT" "$VERSION"
+          go run ./internal/releasecheck/cmd/releasecheck verify "$OUT" "$VERSION" --go-version "go${EXPECTED_GO_VERSION}"
       - name: Upload the verified complete release set
         uses: actions/upload-artifact@v7
         with:
@@ -142,12 +143,13 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           EVENT_SHA: ${{ github.sha }}
+          EXPECTED_GO_VERSION: ${{ steps.go.outputs.version }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EVENT_SHA"
           VERSION="$(go run ./internal/releasecheck/cmd/releasecheck publish-tag "$RELEASE_TAG")"
           case "$VERSION" in v0.0.0-test.*) exit 1 ;; esac
-          go run ./internal/releasecheck/cmd/releasecheck verify "$RUNNER_TEMP/release-publish" "$VERSION"
+          go run ./internal/releasecheck/cmd/releasecheck verify "$RUNNER_TEMP/release-publish" "$VERSION" --go-version "go${EXPECTED_GO_VERSION}"
           printf 'version=%s\n' "$VERSION" >> "$GITHUB_ENV"
       - name: Publish verified non-test release artifacts
         shell: bash

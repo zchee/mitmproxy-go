@@ -8,14 +8,22 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
+	json "encoding/json/v2"
+	"os"
 	"slices"
 	"strings"
 	"testing"
 
 	gocmp "github.com/google/go-cmp/cmp"
+
+	"github.com/zchee/mitmproxy-go/internal/releasecheck/releasetest"
 )
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	releasetest.Cleanup()
+	os.Exit(code)
+}
 
 func TestReleaseArtifacts(t *testing.T) {
 	t.Run("contracts", func(t *testing.T) {
@@ -109,33 +117,24 @@ type releaseEntry struct {
 
 func releaseFixture(t *testing.T, target Target) (Provenance, []releaseEntry, [sha256.Size]byte) {
 	t.Helper()
-	source := Source{Tag: "v1.2.3", Commit: strings.Repeat("a", 40), Tree: strings.Repeat("b", 40), GoVersion: "go1.27.3"}
-	flags, err := LDFlags(source.Tag)
+	family := releasetest.Load(t, false)
+	root, err := ArchiveRoot(releasetest.Tag, target)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := Provenance{Source: source, Target: target, CGOEnabled: "0", LDFlags: flags, ModuleVersions: []string{modulePath, "example.org/dependency v1.2.3"}}
-	root, err := ArchiveRoot(p.Tag, target)
-	if err != nil {
+	var p Provenance
+	if err := json.Unmarshal(family.Files[root+".provenance.json"], &p); err != nil {
 		t.Fatal(err)
 	}
-	license := []byte("test archive license\n")
 	entries := []releaseEntry{
 		{header: tar.Header{Name: root + "/", Typeflag: tar.TypeDir, Mode: 0o755}},
-		{header: tar.Header{Name: root + "/LICENSE", Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(license))}, body: license},
+		{header: tar.Header{Name: root + "/LICENSE", Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(family.License))}, body: family.License},
 	}
-	names, err := BinaryNames(target)
-	if err != nil {
-		t.Fatal(err)
+	for _, binary := range p.Binaries {
+		body := family.Members[root+"/"+binary.Name]
+		entries = append(entries, releaseEntry{header: tar.Header{Name: root + "/" + binary.Name, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(body))}, body: body})
 	}
-	for _, name := range names {
-		body := []byte("executable fixture: " + name)
-		digest := sha256.Sum256(body)
-		info := fmt.Sprintf("%s: %s\n\tpath\t%s/cmd/%s\n\tbuild\t-trimpath=true\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOOS=%s\n\tbuild\tGOARCH=%s\n\tbuild\tvcs.revision=%s\n\tbuild\tvcs.modified=false\n", name, source.GoVersion, modulePath, strings.TrimSuffix(name, ".exe"), target.GOOS, target.GOARCH, source.Commit)
-		p.Binaries = append(p.Binaries, Binary{Name: name, SHA256: hex.EncodeToString(digest[:]), BuildInfo: info})
-		entries = append(entries, releaseEntry{header: tar.Header{Name: root + "/" + name, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(body))}, body: body})
-	}
-	return p, entries, sha256.Sum256(license)
+	return p, entries, sha256.Sum256(family.License)
 }
 
 func releaseTar(t *testing.T, entries []releaseEntry) []byte {

@@ -6,7 +6,8 @@ byte-exact under [`testdata/mitmproxy/script/examples/addons/`](../../testdata/m
 They are MIT-licensed, Copyright (c) 2013 Aldo Cortesi; the complete upstream
 copyright and permission notice is retained in
 [`testdata/UPSTREAM_LICENSE`](../../testdata/UPSTREAM_LICENSE).
-The translations remain covered by that notice.
+The translations remain covered by that notice. All thirty original addon sources are byte-identical at mitmproxy
+`v12.3.1`; the commit above remains the production source of these translations and copied references.
 
 ## Running an example
 

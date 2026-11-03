@@ -5,7 +5,8 @@ not evidence that an installed redirector interoperates with this proxy.
 
 The schema comes from `src/ipc/mitmproxy_ipc.proto` in mitmproxy-rs commit
 `51fe2b7c5aa8439c162abb665db61c6669d146d6` (MIT; upstream licence in
-`../UPSTREAM_LICENSE`). Only a final newline was added to the schema copy.
+`../UPSTREAM_LICENSE`). The upstream schema and macOS framing source are byte-identical at `v0.12.15`;
+the commit above remains the production source. Only a final newline was added to the schema copy.
 `protoc` 36.2 encoded the checked-in `.textproto` inputs independently of the Go
 bindings. The four `.frame` files have a four-byte big-endian payload length,
 matching `src/packet_sources/macos.rs`'s `LengthDelimitedCodec` and NewFlow

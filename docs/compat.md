@@ -1,15 +1,46 @@
 # Behavioural differences from mitmproxy
 
-This page lists every place where the Go port behaves differently from upstream mitmproxy (commit `3368a0a`, see the
-README) on purpose. It is written for a reader who knows mitmproxy. Each table names the upstream behaviour with the
+This page records differences from the comparison baseline mitmproxy `v12.3.1` (commit `51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7`, see the
+README), including intentional port policies and explicitly deferred catch-up. It is written for a reader who knows mitmproxy. Each table names the upstream behaviour with the
 file it lives in, the Go behaviour, and the reason. Paths without a prefix are relative to the upstream repository root
-(`mitmproxy/...`).
+(`mitmproxy/...`). Existing `at 3368a0a` line anchors remain citations of that ancestor commit, not re-anchored citations
+of `v12.3.1`; artifact-production revisions likewise identify the bytes actually imported or generated.
 
 The tables cover the code that exists today and explicitly distinguish reserved options from registered runtime
 behaviour. Where a package reproduces an upstream oddity on purpose, it is listed under "Reproduced on purpose"
 so that it is not mistaken for a port bug.
 
 Anything not listed here is meant to behave as upstream does; a difference that is not on this page is a bug.
+
+## Deferred differences against mitmproxy 12.3.1 and mitmproxy_rs 0.12.15
+
+Updating the comparison baseline does not implement the changes below. Upstream paths and line numbers in this table
+refer specifically to `v12.3.1`; Go paths refer to the current implementation. Catch-up requires separate implementation
+and acceptance work, not relabelling existing artifacts.
+
+The Python differential oracle remains at `3368a0a` (`internal/difftest/difftest.go:24`), together with the oracle
+script headers, option extractor, options golden generator and console acceptance provenance. Testing against
+`v12.3.1` failed on 26 differential leaves across four packages: 16 `TestDifferentialModes` cases in
+`internal/proxy/modespec` returned no Python port versus Go's configured `4424`; option/command inventories in
+`internal/tools/cmdline`, `cmd/mitmdump` and `internal/tools/web/acceptance` exposed the new options and help-text
+changes below. Keeping a coherent oracle/generator set does not claim these differences are fixed.
+
+| Upstream change | Go location | Present Go behaviour | What catch-up needs |
+|---|---|---|---|
+| Resizable flow-table columns and improved flow-details splitter ([mitmproxy/mitmproxy#8358](https://github.com/mitmproxy/mitmproxy/pull/8358), [mitmproxy/mitmproxy#8492](https://github.com/mitmproxy/mitmproxy/pull/8492)); static assets rebuilt for 12.3.0. | `internal/tools/web/assets.tsv:1`, `internal/tools/web/static/`; copied references under `testdata/mitmproxy/tools/web/`. | Embedded mitmweb assets and their manifest retain the build from `3368a0a`; the newer UI is not bundled. | Import and verify the new upstream build, update its manifest and copied references, and rerun browser/schema acceptance. |
+| Omit an empty SAN extension (`mitmproxy/certs.py:444-450`; [mitmproxy/mitmproxy#8473](https://github.com/mitmproxy/mitmproxy/pull/8473)). | `certs/dummy.go:69-72` | Always emits the SAN extension, even with no names. | Conditionally omit it and cover empty/nonempty SAN certificates and consumers. |
+| Consume an Expires comma only after a weekday (`mitmproxy/net/http/cookies.py:177-183`; [mitmproxy/mitmproxy#8489](https://github.com/mitmproxy/mitmproxy/pull/8489)). | `httpmsg/cookies.go:183-188` | Uses the older length-at-most-three heuristic, including short non-weekday values. | Port weekday-and-delimiter handling with malformed, short and multi-cookie parsing cases. |
+| Refresh expiration for empty-valued cookies (`mitmproxy/net/http/cookies.py:314-318`; [mitmproxy/mitmproxy#8520](https://github.com/mitmproxy/mitmproxy/pull/8520)). | `httpmsg/cookies.go:324-329` | Rejects an empty value, as well as a missing name or value, during replay refresh. | Accept an explicitly empty value while retaining rejection of missing values/names; verify replay expiration. |
+| Ignore the global listen port for modes without a default port (`mitmproxy/proxy/mode_specs.py:158-165`; [mitmproxy/mitmproxy#8471](https://github.com/mitmproxy/mitmproxy/pull/8471)). | `internal/proxy/modespec/modespec.go:82-90` | Applies the configured port before checking whether the mode has a default port. | Preserve an explicit custom port, but return no listening port for port-less modes before applying the global default; cover local/TUN mode consumers. |
+| Render unknown WBXML tags as `UNKNOWN_TAG_XX` (`mitmproxy/contrib/wbxml/ASWBXML.py:890-894`; [mitmproxy/mitmproxy#8495](https://github.com/mitmproxy/mitmproxy/pull/8495)). | `contentviews/wbxml.go:155-157` | Returns `unknown WBXML tag` rather than producing XML for an unknown tag. | Add unknown-tag rendering and acceptance vectors without weakening malformed-input/resource bounds. |
+| Add `--emudhra` and `--emudhra-old`, including associated revocation-host blocking (`mitmproxy/tools/cmdline.py:79-80`, `mitmproxy/addons/tlsconfig.py:219-231,518-535,696-701`; [mitmproxy/mitmproxy#8500](https://github.com/mitmproxy/mitmproxy/pull/8500), [mitmproxy/mitmproxy#8503](https://github.com/mitmproxy/mitmproxy/pull/8503), [mitmproxy/mitmproxy#8516](https://github.com/mitmproxy/mitmproxy/pull/8516)). | `certs/distrust.go:54-98`; [existing defensive policy](#addonstlsconfig) | Neither interception option is implemented. The independent defensive distrust policy remains; it is not equivalent to these upstream features. | A separate explicit feature/policy decision and corresponding option, CLI, certificate-chain and request-handling acceptance; the baseline update authorizes none of these. |
+| Upstream 12.3.1 registers 119 option names, including `emudhra` and `emudhra_old` (`mitmproxy/addons/tlsconfig.py:219-230`; the upstream option PRs above). | `testdata/options-upstream.txt:1-117`; `hack/extract-upstream-options.py` | The generated option manifest remains at 117 names from `3368a0a`; CLI/addon/web differential inventories retain that oracle. | Implement or explicitly disposition the two options, update option/CLI/web bindings and acceptance together, then regenerate the manifest and move the coherent oracle set. |
+| Correct option and command help typos (`mitmproxy/addons/save.py:56`, `mitmproxy/addons/view.py:265`; [mitmproxy/mitmproxy#8494](https://github.com/mitmproxy/mitmproxy/pull/8494)). | `addons/save/save.go:62`, `addons/view/commands.go:122`, `testdata/options-upstream.txt:67` | Help retains `formating` and `offests`, rather than 12.3.1's `formatting` and `offsets`. | Update runtime help, command metadata and generated expectations together, then rerun the differential inventories before moving the oracle pin. |
+
+Vendored reference sources also retain their production revisions. At `v12.3.1`, the copied WBXML test adds an
+unknown-tag case, the console `quickhelp.py` and `test_commander.py` sources contain typo fixes, and the generated web
+`_options_gen.ts` adds the two eMudhra options. These differing files are not relabelled as new-baseline copies.
+The Rust fixture sources and IPC schema are byte-identical at `v0.12.15`; this does not establish native redirector acceptance.
 
 ## internal/htpasswd
 

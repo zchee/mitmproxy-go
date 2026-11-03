@@ -59,7 +59,8 @@ Darwin's 84-byte and FreeBSD's 76-byte layouts and all used offsets.
 
 The fixtures `pf01` and `pf02` are copied byte-for-byte from
 https://github.com/mitmproxy/mitmproxy/tree/3368a0a06ae6195aad817a1ece1aaeb6fe0353a1/test/mitmproxy/data
-(MIT). `pf01` has no terminal newline; a complete terminal state row remains valid,
+(MIT). Both upstream fixture files are byte-identical at mitmproxy `v12.3.1`; the URL retains their copied-source revision.
+`pf01` has no terminal newline; a complete terminal state row remains valid,
 but incomplete state names, row grammar and endpoint tokens are rejected.
 
 ## Manual macOS acceptance

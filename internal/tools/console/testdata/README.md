@@ -15,6 +15,9 @@ FlowReader → FlowWriter (Python 3.13.14, mitmproxy 13.0.0.dev0).
   A complete-state equality check verified the transcoded flows against the
   source flows. The digests above identify the source and vendored bytes.
 
+The upstream source fixture and `mitmproxy/io/` source are byte-identical at mitmproxy `v12.3.1`. The generated fixture
+has not been regenerated with that release; its generating commit and tool versions above remain unchanged.
+
 The Go reader still supports formats 18–21; this fixture conversion does not add
 legacy format-11 reader support. Upstream fixture licensing is recorded in the
 repository's `testdata/UPSTREAM_LICENSE` notice.

@@ -12,8 +12,12 @@ the pinned Python mitmproxy in differential tests.
 
 | Upstream | Commit | Notes |
 |---|---|---|
-| [mitmproxy](https://github.com/mitmproxy/mitmproxy) (Python) | `3368a0a` | `13.0.0.dev`, flow format version 21 |
-| [mitmproxy-rs](https://github.com/mitmproxy/mitmproxy-rs) (Rust) | `51fe2b7` | workspace `0.13.0-dev`; redirector artifacts come from the 0.12.x wheels |
+| [mitmproxy](https://github.com/mitmproxy/mitmproxy) (Python) | `v12.3.1` / `51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7` | `12.3.1`, flow format version 21 |
+| [mitmproxy-rs](https://github.com/mitmproxy/mitmproxy-rs) (Rust) | `v0.12.15` / `a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8` | workspace `0.12.15`; redirector artifacts: `0.12.11` (update pending) |
+
+These are comparison baselines, not a claim of complete behavioural catch-up. Retained artifact-production revisions
+and [deferred differences](docs/compat.md#deferred-differences-against-mitmproxy-1231-and-mitmproxy_rs-01215)
+remain documented separately.
 
 ## Status
 

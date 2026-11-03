@@ -3,7 +3,8 @@
 `client_hello.hex`, `fragmented_client_hello1.hex` and
 `fragmented_client_hello2.hex` are copied verbatim from
 `test/mitmproxy/proxy/layers/quic/test__stream_layers.py` in Python mitmproxy
-commit `3368a0a06ae6195aad817a1ece1aaeb6fe0353a1`.
+commit `3368a0a06ae6195aad817a1ece1aaeb6fe0353a1`. That upstream source file is byte-identical at `v12.3.1`;
+the commit label continues to identify the source actually copied.
 The single packet's SNI is `example.com`; the fragmented hello's SNI is
 `localhost` (the pinned `test_fragmented_client_hello` assertion).
 The upstream MIT notice is in the repository's `testdata/UPSTREAM_LICENSE`.

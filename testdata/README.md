@@ -41,6 +41,22 @@ The WireGuard test client binaries were built upstream from
 [mitmproxy_wireguard](https://github.com/decathorpe/mitmproxy_wireguard)
 v0.1.6; their licence (MIT) is `wg-test-client/LICENSE`.
 
+## Baseline comparison
+
+The commits above identify the sources actually copied, not the current comparison baselines. Comparing the copied
+source paths at mitmproxy `v12.3.1`, all imported Python files are byte-identical except:
+
+- `mitmproxy/contentviews/test__view_wbxml.py`: upstream adds an unknown-tag test.
+- `mitmproxy/tools/console/quickhelp.py` and `test_commander.py`: upstream fixes spelling mistakes.
+- `mitmproxy/tools/web/index.html` and the nine static files other than `favicon.ico`: upstream rebuilds the frontend;
+  several old hashed filenames no longer exist.
+- `mitmproxy/web/src/js/ducks/_options_gen.ts`: upstream adds `emudhra` and `emudhra_old`.
+
+All imported Rust fixture sources, including `network_tests.rs` and the contentview testdata, are byte-identical at
+mitmproxy_rs `v0.12.15`. These comparisons do not regenerate the files, move their production labels or establish
+compatibility for the [deferred behavioural changes](../docs/compat.md#deferred-differences-against-mitmproxy-1231-and-mitmproxy_rs-01215).
+Generated options and highlighting expectations have separate oracle provenance below.
+
 ## Contents
 
 | Path | What it holds |

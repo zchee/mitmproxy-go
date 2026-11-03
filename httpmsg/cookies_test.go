@@ -230,6 +230,135 @@ func TestParseSetCookieHeader(t *testing.T) {
 	}
 }
 
+func TestParseSetCookieHeaderExpiry(t *testing.T) {
+	t.Parallel()
+
+	// Includes the Expires vectors from upstream test_cookies.py.
+	tests := map[string]struct {
+		in   string
+		want []SetCookie
+	}{
+		"short_nonweekday_semicolon": {
+			in: "session=abc; Expires=0; Secure; HttpOnly",
+			want: []SetCookie{{Name: "session", Value: new("abc"), Attrs: CookieAttrs{
+				attr("Expires", "0"), attr("Secure", "\x00"), attr("HttpOnly", "\x00"),
+			}}},
+		},
+		"short_nonweekday_comma": {
+			in: "a=b; expires=0, c=d",
+			want: []SetCookie{
+				{Name: "a", Value: new("b"), Attrs: CookieAttrs{attr("expires", "0")}},
+				{Name: "c", Value: new("d"), Attrs: CookieAttrs{}},
+			},
+		},
+		"full_weekday_semicolon": {
+			in: "a=b; expires=Wednesday, 21-Oct-2026 07:28:00 GMT; path=/",
+			want: []SetCookie{{Name: "a", Value: new("b"), Attrs: CookieAttrs{
+				attr("expires", "Wednesday, 21-Oct-2026 07:28:00 GMT"), attr("path", "/"),
+			}}},
+		},
+		"full_weekday_next_cookie": {
+			in: "a=b; expires=Wednesday, 21-Oct-2026 07:28:00 GMT, c=d; path=/",
+			want: []SetCookie{
+				{Name: "a", Value: new("b"), Attrs: CookieAttrs{attr("expires", "Wednesday, 21-Oct-2026 07:28:00 GMT")}},
+				{Name: "c", Value: new("d"), Attrs: CookieAttrs{attr("path", "/")}},
+			},
+		},
+		"abbreviated_weekday": {
+			in:   "a=b; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Secure",
+			want: []SetCookie{{Name: "a", Value: new("b"), Attrs: CookieAttrs{attr("Expires", "Wed, 21 Oct 2015 07:28:00 GMT"), attr("Secure", "\x00")}}},
+		},
+		"mixed_case_weekday": {
+			in:   "a=b; eXpIrEs= \tWeDnEsDaY \t, 21 Oct 2015 07:28:00 GMT; Path=/",
+			want: []SetCookie{{Name: "a", Value: new("b"), Attrs: CookieAttrs{attr("eXpIrEs", " \tWeDnEsDaY \t, 21 Oct 2015 07:28:00 GMT"), attr("Path", "/")}}},
+		},
+		"weekday_semicolon_not_comma": {
+			in:   "a=b; Expires=Wed; Secure; HttpOnly",
+			want: []SetCookie{{Name: "a", Value: new("b"), Attrs: CookieAttrs{attr("Expires", "Wed"), attr("Secure", "\x00"), attr("HttpOnly", "\x00")}}},
+		},
+		"weekday_at_eof": {
+			in:   "a=b; Expires=Wed",
+			want: []SetCookie{{Name: "a", Value: new("b"), Attrs: CookieAttrs{attr("Expires", "Wed")}}},
+		},
+		"empty_expires": {
+			in:   "a=b; Expires=; Secure",
+			want: []SetCookie{{Name: "a", Value: new("b"), Attrs: CookieAttrs{attr("Expires", ""), attr("Secure", "\x00")}}},
+		},
+		"malformed_token": {
+			in: "a=b; Expires=We, c=d; HttpOnly",
+			want: []SetCookie{
+				{Name: "a", Value: new("b"), Attrs: CookieAttrs{attr("Expires", "We")}},
+				{Name: "c", Value: new("d"), Attrs: CookieAttrs{attr("HttpOnly", "\x00")}},
+			},
+		},
+		"quoted_weekday": {
+			in:   `a=b; Expires="Wed", 21 Oct 2015 07:28:00 GMT; Path=/`,
+			want: []SetCookie{{Name: "a", Value: new("b"), Attrs: CookieAttrs{attr("Expires", "Wed, 21 Oct 2015 07:28:00 GMT"), attr("Path", "/")}}},
+		},
+		"multiple_cookies": {
+			in: `a=b; Expires=0, c="d,e"; Expires=Sunday, 25 Oct 2015 07:28:00 GMT; Path=/; Path=/again, f; Secure`,
+			want: []SetCookie{
+				{Name: "a", Value: new("b"), Attrs: CookieAttrs{attr("Expires", "0")}},
+				{Name: "c", Value: new("d,e"), Attrs: CookieAttrs{attr("Expires", "Sunday, 25 Oct 2015 07:28:00 GMT"), attr("Path", "/"), attr("Path", "/again")}},
+				{Name: "f", Attrs: CookieAttrs{attr("Secure", "\x00")}},
+			},
+		},
+	}
+	t.Run("contracts", func(t *testing.T) {
+		for name, tt := range tests {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				if diff := gocmp.Diff(tt.want, ParseSetCookieHeader(tt.in)); diff != "" {
+					t.Errorf("ParseSetCookieHeader(%q) mismatch (-want +got):\n%s", tt.in, diff)
+				}
+			})
+		}
+	})
+}
+
+func TestRefreshEmptyCookie(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		"explicit_empty": {
+			in:   "session=; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Path=/",
+			want: "session=; Expires=Wed, 21 Oct 2015 08:28:00 GMT; Path=/",
+		},
+		"quoted_empty": {
+			in:   `session=""; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Path=/`,
+			want: "session=; Expires=Wed, 21 Oct 2015 08:28:00 GMT; Path=/",
+		},
+		"missing_value": {in: "session; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Path=/", wantErr: true},
+		"missing_name":  {in: "=; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Path=/", wantErr: true},
+		"invalid_expiry_removed": {
+			in:   "session=; Expires=0; Path=/; Secure",
+			want: "session=; Path=/; Secure",
+		},
+		"multiple_cookies": {
+			in:   `session=; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Path=/, other=""; Expires=Wed, 21 Oct 2015 07:28:00 GMT; HttpOnly`,
+			want: "session=; Expires=Wed, 21 Oct 2015 08:28:00 GMT; Path=/, other=; Expires=Wed, 21 Oct 2015 08:28:00 GMT; HttpOnly",
+		},
+	}
+	t.Run("contracts", func(t *testing.T) {
+		for name, tt := range tests {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				got, err := RefreshSetCookieHeader(tt.in, 1445416080-1445412480)
+				if (err != nil) != tt.wantErr {
+					t.Fatalf("RefreshSetCookieHeader(%q) error = %v, wantErr %v", tt.in, err, tt.wantErr)
+				}
+				if diff := gocmp.Diff(tt.want, got); diff != "" {
+					t.Errorf("RefreshSetCookieHeader(%q) mismatch (-want +got):\n%s", tt.in, diff)
+				}
+			})
+		}
+	})
+}
+
 func TestRefreshSetCookieHeader(t *testing.T) {
 	t.Parallel()
 

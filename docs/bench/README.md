@@ -108,11 +108,15 @@ close retain their existing ownership/retirement behavior.
 
 ### HTTP/3 high-concurrency measurement
 
-The `h3/connections=256/bytes=1048576` measurement remains pending while the packet
-pressure change is unlanded. Its previous failure is not a zero-valued result or
-proof of a causal merge boundary. The row is eligible for a new measurement only
-after the repair lands and its unchanged correctness scenario passes; no new
-throughput number, full-baseline refresh or restored measurement is claimed here.
+The `h3/connections=256/bytes=1048576` row was measured diagnostically at the
+landed candidate head `bad32f9a`; it remains **excluded from the baseline
+comparison**. The packet policy landed in merge `af5dd084`, with identical packet
+source, and the unchanged race-enabled correctness scenario passed.
+
+Diagnostic samples are retained at this operator-workspace path:
+`.omc/artifacts/p60-session/evidence/focused/p60-packet/bad32f9a1b37bd90f03b6c935bc9eb8165160b56/`.
+They do not extend the existing 23-scenario baseline or establish a threshold or
+comparative result. No throughput number is published here.
 
 ## Reproduce a baseline
 

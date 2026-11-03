@@ -29,8 +29,12 @@ type versionFamily struct {
 func versionFixture(t *testing.T, experimental bool) versionFamily {
 	t.Helper()
 	fixture := releasetest.Load(t, experimental)
+	expectedVersion := fixture.PlainGoVersion
+	if experimental {
+		expectedVersion += "-X:simd,runtimesecret"
+	}
 	family := versionFamily{
-		source:    Source{Tag: releasetest.Tag, Commit: fixture.Commit, Tree: fixture.Tree, GoVersion: fixture.GoVersion},
+		source:    Source{Tag: releasetest.Tag, Commit: fixture.Commit, Tree: fixture.Tree, GoVersion: expectedVersion},
 		documents: make(map[Target]Provenance), archives: make(map[Target][]byte), license: sha256.Sum256(fixture.License),
 	}
 	for _, target := range Targets() {
@@ -66,8 +70,9 @@ func TestReleaseGoVersion(t *testing.T) {
 		tests := map[string]struct{ run func(*testing.T) }{
 			"host_independent_plain": {func(t *testing.T) {
 				family := versionFixture(t, false)
-				if family.source.GoVersion != "go1.27.3" {
-					t.Fatalf("plain fixture compiler=%q", family.source.GoVersion)
+				fixture := releasetest.Load(t, false)
+				if diff := gocmp.Diff(fixture.PlainGoVersion, fixture.GoVersion); diff != "" {
+					t.Fatalf("plain fixture compiler (-expected +embedded):\n%s", diff)
 				}
 				if err := family.validate(); err != nil {
 					t.Fatal(err)
@@ -75,13 +80,14 @@ func TestReleaseGoVersion(t *testing.T) {
 			}},
 			"host_independent_experiments": {func(t *testing.T) {
 				family := versionFixture(t, true)
-				if !strings.Contains(family.source.GoVersion, "-X:") {
-					t.Fatalf("fixture lacks real experiment suffix: %q", family.source.GoVersion)
+				fixture := releasetest.Load(t, true)
+				if diff := gocmp.Diff(fixture.PlainGoVersion+"-X:simd,runtimesecret", fixture.GoVersion); diff != "" {
+					t.Fatalf("experimental fixture compiler (-expected +embedded): %s", diff)
 				}
 				if err := family.validate(); err != nil {
 					t.Fatal(err)
 				}
-				family.source.GoVersion = "go1.27.3"
+				family.source.GoVersion = fixture.PlainGoVersion
 				if err := family.validate(); err == nil {
 					t.Fatal("experiment suffix was normalized away")
 				}

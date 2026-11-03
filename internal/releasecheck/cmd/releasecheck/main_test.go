@@ -88,7 +88,7 @@ func TestVerifySource(t *testing.T) {
 				family := releasetest.Load(t, false)
 				dir := fixtureDirectory(t, family)
 				before := familyDigests(t, dir)
-				cmd := exec.CommandContext(t.Context(), verifyReader(t), "verify", dir, releasetest.Tag, "--source-root", family.Root, "--go-version", "go1.27.3")
+				cmd := exec.CommandContext(t.Context(), verifyReader(t), "verify", dir, releasetest.Tag, "--source-root", family.Root, "--go-version", family.PlainGoVersion)
 				cmd.Dir = t.TempDir()
 				if output, err := cmd.CombinedOutput(); err != nil {
 					t.Fatalf("explicit trusted root: %v\n%s", err, output)
@@ -100,7 +100,7 @@ func TestVerifySource(t *testing.T) {
 			"default_source_root": {func(t *testing.T) {
 				family := releasetest.Load(t, false)
 				dir := fixtureDirectory(t, family)
-				cmd := exec.CommandContext(t.Context(), verifyReader(t), "verify", dir, releasetest.Tag, "--go-version", "go1.27.3")
+				cmd := exec.CommandContext(t.Context(), verifyReader(t), "verify", dir, releasetest.Tag, "--go-version", family.PlainGoVersion)
 				cmd.Dir = family.Root
 				if output, err := cmd.CombinedOutput(); err != nil {
 					t.Fatalf("default trusted root: %v\n%s", err, output)
@@ -127,11 +127,11 @@ func verifyWrongSource(t *testing.T) {
 		"space in expected compiler":              {[]string{"--go-version", "go1.27.3 extra"}, "requires --go-version"},
 		"unicode whitespace in expected compiler": {[]string{"--go-version", "go1.27.3 "}, "requires --go-version"},
 		"wrong expected compiler":                 {[]string{"--go-version", "go1.26.0"}, "source provenance mismatch"},
-		"relative trusted root":                   {[]string{"--go-version", "go1.27.3", "--source-root", "."}, "must be absolute"},
-		"missing trusted root":                    {[]string{"--go-version", "go1.27.3", "--source-root", filepath.Join(family.Root, "missing")}, "read source root"},
-		"trusted root is a file":                  {[]string{"--go-version", "go1.27.3", "--source-root", filepath.Join(family.Root, "go.mod")}, "source root must be a directory"},
-		"unknown option":                          {[]string{"--go-version", "go1.27.3", "--unexpected"}, "flag provided but not defined"},
-		"extra positional argument":               {[]string{"--go-version", "go1.27.3", "extra"}, "requires --go-version"},
+		"relative trusted root":                   {[]string{"--go-version", family.PlainGoVersion, "--source-root", "."}, "must be absolute"},
+		"missing trusted root":                    {[]string{"--go-version", family.PlainGoVersion, "--source-root", filepath.Join(family.Root, "missing")}, "read source root"},
+		"trusted root is a file":                  {[]string{"--go-version", family.PlainGoVersion, "--source-root", filepath.Join(family.Root, "go.mod")}, "source root must be a directory"},
+		"unknown option":                          {[]string{"--go-version", family.PlainGoVersion, "--unexpected"}, "flag provided but not defined"},
+		"extra positional argument":               {[]string{"--go-version", family.PlainGoVersion, "extra"}, "requires --go-version"},
 	}
 	for name, tt := range tests {
 		args := append([]string{"verify", dir, releasetest.Tag}, tt.args...)
@@ -152,7 +152,7 @@ func verifyWrongSource(t *testing.T) {
 	}
 	check := func(want string) {
 		t.Helper()
-		cmd := exec.CommandContext(t.Context(), binary, "verify", dir, releasetest.Tag, "--source-root", wrongRoot, "--go-version", "go1.27.3")
+		cmd := exec.CommandContext(t.Context(), binary, "verify", dir, releasetest.Tag, "--source-root", wrongRoot, "--go-version", family.PlainGoVersion)
 		cmd.Dir = family.Root
 		output, err := cmd.CombinedOutput()
 		if err == nil || !strings.Contains(string(output), want) {
@@ -173,7 +173,7 @@ func verifyWrongSource(t *testing.T) {
 	if err := os.WriteFile(metadata, []byte(strings.Repeat(" ", 1<<20+1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.CommandContext(t.Context(), binary, "verify", dir, releasetest.Tag, "--source-root", family.Root, "--go-version", "go1.27.3")
+	cmd := exec.CommandContext(t.Context(), binary, "verify", dir, releasetest.Tag, "--source-root", family.Root, "--go-version", family.PlainGoVersion)
 	cmd.Dir = family.Root
 	if output, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(output), "provenance exceeds size bound") {
 		t.Fatalf("oversized metadata accepted or wrong rejection: %v\n%s", err, output)

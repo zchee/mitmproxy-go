@@ -35,10 +35,12 @@ const (
 type Family struct {
 	Root, Commit, Tree, GoVersion string
 	Toolchain, ToolVersion        string
-	Environment                   []string
-	Files                         map[string][]byte
-	Members                       map[string][]byte
-	License                       []byte
+	// PlainGoVersion comes from the selected toolchain, never executable metadata.
+	PlainGoVersion string
+	Environment    []string
+	Files          map[string][]byte
+	Members        map[string][]byte
+	License        []byte
 }
 
 type executable struct {
@@ -65,7 +67,7 @@ func Load(t *testing.T, experimental bool) *Family {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("fixture toolchain=%s version=%s env_overrides=%q (GOEXPERIMENT unset unless listed); no module dependencies", family.Toolchain, family.ToolVersion, family.Environment)
+	t.Logf("fixture toolchain=%s version=%s expected_plain=%q env_overrides=%q (GOEXPERIMENT unset unless listed); no module dependencies", family.Toolchain, family.ToolVersion, family.PlainGoVersion, family.Environment)
 	cache.families[experimental] = family
 	return family
 }
@@ -155,6 +157,12 @@ func build(ctx context.Context, experimental bool) (_ *Family, err error) {
 		return nil, err
 	}
 	family.ToolVersion = string(toolVersion)
+	versionText, hasPrefix := strings.CutPrefix(family.ToolVersion, "go version ")
+	plainVersion, _, hasPlatform := strings.CutLast(versionText, " ")
+	if !hasPrefix || !hasPlatform || plainVersion == "" {
+		return nil, fmt.Errorf("unexpected fixture toolchain version output: %q", family.ToolVersion)
+	}
+	family.PlainGoVersion = plainVersion
 	flags := "-s -w -X " + modulePath + "/internal/version.Version=" + Tag
 	for _, goos := range []string{"linux", "darwin", "windows"} {
 		for _, arch := range []string{"amd64", "arm64"} {

@@ -131,6 +131,12 @@ No differences beyond the message content rule listed under [flow](#flow).
 | DNS wire and expanded record data are parsed through Python helpers (`mitmproxy/dns.py`, `mitmproxy/net/dns/domain_names.py`). | Wire messages are capped at 65,535 bytes; decoded names and RDATA share a 1 MiB expansion budget. Compression pointers are iterative, backward-only and work-bounded. | Bound untrusted decoding. Codec round-trip, malformed-pointer, expansion and fuzz tests verify these limits. |
 | Domain names use Python's IDNA 2003 codec and Unicode 3.2 nameprep tables (`mitmproxy/net/dns/domain_names.py`). | Uses x/net/idna UTS #46 transitional processing. Later assignments can differ: U+1E9E maps to `ss` rather than `xn--kkg`. | Use the maintained Go IDNA implementation; `TestIDNAMappings` records the difference. |
 
+The retained-transaction capacity tests use an owned datagram queue for every UDP
+case, including suppressed replies. They retain the 1,024-ID bound, at-bound ID
+reuse, refusal of a 1,025th ID and flow finalization assertions. This tests DNS
+layer state without depending on socket delivery; it does not certify real UDP
+admission, tuple reuse or kernel buffering.
+
 Test fixtures for socket-backed DNS resolver origins, mode-server DNS listeners
 and origins, DNS-layer UDP sessions, and packet-factory shared-port rows acquire
 live TCP/UDP pairs through `freeport.ListenPair`
@@ -489,6 +495,18 @@ does not reorder fragments or deduplicate retransmissions; pion handles retransm
 | urwid invalidates its cached dimensions on resize and queries the current size when that cache is absent (`urwid/event_loop/main_loop.py`, version 4.0.13). | Known startup-size deviation: Bubble Tea v2.1.1 captures startup dimensions and sends them asynchronously. A stale startup size can arrive after a newer resize; the console installs sizes in delivered order and the next real resize corrects them. | Startup size messages have no freshness sequence; frozen frame tests do not prove that this race is fixed. |
 | Upstream Python can upgrade the console integration fixture `dumpfile-7.mitm`, which uses flow format 11. | The Go reader supports formats 18–21, not 11. Console integration uses a reproducibly transcoded current-format copy with pinned input/output digests; no legacy reader support was added. | Preserve the existing codec compatibility boundary rather than implying that the console extends it. |
 | Bindings can invoke clipboard and script commands. | Clipboard uses the existing optional build tag, without an OSC52 fallback. The script prompt targets the registered synchronous `script.run` command of the default Starlark loader. | Clipboard remains optional; scripting is registered by the default addon sets. |
+
+Console `Run` has one cleanup owner after delegation: the base master's
+`BeforeClose` callback closes the frontend before the base closes its log and
+dispatch services. A guarded outer fallback cleans up only failures that happen
+before entering the base `Run`. Public `Close` and constructor cleanup retain
+their existing behavior.
+
+After delegation, the first run/startup error takes precedence over a later
+cleanup error; a cleanup-only error is returned when there is no earlier error.
+Pre-delegation failures retain joined cleanup diagnostics. The existing frontend
+drain and telemetry shutdown budgets are unchanged. This is an ownership/error
+ordering rule, not an unconditional shutdown-latency guarantee.
 
 ### Renderer and terminal evidence boundary
 
@@ -1047,8 +1065,9 @@ defeats it (`internal/debugserver/server.go:29-87`, `snapshot.go`).
 Changing `pprof_addr` stops the old listener before attempting replacement; empty disables it. Invalid syntax leaves
 a working configuration unchanged. An occupied address logs an optional-feature warning and leaves diagnostics
 disabled; a later valid change can retry. Reconfiguration permits a one-second graceful cutoff within a five-second
-cleanup budget; Close uses one five-second budget (or the caller's earlier deadline), cancels that grace and forces
-connection close. **This is not a universal handler-join guarantee:** a loopback client that stalls after sending
+cleanup budget; Close stops the worker and listener under one five-second shutdown budget (or the caller's earlier
+deadline), cancels that grace and forces connection close. Repeated calls share the same result and completion
+acknowledgement. **Expiry does not guarantee that every active HTTP handler has joined:** a loopback client that stalls after sending
 headers can keep a handler goroutine alive past the five-second close grace. Deadline expiry reports unacknowledged
 cleanup; it must not be described as proof of zero remaining handlers. The server sets header/idle/write timeouts,
 not a general request-body read deadline (`internal/debugserver/controller.go:160-215,223-249,301-344`,
@@ -1332,6 +1351,16 @@ fires one error hook and answers SERVFAIL; no FORMERR response is fabricated. Ot
 
 These policy rows are not a claim that every upstream HTTP3 event/hook sequence is independently reproduced.
 Extended CONNECT, HTTP Datagrams, priority scheduling and received-1xx forwarding are not provided by this contract.
+
+## internal/proxy/packettransport
+
+Shared UDP listener queue pressure drops the newest datagram without retiring a
+live tuple, in both directions. Unknown peers are not admitted when aggregate
+capacity is unavailable. Per-tuple and listener queued-payload bounds are
+unchanged; one active socket-write payload remains outside those counters.
+Oversized datagrams and a full new-tuple accept queue keep their existing error
+behavior. See [the exact accounting boundary](bench/README.md#shared-udp-queue-pressure)
+for the limits and the absence of a fairness or established-tuple metadata quota.
 
 ## internal/proxy/layers/quic
 

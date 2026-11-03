@@ -130,6 +130,10 @@ The matrix produces **18 binaries in six archives**: Linux, macOS and Windows ×
 versions, per-binary hashes and `go version -m` output. `SHA256SUMS` covers exactly the six archives and six provenance
 files, not itself. Checksums establish integrity, not publisher signing or notarization.
 
+[Artifact verification](docs/runbooks/release-artifact-verification.md) explains the required independent
+`--go-version` expectation and optional trusted `--source-root`. The verifier checks six provenance documents
+and 18 embedded executable toolchain versions; it proves consistency, not publisher authenticity.
+
 Release builds inject the tag into `--version`; ordinary source builds retain `0.1.0-dev`. Archives do not include
 native local-mode redirectors or establish native platform evidence; follow the runbooks above.
 
@@ -141,7 +145,10 @@ across eight shards, with at most two shards running concurrently, retaining rec
 The required CI fuzz-smoke jobs remain separate.
 
 The landed [proxy benchmark harness](docs/bench/README.md) covers HTTP/1, HTTP/2, HTTP/3 and WebSocket scenarios.
-A telemetry-enabled benchmark series is not included; no telemetry-on/off performance comparison is claimed.
+A telemetry-enabled benchmark series remains pending. [PR #270](https://github.com/zchee/mitmproxy-go/pull/270)
+remains an open draft at retained head `f663154` and has not landed. The HTTP/1 diagnosis ended
+**INCONCLUSIVE/BLOCKER** after two bounded probes; no product or harness repair was authored.
+No telemetry-on/off performance comparison is claimed.
 
 ## Development
 
@@ -150,6 +157,9 @@ hack/fmt.sh    # gofmt, gofumpt, modernize, goimports-rereviser
 hack/lint.sh   # go vet, golangci-lint
 go test -race -count=1 ./...
 ```
+
+[Timing-sensitive acceptance cases](docs/runbooks/acceptance-flakes.md) records the unrepaired socket/startup
+boundaries and the failure-retention policy; a green rerun is not a repair claim.
 
 ## Licence
 

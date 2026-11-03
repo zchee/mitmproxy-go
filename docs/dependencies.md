@@ -160,7 +160,7 @@ must run separately; a component contract pass is not native packet-capture acce
 These 0.12.15 wheels are downloaded and verified by `internal/local/artifacts.go`, never vendored. The SHA-256
 pins and byte sizes below are verified against PyPI release metadata and are independent of Go-module versions.
 Wheel integrity does not certify native driver privileges, system extension approval, real process attribution,
-or licences of bundled driver components.
+or licences of bundled driver components. The wheel update landed in [PR #288](https://github.com/zchee/mitmproxy-go/pull/288).
 
 | Platform | Exact wheel URL | Bytes | SHA-256 |
 |---|---|---:|---|

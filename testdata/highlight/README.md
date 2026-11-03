@@ -32,7 +32,8 @@ The oracle is the released `mitmproxy_rs==0.12.15` wheel, not execution of
 Rust source commit `51fe2b7c5aa8439c162abb665db61c6669d146d6`. Product source,
 including the highlighter/binding source, is byte-identical between that commit
 and `v0.12.15`. Regenerating the goldens from the new wheel changes only
-`oracle.version`, not token output. The retained `highlighter-source.diff`
+`oracle.version`, not token output. The oracle update landed in
+[PR #288](https://github.com/zchee/mitmproxy-go/pull/288). The retained `highlighter-source.diff`
 records the earlier empty source diff between `v0.12.11` and `51fe2b7`;
 it is not a new-wheel execution receipt. Relative to `v0.12.11`, the
 `v0.12.15` Cargo.lock resolves tree-sitter and tree-sitter-highlight from

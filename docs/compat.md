@@ -31,13 +31,26 @@ changes below. Keeping a coherent oracle/generator set does not claim these diff
 | Ignore the global listen port for modes without a default port (`mitmproxy/proxy/mode_specs.py:158-165`; [mitmproxy/mitmproxy#8471](https://github.com/mitmproxy/mitmproxy/pull/8471)). | `internal/proxy/modespec/modespec.go:82-90` | Applies the configured port before checking whether the mode has a default port. | Preserve an explicit custom port, but return no listening port for port-less modes before applying the global default; cover local/TUN mode consumers. |
 | Render unknown WBXML tags as `UNKNOWN_TAG_XX` (`mitmproxy/contrib/wbxml/ASWBXML.py:890-894`; [mitmproxy/mitmproxy#8495](https://github.com/mitmproxy/mitmproxy/pull/8495)). | `contentviews/wbxml.go:155-157` | Returns `unknown WBXML tag` rather than producing XML for an unknown tag. | Add unknown-tag rendering and acceptance vectors without weakening malformed-input/resource bounds. |
 | Add `--emudhra` and `--emudhra-old`, including associated revocation-host blocking (`mitmproxy/tools/cmdline.py:79-80`, `mitmproxy/addons/tlsconfig.py:219-231,518-535,696-701`; [mitmproxy/mitmproxy#8500](https://github.com/mitmproxy/mitmproxy/pull/8500), [mitmproxy/mitmproxy#8503](https://github.com/mitmproxy/mitmproxy/pull/8503), [mitmproxy/mitmproxy#8516](https://github.com/mitmproxy/mitmproxy/pull/8516)). | `certs/distrust.go:54-98`; [existing defensive policy](#addonstlsconfig) | Neither interception option is implemented. The independent defensive distrust policy remains; it is not equivalent to these upstream features. | A separate explicit feature/policy decision and corresponding option, CLI, certificate-chain and request-handling acceptance; the baseline update authorizes none of these. |
-| Upstream 12.3.1 registers 119 option names, including `emudhra` and `emudhra_old` (`mitmproxy/addons/tlsconfig.py:219-230`; the upstream option PRs above). | `testdata/options-upstream.txt:1-117`; `hack/extract-upstream-options.py` | The generated option manifest remains at 117 names from `3368a0a`; CLI/addon/web differential inventories retain that oracle. | Implement or explicitly disposition the two options, update option/CLI/web bindings and acceptance together, then regenerate the manifest and move the coherent oracle set. |
 | Correct option and command help typos (`mitmproxy/addons/save.py:56`, `mitmproxy/addons/view.py:265`; [mitmproxy/mitmproxy#8494](https://github.com/mitmproxy/mitmproxy/pull/8494)). | `addons/save/save.go:62`, `addons/view/commands.go:122`, `testdata/options-upstream.txt:67` | Help retains `formating` and `offests`, rather than 12.3.1's `formatting` and `offsets`. | Update runtime help, command metadata and generated expectations together, then rerun the differential inventories before moving the oracle pin. |
 
 Vendored reference sources also retain their production revisions. At `v12.3.1`, the copied WBXML test adds an
 unknown-tag case, the console `quickhelp.py` and `test_commander.py` sources contain typo fixes, and the generated web
 `_options_gen.ts` adds the two eMudhra options. These differing files are not relabelled as new-baseline copies.
 The Rust fixture sources and IPC schema are byte-identical at `v0.12.15`; this does not establish native redirector acceptance.
+
+## Upstream option comparison policy
+
+`testdata/deferred-upstream-options.txt` names exactly `emudhra` and `emudhra_old`.
+Neither option is registered by the Go port; their interception and revocation-host features remain
+[deferred](#deferred-differences-against-mitmproxy-1231-and-mitmproxy_rs-01215). The independent defensive
+distrust policy is not an implementation of either option.
+
+The extractor projects out exactly these two names, keeping `testdata/options-upstream.txt` at 117 names.
+At the older Python oracle `3368a0a`, neither name is present; at `v12.3.1`, both must be present with
+boolean type and default `false` before projection. A partial pair is rejected. CLI flags, addon defaults,
+web option metadata and generated-binding comparisons use the same frozen list. No other upstream option
+is excluded: an unlisted extra fails comparison. Option types, defaults and help, command metadata and
+all other compared data retain their existing checks.
 
 ## internal/htpasswd
 

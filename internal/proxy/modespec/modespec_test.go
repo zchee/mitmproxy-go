@@ -228,7 +228,7 @@ func TestListenAddress(t *testing.T) {
 		"specified overrides fallback port":      {"regular@1234", "", new(4424), "", 1234, true},
 		"no local port":                          {"local", "", nil, "", 0, false},
 		"no tun port":                            {"tun", "", nil, "", 0, false},
-		"local fallback port":                    {"local", "", new(0), "", 0, true},
+		"local fallback port":                    {"local", "", new(0), "", 0, false},
 		"specified local port":                   {"local@0", "", nil, "", 0, true},
 		"specified host":                         {"regular@127.0.0.2:8080", "", nil, "127.0.0.2", 8080, true},
 		"fallback host":                          {"regular", "127.0.0.3", nil, "127.0.0.3", 8080, true},
@@ -252,6 +252,50 @@ func TestListenAddress(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPortlessListenPort(t *testing.T) {
+	t.Parallel()
+	t.Run("contracts", func(t *testing.T) {
+		tests := map[string]struct {
+			spec        string
+			defaultPort *int
+			port        int
+			hasPort     bool
+		}{
+			"local_nil":              {"local", nil, 0, false},
+			"local_global_zero":      {"local", new(0), 0, false},
+			"local_global_nonzero":   {"local", new(4424), 0, false},
+			"tun_nil":                {"tun", nil, 0, false},
+			"tun_global_zero":        {"tun", new(0), 0, false},
+			"tun_global_nonzero":     {"tun", new(4424), 0, false},
+			"local_explicit_zero":    {"local@0", new(4424), 0, true},
+			"local_explicit_nonzero": {"local@1234", new(4424), 1234, true},
+			"tun_explicit_zero":      {"tun@0", new(4424), 0, true},
+			"tun_explicit_nonzero":   {"tun@1234", new(4424), 1234, true},
+			"regular_global":         {"regular", new(4424), 4424, true},
+			"reverse_dns_global":     {"reverse:dns://8.8.8.8", new(4424), 4424, true},
+		}
+		for name, tt := range tests {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				mode, err := Parse(tt.spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				port, hasPort := mode.ListenPort(tt.defaultPort)
+				if diff := gocmp.Diff(struct {
+					Port    int
+					HasPort bool
+				}{tt.port, tt.hasPort}, struct {
+					Port    int
+					HasPort bool
+				}{port, hasPort}); diff != "" {
+					t.Errorf("%s ListenPort(%v) (-want +got):\n%s", tt.spec, tt.defaultPort, diff)
+				}
+			})
+		}
+	})
 }
 
 func TestTunNames(t *testing.T) {

@@ -21,12 +21,15 @@ func TestLocalModeAdmission(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if port, hasPort := mode.ListenPort(cfg.ListenPort); port != 0 || hasPort {
+				t.Fatalf("local fallback port = %d, %v; want 0, false", port, hasPort)
+			}
 			instance, err := New(mode, cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if instance.IsRunning() || len(instance.ListenAddrs()) != 0 {
-				t.Fatal("validation started a redirector")
+			if instance.port != 0 || instance.IsRunning() || len(instance.ListenAddrs()) != 0 {
+				t.Fatal("validation retained a fallback port or started a redirector")
 			}
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel()
@@ -36,8 +39,16 @@ func TestLocalModeAdmission(t *testing.T) {
 			if instance.IsRunning() || instance.LastError() == nil {
 				t.Fatal("canceled local frontend state")
 			}
+			state := instance.state.Load()
+			if state.local != nil || len(state.listeners) != 0 || len(state.packetListeners) != 0 || len(instance.ListenAddrs()) != 0 {
+				t.Fatal("canceled startup retained a redirector or listener state")
+			}
 			if err := instance.Stop(); err != nil {
 				t.Fatal(err)
+			}
+			state = instance.state.Load()
+			if instance.IsRunning() || state.local != nil || len(state.listeners) != 0 || len(state.packetListeners) != 0 || len(instance.ListenAddrs()) != 0 || currentLocal.Load() == instance {
+				t.Fatal("Stop retained a redirector, listener state or process ownership")
 			}
 		})
 	}

@@ -35,7 +35,8 @@ type Mode interface {
 	// ListenHost uses the explicit host, then the supplied default.
 	ListenHost(defaultHost string) string
 	// ListenPort uses the explicit port, then defaultPort if non-nil, then
-	// DefaultPort. The bool is false for modes without a listening port.
+	// DefaultPort. Modes without a default listening port ignore defaultPort
+	// and return false unless an explicit port is supplied.
 	ListenPort(defaultPort *int) (int, bool)
 	// Common returns a copy of the original specification and listen overrides.
 	Common() Spec
@@ -82,6 +83,9 @@ func (Spec) isMode() {}
 func (s Spec) listenPort(defaultPort *int, modePort int, hasModePort bool) (int, bool) {
 	if s.HasCustomListenPort {
 		return s.CustomListenPort, true
+	}
+	if !hasModePort {
+		return 0, false
 	}
 	if defaultPort != nil {
 		return *defaultPort, true
@@ -272,7 +276,7 @@ func (LocalMode) DefaultPort() (int, bool) { return 0, false }
 // TransportProtocol returns Both.
 func (LocalMode) TransportProtocol() TransportProtocol { return Both }
 
-// ListenPort resolves the explicit or configured port, if either is supplied.
+// ListenPort returns the explicit port, or no port, ignoring the configured default.
 func (m LocalMode) ListenPort(defaultPort *int) (int, bool) {
 	return m.listenPort(defaultPort, 0, false)
 }
@@ -292,7 +296,7 @@ func (TunMode) DefaultPort() (int, bool) { return 0, false }
 // TransportProtocol returns Both.
 func (TunMode) TransportProtocol() TransportProtocol { return Both }
 
-// ListenPort resolves the explicit or configured port, if either is supplied.
+// ListenPort returns the explicit port, or no port, ignoring the configured default.
 func (m TunMode) ListenPort(defaultPort *int) (int, bool) {
 	return m.listenPort(defaultPort, 0, false)
 }

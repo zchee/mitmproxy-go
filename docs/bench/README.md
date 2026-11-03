@@ -108,15 +108,13 @@ close retain their existing ownership/retirement behavior.
 
 ### HTTP/3 high-concurrency measurement
 
-The `h3/connections=256/bytes=1048576` row was measured diagnostically at the
-landed candidate head `bad32f9a`; it remains **excluded from the baseline
-comparison**. The packet policy landed in merge `af5dd084`, with identical packet
-source, and the unchanged race-enabled correctness scenario passed.
+The packet policy landed in `af5dd08`; its unchanged race-enabled correctness
+scenario passed. The `h3/connections=256/bytes=1048576` row was measured
+diagnostically and remains **excluded from the baseline comparison**.
 
-Diagnostic samples are retained at this operator-workspace path:
-`.omc/artifacts/p60-session/evidence/focused/p60-packet/bad32f9a1b37bd90f03b6c935bc9eb8165160b56/`.
-They do not extend the existing 23-scenario baseline or establish a threshold or
-comparative result. No throughput number is published here.
+The diagnostic five-sample receipt is retained in the round's evidence outside
+the repository. It does not extend the existing baseline. No throughput number,
+threshold or comparative result is claimed here.
 
 ## Reproduce a baseline
 

@@ -262,7 +262,8 @@ func TestGRPC(t *testing.T) {
 		t.Run("empty message", func(t *testing.T) {
 			prettify(t, frame(0, nil), Metadata{}, "{}  # empty protobuf message")
 		})
-		// Expected results of the pinned Rust view (mitmproxy-rs 51fe2b7).
+		// Expected results of the pinned Rust view (mitmproxy-rs 51fe2b7,
+		// product source identical at v0.12.15).
 		reencodeTests := map[string]struct {
 			text    string
 			want    string

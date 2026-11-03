@@ -38,7 +38,7 @@
       "physical_lines": 1,
       "sha256": "5176f0da5299f337c2884103ff71c06a58f699e48da394c68297eb256658aab5",
       "source": {
-        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "commit": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
         "end_line": 48,
         "function": "debug",
         "git_blob": "500829037ae1e5f1606e658ce5f33c4aeb24e039",
@@ -57,7 +57,7 @@
       "physical_lines": 7,
       "sha256": "ecb694f6e002c68e65ca30a0dbf586a231c4af84c61c878fee7b57e091fbc193",
       "source": {
-        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "commit": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
         "end_line": 67,
         "function": "test_highlight",
         "git_blob": "500829037ae1e5f1606e658ce5f33c4aeb24e039",
@@ -76,7 +76,7 @@
       "physical_lines": 1,
       "sha256": "75f19665acb1613443c5e178c53459898f1921ab60e2ce43b55436cfdb007ca5",
       "source": {
-        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "commit": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
         "end_line": 50,
         "function": "debug",
         "git_blob": "4704b8687384b867439533eb57a3e55f8923975c",
@@ -95,7 +95,7 @@
       "physical_lines": 3,
       "sha256": "243b19babfa346f05cae6a02ec407e087b647d98021a444fb2102da7c6fb5064",
       "source": {
-        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "commit": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
         "end_line": 65,
         "function": "test_highlight",
         "git_blob": "4704b8687384b867439533eb57a3e55f8923975c",
@@ -114,7 +114,7 @@
       "physical_lines": 1,
       "sha256": "dc7ce6159db0d24059731bc43c9e8ad665f5692acd6ac9d77de50b2b5d466674",
       "source": {
-        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "commit": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
         "end_line": 46,
         "function": "debug",
         "git_blob": "6566f058f142446e1b19fa78c317437138bf5145",
@@ -133,7 +133,7 @@
       "physical_lines": 1,
       "sha256": "dc7ce6159db0d24059731bc43c9e8ad665f5692acd6ac9d77de50b2b5d466674",
       "source": {
-        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "commit": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
         "end_line": 57,
         "function": "test_highlight",
         "git_blob": "6566f058f142446e1b19fa78c317437138bf5145",
@@ -152,7 +152,7 @@
       "physical_lines": 3,
       "sha256": "83d0551f0186eeb085e7a9a52227373764c7a4929c12eb1be3dae9dbf4682739",
       "source": {
-        "commit": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
+        "commit": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
         "end_line": 51,
         "function": "test_highlight",
         "git_blob": "0952041447656f93168a0c430c367734162de687",
@@ -267,7 +267,7 @@
     }
   ],
   "lock_tables": {
-    "51fe2b7c5aa8439c162abb665db61c6669d146d6": {
+    "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8": {
       "entries": [
         {
           "checksum": "83c567a8e18ae93f20982c90370b16fd24023aeaf52f6052b96957ab253a0fec",
@@ -305,15 +305,15 @@
           "version": "0.7.2"
         }
       ],
-      "sha256": "ec0460b0d03626382b9ee1e35ead876c859da1065841ea5409100419cd5460af",
+      "sha256": "2d7dd606ef345af23ffbfcd36b46bda10a04c4a4f28bb7c2d76e1e79567223b0",
       "snapshot": "sources/mitmproxy-rs/lock-tables.json"
     },
-    "v0.12.11": {
+    "v0.12.15": {
       "entries": [
         {
-          "checksum": "af1c71c1c4cc0920b20d6b0f6572e7682cd07a6a2faec71067a31fa394c586df",
+          "checksum": "83c567a8e18ae93f20982c90370b16fd24023aeaf52f6052b96957ab253a0fec",
           "name": "tree-sitter",
-          "version": "0.26.11"
+          "version": "0.26.12"
         },
         {
           "checksum": "a5cbc5e18f29a2c6d6435891f42569525cf95435a3e01c2f1947abcde178686f",
@@ -321,9 +321,9 @@
           "version": "0.25.0"
         },
         {
-          "checksum": "cd7a0c48d503cf4e0a57a2453424eaef2fce4b4269f13e3579e52f0d0c9e5cc8",
+          "checksum": "12bf7c298789885e63e7c1c9c86976875136064d23f541007bae3a02a23a74f9",
           "name": "tree-sitter-highlight",
-          "version": "0.26.11"
+          "version": "0.26.12"
         },
         {
           "checksum": "68204f2abc0627a90bdf06e605f5c470aa26fdcb2081ea553a04bdad756693f5",
@@ -346,17 +346,17 @@
           "version": "0.7.2"
         }
       ],
-      "sha256": "ec0460b0d03626382b9ee1e35ead876c859da1065841ea5409100419cd5460af",
+      "sha256": "2d7dd606ef345af23ffbfcd36b46bda10a04c4a4f28bb7c2d76e1e79567223b0",
       "snapshot": "sources/mitmproxy-rs/lock-tables.json"
     }
   },
   "oracle": {
     "distribution": "mitmproxy_rs",
-    "version": "0.12.11"
+    "version": "0.12.15"
   },
   "schema_version": 1,
   "source_diff": {
-    "from": "v0.12.11",
+    "from": "v0.12.15",
     "paths": [
       "mitmproxy-highlight/src/css.rs",
       "mitmproxy-highlight/src/javascript.rs",
@@ -368,11 +368,11 @@
     ],
     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "snapshot": "sources/mitmproxy-rs/highlighter-source.diff",
-    "to": "51fe2b7c5aa8439c162abb665db61c6669d146d6"
+    "to": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8"
   },
   "source_pins": {
-    "python": "3368a0a06ae6195aad817a1ece1aaeb6fe0353a1",
-    "rust": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
-    "wheel_source": "40f1dfb5dca7b03ff7793d3c90f23b8bdf873889"
+    "python": "51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7",
+    "rust": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
+    "wheel_source": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8"
   }
 }

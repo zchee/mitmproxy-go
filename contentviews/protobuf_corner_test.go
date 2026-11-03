@@ -12,8 +12,8 @@ import (
 
 // TestProtobufCornerOracle holds wire shapes outside the upstream vectors.
 // The expected results were produced by the pinned Rust view (mitmproxy-rs
-// 51fe2b7) through its public prettify and reencode calls; an empty want
-// means the Rust view reports an error.
+// 51fe2b7, product source identical at v0.12.15) through its public prettify
+// and reencode calls; an empty want means the Rust view reports an error.
 func TestProtobufCornerOracle(t *testing.T) {
 	decodeTests := map[string]struct {
 		input string

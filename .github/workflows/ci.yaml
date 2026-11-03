@@ -913,9 +913,9 @@ jobs:
             printf 'end: %s\nexit: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$result" >> "$OUT/$name.receipt"
             return "$result"
           }
-          receipt collection timeout --signal=QUIT --kill-after=15s 15m uv run --no-project --python 3.13 --with mitmproxy_rs==0.12.11 --with pytest==9.1.1 python -m pytest -q --collect-only "$R/hack/test_generate_highlight_goldens.py"
-          receipt tests timeout --signal=QUIT --kill-after=15s 15m uv run --no-project --python 3.13 --with mitmproxy_rs==0.12.11 --with pytest==9.1.1 python -m pytest -q "$R/hack/test_generate_highlight_goldens.py" -rA --junitxml="$OUT/highlight-generator.xml"
-          receipt generation timeout --signal=QUIT --kill-after=15s 30m uv run --no-project --python 3.13 --with mitmproxy_rs==0.12.11 python "$R/hack/generate-highlight-goldens.py" --inputs "$R/testdata/highlight/inputs" --output "$OUT/generated"
+          receipt collection timeout --signal=QUIT --kill-after=15s 15m uv run --no-project --python 3.13 --with mitmproxy_rs==0.12.15 --with pytest==9.1.1 python -m pytest -q --collect-only "$R/hack/test_generate_highlight_goldens.py"
+          receipt tests timeout --signal=QUIT --kill-after=15s 15m uv run --no-project --python 3.13 --with mitmproxy_rs==0.12.15 --with pytest==9.1.1 python -m pytest -q "$R/hack/test_generate_highlight_goldens.py" -rA --junitxml="$OUT/highlight-generator.xml"
+          receipt generation timeout --signal=QUIT --kill-after=15s 30m uv run --no-project --python 3.13 --with mitmproxy_rs==0.12.15 python "$R/hack/generate-highlight-goldens.py" --inputs "$R/testdata/highlight/inputs" --output "$OUT/generated"
           receipt frozen-comparison cmp "$R/testdata/highlight/goldens.json" "$OUT/generated/goldens.json"
           receipt inventory-validation uv run --no-project --python 3.13 python - "$OUT" <<'PY'
           from pathlib import Path

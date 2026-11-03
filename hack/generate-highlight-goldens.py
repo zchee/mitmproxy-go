@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["mitmproxy_rs==0.12.11"]
+# dependencies = ["mitmproxy_rs==0.12.15"]
 # ///
 """Generate validated, deterministic highlighting assets with the pinned wheel.
 
@@ -38,12 +38,12 @@ from urllib.parse import urlparse
 from mitmproxy_rs import syntax_highlight  # pyright: ignore[reportMissingImports, reportMissingModuleSource]
 
 LOGGER = logging.getLogger(__name__)
-VERSION = "0.12.11"
-MANIFEST_SHA256 = "cfbb7073e43ba8e4468b6aca837c3efe0eed04dc62a5abeaeec7183bbf28536c"
+VERSION = "0.12.15"
+MANIFEST_SHA256 = "4191533cb46bf1309fc6c07790080d504005e85508342eee6ce9f8d9e27fbfff"
 PINS = {
-    "python": "3368a0a06ae6195aad817a1ece1aaeb6fe0353a1",
-    "rust": "51fe2b7c5aa8439c162abb665db61c6669d146d6",
-    "wheel_source": "40f1dfb5dca7b03ff7793d3c90f23b8bdf873889",
+    "python": "51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7",
+    "rust": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
+    "wheel_source": "a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8",
 }
 LANGUAGES = ["css", "javascript", "xml", "yaml", "none", "error"]
 TAGS = ["name", "string", "number", "boolean", "comment", "error"]
@@ -59,8 +59,8 @@ OCCURRENCES = {
 }
 IDENTITIES = list(OCCURRENCES) + [f"{language}_real_200" for language in LANGUAGES[:4]]
 LOCK_DIGESTS = {
-    "v0.12.11": "ec0460b0d03626382b9ee1e35ead876c859da1065841ea5409100419cd5460af",
-    PINS["rust"]: "ec0460b0d03626382b9ee1e35ead876c859da1065841ea5409100419cd5460af",
+    "v0.12.15": "2d7dd606ef345af23ffbfcd36b46bda10a04c4a4f28bb7c2d76e1e79567223b0",
+    PINS["rust"]: "2d7dd606ef345af23ffbfcd36b46bda10a04c4a4f28bb7c2d76e1e79567223b0",
 }
 LOCK_NAMES = {
     "tree-sitter",
@@ -78,10 +78,10 @@ MAX_SOURCE_BYTES = 2 * 1024 * 1024
 MAX_WHEEL_BYTES = 128 * 1024 * 1024
 # The native redirector pins are shared with docs/dependencies.md.
 COMPANION_PINS = {
-    "mitmproxy_macos-0.12.11-py3-none-any.whl": "63349d9b46514ca679547651f7c0548f9222892edfbcba087b82b3244fbae859",
-    "mitmproxy_windows-0.12.11-py3-none-any.whl": "59addc8864669a08f8cb48d8b29129efb1ca5f6cba9696e2d91f1f506b21a2d7",
-    "mitmproxy_linux-0.12.11-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl": "3de4f96c11565cca2d051655f8ca23f8f24f4b3220e9ca3b0ad81007f293e9da",
-    "mitmproxy_linux-0.12.11-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": "0e5670a6b82546ebc0f947d79adfcb3c001ba3136a10ce848a2f4e2f336611c4",
+    "mitmproxy_macos-0.12.15-py3-none-any.whl": "ed5693f89b0cbd1d2a8c5a31baed2bd7a74b0aad68672e08444c1868c38f49f8",
+    "mitmproxy_windows-0.12.15-py3-none-any.whl": "11774ef89436e38d8a36a267eb14048ada7a155d153767410a90012f0d19f8d3",
+    "mitmproxy_linux-0.12.15-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl": "59e54f1ab8952530333c91b484fad16a3ad4ade35473929d30ca68d6a9267a27",
+    "mitmproxy_linux-0.12.15-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": "b5b1c277980ba37de4af21da19fd67466e0ebdefba7c0c325d6c9d48c32a94f8",
 }
 
 
@@ -180,7 +180,7 @@ def _validate_sources(manifest: dict[str, object], root: Path) -> None:
             raise ValueError("lock table entries mismatch")
     diff = _object(manifest.get("source_diff"), "source diff")
     if (diff.get("from"), diff.get("to"), diff.get("paths")) != (
-        "v0.12.11",
+        "v0.12.15",
         PINS["rust"],
         SOURCE_PATHS,
     ) or _snapshot(root, diff) != b"":

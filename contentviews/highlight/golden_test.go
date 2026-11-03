@@ -54,7 +54,7 @@ func readHighlightCorpus(root string) ([]highlightCase, error) {
 		return nil, err
 	}
 	manifestDigest := sha256.Sum256(manifestBytes)
-	if hex.EncodeToString(manifestDigest[:]) != "cfbb7073e43ba8e4468b6aca837c3efe0eed04dc62a5abeaeec7183bbf28536c" {
+	if hex.EncodeToString(manifestDigest[:]) != "4191533cb46bf1309fc6c07790080d504005e85508342eee6ce9f8d9e27fbfff" {
 		return nil, errors.New("frozen highlight input manifest differs")
 	}
 	var manifest struct {
@@ -98,7 +98,7 @@ func readHighlightCorpus(root string) ([]highlightCase, error) {
 	if manifest.Version != 1 || goldens.Version != 1 || len(manifest.Inputs) != len(ids) || len(goldens.Cases) != len(ids) {
 		return nil, errors.New("highlight corpus version or identity count differs")
 	}
-	if goldens.Oracle.Distribution != "mitmproxy_rs" || goldens.Oracle.Version != "0.12.11" || !slices.Equal(goldens.Languages, Languages()) || !slices.Equal(goldens.Tags, Tags()) {
+	if goldens.Oracle.Distribution != "mitmproxy_rs" || goldens.Oracle.Version != "0.12.15" || !slices.Equal(goldens.Languages, Languages()) || !slices.Equal(goldens.Tags, Tags()) {
 		return nil, errors.New("highlight oracle or vocabulary differs")
 	}
 	cases := make([]highlightCase, 0, len(ids))

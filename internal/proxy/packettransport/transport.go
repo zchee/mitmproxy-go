@@ -172,6 +172,10 @@ func (l *Listener) readLoop() {
 		key := addr.Network() + "\x00" + addr.String()
 		conn := l.tuples[key]
 		if conn == nil {
+			if l.queuedPackets+l.writePackets >= layer.ListenerPacketQueueCapacity || l.queuedBytes+l.writeBytes+n > layer.ListenerPacketQueueBytes {
+				l.mu.Unlock()
+				continue
+			}
 			ctx, cancel := context.WithCancelCause(l.ctx)
 			conn = &TupleConn{listener: l, key: key, peer: cloneAddr(addr), ctx: ctx, cancel: cancel, wake: make(chan struct{})}
 			l.tuples[key] = conn
@@ -196,12 +200,15 @@ func (l *Listener) enqueueLocked(conn *TupleConn, payload []byte) bool {
 	if conn.err != nil {
 		return false
 	}
-	if len(payload) > layer.MaxUDPPacketBytes || l.queuedPackets+l.writePackets >= layer.ListenerPacketQueueCapacity || l.queuedBytes+l.writeBytes+len(payload) > layer.ListenerPacketQueueBytes {
+	if len(payload) > layer.MaxUDPPacketBytes {
 		l.finishLocked(conn, layer.ErrPacketOverflow)
 		return false
 	}
 	// Ordinary datagram loss lets reliable transports recover without retiring
-	// their live tuple when one peer temporarily exhausts its queue budget.
+	// live tuples when a peer or the listener exhausts its queue budget.
+	if l.queuedPackets+l.writePackets >= layer.ListenerPacketQueueCapacity || l.queuedBytes+l.writeBytes+len(payload) > layer.ListenerPacketQueueBytes {
+		return false
+	}
 	if len(conn.packets)+conn.writePackets >= layer.PacketQueueCapacity || conn.bytes+conn.writeBytes+len(payload) > layer.PacketQueueBytes {
 		return false
 	}
@@ -338,10 +345,10 @@ func (c *TupleConn) ReadFrom(p []byte) (int, net.Addr, error) {
 }
 
 // WriteTo sends one bounded datagram to the fixed peer. A different addr is an
-// error; nil selects the fixed peer. At the per-tuple queue bound the datagram is
-// dropped and len(p), nil is returned, as for ordinary UDP loss. Listener-wide
-// overflow still closes the tuple. The socket writer does not retain the
-// caller's buffer after this method returns.
+// error; nil selects the fixed peer. At a tuple or listener queue bound the newest
+// datagram is dropped and len(p), nil is returned, as for ordinary UDP loss.
+// Oversized datagrams still close the tuple. The socket writer does not retain
+// the caller's buffer after this method returns.
 func (c *TupleConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	if addr != nil && (addr.Network() != c.peer.Network() || addr.String() != c.peer.String()) {
 		return 0, &net.OpError{Op: "write", Net: "udp", Addr: addr, Err: errors.New("packet peer differs from fixed tuple")}
@@ -352,10 +359,14 @@ func (c *TupleConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 		l.mu.Unlock()
 		return 0, err
 	}
-	if len(p) > layer.MaxUDPPacketBytes || l.queuedPackets+l.writePackets >= layer.ListenerPacketQueueCapacity || l.queuedBytes+l.writeBytes+len(p) > layer.ListenerPacketQueueBytes {
+	if len(p) > layer.MaxUDPPacketBytes {
 		l.finishLocked(c, layer.ErrPacketOverflow)
 		l.mu.Unlock()
 		return 0, layer.ErrPacketOverflow
+	}
+	if l.queuedPackets+l.writePackets >= layer.ListenerPacketQueueCapacity || l.queuedBytes+l.writeBytes+len(p) > layer.ListenerPacketQueueBytes {
+		l.mu.Unlock()
+		return len(p), nil
 	}
 	if len(c.packets)+c.writePackets >= layer.PacketQueueCapacity || c.bytes+c.writeBytes+len(p) > layer.PacketQueueBytes {
 		l.mu.Unlock()
@@ -373,9 +384,9 @@ func (c *TupleConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	select {
 	case l.writes <- job:
 	default:
-		l.finishLocked(c, layer.ErrPacketOverflow)
+		l.releaseWriteLocked(job)
 		l.mu.Unlock()
-		return 0, layer.ErrPacketOverflow
+		return len(p), nil
 	}
 	l.mu.Unlock()
 	for {

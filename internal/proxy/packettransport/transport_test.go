@@ -280,7 +280,16 @@ func TestTupleBounds(t *testing.T) {
 						t.Fatalf("budget rejected packet %d before aggregate bound", i)
 					}
 				}
-				listener.enqueueLocked(conn, payload)
+				if listener.enqueueLocked(conn, payload) {
+					listener.mu.Unlock()
+					t.Fatal("aggregate bound admitted newest datagram")
+				}
+				if listener.tuples[conn.key] != conn || conn.Context().Err() != nil || listener.queuedPackets != test.count || listener.queuedBytes != test.count*test.size {
+					listener.mu.Unlock()
+					t.Fatal("aggregate drop retired tuple or changed retained accounting")
+				}
+				listener.mu.Unlock()
+				return
 			} else {
 				for range test.count {
 					if !listener.enqueueLocked(conn, make([]byte, test.size)) {

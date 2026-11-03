@@ -22,8 +22,8 @@ const (
 	ListenerPacketQueueBytes = 64 << 20
 )
 
-// ErrPacketOverflow reports either packet-count or payload-byte queue overflow.
-// Overflow must be surfaced to the flow owner rather than silently dropping data.
+// ErrPacketOverflow reports rejected packets or tuple admission at a size or queue bound.
+// Shared UDP listeners silently drop newest datagrams at queue pressure instead.
 var ErrPacketOverflow = errors.New("proxy: packet queue limit exceeded")
 
 // PacketTransport is a virtual packet connection for a fixed client/server tuple.
@@ -35,8 +35,11 @@ var ErrPacketOverflow = errors.New("proxy: packet queue limit exceeded")
 // this tuple; they never close the shared listener or another tuple. Reusing an
 // evicted tuple constructs a new transport and flow, without migration.
 // Both packet-count and payload-byte bounds above apply per tuple and listener.
-// Admission never blocks the listener reader; rejected input surfaces
-// ErrPacketOverflow to the owning flow. Writes borrow bytes only until return.
+// Admission never blocks the listener reader. Shared UDP listeners silently drop
+// the newest datagram at either queue bound without retiring live tuples, and
+// refuse unknown peers when aggregate capacity is unavailable. Oversized
+// datagrams and full new-tuple accept queues still report ErrPacketOverflow.
+// Writes borrow bytes only until return.
 // Packet transports do not implement TCP half-close semantics.
 type PacketTransport interface {
 	net.PacketConn

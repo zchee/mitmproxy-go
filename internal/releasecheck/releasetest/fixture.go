@@ -35,7 +35,7 @@ const (
 type Family struct {
 	Root, Commit, Tree, GoVersion string
 	Toolchain, ToolVersion        string
-	// PlainGoVersion comes from the selected toolchain, never executable metadata.
+	// PlainGoVersion comes from the repository go directive, not host or artifact metadata.
 	PlainGoVersion string
 	Environment    []string
 	Files          map[string][]byte
@@ -67,7 +67,7 @@ func Load(t *testing.T, experimental bool) *Family {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("fixture toolchain=%s version=%s expected_plain=%q env_overrides=%q (GOEXPERIMENT unset unless listed); no module dependencies", family.Toolchain, family.ToolVersion, family.PlainGoVersion, family.Environment)
+	t.Logf("fixture driver=%s selected_version=%s expected_plain=%q env_overrides=%q (GOEXPERIMENT unset unless listed); no module dependencies", family.Toolchain, family.ToolVersion, family.PlainGoVersion, family.Environment)
 	cache.families[experimental] = family
 	return family
 }
@@ -83,9 +83,11 @@ func command(ctx context.Context, dir string, environment []string, name string,
 	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // Private test fixture callers pass only git or the test process's absolute Go toolchain, without a shell.
 	cmd.Dir = dir
 	cmd.Env = environment
-	output, err := cmd.CombinedOutput()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("fixture %s %q: %w\n%s", name, args, err, output)
+		return nil, fmt.Errorf("fixture %s %q: %w\n%s\n%s", name, args, err, output, stderr.Bytes())
 	}
 	return bytes.TrimSpace(output), nil
 }
@@ -104,8 +106,50 @@ func build(ctx context.Context, experimental bool) (_ *Family, err error) {
 	if err := os.Mkdir(family.Root, 0o700); err != nil {
 		return nil, err
 	}
+	family.Toolchain = filepath.Join(runtime.GOROOT(), "bin", "go") //nolint:staticcheck // The local test-process driver selects the repository's toolchain explicitly, never an arbitrary PATH binary.
+	if runtime.GOOS == "windows" {
+		family.Toolchain += ".exe"
+	}
+	inherited := slices.DeleteFunc(os.Environ(), func(value string) bool {
+		key, _, _ := strings.Cut(value, "=")
+		return slices.Contains([]string{"GOENV", "GOTOOLCHAIN", "GOFLAGS", "GOEXPERIMENT", "GOWORK", "GOOS", "GOARCH", "CGO_ENABLED"}, key)
+	})
+	bootstrap := append(slices.Clone(inherited), "GOENV=off", "GOTOOLCHAIN=local", "GOFLAGS=", "GOWORK=off")
+	goModPath, err := command(ctx, "", bootstrap, family.Toolchain, "env", "GOMOD")
+	if err != nil {
+		return nil, err
+	}
+	goMod, err := os.ReadFile(string(goModPath)) //nolint:gosec // The trusted Go driver locates the real repository module from the test working directory.
+	if err != nil {
+		return nil, fmt.Errorf("read repository go.mod: %w", err)
+	}
+	for line := range strings.SplitSeq(string(goMod), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "go" {
+			family.PlainGoVersion = "go" + fields[1]
+			break
+		}
+	}
+	if family.PlainGoVersion == "" {
+		return nil, fmt.Errorf("repository go.mod has no go directive")
+	}
+	family.Environment = []string{"GOENV=off", "GOTOOLCHAIN=" + family.PlainGoVersion, "GOFLAGS=", "GOWORK=off"}
+	if experimental {
+		family.Environment = append(family.Environment, "GOEXPERIMENT=simd,runtimesecret")
+	}
+	baseEnvironment := append(inherited, family.Environment...)
+	toolVersion, err := command(ctx, family.Root, baseEnvironment, family.Toolchain, "version")
+	if err != nil {
+		return nil, err
+	}
+	family.ToolVersion = string(toolVersion)
+	versionText, hasPrefix := strings.CutPrefix(family.ToolVersion, "go version ")
+	plainVersion, _, hasPlatform := strings.CutLast(versionText, " ")
+	if !hasPrefix || !hasPlatform || plainVersion != family.PlainGoVersion {
+		return nil, fmt.Errorf("selected fixture toolchain %q differs from repository expectation %q", family.ToolVersion, family.PlainGoVersion)
+	}
 	files := map[string]string{
-		"go.mod":                      "module " + modulePath + "\n\ngo 1.27.3\n",
+		"go.mod":                      "module " + modulePath + "\n\ngo " + strings.TrimPrefix(family.PlainGoVersion, "go") + "\n",
 		"LICENSE":                     string(family.License),
 		"internal/version/version.go": "package version\nvar Version = \"development\"\n",
 	}
@@ -139,30 +183,6 @@ func build(ctx context.Context, experimental bool) (_ *Family, err error) {
 		return nil, err
 	}
 	family.Commit, family.Tree = string(commit), string(tree)
-	family.Toolchain = filepath.Join(runtime.GOROOT(), "bin", "go") //nolint:staticcheck // These tests build local fixtures with their own compiler, not a potentially different Go binary on PATH.
-	if runtime.GOOS == "windows" {
-		family.Toolchain += ".exe"
-	}
-	family.Environment = []string{"GOENV=off", "GOTOOLCHAIN=local", "GOFLAGS=", "GOWORK=off"}
-	if experimental {
-		family.Environment = append(family.Environment, "GOEXPERIMENT=simd,runtimesecret")
-	}
-	baseEnvironment := slices.DeleteFunc(os.Environ(), func(value string) bool {
-		key, _, _ := strings.Cut(value, "=")
-		return slices.Contains([]string{"GOENV", "GOTOOLCHAIN", "GOFLAGS", "GOEXPERIMENT", "GOWORK", "GOOS", "GOARCH", "CGO_ENABLED"}, key)
-	})
-	baseEnvironment = append(baseEnvironment, family.Environment...)
-	toolVersion, err := command(ctx, family.Root, baseEnvironment, family.Toolchain, "version")
-	if err != nil {
-		return nil, err
-	}
-	family.ToolVersion = string(toolVersion)
-	versionText, hasPrefix := strings.CutPrefix(family.ToolVersion, "go version ")
-	plainVersion, _, hasPlatform := strings.CutLast(versionText, " ")
-	if !hasPrefix || !hasPlatform || plainVersion == "" {
-		return nil, fmt.Errorf("unexpected fixture toolchain version output: %q", family.ToolVersion)
-	}
-	family.PlainGoVersion = plainVersion
 	flags := "-s -w -X " + modulePath + "/internal/version.Version=" + Tag
 	for _, goos := range []string{"linux", "darwin", "windows"} {
 		for _, arch := range []string{"amd64", "arm64"} {

@@ -180,12 +180,15 @@ func readSetCookiePairs(s string) [][]CookieAttr {
 		if off < len(s) && s[off] == '=' {
 			var rhs string
 			rhs, off = readValue(s, off+1, ";,")
-			// Expires values contain a comma. A value of three bytes or
-			// fewer ("Mon") means only the weekday was read, so read on.
-			if strings.ToLower(lhs) == "expires" && len(rhs) <= 3 {
-				var trail string
-				trail, off = readValue(s, off+1, ";,")
-				rhs = rhs + "," + trail
+			// A comma belongs to Expires only after an abbreviated or full weekday.
+			if strings.ToLower(lhs) == "expires" && off < len(s) && s[off] == ',' {
+				switch strings.ToLower(strings.TrimSpace(rhs)) {
+				case "mon", "tue", "wed", "thu", "fri", "sat", "sun",
+					"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday":
+					var trail string
+					trail, off = readValue(s, off+1, ";,")
+					rhs = rhs + "," + trail
+				}
 			}
 			pairs = append(pairs, CookieAttr{Name: lhs, Value: &rhs})
 		} else if lhs != "" {
@@ -320,12 +323,12 @@ var errInvalidCookie = errors.New("invalid cookie")
 
 // RefreshSetCookieHeader shifts the Expires attribute of every cookie in a
 // Set-Cookie header value by delta seconds. An Expires value that cannot be
-// parsed is removed. It fails for a cookie with an empty name or value.
+// parsed is removed. It fails for a cookie with an empty name or missing value.
 func RefreshSetCookieHeader(c string, delta float64) (string, error) {
 	cookies := ParseSetCookieHeader(c)
 	for i := range cookies {
 		ck := &cookies[i]
-		if ck.Name == "" || ck.Value == nil || *ck.Value == "" {
+		if ck.Name == "" || ck.Value == nil {
 			return "", errInvalidCookie
 		}
 		v, ok := ck.Attrs.Lookup("expires")

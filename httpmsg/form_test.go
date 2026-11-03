@@ -242,6 +242,46 @@ func TestResponseRefresh(t *testing.T) {
 	}
 }
 
+func TestResponseRefreshEmptyCookie(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		in   string
+		want string
+	}{
+		"explicit_empty": {
+			in:   "session=; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Path=/",
+			want: "session=; Expires=Wed, 21 Oct 2015 08:28:00 GMT; Path=/",
+		},
+		"quoted_empty": {
+			in:   `session=""; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Path=/`,
+			want: "session=; Expires=Wed, 21 Oct 2015 08:28:00 GMT; Path=/",
+		},
+		"missing_value_preserved": {
+			in:   "session; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Path=/",
+			want: "session; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Path=/",
+		},
+		"missing_name_preserved": {
+			in:   "=; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Path=/",
+			want: "=; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Path=/",
+		},
+	}
+	t.Run("contracts", func(t *testing.T) {
+		for name, tt := range tests {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				r := tResp()
+				r.TimestampStart = 1445412480
+				r.Headers.Set("set-cookie", tt.in)
+				r.Refresh(1445416080)
+				if diff := gocmp.Diff([]string{tt.want}, r.Headers.GetAll("set-cookie")); diff != "" {
+					t.Errorf("Refresh Set-Cookie %q mismatch (-want +got):\n%s", tt.in, diff)
+				}
+			})
+		}
+	})
+}
+
 func TestURLEncodedForm(t *testing.T) {
 	t.Parallel()
 

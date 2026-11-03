@@ -20,6 +20,7 @@ import (
 	"github.com/zchee/mitmproxy-go/contentviews/highlight"
 	"github.com/zchee/mitmproxy-go/flow"
 	"github.com/zchee/mitmproxy-go/flowio/flowjson"
+	"github.com/zchee/mitmproxy-go/internal/difftest"
 	"github.com/zchee/mitmproxy-go/internal/proxy/modespec"
 	"github.com/zchee/mitmproxy-go/internal/testutil"
 	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
@@ -97,9 +98,24 @@ func checkGeneratedOptions(t *testing.T) {
 		}
 		manifest[parts[0]] = row{parts[1], parts[2]}
 	}
+	metadata := make(map[string]testutil.DeferredOption, len(manifest))
+	for name, row := range manifest {
+		var value any
+		if err := json.Unmarshal([]byte(row.value), &value); err != nil {
+			t.Fatal(err)
+		}
+		metadata[name] = testutil.DeferredOption{Type: row.typ, Default: value}
+	}
+	policy := testutil.DeferredUpstreamOptions(t)
+	if _, err := policy.Project(testutil.ProjectedOptions, difftest.PinnedCommit, "union", metadata); err != nil {
+		t.Fatal(err)
+	}
 	types := map[string]string{"bool": "boolean", "int": "number", "str": "string", "optional str": "string | undefined", "optional int": "number | undefined", "sequence of str": "string[]"}
 	seen := make(map[string]bool)
 	core := options.New()
+	if err := policy.CheckGoNames(core.Keys()); err != nil {
+		t.Fatal(err)
+	}
 	for i, declaration := range declarations {
 		name, typ := declaration[1], declaration[2]
 		want, exists := manifest[name]

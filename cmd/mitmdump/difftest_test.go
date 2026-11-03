@@ -108,22 +108,24 @@ func TestDifferentialReadDump(t *testing.T) {
 }
 
 // TestDifferentialAddonListings compares the binary registries with DumpMaster,
-// excluding only Go-only options.
+// excluding the frozen Go-only and deferred-upstream option names.
 func TestDifferentialAddonListings(t *testing.T) {
 	var reference struct {
-		Options  map[string]any `json:"options"`
-		Commands []string       `json:"commands"`
+		Options  map[string]any                     `json:"options"`
+		Metadata map[string]testutil.DeferredOption `json:"metadata"`
+		Commands []string                           `json:"commands"`
 	}
 	data := difftest.Python(t, `
 import asyncio
 import json
-from mitmproxy import options
+from mitmproxy import options, optmanager
 from mitmproxy.tools.dump import DumpMaster
 
 async def main():
     opts = options.Options()
     master = DumpMaster(opts, with_termlog=True, with_dumper=True)
     result = {
+        "metadata": optmanager.dump_dicts(opts),
         "options": {name: option.default for name, option in opts._options.items()},
         "commands": sorted(cmd.signature_help().strip() for cmd in master.commands.commands.values()),
     }
@@ -134,12 +136,26 @@ asyncio.run(main())
 	if err := json.Unmarshal(data, &reference); err != nil {
 		t.Fatal(err)
 	}
+	policy := testutil.DeferredUpstreamOptions(t)
+	if _, err := policy.Project(testutil.RawLiveOptions, difftest.PinnedCommit, "DumpMaster", reference.Metadata); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range policy.Names() {
+		delete(reference.Options, name)
+	}
 	out, stderr, code := goRun(t, "--options")
 	if code != 0 {
 		t.Fatalf("option listing exited %d: %s", code, stderr)
 	}
 	var listed map[string]any
 	if err := yaml.Unmarshal([]byte(out), &listed); err != nil {
+		t.Fatal(err)
+	}
+	var goNames []string
+	for name := range listed {
+		goNames = append(goNames, name)
+	}
+	if err := policy.CheckGoNames(goNames); err != nil {
 		t.Fatal(err)
 	}
 	// JSON normalization makes YAML integer defaults and Python JSON numbers

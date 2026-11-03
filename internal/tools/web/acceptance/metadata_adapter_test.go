@@ -14,6 +14,7 @@ import (
 
 	gocmp "github.com/google/go-cmp/cmp"
 
+	"github.com/zchee/mitmproxy-go/internal/difftest"
 	"github.com/zchee/mitmproxy-go/internal/testutil"
 	"github.com/zchee/mitmproxy-go/internal/tools/web"
 )
@@ -28,7 +29,11 @@ func adaptWebFixtureMetadata(t *testing.T, values map[string]any, goRuntime bool
 	if !ok {
 		t.Fatal("commands must be a JSON object")
 	}
+	policy := testutil.DeferredUpstreamOptions(t)
 	if goRuntime {
+		if err := policy.CheckGoNames(slices.Collect(maps.Keys(options))); err != nil {
+			t.Fatal(err)
+		}
 		names := goOnlyMetadataNames(t)
 		for _, name := range names {
 			if _, exists := options[name]; !exists {
@@ -39,6 +44,21 @@ func adaptWebFixtureMetadata(t *testing.T, values map[string]any, goRuntime bool
 			delete(options, name)
 		}
 		return
+	}
+	metadata := make(map[string]testutil.DeferredOption, len(options))
+	for name, value := range options {
+		row, ok := value.(map[string]any)
+		if !ok {
+			t.Fatalf("upstream option %s metadata must be an object", name)
+		}
+		typ, _ := row["type"].(string)
+		metadata[name] = testutil.DeferredOption{Type: typ, Default: row["default"]}
+	}
+	if _, err := policy.Project(testutil.RawLiveOptions, difftest.PinnedCommit, "WebMaster", metadata); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range policy.Names() {
+		delete(options, name)
 	}
 	browser, ok := commands["browser.start"].(map[string]any)
 	if !ok {

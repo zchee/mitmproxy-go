@@ -148,9 +148,19 @@ GOMAXPROCS=8 go test -tags proxybench -run '^$' -bench '^BenchmarkProxyThroughpu
 A telemetry-enabled comparison is a separately named workload, not an environment
 switch; it does not replace the uninstrumented baseline. That series requires the
 owned collector integration and is not supplied by the uninstrumented harness.
-The telemetry-enabled series is pending: the initial diagnostic was inconclusive,
-and one additional bounded diagnostic is pending. No on/off performance result is
-claimed from either diagnostic.
+
+Two bounded diagnostic probes examined the
+`h1/connections=256/bytes=1048576` residual. The first reproduced it once in five
+repetitions and observed a deciding close in the client-side `net/http` read loop,
+but could not attribute the first cause or prove a server or harness defect. The
+second used corrected instrumentation and passed five of five repetitions without
+reaching the residual. The diagnosis ended **INCONCLUSIVE/BLOCKER**, not a repair
+or a performance result.
+
+No product or harness repair was authored. [PR #270](https://github.com/zchee/mitmproxy-go/pull/270)
+remains an open draft at retained head `f663154` and has not landed. Telemetry-enabled
+benchmark measurements and result fields remain pending; the existing 23-scenario
+baseline is unchanged.
 
 Save raw outputs as `<host>-<date>.txt` and provenance/interpretation as the matching
 `.md`, with host/toolchain/date/source commit but no operational tracking IDs.

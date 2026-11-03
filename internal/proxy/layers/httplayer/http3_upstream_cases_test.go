@@ -4,6 +4,10 @@
 package httplayer
 
 // Full-sequence map for py:test/mitmproxy/proxy/layers/http/test_http3.py at 3368a0a:
+// Source and line ranges rechecked at v12.3.1 on 2026-11-03 21:45:02 JST:
+// git diff --exit-code 3368a0a 51c1d6b2 --
+// test/mitmproxy/proxy/layers/http/test_http3.py is empty.
+// The original mapping and its partial-coverage limits below remain unchanged.
 // test_ignore_push (386-388): TestHTTP3UpstreamIgnorePush.
 // test_fail_without_header (390-403): TestHTTP3UpstreamFailWithoutHeader,
 // internal-event sequence, adapter-level.

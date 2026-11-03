@@ -14,16 +14,22 @@ Anything not listed here is meant to behave as upstream does; a difference that 
 
 ## Deferred differences against mitmproxy 12.3.1 and mitmproxy_rs 0.12.15
 
-Updating the comparison baseline does not implement the changes below. Upstream paths and line numbers in this table
-refer specifically to `v12.3.1`; Go paths refer to the current implementation. Catch-up requires separate implementation
-and acceptance work, not relabelling existing artifacts.
+The deferred changes below are the embedded mitmweb asset update and the two eMudhra interception features.
+Upstream paths and line numbers in this table refer specifically to `v12.3.1`; Go paths refer to the current
+implementation. Matching the comparison baseline elsewhere does not implement either deferred change or
+relabel retained assets and copied references.
 
-The Python differential oracle remains at `3368a0a` (`internal/difftest/difftest.go:24`), together with the oracle
-script headers, option extractor, options golden generator and console acceptance provenance. Testing against
-`v12.3.1` failed on 26 differential leaves across four packages: 16 `TestDifferentialModes` cases in
-`internal/proxy/modespec` returned no Python port versus Go's configured `4424`; option/command inventories in
-`internal/tools/cmdline`, `cmd/mitmdump` and `internal/tools/web/acceptance` exposed the new options and help-text
-changes below. Keeping a coherent oracle/generator set does not claim these differences are fixed.
+The Python differential oracle is at `v12.3.1` (`51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7`), together with
+the active oracle scripts, option extractor, options golden generator and console acceptance oracle.
+The port-less mode, unknown-WBXML-tag and help-text changes match that oracle. Its raw option inventory has
+119 names; the [comparison policy](#upstream-option-comparison-policy) projects out exactly `emudhra` and
+`emudhra_old`, leaving the 117-name manifest. Neither deferred feature is implemented.
+
+Retained copied references and historical production records still identify the revisions that produced
+their bytes. Fresh comparisons against `v12.3.1` verify the generated fixtures without rewriting those
+attributions. The 200×50 console frames have no Python regenerator: their unchanged bytes receive a fresh
+layout/presentation compatibility review, not a regeneration claim. Emoji-table verification likewise
+compares the ordered source pairs without claiming a generator was rerun.
 
 | Upstream change | Go location | Present Go behaviour | What catch-up needs |
 |---|---|---|---|

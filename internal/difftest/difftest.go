@@ -21,7 +21,7 @@ import (
 
 // PinnedCommit is the upstream mitmproxy commit that differential tests run
 // against.
-const PinnedCommit = "3368a0a06ae6195aad817a1ece1aaeb6fe0353a1"
+const PinnedCommit = "51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7"
 
 // Requirement is the uv requirement that installs mitmproxy at PinnedCommit.
 const Requirement = "mitmproxy @ git+https://github.com/mitmproxy/mitmproxy@" + PinnedCommit

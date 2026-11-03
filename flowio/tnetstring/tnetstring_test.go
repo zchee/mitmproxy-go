@@ -224,6 +224,9 @@ func TestDictOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Recorded from tnetstring.dumps({"a": 1, "b": 2}) of mitmproxy 3368a0a.
+	// Rechecked at v12.3.1 on 2026-11-03 21:45:02 JST: git diff --exit-code
+	// 3368a0a 51c1d6b2 -- mitmproxy/io/tnetstring.py is empty; the same Python
+	// dumps({"a": 1, "b": 2}) call returns the recorded bytes unchanged.
 	if got, want := string(enc), "16:1:b;1:2#1:a;1:1#}"; got != want {
 		t.Fatalf("Dumps({a: 1, b: 2}) = %q, want %q", got, want)
 	}

@@ -21,6 +21,10 @@ import (
 
 // Ported from upstream test/mitmproxy/proxy/layers/http/test_http1.py at
 // 3368a0a. Every upstream test function maps to a case below:
+// Source and line ranges rechecked at v12.3.1 on 2026-11-03 21:45:02 JST:
+// git diff --exit-code 3368a0a 51c1d6b2 --
+// test/mitmproxy/proxy/layers/http/test_http1.py is empty.
+// The original port attribution and coverage scope remain unchanged.
 //
 //	TestServer::test_simple         -> TestHTTP1ServerExchanges "success: simple ..."
 //	TestServer::test_connect        -> TestHTTP1ServerExchanges "success: connect ..."

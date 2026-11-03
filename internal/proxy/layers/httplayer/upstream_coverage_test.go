@@ -6,6 +6,11 @@ package httplayer
 // Upstream coverage at mitmproxy 3368a0a. Source paths are relative to
 // test/mitmproxy/proxy/layers/http. Each row names an upstream test function,
 // with class qualification where needed, and its Go cases in this package.
+// Source and line ranges rechecked at v12.3.1 on 2026-11-03 21:45:02 JST:
+// git diff --exit-code 3368a0a 51c1d6b2 --
+// test/mitmproxy/proxy/layers/http/test_http.py
+// test/mitmproxy/proxy/layers/http/test_http1.py is empty.
+// This preserves the original coverage record, not a new completion claim.
 // Counts: 55 functions, 54 ported, one partially ported, none not applicable.
 // The only deferred branch is WebSocket protocol dispatch in test_upgrade;
 // its TCP/disabled-protocol branches and the HTTP/1 upgrade bytes are covered.

@@ -17,9 +17,9 @@ the pinned Python mitmproxy in differential tests.
 
 These are comparison baselines, not a claim of complete behavioural catch-up. Retained artifact-production revisions
 and [deferred differences](docs/compat.md#deferred-differences-against-mitmproxy-1231-and-mitmproxy_rs-01215)
-remain documented separately. The Python differential oracle and its fixture generators still use `3368a0a`:
-new-baseline checks expose deferred mode-port, option-inventory and help-text differences. This retained test pin is
-not the comparison baseline above.
+remain documented separately. The Python differential oracle and its active fixture generators use `v12.3.1`.
+The option manifest contains 117 projected names: comparisons exclude exactly `emudhra` and `emudhra_old`, whose
+features remain unimplemented. Historical fixture-production revisions and the older embedded web assets are retained.
 
 ## Status
 

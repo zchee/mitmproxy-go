@@ -126,7 +126,7 @@ func TestPython(t *testing.T) {
 
 func TestScript(t *testing.T) {
 	got := string(difftest.Script(t, filepath.Join("testdata", "version_args.py"), "a b", "c"))
-	if diff := gocmp.Diff("13.0.0.dev\na b\nc\n", got); diff != "" {
+	if diff := gocmp.Diff("12.3.1\na b\nc\n", got); diff != "" {
 		t.Errorf("Script output mismatch (-want +got):\n%s", diff)
 	}
 }

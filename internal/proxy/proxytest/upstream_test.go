@@ -75,6 +75,11 @@ func TestUpstreamProxyWire(t *testing.T) {
 			switch {
 			case tt.refuse:
 				// Upstream 3368a0a: http/__init__.py:802-845 acknowledges CONNECT;
+				// the cited http/__init__.py, tunnel.py and _upstream_proxy.py source
+				// and line ranges are unchanged at v12.3.1, rechecked on
+				// 2026-11-03 21:45:02 JST with git diff --exit-code 3368a0a 51c1d6b2 --
+				// mitmproxy/proxy/layers/http/{__init__,_upstream_proxy}.py
+				// mitmproxy/proxy/tunnel.py. Original recorded provenance is retained.
 				// tunnel.py:129-140 defers the parent dial until the child requests it.
 				// _upstream_proxy.py:105-112 returns the refusal diagnostic;
 				// tunnel.py:166-168 closes the parent and :100-109 replies with it.

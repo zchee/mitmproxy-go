@@ -89,7 +89,11 @@ func TestDummyCert(t *testing.T) {
 			if !bytes.Equal(x.AuthorityKeyId, ca.X509().SubjectKeyId) {
 				t.Error("leaf AKI differs from issuer SKI")
 			}
-			wantOIDs := []string{"2.5.29.37", "2.5.29.17", "2.5.29.35"}
+			wantOIDs := []string{"2.5.29.37"}
+			if len(tt.sans) > 0 {
+				wantOIDs = append(wantOIDs, "2.5.29.17")
+			}
+			wantOIDs = append(wantOIDs, "2.5.29.35")
 			if tt.crlURL != "" {
 				wantOIDs = append(wantOIDs, "2.5.29.31")
 				if diff := gocmp.Diff([]string{tt.crlURL}, leaf.CRLDistributionPoints()); diff != "" {

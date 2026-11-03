@@ -68,10 +68,12 @@ func DummyCert(privateKey crypto.Signer, ca *Cert, commonName string, sans []Gen
 		SignatureAlgorithm: algorithm,
 		ExtraExtensions: []pkix.Extension{
 			{Id: asn1.ObjectIdentifier{2, 5, 29, 37}, Value: []byte{0x30, 10, 6, 8, 0x2b, 6, 1, 5, 5, 7, 3, 1}},
-			{Id: oidSubjectAltName, Critical: !validCN, Value: sanDER},
-			{Id: asn1.ObjectIdentifier{2, 5, 29, 35}, Value: akiDER},
 		},
 	}
+	if len(sans) > 0 {
+		template.ExtraExtensions = append(template.ExtraExtensions, pkix.Extension{Id: oidSubjectAltName, Critical: !validCN, Value: sanDER})
+	}
+	template.ExtraExtensions = append(template.ExtraExtensions, pkix.Extension{Id: asn1.ObjectIdentifier{2, 5, 29, 35}, Value: akiDER})
 	if crlURL != "" {
 		uri, err := marshalGeneralNames([]GeneralName{URIName(crlURL)})
 		if err != nil {

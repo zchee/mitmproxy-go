@@ -11,11 +11,11 @@ Install Go 1.27.2 or newer, `uv`, and the command-line developer tools.
 Use a normal user account; approve installation and the network/system
 extension yourself. Keep the commands and their output with the results.
 
-The pinned wheel is `mitmproxy_macos-0.12.11-py3-none-any.whl`.
+The pinned wheel is `mitmproxy_macos-0.12.15-py3-none-any.whl`.
 Its SHA-256, from `internal/local/artifacts.go:24-26`, is:
 
 ```text
-63349d9b46514ca679547651f7c0548f9222892edfbcba087b82b3244fbae859
+ed5693f89b0cbd1d2a8c5a31baed2bd7a74b0aad68672e08444c1868c38f49f8
 ```
 
 ```sh
@@ -23,11 +23,11 @@ work="${PWD}/_test/local-macos"
 test ! -e "$work" || { printf 'Archive the previous results first.\n' >&2; exit 1; }
 umask 077
 mkdir -p "$work/extracted" "$work/origin"
-wheel="$work/mitmproxy_macos-0.12.11-py3-none-any.whl"
+wheel="$work/mitmproxy_macos-0.12.15-py3-none-any.whl"
 curl --fail --location --output "$wheel" \
-  'https://files.pythonhosted.org/packages/fe/7f/7f77310e810ab3ee47357e4ce1bdafc05d429e411bad63c0e546ceef2f2e/mitmproxy_macos-0.12.11-py3-none-any.whl'
+  'https://files.pythonhosted.org/packages/63/98/ce0d7feb45bacd086ac387d97b6b7725b5b5a0edf84283fbeebdd3da85e6/mitmproxy_macos-0.12.15-py3-none-any.whl'
 printf '%s  %s\n' \
-  63349d9b46514ca679547651f7c0548f9222892edfbcba087b82b3244fbae859 \
+  ed5693f89b0cbd1d2a8c5a31baed2bd7a74b0aad68672e08444c1868c38f49f8 \
   "$wheel" | shasum -a 256 -c -
 unzip -p "$wheel" 'mitmproxy_macos/Mitmproxy Redirector.app.tar' \
   >| "$work/app.tar"
@@ -195,7 +195,7 @@ date '+%Y-%m-%d %H:%M:%S %Z'
 sw_vers
 git rev-parse HEAD
 go version
-shasum -a 256 _test/local-macos/mitmproxy_macos-0.12.11-py3-none-any.whl
+shasum -a 256 _test/local-macos/mitmproxy_macos-0.12.15-py3-none-any.whl
 systemextensionsctl list
 ```
 

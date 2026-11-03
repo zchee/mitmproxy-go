@@ -13,11 +13,11 @@ Npcap loopback support. Put `tshark.exe` on PATH and establish capture access
 before this run; do not launch a second elevation just to perform capture.
 Keep UAC enabled. Do not run alongside another local-mode proxy.
 
-The pinned wheel is `mitmproxy_windows-0.12.11-py3-none-any.whl`.
+The pinned wheel is `mitmproxy_windows-0.12.15-py3-none-any.whl`.
 Its SHA-256, from `internal/local/artifacts.go:24,27-28`, is:
 
 ```text
-59addc8864669a08f8cb48d8b29129efb1ca5f6cba9696e2d91f1f506b21a2d7
+11774ef89436e38d8a36a267eb14048ada7a155d153767410a90012f0d19f8d3
 ```
 
 In PowerShell, establish a fresh evidence directory and verify the wheel:
@@ -27,10 +27,10 @@ $ErrorActionPreference = 'Stop'
 $Work = Join-Path (Get-Location) '_test/local-windows'
 if (Test-Path $Work) { throw 'Archive the previous results first.' }
 New-Item -ItemType Directory -Path "$Work/origin" -Force | Out-Null
-$Wheel = Join-Path $Work 'mitmproxy_windows-0.12.11-py3-none-any.whl'
-$Expected = '59addc8864669a08f8cb48d8b29129efb1ca5f6cba9696e2d91f1f506b21a2d7'
+$Wheel = Join-Path $Work 'mitmproxy_windows-0.12.15-py3-none-any.whl'
+$Expected = '11774ef89436e38d8a36a267eb14048ada7a155d153767410a90012f0d19f8d3'
 curl.exe --fail --location --output $Wheel `
-  'https://files.pythonhosted.org/packages/52/c9/969db83d2e72de672e88a4ff556d07763ac2a106ba676f6831ced8c4db4e/mitmproxy_windows-0.12.11-py3-none-any.whl'
+  'https://files.pythonhosted.org/packages/c9/6b/ba00297f8c5093c9f8b0b1476d68eca196789365d7d5e164929e4dd09840/mitmproxy_windows-0.12.15-py3-none-any.whl'
 if ($LASTEXITCODE -ne 0) { throw 'Wheel download failed.' }
 if ((Get-FileHash $Wheel -Algorithm SHA256).Hash.ToLower() -ne $Expected) {
   throw 'Wheel SHA-256 mismatch.'
@@ -74,8 +74,8 @@ After startup, verify the CLI's cached wheel in a separate PowerShell:
 ```powershell
 $Work = Join-Path (Get-Location) '_test/local-windows'
 $Cached = Join-Path $Work `
-  'conf/redirector/0.12.11/windows/mitmproxy_windows-0.12.11-py3-none-any.whl'
-$Expected = '59addc8864669a08f8cb48d8b29129efb1ca5f6cba9696e2d91f1f506b21a2d7'
+  'conf/redirector/0.12.15/windows/mitmproxy_windows-0.12.15-py3-none-any.whl'
+$Expected = '11774ef89436e38d8a36a267eb14048ada7a155d153767410a90012f0d19f8d3'
 if ((Get-FileHash $Cached -Algorithm SHA256).Hash.ToLower() -ne $Expected) {
   throw 'Cached wheel SHA-256 mismatch.'
 }
@@ -242,7 +242,7 @@ bash -lc 'date "+%Y-%m-%d %H:%M:%S %Z"'
 Get-CimInstance Win32_OperatingSystem | Select-Object Version, BuildNumber
 git rev-parse HEAD
 go version
-Get-FileHash _test/local-windows/mitmproxy_windows-0.12.11-py3-none-any.whl `
+Get-FileHash _test/local-windows/mitmproxy_windows-0.12.15-py3-none-any.whl `
   -Algorithm SHA256
 tshark.exe --version
 ```

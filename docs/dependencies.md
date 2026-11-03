@@ -157,16 +157,17 @@ must run separately; a component contract pass is not native packet-capture acce
 
 ## Native redirector artifacts
 
-These 0.12.11 wheels are downloaded and verified by `internal/local/artifacts.go`, never vendored. The SHA-256
-pins are independent of Go-module versions. Wheel integrity does not certify native driver privileges, system
-extension approval, real process attribution, or licences of bundled driver components.
+These 0.12.15 wheels are downloaded and verified by `internal/local/artifacts.go`, never vendored. The SHA-256
+pins and byte sizes below are verified against PyPI release metadata and are independent of Go-module versions.
+Wheel integrity does not certify native driver privileges, system extension approval, real process attribution,
+or licences of bundled driver components.
 
-| Platform | Exact wheel URL | SHA-256 |
-|---|---|---|
-| macOS | [macOS wheel](https://files.pythonhosted.org/packages/fe/7f/7f77310e810ab3ee47357e4ce1bdafc05d429e411bad63c0e546ceef2f2e/mitmproxy_macos-0.12.11-py3-none-any.whl) | `63349d9b46514ca679547651f7c0548f9222892edfbcba087b82b3244fbae859` |
-| Windows | [Windows wheel](https://files.pythonhosted.org/packages/52/c9/969db83d2e72de672e88a4ff556d07763ac2a106ba676f6831ced8c4db4e/mitmproxy_windows-0.12.11-py3-none-any.whl) | `59addc8864669a08f8cb48d8b29129efb1ca5f6cba9696e2d91f1f506b21a2d7` |
-| Linux arm64 | [Linux arm64 wheel](https://files.pythonhosted.org/packages/f0/2a/ad2ae5e4c6383175c89fbc1c24c9e084a2f5b9325951e91cc3eb4b2e1649/mitmproxy_linux-0.12.11-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl) | `3de4f96c11565cca2d051655f8ca23f8f24f4b3220e9ca3b0ad81007f293e9da` |
-| Linux amd64 | [Linux amd64 wheel](https://files.pythonhosted.org/packages/53/db/1a4295e7fc6d6d975ce93a49107514bd2e13873a39c643c75109391fd336/mitmproxy_linux-0.12.11-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl) | `0e5670a6b82546ebc0f947d79adfcb3c001ba3136a10ce848a2f4e2f336611c4` |
+| Platform | Exact wheel URL | Bytes | SHA-256 |
+|---|---|---:|---|
+| macOS | [macOS wheel](https://files.pythonhosted.org/packages/63/98/ce0d7feb45bacd086ac387d97b6b7725b5b5a0edf84283fbeebdd3da85e6/mitmproxy_macos-0.12.15-py3-none-any.whl) | 2,508,792 | `ed5693f89b0cbd1d2a8c5a31baed2bd7a74b0aad68672e08444c1868c38f49f8` |
+| Windows | [Windows wheel](https://files.pythonhosted.org/packages/c9/6b/ba00297f8c5093c9f8b0b1476d68eca196789365d7d5e164929e4dd09840/mitmproxy_windows-0.12.15-py3-none-any.whl) | 461,498 | `11774ef89436e38d8a36a267eb14048ada7a155d153767410a90012f0d19f8d3` |
+| Linux arm64 | [Linux arm64 wheel](https://files.pythonhosted.org/packages/62/31/538d49c2e4943fac02ae154967b7ed21a952c7650e5835e60e41ac69bab4/mitmproxy_linux-0.12.15-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl) | 1,519,055 | `59e54f1ab8952530333c91b484fad16a3ad4ade35473929d30ca68d6a9267a27` |
+| Linux amd64 | [Linux amd64 wheel](https://files.pythonhosted.org/packages/fa/ef/32bf79a030d7d0775c31d0c866d68030da386d738be284e8527c0ffa230e/mitmproxy_linux-0.12.15-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl) | 1,627,251 | `b5b1c277980ba37de4af21da19fd67466e0ebdefba7c0c325d6c9d48c32a94f8` |
 
 On any artifact change, verify all four URLs/digests, bounded ZIP extraction, cache tamper/traversal/link refusal,
 cancellation and concurrent publication, then run real opt-in wheel downloads without execution. Native

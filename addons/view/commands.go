@@ -119,7 +119,7 @@ func (v *View) Load(ctx context.Context, loader *addon.Loader) error {
 		params []string
 		help   string
 	}{
-		{"view.focus.go", v.goFocus, []string{"offset"}, "Go to a specified offset. Positive offests are from the beginning of the view, negative from the end of the view, so that 0 is the first flow, -1 is the last flow."},
+		{"view.focus.go", v.goFocus, []string{"offset"}, "Go to a specified offset. Positive offsets are from the beginning of the view, negative from the end of the view, so that 0 is the first flow, -1 is the last flow."},
 		{"view.focus.next", v.focusNext, nil, "Set focus to the next flow."},
 		{"view.focus.prev", v.focusPrev, nil, "Set focus to the previous flow."},
 		{"view.order.options", v.orderOptions, nil, "Choices supported by the view_order option."},

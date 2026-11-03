@@ -59,7 +59,7 @@ func New(opts *options.Manager, fatal func(error)) *Save {
 func (s *Save) Load(ctx context.Context, loader *addon.Loader) error {
 	if err := loader.AddOption(ctx, "save_stream_file", options.TypeOptStr, nil, `
             Stream flows to file as they arrive. Prefix path with + to append.
-            The full path can use python strftime() formating, missing
+            The full path can use python strftime() formatting, missing
             directories are created as needed. A new file is opened every time
             the formatted string changes.
             `); err != nil {

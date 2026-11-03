@@ -64,7 +64,7 @@ rawtcp	bool	true	Enable/disable raw TCP connections. TCP connections are enabled
 readfile_filter	optional str	null	Read only matching flows.
 request_client_cert	bool	false	Requests a client certificate (TLS message 'CertificateRequest') to establish a mutual TLS connection between client and mitmproxy (combined with 'client_certs' option for mitmproxy and upstream).
 rfile	optional str	null	Read flows from file.
-save_stream_file	optional str	null	Stream flows to file as they arrive. Prefix path with + to append. The full path can use python strftime() formating, missing directories are created as needed. A new file is opened every time the formatted string changes.
+save_stream_file	optional str	null	Stream flows to file as they arrive. Prefix path with + to append. The full path can use python strftime() formatting, missing directories are created as needed. A new file is opened every time the formatted string changes.
 save_stream_filter	optional str	null	Filter which flows are written to file.
 scripts	sequence of str	[]	Execute a script.
 server	bool	true	Start a proxy server. Enabled by default.

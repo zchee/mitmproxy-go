@@ -76,7 +76,7 @@ func NewDeferredOptionPolicy(data []byte, projected, goOnly []string) (DeferredO
 	}
 	for _, name := range goOnly {
 		if known[name] || slices.Contains(names, name) {
-			return DeferredOptionPolicy{}, fmt.Errorf("Go-only option %q overlaps upstream options", name)
+			return DeferredOptionPolicy{}, fmt.Errorf("option %q in the Go-only manifest overlaps upstream options", name)
 		}
 	}
 	return DeferredOptionPolicy{names: names, known: known}, nil

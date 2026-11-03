@@ -7,6 +7,7 @@ package contentviews
 
 import (
 	json "encoding/json/v2"
+	"maps"
 	"os"
 	"testing"
 
@@ -21,7 +22,10 @@ func TestWBXMLDifferential(t *testing.T) {
 		t.Fatal(err)
 	}
 	cases := map[string][]byte{"minimal": {3, 1, 0x6a, 0}, "invalid": []byte("foo"), "fixture": fixture}
-	input, err := json.Marshal(cases)
+	unknown := []byte{3, 1, 0x6a, 0, 0x3f}
+	inputs := maps.Clone(cases)
+	inputs["unknown"] = unknown
+	input, err := json.Marshal(inputs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +71,19 @@ json.dump(result, sys.stdout)
 					if diff := cmp.Diff(want.Text, got); diff != "" {
 						t.Fatalf("%s: %s", name, diff)
 					}
+				}
+			},
+			"test_wbxml_unknown_tag": func(t *testing.T) {
+				want, found := reference.Cases["unknown"]
+				if !found {
+					t.Fatal("missing Python unknown-tag result")
+				}
+				got, err := (WBXML{}).Prettify(unknown, Metadata{})
+				if (err != nil) != want.Failed {
+					t.Fatalf("unknown tag: error=%v want failed=%v", err, want.Failed)
+				}
+				if diff := cmp.Diff(want.Text, got); diff != "" {
+					t.Fatal(diff)
 				}
 			},
 			"test_render_priority": func(t *testing.T) {

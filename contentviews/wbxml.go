@@ -154,7 +154,10 @@ func parseWBXML(data []byte, budget *viewBudget) (*wbxmlNode, error) {
 			}
 			tag := wbxmlCodePages[page][b&63]
 			if tag == "" {
-				return nil, fmt.Errorf("unknown WBXML tag")
+				if err := budget.chargeMaterialization("WBXML tag", uint64(len("UNKNOWN_TAG_00"))); err != nil {
+					return nil, err
+				}
+				tag = fmt.Sprintf("UNKNOWN_TAG_%02X", b&63)
 			}
 			if parent == root && len(root.children) != 0 {
 				return nil, fmt.Errorf("multiple WBXML document elements")

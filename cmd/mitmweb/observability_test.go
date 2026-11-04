@@ -52,7 +52,7 @@ func TestObservabilityCLI(t *testing.T) {
 				for _, listing := range []string{"--options", "--commands"} {
 					args := []string{"--set", "confdir=" + t.TempDir(), "--set", "mode=regular@" + reserved.Addr().String(), "--set", "otel_exporter_endpoint=" + collector.URL, "--set", "pprof_addr=" + reserved.Addr().String(), listing}
 					childCtx, stop := context.WithTimeout(t.Context(), 30*time.Second)
-					cmd := exec.CommandContext(childCtx, binary, args...) //nolint:gosec // The path is the executable built into this test's private directory.
+					cmd := exec.CommandContext(childCtx, binary, args...)
 					output, err := cmd.CombinedOutput()
 					stop()
 					if err != nil {

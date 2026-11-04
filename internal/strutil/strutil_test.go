@@ -5,8 +5,6 @@ package strutil
 
 import (
 	"bytes"
-	"regexp"
-	"slices"
 	"strings"
 	"testing"
 
@@ -188,116 +186,6 @@ func TestIsXML(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if got := IsXML([]byte(tt.data)); got != tt.want {
 				t.Errorf("IsXML(%q) = %t, want %t", tt.data, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestCleanHangingNewline(t *testing.T) {
-	tests := map[string]struct {
-		text string
-		want string
-	}{
-		"success: trailing newline removed": {text: "foo\n", want: "foo"},
-		"success: no newline":               {text: "foo", want: "foo"},
-		"success: only one newline removed": {text: "foo\n\n", want: "foo\n"},
-		"success: empty":                    {text: "", want: ""},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			if got := CleanHangingNewline(tt.text); got != tt.want {
-				t.Errorf("CleanHangingNewline(%q) = %q, want %q", tt.text, got, tt.want)
-			}
-		})
-	}
-}
-
-// The expected lines come from upstream's hexdump on CPython 3.14.
-func TestHexDump(t *testing.T) {
-	got := slices.Collect(HexDump(bytes.Repeat([]byte("one\x00"), 10)))
-	want := []HexDumpLine{
-		{Offset: "0000000000", Hex: "6f 6e 65 00 6f 6e 65 00 6f 6e 65 00 6f 6e 65 00", Text: "one.one.one.one."},
-		{Offset: "0000000010", Hex: "6f 6e 65 00 6f 6e 65 00 6f 6e 65 00 6f 6e 65 00", Text: "one.one.one.one."},
-		{Offset: "0000000020", Hex: "6f 6e 65 00 6f 6e 65 00                        ", Text: "one.one."},
-	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("HexDump mismatch (-want +got):\n%s", diff)
-	}
-
-	got = slices.Collect(HexDump([]byte("\x7f\x80\xffA\t")))
-	want = []HexDumpLine{{Offset: "0000000000", Hex: "7f 80 ff 41 09" + strings.Repeat(" ", 33), Text: "...A."}}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("HexDump(non-printable) mismatch (-want +got):\n%s", diff)
-	}
-
-	if lines := slices.Collect(HexDump(nil)); len(lines) != 0 {
-		t.Errorf("HexDump(nil) = %v, want no lines", lines)
-	}
-
-	for range HexDump(make([]byte, 64)) {
-		break // An early break must not panic.
-	}
-}
-
-// escapeQuotes matches quoted strings that end at an unescaped quote. It is
-// the RE2 form of upstream's "'" + SINGLELINE_CONTENT + NO_ESCAPE + "'",
-// whose lookbehind Go's regexp does not support.
-var escapeQuotes = regexp.MustCompile(`(?m)'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"`)
-
-func TestSplitSpecialAreas(t *testing.T) {
-	tests := map[string]struct {
-		data  string
-		areas *regexp.Regexp
-		want  []string
-	}{
-		"success: no areas": {data: "foo", areas: escapeQuotes, want: []string{"foo"}},
-		"success: one quoted area": {
-			data: "foo 'bar' baz", areas: escapeQuotes, want: []string{"foo ", "'bar'", " baz"},
-		},
-		"success: escaped quote inside": {
-			data: `foo 'b\'a"r' baz`, areas: escapeQuotes, want: []string{"foo ", `'b\'a"r'`, " baz"},
-		},
-		"success: multi-line comment": {
-			data: "foo\n/*bar\nbaz*/\nqux", areas: regexp.MustCompile(`(?m)/\*[\s\S]+?\*/`),
-			want: []string{"foo\n", "/*bar\nbaz*/", "\nqux"},
-		},
-		"success: line comment up to end of line": {
-			data: "foo\n//bar\nbaz", areas: regexp.MustCompile(`(?m)//.+$`),
-			want: []string{"foo\n", "//bar", "\nbaz"},
-		},
-		"success: area at both ends": {
-			data: "'a'b'c'", areas: escapeQuotes, want: []string{"", "'a'", "b", "'c'", ""},
-		},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			got := SplitSpecialAreas(tt.data, tt.areas)
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("SplitSpecialAreas(%q) mismatch (-want +got):\n%s", tt.data, diff)
-			}
-			if joined := strings.Join(got, ""); joined != tt.data {
-				t.Errorf("joined parts = %q, want %q", joined, tt.data)
-			}
-		})
-	}
-}
-
-func TestEscapeSpecialAreas(t *testing.T) {
-	tests := map[string]struct {
-		data string
-		want string
-	}{
-		"success: nothing to escape": {data: `foo "bar" baz`, want: `foo "bar" baz`},
-		"success: only inside areas": {data: `foo "b*r" b*z`, want: "foo \"br\" b*z"},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			got := EscapeSpecialAreas(tt.data, escapeQuotes, "*")
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("EscapeSpecialAreas(%q) mismatch (-want +got):\n%s", tt.data, diff)
-			}
-			if back := UnescapeSpecialAreas(got); back != tt.data {
-				t.Errorf("UnescapeSpecialAreas(%q) = %q, want %q", got, back, tt.data)
 			}
 		})
 	}

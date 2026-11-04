@@ -42,10 +42,6 @@ func pfEndpoint(s string) (netip.AddrPort, error) {
 	return netip.AddrPortFrom(ip.Unmap(), uint16(p)), nil
 }
 
-func pfStateLookup(peer netip.AddrPort, output []byte) (connection.Address, error) {
-	return pfStateLookupForLocal(peer, netip.AddrPort{}, output)
-}
-
 func pfStateLookupForLocal(peer, local netip.AddrPort, output []byte) (connection.Address, error) {
 	if len(output) > pfOutputLimit || !utf8.Valid(output) {
 		return connection.Address{}, ErrPFOutput

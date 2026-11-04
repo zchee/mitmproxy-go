@@ -21,7 +21,7 @@ func checkArtifactRootOwner(info os.FileInfo) error {
 	if !ok {
 		return fmt.Errorf("cannot verify directory ownership")
 	}
-	if uint64(stat.Uid) != uint64(os.Getuid()) { //nolint:gosec // Unix caller uid is nonnegative.
+	if uint64(stat.Uid) != uint64(os.Getuid()) {
 		return fmt.Errorf("directory must be owned by caller uid %d (owner uid %d)", os.Getuid(), stat.Uid)
 	}
 	return nil

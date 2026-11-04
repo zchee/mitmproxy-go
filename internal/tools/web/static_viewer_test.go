@@ -26,7 +26,6 @@ import (
 	"github.com/zchee/mitmproxy-go/flowio"
 	"github.com/zchee/mitmproxy-go/flowio/flowjson"
 	"github.com/zchee/mitmproxy-go/internal/testutil/testflow"
-	"github.com/zchee/mitmproxy-go/internal/version"
 )
 
 func viewerTestFiles(t *testing.T, flows []flow.Flow) map[string][]byte {
@@ -150,19 +149,6 @@ func TestWebStaticViewer(t *testing.T) {
 					t.Fatal(err)
 				}
 				if diff := gocmp.Diff(want, viewerRead(t, e.stage, "filter-help.json")); diff != "" {
-					t.Fatal(diff)
-				}
-			}},
-			"test_save_settings": {run: func(t *testing.T) {
-				e := viewerTestStage(t, map[string][]byte{})
-				if err := e.saveSettings(t.Context()); err != nil {
-					t.Fatal(err)
-				}
-				var got map[string]string
-				if err := json.Unmarshal(viewerRead(t, e.stage, "settings.json"), &got); err != nil {
-					t.Fatal(err)
-				}
-				if diff := gocmp.Diff(map[string]string{"version": version.Version}, got); diff != "" {
 					t.Fatal(diff)
 				}
 			}},

@@ -76,7 +76,7 @@ func Compose(state contract.State, panes []string, width, height int, footer []s
 		}
 		rendered[i] = strings.Join(lines, "\n")
 	}
-	body := ""
+	var body string
 	if len(rendered) == 1 {
 		body = rendered[0]
 	} else if state.Layout == "horizontal" {

@@ -276,7 +276,7 @@ func TestConsoleMaster(t *testing.T) {
 				}
 				ctx, cancel := context.WithTimeout(t.Context(), 25*time.Second)
 				defer cancel()
-				cmd := exec.CommandContext(ctx, script, args...) //nolint:gosec // The executable is the current controlled test binary.
+				cmd := exec.CommandContext(ctx, script, args...)
 				cmd.Env = append(os.Environ(), "MITMPROXY_CONSOLE_LIFECYCLE_CASE="+name, "MITMPROXY_CONSOLE_TEST_DIR="+directory, "MITMPROXY_CONSOLE_TEST_TRANSCRIPT="+transcript, "TERM=xterm-256color", "LC_ALL=en_US.UTF-8")
 				if name == "utf8_warning" {
 					cmd.Env = append(cmd.Env, "LC_ALL=C")

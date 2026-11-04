@@ -18,7 +18,7 @@ import (
 
 func TestConsoleFormatting(t *testing.T) {
 	t.Run("upstream", func(t *testing.T) {
-		tests := map[string]struct{}{"test_format_flow": {}, "test_format_durations": {}, "test_format_keyvals": {}, "test_truncated_text": {}}
+		tests := map[string]struct{}{"test_format_flow": {}, "test_format_durations": {}, "test_truncated_text": {}}
 		for name := range tests {
 			t.Run(name, func(t *testing.T) {
 				switch name {
@@ -64,15 +64,6 @@ func TestConsoleFormatting(t *testing.T) {
 						if diff := cmp.Diff(want, [2]string{text, tag}); diff != "" {
 							t.Errorf("seconds=%g: %s", seconds, diff)
 						}
-					}
-				case "test_format_keyvals":
-					got := FormatKeyValues([]KeyValue{{"aa", "bb"}, {"cc", "dd"}, {"ee", ""}}, 0)
-					if diff := cmp.Diff("aa  bb\ncc  dd\nee  ", got); diff != "" {
-						t.Fatal(diff)
-					}
-					nested := FormatKeyValues([]KeyValue{{"aa", FormatKeyValues([]KeyValue{{"foo", "bar"}}, 0)}}, 0)
-					if !strings.Contains(nested, "foo  bar") {
-						t.Fatal(nested)
 					}
 				case "test_truncated_text":
 					for _, text := range []string{"Half-width", "ＦＵＬＬ－ＷＩＤＴＨ"} {

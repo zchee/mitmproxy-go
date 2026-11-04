@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -19,9 +18,6 @@ import (
 )
 
 var availableWebColumns = []string{"icon", "index", "method", "version", "path", "quickactions", "size", "status", "time", "timestamp", "tls", "comment"}
-
-// AvailableColumns returns an owned copy of the frontend's column vocabulary.
-func AvailableColumns() []string { return slices.Clone(availableWebColumns) }
 
 // WebAddon registers the web display options and starts the assembled frontend.
 // A standalone value can register options without constructing a Master.

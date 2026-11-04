@@ -27,41 +27,6 @@ func EncodeInterceptSpec(spec string, ownPID uint32) (*InterceptConf, error) {
 	return &InterceptConf{Actions: actions}, nil
 }
 
-// DescribeSpec validates spec and returns the native redirector's description.
-// It describes only the supplied rules, without adding an own-process exclusion.
-// Invalid patterns return the original spec in the upstream error message.
-func DescribeSpec(spec string) (string, error) {
-	actions, err := parseInterceptSpec(spec)
-	if err != nil {
-		return "", err
-	}
-	if len(actions) == 0 {
-		return "Intercept nothing.", nil
-	}
-	var description strings.Builder
-	for i, action := range actions {
-		if i != 0 {
-			description.WriteByte(' ')
-		}
-		pattern, excluded := strings.CutPrefix(action, "!")
-		if excluded {
-			description.WriteString("Exclude ")
-		} else {
-			description.WriteString("Include ")
-		}
-		if _, err := strconv.ParseUint(pattern, 10, 32); err == nil {
-			description.WriteString("PID ")
-			description.WriteString(pattern)
-			description.WriteByte('.')
-		} else {
-			description.WriteString("processes matching \"")
-			description.WriteString(pattern)
-			description.WriteString("\".")
-		}
-	}
-	return description.String(), nil
-}
-
 // UnavailableReason returns the native local mode's informational availability text.
 // An empty result means available. Linux launch must still attempt sudo rather
 // than treating a non-root result as a startup prohibition.

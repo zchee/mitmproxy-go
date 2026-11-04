@@ -54,7 +54,7 @@ func expandHome(path string) (string, error) {
 		return path, nil
 	}
 	account, rest, _ := strings.Cut(path[1:], string(filepath.Separator))
-	home := ""
+	var home string
 	if account == "" {
 		var err error
 		home, err = os.UserHomeDir()

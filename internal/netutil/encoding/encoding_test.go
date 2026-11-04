@@ -422,7 +422,7 @@ func TestRoundTripLarge(t *testing.T) {
 // roughly like an HTML or JSON body.
 func benchPayload(n int) []byte {
 	words := []string{"mitmproxy", "flow", "request", "response", "header", "content", "{", "}", "\"key\":", "1234", "\n"}
-	r := rand.New(rand.NewPCG(1, 2)) //nolint:gosec // A fixed seed keeps the benchmark payload reproducible.
+	r := rand.New(rand.NewPCG(1, 2))
 	var buf bytes.Buffer
 	for buf.Len() < n {
 		fmt.Fprintf(&buf, "%s ", words[r.IntN(len(words))])

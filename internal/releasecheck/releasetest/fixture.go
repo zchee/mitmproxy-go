@@ -119,7 +119,7 @@ func build(ctx context.Context, experimental bool) (_ *Family, err error) {
 	if err != nil {
 		return nil, err
 	}
-	goMod, err := os.ReadFile(string(goModPath)) //nolint:gosec // The trusted Go driver locates the real repository module from the test working directory.
+	goMod, err := os.ReadFile(string(goModPath))
 	if err != nil {
 		return nil, fmt.Errorf("read repository go.mod: %w", err)
 	}

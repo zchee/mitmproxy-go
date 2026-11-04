@@ -48,10 +48,12 @@ func TestParseICO(t *testing.T) {
 // icoDirectory frames one directory entry pointing at the given offset,
 // followed by the rest of the file's bytes.
 func icoDirectory(offset uint32, rest []byte) []byte {
-	out := []byte{0, 0, 1, 0, 1, 0} // magic, one image
-	out = append(out, 0, 0, 0, 0)   // 256 x 256, no palette, reserved
-	out = append(out, 1, 0, 32, 0)  // planes, bits per pixel
-	out = append(out, 22, 0, 0, 0)  // data length
+	out := []byte{
+		0, 0, 1, 0, 1, 0, // magic, one image
+		0, 0, 0, 0, // 256 x 256, no palette, reserved
+		1, 0, 32, 0, // planes, bits per pixel
+		22, 0, 0, 0, // data length
+	}
 	out = binary.LittleEndian.AppendUint32(out, offset)
 	return append(out, rest...)
 }
@@ -104,7 +106,7 @@ func TestParseICOMalformed(t *testing.T) {
 func TestParseICOTruncated(t *testing.T) {
 	t.Parallel()
 	data := testutil.Fixture(t, "mitmproxy/image.ico")
-	for i := range len(data) {
+	for i := range data {
 		_, err := ParseICO(data[:i])
 		if (err == nil) != icoPrefixParses(data, i) {
 			t.Fatalf("ParseICO(data[:%d]) error = %v; want the opposite", i, err)

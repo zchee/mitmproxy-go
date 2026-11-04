@@ -79,13 +79,15 @@ func TestProtobufRoundTrip(t *testing.T) {
 			})
 		}
 		t.Run("direct", func(t *testing.T) {
-			tests := map[string]func(t *testing.T){
+			tests := map[string]func(*testing.T){
 				"test_invalid_protobuf": func(t *testing.T) {
+					t.Helper()
 					if got, err := (Protobuf{}).Prettify([]byte{0xff, 0xff}, Metadata{}); err == nil {
 						t.Fatalf("Prettify(ffff) = %q, want an error", got)
 					}
 				},
 				"test_no_crash": func(t *testing.T) {
+					t.Helper()
 					input := []byte("\n\x13gRPC testing server\x12\x07\n\x05Index\x12\x07\n\x05Empty\x12\x0c\n\nDummyUnary\x12\x0f\n\rSpecificError\x12\r\n\x0bRandomError\x12\x0e\n\x0cHeadersUnary\x12\x11\n\x0fNoResponseUnary")
 					want := "1: gRPC testing server\n2:\n- 1: Index\n- 1: Empty\n- 1: DummyUnary\n- 1: SpecificError\n- 1: RandomError\n- 1: HeadersUnary\n- 1: NoResponseUnary\n"
 					got, err := Protobuf{}.Prettify(input, Metadata{})
@@ -97,6 +99,7 @@ func TestProtobufRoundTrip(t *testing.T) {
 					}
 				},
 				"test_empty_protobuf": func(t *testing.T) {
+					t.Helper()
 					got, err := Protobuf{}.Prettify(nil, Metadata{})
 					if err != nil {
 						t.Fatal(err)
@@ -118,8 +121,9 @@ func TestProtobufDefinitions(t *testing.T) {
 		t.Run("existing_definition", func(t *testing.T) {
 			const varintPrettyYAML = "example: 150\n"
 			metadata := Metadata{ProtobufDefinitions: protobufFixture("simple.proto")}
-			tests := map[string]func(t *testing.T){
+			tests := map[string]func(*testing.T){
 				"prettify": func(t *testing.T) {
+					t.Helper()
 					got, err := Protobuf{}.Prettify(protobufRoundTrips["varint"].proto, metadata)
 					if err != nil {
 						t.Fatal(err)
@@ -131,6 +135,7 @@ func TestProtobufDefinitions(t *testing.T) {
 				// Wire data that is valid protobuf but does not fit the
 				// definition is rendered without it.
 				"prettify_mismatch": func(t *testing.T) {
+					t.Helper()
 					got, err := Protobuf{}.Prettify(protobufRoundTrips["string"].proto, metadata)
 					if err != nil {
 						t.Fatal(err)
@@ -140,6 +145,7 @@ func TestProtobufDefinitions(t *testing.T) {
 					}
 				},
 				"reencode": func(t *testing.T) {
+					t.Helper()
 					got, err := Protobuf{}.Reencode(varintPrettyYAML, metadata)
 					if err != nil {
 						t.Fatal(err)
@@ -149,6 +155,7 @@ func TestProtobufDefinitions(t *testing.T) {
 					}
 				},
 				"reencode_mismatch": func(t *testing.T) {
+					t.Helper()
 					got, err := Protobuf{}.Reencode("example: hello", metadata)
 					if err != nil {
 						t.Fatal(err)

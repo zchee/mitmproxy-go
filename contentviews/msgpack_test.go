@@ -60,8 +60,9 @@ func mustHex(t *testing.T, text string) []byte {
 
 func TestMsgPack(t *testing.T) {
 	t.Run("upstream", func(t *testing.T) {
-		tests := map[string]func(t *testing.T){
+		tests := map[string]func(*testing.T){
 			"test_msgpack_deserialize": func(t *testing.T) {
+				t.Helper()
 				got, err := MsgPack{}.Prettify(testMsgPack, Metadata{})
 				if err != nil {
 					t.Fatal(err)
@@ -71,6 +72,7 @@ func TestMsgPack(t *testing.T) {
 				}
 			},
 			"test_msgpack_serialize": func(t *testing.T) {
+				t.Helper()
 				data, err := MsgPack{}.Reencode(testMsgPackYAML, Metadata{})
 				if err != nil {
 					t.Fatal(err)
@@ -105,6 +107,7 @@ func TestMsgPack(t *testing.T) {
 				}
 			},
 			"test_msgpack_roundtrip": func(t *testing.T) {
+				t.Helper()
 				text, err := MsgPack{}.Prettify(testMsgPack, Metadata{})
 				if err != nil {
 					t.Fatal(err)
@@ -118,6 +121,7 @@ func TestMsgPack(t *testing.T) {
 				}
 			},
 			"test_invalid_yaml": func(t *testing.T) {
+				t.Helper()
 				data, err := MsgPack{}.Reencode("@invalid_yaml", Metadata{})
 				if err == nil || data != nil {
 					t.Fatalf("Reencode = %x, %v; want an error", data, err)
@@ -157,7 +161,7 @@ func TestMsgPack(t *testing.T) {
 
 	t.Run("registry", func(t *testing.T) {
 		registry := NewRegistry()
-		var names []string
+		names := make([]string, 0, len(registry.views))
 		for _, view := range registry.views {
 			names = append(names, view.name)
 		}

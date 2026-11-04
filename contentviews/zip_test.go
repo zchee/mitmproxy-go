@@ -13,21 +13,21 @@ import (
 	"testing"
 )
 
-func zipFixture(t testing.TB, names []string, nonUTF8 bool) []byte {
-	t.Helper()
+func zipFixture(tb testing.TB, names []string, nonUTF8 bool) []byte {
+	tb.Helper()
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
 	for _, name := range names {
 		file, err := writer.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Store, NonUTF8: nonUTF8})
 		if err != nil {
-			t.Fatal(err)
+			tb.Fatal(err)
 		}
 		if _, err := file.Write([]byte("content")); err != nil {
-			t.Fatal(err)
+			tb.Fatal(err)
 		}
 	}
 	if err := writer.Close(); err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	return buffer.Bytes()
 }
@@ -36,6 +36,7 @@ func TestZIP(t *testing.T) {
 	t.Run("upstream", func(t *testing.T) {
 		tests := map[string]func(*testing.T){
 			"test_view_zip": func(t *testing.T) {
+				t.Helper()
 				names := []string{"normal.txt", "with spaces.txt", "dir/nested.txt", "file\nwith\nnewlines.txt", "unicode_文件.txt", "café.txt"}
 				view := ZIP{}
 				text, err := view.Prettify(zipFixture(t, names, false), Metadata{ContentType: "application/zip"})
@@ -52,12 +53,14 @@ func TestZIP(t *testing.T) {
 				}
 			},
 			"test_view_zip_empty": func(t *testing.T) {
+				t.Helper()
 				text, err := (ZIP{}).Prettify(zipFixture(t, nil, false), Metadata{})
 				if err != nil || text != "(empty zip file)" {
 					t.Fatalf("empty ZIP=%q %v", text, err)
 				}
 			},
 			"test_render_priority": func(t *testing.T) {
+				t.Helper()
 				view := ZIP{}
 				if view.RenderPriority([]byte("data"), Metadata{ContentType: "application/zip"}) != 1 || view.RenderPriority([]byte("data"), Metadata{ContentType: "text/plain"}) != 0 || view.RenderPriority(nil, Metadata{ContentType: "application/zip"}) != 0 {
 					t.Fatal("ZIP priority mismatch")

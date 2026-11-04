@@ -17,11 +17,11 @@ import (
 	"github.com/zchee/mitmproxy-go/tcp"
 )
 
-func http3Vectors(t testing.TB) map[string]struct {
+func http3Vectors(tb testing.TB) map[string]struct {
 	data []byte
 	uni  bool
 } {
-	t.Helper()
+	tb.Helper()
 	literals := map[string]struct {
 		hex string
 		uni bool
@@ -43,7 +43,7 @@ func http3Vectors(t testing.TB) map[string]struct {
 	for name, literal := range literals {
 		data, err := hex.DecodeString(literal.hex)
 		if err != nil {
-			t.Fatal(err)
+			tb.Fatal(err)
 		}
 		tests[name] = struct {
 			data []byte

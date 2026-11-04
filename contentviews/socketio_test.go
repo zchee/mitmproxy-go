@@ -18,6 +18,7 @@ func TestSocketIO(t *testing.T) {
 	t.Run("upstream", func(t *testing.T) {
 		tests := map[string]func(*testing.T){
 			"test_parse_packet": func(t *testing.T) {
+				t.Helper()
 				tests := map[string]struct {
 					name    string
 					payload string
@@ -34,6 +35,7 @@ func TestSocketIO(t *testing.T) {
 				}
 			},
 			"test_view": func(t *testing.T) {
+				t.Helper()
 				tests := map[string]struct {
 					text string
 					fail bool
@@ -56,6 +58,7 @@ func TestSocketIO(t *testing.T) {
 				}
 			},
 			"test_render_priority": func(t *testing.T) {
+				t.Helper()
 				view := SocketIO{}
 				if view.RenderPriority(nil, Metadata{}) != 0 {
 					t.Fatal("empty flowless packet selected")

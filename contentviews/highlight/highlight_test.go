@@ -47,7 +47,7 @@ func TestHighlightLanguagesTags(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				var tags []string
+				tags := make([]string, 0, len(chunks))
 				for _, chunk := range chunks {
 					tags = append(tags, chunk.Tag)
 				}

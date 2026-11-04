@@ -163,7 +163,7 @@ func TestParseGIFMalformed(t *testing.T) {
 func TestParseGIFTruncated(t *testing.T) {
 	t.Parallel()
 	data := testutil.Fixture(t, "mitmproxy/image_parser/chi.gif")
-	for i := range len(data) {
+	for i := range data {
 		if _, err := ParseGIF(data[:i]); err == nil && i <= 13 {
 			t.Fatalf("ParseGIF(data[:%d]) succeeded inside the header", i)
 		}

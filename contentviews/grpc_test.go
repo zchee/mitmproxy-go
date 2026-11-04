@@ -70,16 +70,22 @@ func TestGRPC(t *testing.T) {
 		}
 	}
 	t.Run("upstream", func(t *testing.T) {
-		tests := map[string]func(t *testing.T){
-			"test_empty":                 func(t *testing.T) { prettify(t, nil, Metadata{}, "") },
-			"test_prettify_two_messages": func(t *testing.T) { prettify(t, testGRPC, Metadata{}, testGRPCYAML) },
+		tests := map[string]func(*testing.T){
+			"test_empty": func(t *testing.T) { t.Helper(); prettify(t, nil, Metadata{}, "") },
+			"test_prettify_two_messages": func(t *testing.T) {
+				t.Helper()
+				prettify(t, testGRPC, Metadata{}, testGRPCYAML)
+			},
 			"test_prettify_gzip": func(t *testing.T) {
+				t.Helper()
 				prettify(t, testGRPCGzip, grpcMetadata("gzip"), "1: 150  # !sint: 75\n")
 			},
 			"test_prettify_deflate": func(t *testing.T) {
+				t.Helper()
 				prettify(t, testGRPCDeflate, grpcMetadata("deflate"), "1: 150  # !sint: 75\n")
 			},
 			"test_reencode_two_messages": func(t *testing.T) {
+				t.Helper()
 				got, err := GRPC{}.Reencode(testGRPCYAML, Metadata{})
 				if err != nil {
 					t.Fatal(err)
@@ -89,6 +95,7 @@ func TestGRPC(t *testing.T) {
 				}
 			},
 			"test_render_priority": func(t *testing.T) {
+				t.Helper()
 				got := []float64{
 					GRPC{}.RenderPriority(nil, Metadata{ContentType: "application/grpc"}),
 					GRPC{}.RenderPriority(nil, Metadata{ContentType: "text/plain"}),

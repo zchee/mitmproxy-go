@@ -49,12 +49,14 @@ func (v exampleView) Prettify(data []byte, _ Metadata) (string, error) {
 func TestRegistry(t *testing.T) {
 	tests := map[string]struct{ run func(*testing.T) }{
 		"built_in_views": {func(t *testing.T) {
+			t.Helper()
 			want := []string{"auto", "dns", "graphql", "grpc", "hex dump", "hex stream", "http/3 frames", "image", "javascript", "json", "mqtt", "msgpack", "multipart form", "protobuf", "query", "raw", "socket.io", "url-encoded", "viewcss", "wbxml", "xml/html", "zip archive"}
 			if diff := cmp.Diff(want, NewRegistry().AvailableViews()); diff != "" {
 				t.Fatal(diff)
 			}
 		}},
 		"register_triggers_on_change": {func(t *testing.T) {
+			t.Helper()
 			r := &Registry{}
 			var changed []string
 			unsubscribe := r.Subscribe(func(v View) { changed = append(changed, v.Name()); r.Get(v.Name()) })
@@ -66,6 +68,7 @@ func TestRegistry(t *testing.T) {
 			}
 		}},
 		"replace_view_triggers_on_change_and_logs": {func(t *testing.T) {
+			t.Helper()
 			var log bytes.Buffer
 			previous := SetLogger(slog.New(slog.NewTextHandler(&log, nil)))
 			t.Cleanup(func() { SetLogger(previous) })
@@ -81,6 +84,7 @@ func TestRegistry(t *testing.T) {
 			}
 		}},
 		"dunder_methods": {func(t *testing.T) {
+			t.Helper()
 			r := &Registry{}
 			view := exampleView{name: "Example"}
 			r.Register(view)
@@ -94,6 +98,7 @@ func TestRegistry(t *testing.T) {
 			}
 		}},
 		"get_view_unknown_name": {func(t *testing.T) {
+			t.Helper()
 			var log bytes.Buffer
 			previous := SetLogger(slog.New(slog.NewTextHandler(&log, nil)))
 			t.Cleanup(func() { SetLogger(previous) })
@@ -106,6 +111,7 @@ func TestRegistry(t *testing.T) {
 			}
 		}},
 		"render_priority_error": {func(t *testing.T) {
+			t.Helper()
 			var log bytes.Buffer
 			previous := SetLogger(slog.New(slog.NewTextHandler(&log, nil)))
 			t.Cleanup(func() { SetLogger(previous) })
@@ -121,6 +127,7 @@ func TestRegistry(t *testing.T) {
 			}
 		}},
 		"equal_priority_keeps_registration_order": {func(t *testing.T) {
+			t.Helper()
 			r := &Registry{}
 			r.Register(exampleView{name: "Z", priority: 1})
 			r.Register(exampleView{name: "A", priority: 1})
@@ -131,6 +138,7 @@ func TestRegistry(t *testing.T) {
 			}
 		}},
 		"empty_registry": {func(t *testing.T) {
+			t.Helper()
 			_, err := (&Registry{}).GetView(nil, Metadata{}, "auto")
 			if !errors.Is(err, ErrNoView) {
 				t.Fatalf("got %v", err)

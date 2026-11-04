@@ -45,7 +45,7 @@ func (m *destinationMode) Run(ctx context.Context, c *layer.Context) error {
 	if server != nil {
 		conn, actual, err := c.Pool.Open(ctx, server, layer.OpenOptions{Reuse: true})
 		if err != nil {
-			return err
+			return logEagerConnectFailure(ctx, c, err)
 		}
 		c.Server = c.Record(conn)
 		if err := c.Do(ctx, func(context.Context) error { c.Data.Server = actual; return nil }); err != nil {

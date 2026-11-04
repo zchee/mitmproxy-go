@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"runtime"
 	"strings"
@@ -293,16 +294,67 @@ func TestReverseConnectOrdering(t *testing.T) {
 	}
 }
 
+type logRecord struct {
+	Level   slog.Level
+	Message string
+	Error   string
+}
+
+type recordingHandler struct {
+	slog.Handler
+	records []logRecord
+}
+
+func (h *recordingHandler) Handle(_ context.Context, record slog.Record) error {
+	entry := logRecord{Level: record.Level, Message: record.Message}
+	record.Attrs(func(attr slog.Attr) bool {
+		if attr.Key == "error" {
+			entry.Error = attr.Value.String()
+		}
+		return true
+	})
+	h.records = append(h.records, entry)
+	return nil
+}
+
 func TestReverseConnectFailure(t *testing.T) {
-	c := newContext(t, "reverse:https://example.com")
-	wantErr := errors.New("IPoAC packet dropped by cat")
-	c.Pool = &pool{dial: func(context.Context, *connection.Server) (layer.Conn, error) { return nil, wantErr }}
-	c.NextLayer = func(context.Context, *layer.Context) (layer.Layer, error) {
-		t.Error("selected a child after failed eager connect")
-		return nil, nil
+	tests := map[string]struct{ killed bool }{
+		"error: dial failure":    {},
+		"error: killed by addon": {killed: true},
 	}
-	if err := run(t, build(t, c, hookdata.LayerReverse), c); !errors.Is(err, wantErr) {
-		t.Fatalf("Run = %v", err)
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			c := newContext(t, "reverse:https://[::1]")
+			logs := &recordingHandler{Handler: slog.NewTextHandler(io.Discard, nil)}
+			c.Logger = slog.New(logs)
+			failure := errors.New("IPoAC packet dropped by cat")
+			if tt.killed {
+				failure = errors.New("proxy: connection killed: Request destination unknown. Unable to figure out where this request should be forwarded to.")
+			}
+			c.Pool = &pool{dial: func(ctx context.Context, _ *connection.Server) (layer.Conn, error) {
+				if err := c.Do(ctx, func(context.Context) error {
+					if tt.killed {
+						c.Data.Server.Error = new("Request destination unknown. Unable to figure out where this request should be forwarded to.")
+					}
+					return nil
+				}); err != nil {
+					return nil, err
+				}
+				return nil, failure
+			}}
+			selected := false
+			c.NextLayer = func(context.Context, *layer.Context) (layer.Layer, error) {
+				selected = true
+				return nil, nil
+			}
+			if err := run(t, build(t, c, hookdata.LayerReverse), c); err != nil || selected {
+				t.Fatalf("Run = %v, selected=%v", err, selected)
+			}
+			wantRecords := []logRecord{{Level: slog.LevelInfo, Message: "server connection to [::1]:443 failed before connect", Error: failure.Error()}}
+			if diff := gocmp.Diff(wantRecords, logs.records); diff != "" {
+				t.Fatalf("connection logs (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

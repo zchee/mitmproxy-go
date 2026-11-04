@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"sync"
 
 	"github.com/zchee/mitmproxy-go/addon"
@@ -246,12 +247,11 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 				next[direction] = driverWrite{event: event, turn: turn}
 			}
 		}
-		var writeCtx [2]context.Context
 		var writeCancel [2]context.CancelFunc
 		for i := range 2 {
 			if destinations[i] != nil {
-				writeCtx[i], writeCancel[i] = context.WithCancel(ctx)
-				next[i].ctx = writeCtx[i]
+				writeCtx, stop := context.WithCancel(ctx)
+				next[i].ctx, writeCancel[i] = writeCtx, stop
 			}
 		}
 		var result driverRead
@@ -278,7 +278,7 @@ func (d *streamDriver) run(ctx context.Context) (err error) {
 			activeTurns[0] = next[0].turn
 			active[0], writeCancel[0] = writeCancel[0], nil
 		case destinations[1] <- next[1]:
-			if headers, ok := next[1].event.(ResponseHeaders); ok && headers.Response.StatusCode == 101 {
+			if headers, ok := next[1].event.(ResponseHeaders); ok && headers.Response.StatusCode == http.StatusSwitchingProtocols {
 				d.stream.upgrade.clientResponse = headers.Response.Clone()
 			}
 			next[1].turn.pending = true

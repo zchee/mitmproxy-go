@@ -80,7 +80,7 @@ func Conformance(t *testing.T, setup func(*testing.T) Session) {
 			if tt.replay {
 				// One-byte reads model a fragmented sniff without hiding bytes
 				// in a bufio.Reader that the child cannot access.
-				for i := range len(out) {
+				for i := range out {
 					var b [1]byte
 					if _, err := io.ReadFull(input, b[:]); err != nil {
 						fail(t, "record prefix", err)

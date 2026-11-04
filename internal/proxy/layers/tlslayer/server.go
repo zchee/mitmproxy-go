@@ -208,7 +208,7 @@ func (p *serverTLSPool) setup(ctx context.Context, conn layer.Conn, srv *connect
 	}
 	tc := tls.Client(conn, data.Config)
 	if err := tc.HandshakeContext(ctx); err != nil {
-		failure := &handshakeFailure{explanation: serverHandshakeError(err), err: err}
+		failure := &handshakeError{explanation: serverHandshakeError(err), err: err}
 		p.c.Logger.WarnContext(ctx, "Server TLS handshake failed. "+failure.explanation)
 		_, hookErr := p.c.Hooks.FireFunc(ctx, func(context.Context) error {
 			srv.Error = &failure.explanation
@@ -240,18 +240,18 @@ func (p *serverTLSPool) hookContext(srv *connection.Server) *hookdata.Context {
 	return &derived
 }
 
-// handshakeFailure carries the explanation upstream presents for a failed
+// handshakeError carries the explanation upstream presents for a failed
 // handshake while preserving the underlying error chain.
-type handshakeFailure struct {
+type handshakeError struct {
 	explanation string
 	err         error
 }
 
 // Error implements the error interface.
-func (e *handshakeFailure) Error() string { return e.explanation }
+func (e *handshakeError) Error() string { return e.explanation }
 
 // Unwrap makes the original handshake error available to [errors.Is].
-func (e *handshakeFailure) Unwrap() error { return e.err }
+func (e *handshakeError) Unwrap() error { return e.err }
 
 // serverHandshakeError explains a server handshake error the way upstream
 // does (py:mitmproxy/proxy/layers/tls.py), translated from OpenSSL error

@@ -80,7 +80,7 @@ func publishDTLS(conn *connection.Connection, state *dtls.State) {
 }
 
 func failDTLSHandshake(ctx context.Context, c *layer.Context, data *hookdata.TLS, err error) error {
-	failure := &handshakeFailure{explanation: err.Error(), err: err}
+	failure := &handshakeError{explanation: err.Error(), err: err}
 	var client bool
 	if dispatchErr := c.Do(ctx, func(context.Context) error {
 		client = data.IsClient()

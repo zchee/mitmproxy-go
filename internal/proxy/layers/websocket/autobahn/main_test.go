@@ -14,6 +14,25 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 )
 
+func TestExitCode(t *testing.T) {
+	tests := map[string]struct {
+		args []string
+		want int
+	}{
+		"invalid command returns failure": {args: []string{"unknown"}, want: 1},
+		"cancelled guard returns success": {args: []string{"guard", "60", "1234"}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			if got := exitCode(ctx, tt.args); got != tt.want {
+				t.Fatalf("exitCode(%q) = %d, want %d", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestConfigureSuite(t *testing.T) {
 	output := filepath.Join(t.TempDir(), "fuzzingclient.json")
 	image, err := configureSuite("cases.json", "fuzzingclient.json", "ws://127.0.0.1:12345", output)

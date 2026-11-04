@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -109,7 +110,7 @@ func (s *http1Server) readHead(ctx context.Context) error {
 	s.mu.Unlock()
 	id := s.streamID()
 	var head http1.RequestHead
-	_, err := s.readHeadCtx(ctx, id != 1, func() (int, error) {
+	err := s.readHeadCtx(ctx, id != 1, func() (int, error) {
 		var err error
 		head, err = http1.ReadRequestHead(s.br)
 		return 0, err
@@ -414,7 +415,7 @@ func (s *http1Server) sendHead(ctx context.Context, response *httpmsg.Response) 
 	if err := s.writeCtx(ctx, raw); err != nil {
 		return err
 	}
-	if response.StatusCode >= 100 && response.StatusCode < 200 && response.StatusCode != 101 {
+	if response.StatusCode >= 100 && response.StatusCode < 200 && response.StatusCode != http.StatusSwitchingProtocols {
 		// An informational response precedes the final head.
 		return nil
 	}
@@ -434,7 +435,7 @@ func (s *http1Server) sendEnd(ctx context.Context) error {
 	if !s.sentHead || request == nil {
 		return errors.New("HTTP/1 response ended before its headers")
 	}
-	if s.sentChunked && strings.ToUpper(request.Method) != "HEAD" {
+	if s.sentChunked && !strings.EqualFold(request.Method, "HEAD") {
 		if err := s.writeLastChunk(ctx, s.sentTrailers); err != nil {
 			return err
 		}
@@ -505,7 +506,7 @@ func (s *http1Server) markDoneLocked(request, response, onReceive bool) {
 	}
 	s.wire.drop(s.id)
 	if shouldMakePipe(s.request, s.response) {
-		if s.handover && strings.ToUpper(s.request.Method) == "CONNECT" {
+		if s.handover && strings.EqualFold(s.request.Method, "CONNECT") {
 			// The routing layer takes the buffered tunnel bytes and the
 			// transport to a child layer; nothing is parsed or relayed here.
 			s.handingOver = true

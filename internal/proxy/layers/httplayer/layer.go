@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -194,7 +195,7 @@ func (l *httpLayer) Run(ctx context.Context, c *layer.Context) error {
 		if stream.connectEstablished {
 			return l.tunnel(ctx, c, client, stream)
 		}
-		if stream.snapshot != nil && stream.snapshot.Response != nil && stream.snapshot.Response.StatusCode == 101 {
+		if stream.snapshot != nil && stream.snapshot.Response != nil && stream.snapshot.Response.StatusCode == http.StatusSwitchingProtocols {
 			var websocket, raw bool
 			if err := c.Do(ctx, func(context.Context) error {
 				websocket = c.Data.Options.Bool("websocket")

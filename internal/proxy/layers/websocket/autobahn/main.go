@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -21,17 +22,22 @@ import (
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	os.Exit(exitCode(context.Background(), os.Args[1:]))
+}
+
+func exitCode(ctx context.Context, args []string) int {
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, os.Args[1:]); err != nil {
+	if err := run(ctx, args); err != nil {
 		slog.Error("Autobahn gate failed", "error", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("expected origin, address, port, wait, configure, seconds, guard or verify")
+		return errors.New("expected origin, address, port, wait, configure, seconds, guard or verify")
 	}
 	switch {
 	case args[0] == "origin" && len(args) == 3:
@@ -104,7 +110,7 @@ func run(ctx context.Context, args []string) error {
 		}
 		pid, err := strconv.Atoi(args[2])
 		if err != nil || pid < 2 {
-			return fmt.Errorf("guard requires a positive child process ID")
+			return errors.New("guard requires a positive child process ID")
 		}
 		if ctx.Err() != nil {
 			return nil
@@ -122,7 +128,7 @@ func run(ctx context.Context, args []string) error {
 			if err := process.Signal(syscall.SIGTERM); err != nil {
 				return err
 			}
-			return fmt.Errorf("autobahn suite exceeded its hang guard")
+			return errors.New("autobahn suite exceeded its hang guard")
 		}
 	case args[0] == "verify" && len(args) >= 4:
 		result, err := verifyFiles(args[1], args[2], args[4:]...)
@@ -131,14 +137,14 @@ func run(ctx context.Context, args []string) error {
 		}
 		return writeJSON(args[3], result)
 	default:
-		return fmt.Errorf("invalid command or argument count")
+		return errors.New("invalid command or argument count")
 	}
 }
 
 func timeoutSeconds(value string) (int, error) {
 	limit, err := strconv.Atoi(value)
 	if err != nil || limit < 1 || limit > 86400 {
-		return 0, fmt.Errorf("WS_GATE_TIMEOUT_SECONDS must be between 1 and 86400")
+		return 0, errors.New("WS_GATE_TIMEOUT_SECONDS must be between 1 and 86400")
 	}
 	return limit, nil
 }
@@ -146,7 +152,7 @@ func timeoutSeconds(value string) (int, error) {
 func configuredAddress(host, port string) (string, error) {
 	n, err := strconv.Atoi(port)
 	if host == "" || err != nil || n < 0 || n > 65535 {
-		return "", fmt.Errorf("listen host must be nonempty and port must be between 0 and 65535")
+		return "", errors.New("listen host must be nonempty and port must be between 0 and 65535")
 	}
 	return net.JoinHostPort(host, port), nil
 }
@@ -164,17 +170,17 @@ func configureSuite(manifestPath, configPath, target, output string, prefixes ..
 		return "", err
 	}
 	if config.Image != m.Image {
-		return "", fmt.Errorf("config and manifest image digests differ")
+		return "", errors.New("config and manifest image digests differ")
 	}
 	u, err := url.Parse(target)
 	if err != nil || u.Scheme != "ws" || u.Host == "" || u.User != nil {
-		return "", fmt.Errorf("target must be a credential-free ws URL")
+		return "", errors.New("target must be a credential-free ws URL")
 	}
 	config.Outdir = "/reports/clients"
 	config.Servers = []suiteServer{{Agent: suiteAgent, URL: target}}
 	config.Cases = make([]string, 0, len(m.Cases))
 	if slices.Contains(prefixes, "") {
-		return "", fmt.Errorf("case prefixes must be nonempty")
+		return "", errors.New("case prefixes must be nonempty")
 	}
 	for _, c := range m.Cases {
 		selected := len(prefixes) == 0
@@ -191,7 +197,7 @@ func configureSuite(manifestPath, configPath, target, output string, prefixes ..
 		}
 	}
 	if len(config.Cases) == 0 {
-		return "", fmt.Errorf("case prefixes select no frozen cases")
+		return "", errors.New("case prefixes select no frozen cases")
 	}
 	config.ExcludeCases, config.ExcludeAgentCases = []string{}, map[string][]string{}
 	return m.Image, writeJSON(output, config)

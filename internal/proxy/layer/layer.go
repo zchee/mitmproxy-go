@@ -110,10 +110,10 @@ func Register(kind hookdata.LayerKind, ctor Constructor) {
 // Mode layers are permitted only as the single initial layer.
 func Build(ctx context.Context, c *Context, stack hookdata.LayerStack) (Layer, error) {
 	if c == nil || c.Data == nil || c.Do == nil {
-		return nil, fmt.Errorf("layer: Build requires a context with Data and Do")
+		return nil, errors.New("layer: Build requires a context with Data and Do")
 	}
 	if len(stack) == 0 {
-		return nil, fmt.Errorf("layer: Build with an empty stack")
+		return nil, errors.New("layer: Build with an empty stack")
 	}
 	var outer Layer
 	err := c.Do(ctx, func(context.Context) error {
@@ -171,7 +171,7 @@ func Build(ctx context.Context, c *Context, stack hookdata.LayerStack) (Layer, e
 // replay.
 func Next(ctx context.Context, c *Context) (Layer, error) {
 	if c == nil || c.NextLayer == nil {
-		return nil, fmt.Errorf("layer: no next-layer selector configured")
+		return nil, errors.New("layer: no next-layer selector configured")
 	}
 	return c.NextLayer(ctx, c)
 }

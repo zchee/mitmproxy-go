@@ -216,7 +216,7 @@ func (p *packetServers) close() error {
 	p.closed = true
 	p.mu.Unlock()
 	p.workers.Wait()
-	var errs []error
+	errs := make([]error, 0, len(p.entries))
 	for _, entry := range p.entries {
 		_ = entry.transport.Close()
 		_, err := p.hooks.FireFunc(context.WithoutCancel(p.ctx), func(context.Context) error {

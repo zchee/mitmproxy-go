@@ -18,16 +18,16 @@ import (
 	"github.com/zchee/mitmproxy-go/tlsparse"
 )
 
-type packetHeadTimeout struct{}
+type packetHeadTimeoutError struct{}
 
 // Error identifies expiration of the DTLS protocol-head read deadline.
-func (packetHeadTimeout) Error() string { return "proxy: DTLS protocol head read timed out" }
+func (packetHeadTimeoutError) Error() string { return "proxy: DTLS protocol head read timed out" }
 
 // Timeout classifies the expired protocol-head deadline as a network timeout.
-func (packetHeadTimeout) Timeout() bool { return true }
+func (packetHeadTimeoutError) Timeout() bool { return true }
 
 // Temporary reports that protocol selection cannot retry after its deadline expires.
-func (packetHeadTimeout) Temporary() bool { return false }
+func (packetHeadTimeoutError) Temporary() bool { return false }
 
 func nextPacketLayer(ctx context.Context, c *layer.Context) (layer.Layer, error) {
 	if c.Data == nil || c.Hooks == nil || c.Do == nil {
@@ -93,7 +93,7 @@ func nextPacketLayer(ctx context.Context, c *layer.Context) (layer.Layer, error)
 				}
 				received[read.side] = append(received[read.side], read.data...)
 				if stopHead == nil && tlsparse.StartsLikeDTLSRecord(received[0]) {
-					stopHead = clock.AfterFunc(layer.HeadReadTimeout, func() { cancel(packetHeadTimeout{}) })
+					stopHead = clock.AfterFunc(layer.HeadReadTimeout, func() { cancel(packetHeadTimeoutError{}) })
 				}
 				_, err := c.Hooks.FireFunc(readCtx, func(context.Context) error {
 					data.DataClient = slices.Clip(received[0])
@@ -118,7 +118,7 @@ func nextPacketLayer(ctx context.Context, c *layer.Context) (layer.Layer, error)
 				}
 				if stack != nil {
 					if stopHead != nil && !stopHead() {
-						return nil, packetHeadTimeout{}
+						return nil, packetHeadTimeoutError{}
 					}
 					finish()
 					for _, spec := range stack {

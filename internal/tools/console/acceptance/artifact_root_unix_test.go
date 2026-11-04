@@ -6,6 +6,7 @@
 package acceptance_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,7 +20,7 @@ import (
 func checkArtifactRootOwner(info os.FileInfo) error {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return fmt.Errorf("cannot verify directory ownership")
+		return errors.New("cannot verify directory ownership")
 	}
 	if uint64(stat.Uid) != uint64(os.Getuid()) {
 		return fmt.Errorf("directory must be owned by caller uid %d (owner uid %d)", os.Getuid(), stat.Uid)
@@ -37,20 +38,22 @@ func TestArtifactRoot(t *testing.T) {
 			wantErr: "MITMPROXY_TEST_CONSOLE_ARTIFACTS must be an absolute path",
 		},
 		"nonexistent": {
-			setup:   func(t *testing.T) string { return filepath.Join(t.TempDir(), "missing") },
+			setup:   func(t *testing.T) string { t.Helper(); return filepath.Join(t.TempDir(), "missing") },
 			wantErr: "resolve console artifact root",
 		},
 		"file": {
 			setup: func(t *testing.T) string {
+				t.Helper()
 				path := filepath.Join(t.TempDir(), "file")
 				requireNoError(t, os.WriteFile(path, nil, 0o600))
 				return path
 			},
 			wantErr: "must be an existing directory",
 		},
-		"absolute": {setup: func(t *testing.T) string { return t.TempDir() }},
+		"absolute": {setup: func(t *testing.T) string { t.Helper(); return t.TempDir() }},
 		"group writable": {
 			setup: func(t *testing.T) string {
+				t.Helper()
 				path := t.TempDir()
 				requireNoError(t, os.Chmod(path, 0o720))
 				return path
@@ -59,6 +62,7 @@ func TestArtifactRoot(t *testing.T) {
 		},
 		"other writable": {
 			setup: func(t *testing.T) string {
+				t.Helper()
 				path := t.TempDir()
 				requireNoError(t, os.Chmod(path, 0o702))
 				return path

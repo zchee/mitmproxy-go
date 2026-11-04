@@ -24,23 +24,23 @@ const testdataDir = "../../testdata"
 // The repository root is located from the source path of this file, so the
 // result does not depend on the working directory of the test binary. That
 // path is not a file system path when the binary is built with -trimpath.
-func FixturePath(t testing.TB, rel string) string {
-	t.Helper()
+func FixturePath(tb testing.TB, rel string) string {
+	tb.Helper()
 
 	if !fs.ValidPath(rel) {
-		t.Fatalf("testutil.FixturePath(%q): not a clean slash-separated relative path", rel)
+		tb.Fatalf("testutil.FixturePath(%q): not a clean slash-separated relative path", rel)
 	}
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
-		t.Fatalf("testutil.FixturePath(%q): cannot determine the source path of the testutil package", rel)
+		tb.Fatalf("testutil.FixturePath(%q): cannot determine the source path of the testutil package", rel)
 	}
 	if !filepath.IsAbs(file) {
-		t.Fatalf("testutil.FixturePath(%q): source path %q is not absolute; fixtures cannot be located in a binary built with -trimpath", rel, file)
+		tb.Fatalf("testutil.FixturePath(%q): source path %q is not absolute; fixtures cannot be located in a binary built with -trimpath", rel, file)
 	}
 
 	path := filepath.Join(filepath.Dir(file), filepath.FromSlash(testdataDir), filepath.FromSlash(rel))
 	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("testutil.FixturePath(%q): %v", rel, err)
+		tb.Fatalf("testutil.FixturePath(%q): %v", rel, err)
 	}
 	return path
 }
@@ -49,20 +49,20 @@ func FixturePath(t testing.TB, rel string) string {
 // relative to the repository's testdata directory. It fails the test if the
 // file cannot be read. The file is read through an [os.Root] opened on the
 // testdata directory, so a symbolic link cannot lead the read outside it.
-func Fixture(t testing.TB, rel string) []byte {
-	t.Helper()
+func Fixture(tb testing.TB, rel string) []byte {
+	tb.Helper()
 
-	FixturePath(t, rel) // fails the test if rel is malformed or missing
-	root, err := os.OpenRoot(FixturePath(t, "."))
+	FixturePath(tb, rel) // fails the test if rel is malformed or missing
+	root, err := os.OpenRoot(FixturePath(tb, "."))
 	if err != nil {
-		t.Fatalf("testutil.Fixture(%q): %v", rel, err)
+		tb.Fatalf("testutil.Fixture(%q): %v", rel, err)
 	}
 	b, err := root.ReadFile(filepath.FromSlash(rel))
 	if closeErr := root.Close(); err == nil {
 		err = closeErr
 	}
 	if err != nil {
-		t.Fatalf("testutil.Fixture(%q): %v", rel, err)
+		tb.Fatalf("testutil.Fixture(%q): %v", rel, err)
 	}
 	return b
 }

@@ -190,10 +190,12 @@ func TestConsoleKeymap(t *testing.T) {
 					// Expanded aliases exceed the node budget despite a small input graph.
 					bomb := "- &a [x, x, x, x, x, x, x, x, x, x]\n"
 					prev := "a"
+					var bombSb193 strings.Builder
 					for _, next := range []string{"b", "c", "d", "e", "f"} {
-						bomb += "- &" + next + " [" + strings.TrimSuffix(strings.Repeat("*"+prev+",", 10), ",") + "]\n"
+						bombSb193.WriteString("- &" + next + " [" + strings.TrimSuffix(strings.Repeat("*"+prev+",", 10), ",") + "]\n")
 						prev = next
 					}
+					bomb += bombSb193.String()
 					if _, err := Parse([]byte(bomb)); err == nil {
 						t.Fatal("expanded alias budget accepted")
 					}

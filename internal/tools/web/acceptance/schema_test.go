@@ -282,7 +282,7 @@ func TestMitmwebFlowSchema(t *testing.T) {
 			t.Fatalf("flow.ts SHA256 = %s, want %s", got, flowSchemaSHA256)
 		}
 		interfaces := regexp.MustCompile(`(?m)^(?:export )?interface (\w+)(?: extends (\w+))? \{\n([\s\S]*?)^\}`).FindAllSubmatch(source, -1)
-		declarations := regexp.MustCompile(`(?m)^    (\w+)(\?)?: ([^\n]+);$`)
+		declarations := regexp.MustCompile(`(?m)^ {4}(\w+)(\?)?: ([^\n]+);$`)
 		var optional []string
 		seen := make(map[string]bool)
 		for _, definition := range interfaces {
@@ -303,7 +303,7 @@ func TestMitmwebFlowSchema(t *testing.T) {
 				if !field.Anonymous {
 					key, _, _ := strings.Cut(field.Tag.Get("json"), ",")
 					got = append(got, key)
-				} else if string(definition[2]) == "" || field.Type != schemaInterfaces[string(definition[2])] {
+				} else if len(definition[2]) == 0 || field.Type != schemaInterfaces[string(definition[2])] {
 					t.Fatalf("%s: incorrect inheritance", name)
 				}
 			}

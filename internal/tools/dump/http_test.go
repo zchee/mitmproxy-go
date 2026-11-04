@@ -121,7 +121,7 @@ func TestHTTPProxyAssembly(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
 			if err != nil {
 				t.Fatal(err)
 			}

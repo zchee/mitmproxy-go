@@ -95,7 +95,7 @@ func TestObservabilityAssembly(t *testing.T) {
 				client := &http.Client{Transport: &http.Transport{}}
 				defer client.CloseIdleConnections()
 				for _, path := range []string{"/debug", "/debug/pprof/"} {
-					req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+bound.Address+path, nil)
+					req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+bound.Address+path, http.NoBody)
 					if err != nil {
 						t.Fatal(err)
 					}

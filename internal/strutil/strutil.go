@@ -3,8 +3,7 @@
 
 // Package strutil holds the string and byte helpers of mitmproxy's
 // mitmproxy/utils/strutils.py: escaping bytes for display and back, binary
-// and XML sniffing, hex dumps, and protecting regions of source text from
-// regular-expression rewrites.
+// and XML sniffing, and line-based content limits.
 //
 // Upstream's always_bytes and always_str are not ported: in Go they are the
 // []byte and string conversions, and the text codecs they select belong to

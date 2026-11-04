@@ -4,6 +4,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -28,7 +29,7 @@ func testWebLoginPost(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			h := newRouteHarness(t)
 			form := url.Values{"token": {test.token}, "_xsrf": {h.xsrf}}
-			request, err := http.NewRequestWithContext(t.Context(), "POST", h.server.URL+"/", strings.NewReader(form.Encode()))
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, h.server.URL+"/", strings.NewReader(form.Encode()))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -53,10 +54,10 @@ func testWebLoginPost(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if string(body) != string(expected) {
+				if !bytes.Equal(body, expected) {
 					t.Fatal("successful form login did not render the embedded index")
 				}
-				request, err := http.NewRequestWithContext(t.Context(), "GET", h.server.URL+"/flows", nil)
+				request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, h.server.URL+"/flows", http.NoBody)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -65,7 +66,7 @@ func testWebLoginPost(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer func() { _ = response.Body.Close() }()
-				if response.StatusCode != 200 {
+				if response.StatusCode != http.StatusOK {
 					t.Fatal("successful form login did not establish a reusable session")
 				}
 			}

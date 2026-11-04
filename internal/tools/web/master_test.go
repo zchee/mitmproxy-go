@@ -228,7 +228,7 @@ func TestWebMaster(t *testing.T) {
 			requestDone := make(chan struct{})
 			go func() {
 				defer close(requestDone)
-				r, err := http.NewRequestWithContext(t.Context(), "POST", "http://"+m.WebAddr().String()+"/commands/web.wait", strings.NewReader(`{"arguments":[]}`))
+				r, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://"+m.WebAddr().String()+"/commands/web.wait", strings.NewReader(`{"arguments":[]}`))
 				if err != nil {
 					return
 				}

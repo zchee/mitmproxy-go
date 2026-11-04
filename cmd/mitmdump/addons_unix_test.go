@@ -8,7 +8,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -18,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -159,7 +159,7 @@ func TestClientReplayBinary(t *testing.T) {
 		}
 		flows = append(flows, f)
 		want = append(want, requestRow{tt.method, tt.path, "HTTP/1.1", strings.TrimPrefix(origin.URL, "http://"), http.Header{
-			"Content-Length": {fmt.Sprint(len(tt.body))},
+			"Content-Length": {strconv.Itoa(len(tt.body))},
 			"X-Recorded":     {name},
 			"X-Repeated":     {"first", "second"},
 		}, tt.body})
@@ -169,7 +169,7 @@ func TestClientReplayBinary(t *testing.T) {
 		t.Fatalf("client replay exited %d: stdout %s, stderr %s", code, out, stderr)
 	}
 	var got []requestRow
-	for range len(want) {
+	for range want {
 		select {
 		case row := <-seen:
 			got = append(got, row)
@@ -211,7 +211,7 @@ func TestServerReplayBinary(t *testing.T) {
 	defer transport.CloseIdleConnections()
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "POST", f.Request.URL(), strings.NewReader("recorded request"))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, f.Request.URL(), strings.NewReader("recorded request"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +254,7 @@ func TestHARAndRewriteOptionsBinary(t *testing.T) {
 			defer transport.CloseIdleConnections()
 			ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 			defer cancel()
-			req, err := http.NewRequestWithContext(ctx, "POST", origin.URL+"/probe", strings.NewReader("HAR request"))
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin.URL+"/probe", strings.NewReader("HAR request"))
 			if err != nil {
 				t.Fatal(err)
 			}

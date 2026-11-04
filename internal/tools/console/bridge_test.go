@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -652,10 +653,10 @@ func TestConsoleSnapshots(t *testing.T) {
 				switch name {
 				case "detached":
 					verifyResults(t)
-					copy := snapshot.Clone()
-					copy.Focused.(*flow.HTTPFlow).Request.Method = "DELETE"
-					copy.IDs[0] = "changed"
-					if snapshot.IDs[0] != f.ID || snapshot.Focused.Common().ID != f.ID || f.Request.Method == "DELETE" || snapshot.Focused.(*flow.HTTPFlow).Request.Method == "DELETE" {
+					cloned := snapshot.Clone()
+					cloned.Focused.(*flow.HTTPFlow).Request.Method = http.MethodDelete
+					cloned.IDs[0] = "changed"
+					if snapshot.IDs[0] != f.ID || snapshot.Focused.Common().ID != f.ID || f.Request.Method == http.MethodDelete || snapshot.Focused.(*flow.HTTPFlow).Request.Method == http.MethodDelete {
 						t.Fatal("snapshot aliases source or another copy")
 					}
 					if len(snapshot.Commands) == 0 || snapshot.Detail.Registry == nil {
@@ -719,7 +720,7 @@ func TestConsoleSnapshots(t *testing.T) {
 					expected, _ := fingerprint(f, contract.EditTarget{})
 					edit := contract.Edit{Target: contract.EditTarget{FlowID: f.ID, Part: "request", Fingerprint: expected}, Fingerprint: fingerprint, Apply: func(f flow.Flow, _ contract.EditTarget) { f.(*flow.HTTPFlow).Request.Method = "PATCH" }}
 					mustConsole(t, b.CommitEdit(t.Context(), edit))
-					if f.Request.Method != "PATCH" || !f.Modified() {
+					if f.Request.Method != http.MethodPatch || !f.Modified() {
 						t.Fatal("edit was not backed up/applied")
 					}
 					if !errors.Is(b.CommitEdit(t.Context(), edit), ErrEditConflict) {

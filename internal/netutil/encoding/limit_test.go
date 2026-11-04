@@ -23,11 +23,11 @@ const (
 
 // bomb returns bombSize zero bytes encoded with enc, a body a few KiB long
 // that decodes to 64 MiB.
-func bomb(t testing.TB, enc string) []byte {
-	t.Helper()
+func bomb(tb testing.TB, enc string) []byte {
+	tb.Helper()
 	encoded, err := Encode(make([]byte, bombSize), enc)
 	if err != nil {
-		t.Fatalf("Encode(%q) error: %v", enc, err)
+		tb.Fatalf("Encode(%q) error: %v", enc, err)
 	}
 	return encoded
 }
@@ -35,18 +35,18 @@ func bomb(t testing.TB, enc string) []byte {
 // zstdStream encodes data as a zstd frame that does not declare its
 // content size, as a streaming compressor writes it, so that a decoder
 // cannot refuse it from the frame header.
-func zstdStream(t testing.TB, data []byte, opts ...zstd.EOption) []byte {
-	t.Helper()
+func zstdStream(tb testing.TB, data []byte, opts ...zstd.EOption) []byte {
+	tb.Helper()
 	var buf bytes.Buffer
 	zw, err := zstd.NewWriter(&buf, append([]zstd.EOption{zstd.WithEncoderLevel(zstd.SpeedFastest)}, opts...)...)
 	if err != nil {
-		t.Fatalf("zstd.NewWriter error: %v", err)
+		tb.Fatalf("zstd.NewWriter error: %v", err)
 	}
 	if _, err := zw.Write(data); err != nil {
-		t.Fatalf("zstd write error: %v", err)
+		tb.Fatalf("zstd write error: %v", err)
 	}
 	if err := zw.Close(); err != nil {
-		t.Fatalf("zstd close error: %v", err)
+		tb.Fatalf("zstd close error: %v", err)
 	}
 	return buf.Bytes()
 }
@@ -166,15 +166,15 @@ var raceEnabled bool
 
 // brotliBomb returns bombSize zero bytes encoded with brotli's largest
 // window, 2^24, which sets the size of the decoder's ring buffer.
-func brotliBomb(t testing.TB) []byte {
-	t.Helper()
+func brotliBomb(tb testing.TB) []byte {
+	tb.Helper()
 	var buf bytes.Buffer
 	bw := brotli.NewWriterOptions(&buf, brotli.WriterOptions{Quality: 0, LGWin: 24})
 	if _, err := bw.Write(make([]byte, bombSize)); err != nil {
-		t.Fatalf("brotli write error: %v", err)
+		tb.Fatalf("brotli write error: %v", err)
 	}
 	if err := bw.Close(); err != nil {
-		t.Fatalf("brotli close error: %v", err)
+		tb.Fatalf("brotli close error: %v", err)
 	}
 	return buf.Bytes()
 }

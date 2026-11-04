@@ -36,22 +36,22 @@ type DeferredOptionPolicy struct {
 
 // DeferredUpstreamOptions reads the shared policy and the disjoint option manifests.
 // It fails the test if the frozen two-name policy or either manifest is invalid.
-func DeferredUpstreamOptions(t testing.TB) DeferredOptionPolicy {
-	t.Helper()
+func DeferredUpstreamOptions(tb testing.TB) DeferredOptionPolicy {
+	tb.Helper()
 	readNames := func(file string) []string {
 		var names []string
-		for line := range strings.Lines(string(Fixture(t, file))) {
+		for line := range strings.Lines(string(Fixture(tb, file))) {
 			fields := strings.Split(strings.TrimSuffix(line, "\n"), "\t")
 			if len(fields) != 4 {
-				t.Fatalf("%s: malformed option row %q", file, line)
+				tb.Fatalf("%s: malformed option row %q", file, line)
 			}
 			names = append(names, fields[0])
 		}
 		return names
 	}
-	policy, err := NewDeferredOptionPolicy(Fixture(t, "deferred-upstream-options.txt"), readNames("options-upstream.txt"), readNames("options-go-only.txt"))
+	policy, err := NewDeferredOptionPolicy(Fixture(tb, "deferred-upstream-options.txt"), readNames("options-upstream.txt"), readNames("options-go-only.txt"))
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	return policy
 }

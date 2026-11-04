@@ -322,11 +322,16 @@ func TestConsoleFlowView(t *testing.T) {
 			want []string
 			row  string
 		}{
-			"http":      {func(t *testing.T) flow.Flow { return fixture(t) }, []string{"Request", "Response", "Detail"}, "          Request                   Response                    Detail          "},
-			"websocket": {func(t *testing.T) flow.Flow { f := fixture(t); f.WebSocket = &websocket.Data{}; return f }, []string{"Request", "Response", "WebSocket Messages", "Detail"}, "      Request             Response       WebSocket Messages         Detail      "},
-			"tcp":       {func(*testing.T) flow.Flow { return flow.NewTCPFlow(nil, nil, false) }, []string{"TCP Stream", "Detail"}, "               TCP Stream                                 Detail                "},
-			"udp":       {func(*testing.T) flow.Flow { return flow.NewUDPFlow(nil, nil, false) }, []string{"UDP Stream", "Detail"}, "               UDP Stream                                 Detail                "},
-			"dns":       {func(*testing.T) flow.Flow { return flow.NewDNSFlow(nil, nil, false) }, []string{"Request", "Response", "Detail"}, "          Request                   Response                    Detail          "},
+			"http": {func(t *testing.T) flow.Flow { t.Helper(); return fixture(t) }, []string{"Request", "Response", "Detail"}, "          Request                   Response                    Detail          "},
+			"websocket": {func(t *testing.T) flow.Flow {
+				t.Helper()
+				f := fixture(t)
+				f.WebSocket = &websocket.Data{}
+				return f
+			}, []string{"Request", "Response", "WebSocket Messages", "Detail"}, "      Request             Response       WebSocket Messages         Detail      "},
+			"tcp": {func(*testing.T) flow.Flow { return flow.NewTCPFlow(nil, nil, false) }, []string{"TCP Stream", "Detail"}, "               TCP Stream                                 Detail                "},
+			"udp": {func(*testing.T) flow.Flow { return flow.NewUDPFlow(nil, nil, false) }, []string{"UDP Stream", "Detail"}, "               UDP Stream                                 Detail                "},
+			"dns": {func(*testing.T) flow.Flow { return flow.NewDNSFlow(nil, nil, false) }, []string{"Request", "Response", "Detail"}, "          Request                   Response                    Detail          "},
 		}
 		for name, tt := range tests {
 			t.Run(name, func(t *testing.T) {

@@ -5,6 +5,7 @@ package flowlist
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -280,7 +281,7 @@ func testFollowFocus(t *testing.T) {
 				return err
 			}
 		}
-		return fmt.Errorf("clicked flow missing before removal")
+		return errors.New("clicked flow missing before removal")
 	}); err != nil {
 		t.Fatal(err)
 	}

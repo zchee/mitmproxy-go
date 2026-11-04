@@ -6,8 +6,8 @@ package processinfo
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -88,7 +88,7 @@ func TestProcessIconCache(t *testing.T) {
 		"real_capacity": {run: func(t *testing.T) {
 			cache := newIconCache(256, 16<<20)
 			for index := range 257 {
-				path := fmt.Sprint(index)
+				path := strconv.Itoa(index)
 				if _, err := cache.get(path, func(string) ([]byte, error) { return []byte(path), nil }); err != nil {
 					t.Fatal(err)
 				}

@@ -16,11 +16,11 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-func mustHex(t testing.TB, s string) []byte {
-	t.Helper()
+func mustHex(tb testing.TB, s string) []byte {
+	tb.Helper()
 	b, err := hex.DecodeString(s)
 	if err != nil {
-		t.Fatalf("hex.DecodeString(%q): %v", s, err)
+		tb.Fatalf("hex.DecodeString(%q): %v", s, err)
 	}
 	return b
 }
@@ -87,11 +87,11 @@ func decodeLimit3(data []byte, encoding string) ([]byte, error) {
 }
 
 // mustEncode encodes s with the named encoding.
-func mustEncode(t testing.TB, s, encoding string) []byte {
-	t.Helper()
+func mustEncode(tb testing.TB, s, encoding string) []byte {
+	tb.Helper()
 	b, err := Encode([]byte(s), encoding)
 	if err != nil {
-		t.Fatalf("Encode(%q, %q) error: %v", s, encoding, err)
+		tb.Fatalf("Encode(%q, %q) error: %v", s, encoding, err)
 	}
 	return b
 }

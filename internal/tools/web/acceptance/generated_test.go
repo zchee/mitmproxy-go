@@ -48,7 +48,7 @@ func checkBackendConstants(t *testing.T) {
 	if len(enums) != 2 {
 		t.Fatalf("enum count = %d, want 2", len(enums))
 	}
-	entry := regexp.MustCompile(`(?m)^    (\w+) = "([^"]+)",$`)
+	entry := regexp.MustCompile(`(?m)^ {4}(\w+) = "([^"]+)",$`)
 	for _, enum := range enums {
 		var values []string
 		for _, value := range entry.FindAllStringSubmatch(enum[2], -1) {
@@ -84,8 +84,8 @@ func checkBackendConstants(t *testing.T) {
 
 func checkGeneratedOptions(t *testing.T) {
 	source := string(testutil.Fixture(t, "mitmproxy/web/src/js/ducks/_options_gen.ts"))
-	declarations := regexp.MustCompile(`(?m)^    (\w+): ([^;\n]+);$`).FindAllStringSubmatch(source, -1)
-	defaults := regexp.MustCompile(`(?m)^    (\w+): ([^\n]+),$`).FindAllStringSubmatch(source, -1)
+	declarations := regexp.MustCompile(`(?m)^ {4}(\w+): ([^;\n]+);$`).FindAllStringSubmatch(source, -1)
+	defaults := regexp.MustCompile(`(?m)^ {4}(\w+): ([^\n]+),$`).FindAllStringSubmatch(source, -1)
 	if len(declarations) != 103 || len(defaults) != 103 {
 		t.Fatalf("WebMaster option inventory: declarations=%d defaults=%d, want 103 each", len(declarations), len(defaults))
 	}

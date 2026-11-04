@@ -141,7 +141,7 @@ func newIntegrationHarness(t *testing.T, listeners bool) *integrationHarness {
 	return h
 }
 
-func (h *integrationHarness) wait(t *testing.T, ready func(integrationFrame) bool) integrationFrame {
+func (h *integrationHarness) wait(t *testing.T, ready func(integrationFrame) bool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
@@ -152,7 +152,7 @@ func (h *integrationHarness) wait(t *testing.T, ready func(integrationFrame) boo
 		select {
 		case last = <-reply:
 			if ready(last) {
-				return last
+				return
 			}
 		case <-ctx.Done():
 			t.Fatalf("UI inspection timed out: %v", ctx.Err())
@@ -275,7 +275,7 @@ func integrationIntercept(t *testing.T, h *integrationHarness) {
 	client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
 	result := make(chan error, 1)
 	go func() {
-		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, origin.URL+"/intercept", nil)
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, origin.URL+"/intercept", http.NoBody)
 		if err != nil {
 			result <- err
 			return

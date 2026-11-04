@@ -197,7 +197,7 @@ func FuzzWebAuthTokens(f *testing.F) {
 		auth := &WebAuth{clock: func() time.Time { return at }}
 		copy(auth.secret[:], secret)
 		config := &configuration{password: "test", port: 8081}
-		r := httptest.NewRequest(http.MethodGet, "/api?token=test", nil)
+		r := httptest.NewRequest(http.MethodGet, "/api?token=test", http.NoBody)
 		r.Header.Set("Authorization", value)
 		r.Header.Set("Cookie", "mitmproxy-auth-8081="+value)
 		cookie, cookieErr := r.Cookie("mitmproxy-auth-8081")

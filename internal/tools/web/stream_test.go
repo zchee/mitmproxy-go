@@ -26,7 +26,7 @@ type webPeer struct {
 
 func openWebPeer(t *testing.T, address, password string) *webPeer {
 	t.Helper()
-	request, err := http.NewRequestWithContext(t.Context(), "GET", strings.TrimSuffix(address, "/")+"/updates", nil)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, strings.TrimSuffix(address, "/")+"/updates", http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func openWebPeer(t *testing.T, address, password string) *webPeer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.StatusCode != 101 {
+	if response.StatusCode != http.StatusSwitchingProtocols {
 		_ = response.Body.Close()
 		t.Fatalf("real upgrade status=%d", response.StatusCode)
 	}
@@ -123,7 +123,7 @@ func testWebStreamRoute(t *testing.T, h *routeHarness) {
 		t.Fatal("ROOT upgrade lost pending auth/XSRF cookies")
 	}
 	p.barrier(t)
-	request, err := http.NewRequestWithContext(t.Context(), "GET", h.server.URL+"/updates", nil)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, h.server.URL+"/updates", http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func testWebStreamRoute(t *testing.T, h *routeHarness) {
 	if readErr != nil || closeErr != nil {
 		t.Fatalf("origin rejection read=%v close=%v", readErr, closeErr)
 	}
-	if response.StatusCode != 403 || string(body) != "<html><title>403: Forbidden</title><body>403: Forbidden</body></html>" {
+	if response.StatusCode != http.StatusForbidden || string(body) != "<html><title>403: Forbidden</title><body>403: Forbidden</body></html>" {
 		t.Fatalf("ROOT origin rejection status=%d body=%q", response.StatusCode, body)
 	}
 }

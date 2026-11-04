@@ -95,16 +95,17 @@ func TestListenPairIPv6CandidateSelection(t *testing.T) {
 					if err != nil || parseErr != nil || host != "::1" {
 						t.Fatalf("invalid IPv6 candidate: %s", requested)
 					}
-					if test.fixed {
+					switch {
+					case test.fixed:
 						if requested != address {
 							t.Fatalf("fixed candidate changed: %s", requested)
 						}
-					} else if test.random {
+					case test.random:
 						if port < 49152 || port > 65535 || seen[port] {
 							t.Fatalf("invalid or repeated explicit candidate: %s", requested)
 						}
 						seen[port] = true
-					} else if port != 0 {
+					case port != 0:
 						t.Fatalf("non-Windows IPv6 did not use native :0: %s", requested)
 					}
 					tcpCalls++

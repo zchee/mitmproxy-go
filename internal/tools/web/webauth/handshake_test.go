@@ -57,7 +57,7 @@ func handshakeRequest(t *testing.T, target *url.URL, jar http.CookieJar, authori
 	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	r, err := http.NewRequestWithContext(t.Context(), http.MethodGet, target.String(), nil)
+	r, err := http.NewRequestWithContext(t.Context(), http.MethodGet, target.String(), http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestWebHandshakeCookies(t *testing.T) {
 			var originalSession string
 			if tt.existing {
 				before := time.Now()
-				r, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/flows?token="+url.QueryEscape(handshakePassword), nil)
+				r, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/flows?token="+url.QueryEscape(handshakePassword), http.NoBody)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -210,7 +210,7 @@ func TestWebHandshakeCookies(t *testing.T) {
 				if method == http.MethodPost {
 					path = "/clear"
 				}
-				r, err := http.NewRequestWithContext(t.Context(), method, server.URL+path, nil)
+				r, err := http.NewRequestWithContext(t.Context(), method, server.URL+path, http.NoBody)
 				if err != nil {
 					t.Fatal(err)
 				}

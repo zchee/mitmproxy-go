@@ -37,7 +37,7 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/pyrepr"
 )
 
-// ErrUnknownEncoding is wrapped by the error Decode and Encode return for an
+// ErrUnknownEncoding is wrapped by the error DecodeLimit and Encode return for an
 // encoding name they do not support.
 var ErrUnknownEncoding = errors.New("unknown encoding")
 
@@ -46,7 +46,7 @@ var ErrUnknownEncoding = errors.New("unknown encoding")
 // window larger than the bound DecodeLimit allows for that limit.
 var ErrSizeLimit = errors.New("decoded size exceeds the limit")
 
-// Error describes a failed Decode or Encode call.
+// Error describes a failed decoding or encoding operation.
 type Error struct {
 	// Op is "decoding" or "encoding".
 	Op string
@@ -156,10 +156,10 @@ func DecodeLimit(data []byte, encoding string, limit int64) ([]byte, error) {
 	return decode(data, encoding, max(limit, 0))
 }
 
-// unlimited is the limit passed by Decode.
+// unlimited disables the decoded-size bound.
 const unlimited = -1
 
-// decode implements Decode and DecodeLimit. A negative limit means no limit.
+// decode applies the named content decoding. A negative limit means no limit.
 func decode(data []byte, encoding string, limit int64) ([]byte, error) {
 	encoding = strings.ToLower(encoding)
 	var (

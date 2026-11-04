@@ -10,7 +10,8 @@ import (
 	"testing"
 )
 
-func TestCommandExit(t *testing.T) {
+// TestCommandPreservesExitCodesAndOutput covers successful and failed invocations.
+func TestCommandPreservesExitCodesAndOutput(t *testing.T) {
 	binary := verifyReader(t)
 	tests := map[string]struct {
 		args   []string

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -155,7 +156,7 @@ func TestHTTP2InitialRequestFailureIsolation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if headers, ok := response.(ResponseHeaders); !ok || headers.Response.StatusCode != 204 {
+			if headers, ok := response.(ResponseHeaders); !ok || headers.Response.StatusCode != http.StatusNoContent {
 				t.Fatalf("sibling response = %#v", response)
 			}
 			if err := manager.Do(t.Context(), func(context.Context) error {
@@ -292,7 +293,7 @@ func TestHTTP2InitialRequestFailureDriver(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if head, ok := event.(ResponseHeaders); !ok || head.Response.StatusCode != 204 {
+				if head, ok := event.(ResponseHeaders); !ok || head.Response.StatusCode != http.StatusNoContent {
 					t.Fatalf("sibling response = %#v, want 204", event)
 				}
 				if err := manager.Do(t.Context(), func(context.Context) error {

@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -388,6 +389,7 @@ func TestServerTLSHandshakeFailure(t *testing.T) {
 		"untrusted certificate": {
 			configure: func(_, clientConfig *tls.Config) { clientConfig.ServerName = "wrong.host" },
 			peer: func(t *testing.T, conn layer.Conn, config *tls.Config) <-chan error {
+				t.Helper()
 				done := make(chan error, 1)
 				ctx := t.Context()
 				go func() {
@@ -402,6 +404,7 @@ func TestServerTLSHandshakeFailure(t *testing.T) {
 		"remote speaks no tls": {
 			configure: func(_, _ *tls.Config) {},
 			peer: func(t *testing.T, conn layer.Conn, _ *tls.Config) <-chan error {
+				t.Helper()
 				done := make(chan error, 1)
 				go func() {
 					header := make([]byte, 5)
@@ -422,6 +425,7 @@ func TestServerTLSHandshakeFailure(t *testing.T) {
 				clientConfig.MinVersion = tls.VersionTLS13
 			},
 			peer: func(t *testing.T, conn layer.Conn, config *tls.Config) <-chan error {
+				t.Helper()
 				done := make(chan error, 1)
 				ctx := t.Context()
 				go func() {
@@ -552,7 +556,7 @@ func TestServerTLSAlternateTarget(t *testing.T) {
 	}
 	if err := s.manager.Do(t.Context(), func(context.Context) error {
 		if s.c.Data.Server == target {
-			return fmt.Errorf("context server was replaced by the target")
+			return errors.New("context server was replaced by the target")
 		}
 		if !target.TLS || !target.TLSEstablished() {
 			return fmt.Errorf("target metadata not published: tls=%t established=%t", target.TLS, target.TLSEstablished())

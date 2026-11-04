@@ -154,7 +154,7 @@ func TestUpstreamPoolNestedTLSUpgrade(t *testing.T) {
 					served <- err
 					return
 				}
-				if request.Method != "CONNECT" || request.RequestURI != "origin.test:443" || parent.ConnectionState().ServerName != "proxy.test" {
+				if request.Method != http.MethodConnect || request.RequestURI != "origin.test:443" || parent.ConnectionState().ServerName != "proxy.test" {
 					served <- fmt.Errorf("wrong parent routing: %s %s SNI=%q", request.Method, request.RequestURI, parent.ConnectionState().ServerName)
 					return
 				}

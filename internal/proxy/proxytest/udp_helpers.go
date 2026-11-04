@@ -15,15 +15,15 @@ import (
 // StartUDPEchoOrigin starts a UDP4 origin on an ephemeral loopback port. Each
 // received datagram, including an empty one, is echoed to its sender. Cleanup
 // closes the socket and joins the reader before returning.
-func StartUDPEchoOrigin(t testing.TB) *Origin {
-	t.Helper()
+func StartUDPEchoOrigin(tb testing.TB) *Origin {
+	tb.Helper()
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	if err := packettransport.ConfigureSocketBuffers(conn); err != nil {
 		_ = conn.Close()
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	done := make(chan struct{})
 	go func() {
@@ -33,21 +33,21 @@ func StartUDPEchoOrigin(t testing.TB) *Origin {
 			n, peer, err := conn.ReadFrom(buf)
 			if err != nil {
 				if !errors.Is(err, net.ErrClosed) {
-					t.Errorf("proxytest: UDP origin read: %v", err)
+					tb.Errorf("proxytest: UDP origin read: %v", err)
 				}
 				return
 			}
 			if _, err := conn.WriteTo(buf[:n], peer); err != nil {
 				if !errors.Is(err, net.ErrClosed) {
-					t.Errorf("proxytest: UDP origin write: %v", err)
+					tb.Errorf("proxytest: UDP origin write: %v", err)
 				}
 				return
 			}
 		}
 	}()
-	t.Cleanup(func() {
+	tb.Cleanup(func() {
 		_ = conn.Close()
-		wait(t, done, "UDP origin shutdown")
+		wait(tb, done, "UDP origin shutdown")
 	})
 	return &Origin{Addr: conn.LocalAddr().String()}
 }
@@ -55,14 +55,14 @@ func StartUDPEchoOrigin(t testing.TB) *Origin {
 // StartReverseDTLS starts a reverse DTLS proxy on an ephemeral IPv4 loopback
 // port, trusting origin's CA when present. Caller options are applied after
 // these defaults. A nil origin fails the test before starting a listener.
-func StartReverseDTLS(t testing.TB, origin *Origin, opts ...Option) *Proxy {
-	t.Helper()
+func StartReverseDTLS(tb testing.TB, origin *Origin, opts ...Option) *Proxy {
+	tb.Helper()
 	if origin == nil || origin.Addr == "" {
-		t.Fatal("proxytest: StartReverseDTLS requires an origin address")
+		tb.Fatal("proxytest: StartReverseDTLS requires an origin address")
 	}
 	defaults := []Option{WithOptions(map[string]any{"mode": []string{"reverse:dtls://" + origin.Addr + "@127.0.0.1:0"}})}
 	if origin.CA != nil {
 		defaults = append(defaults, WithTrustedCA(origin.CA))
 	}
-	return Start(t, append(defaults, opts...)...)
+	return Start(tb, append(defaults, opts...)...)
 }

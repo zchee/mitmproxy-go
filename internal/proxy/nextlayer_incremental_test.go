@@ -37,7 +37,7 @@ func TestNextLayerLinearCopies(t *testing.T) {
 		return nil
 	})
 	done := startSelection(t, t.Context(), c)
-	for i := range len(wire) {
+	for i := range wire {
 		if _, err := peer.Write(wire[i : i+1]); err != nil {
 			t.Fatal(err)
 		}

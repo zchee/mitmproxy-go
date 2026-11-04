@@ -148,7 +148,7 @@ func TestHTTP2ResetSourceErrorBody(t *testing.T) {
 			if err := h1.Send(t.Context(), protocolError); err != nil {
 				t.Fatal(err)
 			}
-			h1Response, err := http.ReadResponse(bufio.NewReader(h1Peer), &http.Request{Method: "GET"})
+			h1Response, err := http.ReadResponse(bufio.NewReader(h1Peer), &http.Request{Method: http.MethodGet})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -156,7 +156,7 @@ func TestHTTP2ResetSourceErrorBody(t *testing.T) {
 			if closeErr := h1Response.Body.Close(); err != nil || closeErr != nil {
 				t.Fatalf("HTTP/1 response body = %v, close = %v", err, closeErr)
 			}
-			if h1Response.StatusCode != 502 {
+			if h1Response.StatusCode != http.StatusBadGateway {
 				t.Fatalf("HTTP/1 error status = %d, want 502", h1Response.StatusCode)
 			}
 			if diff := gocmp.Diff(wantBody, h1Body); diff != "" {

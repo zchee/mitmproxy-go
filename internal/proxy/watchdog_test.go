@@ -88,6 +88,7 @@ func TestWatchdogDeadline(t *testing.T) {
 		run func(*testing.T, *watchdog, *manualClock, *atomic.Int32)
 	}{
 		"idle": {func(t *testing.T, _ *watchdog, clock *manualClock, count *atomic.Int32) {
+			t.Helper()
 			clock.advance(4 * time.Second)
 			requireExpirations(t, count, 0)
 			clock.advance(time.Second)
@@ -96,6 +97,7 @@ func TestWatchdogDeadline(t *testing.T) {
 			requireExpirations(t, count, 1)
 		}},
 		"activity extends deadline without replacing timer": {func(t *testing.T, w *watchdog, clock *manualClock, count *atomic.Int32) {
+			t.Helper()
 			clock.advance(4 * time.Second)
 			w.activity()
 			if len(clock.timers) != 1 {
@@ -107,6 +109,7 @@ func TestWatchdogDeadline(t *testing.T) {
 			requireExpirations(t, count, 1)
 		}},
 		"overlapping disarms": {func(t *testing.T, w *watchdog, clock *manualClock, count *atomic.Int32) {
+			t.Helper()
 			w.disarm()
 			w.disarm()
 			clock.advance(30 * time.Second)
@@ -121,6 +124,7 @@ func TestWatchdogDeadline(t *testing.T) {
 			requireExpirations(t, count, 1)
 		}},
 		"stale timer after rearm": {func(t *testing.T, w *watchdog, clock *manualClock, count *atomic.Int32) {
+			t.Helper()
 			oldCallback := clock.timers[0].callback
 			w.disarm()
 			clock.advance(30 * time.Second)
@@ -131,6 +135,7 @@ func TestWatchdogDeadline(t *testing.T) {
 			requireExpirations(t, count, 1)
 		}},
 		"close suppresses queued callback": {func(t *testing.T, w *watchdog, clock *manualClock, count *atomic.Int32) {
+			t.Helper()
 			oldCallback := clock.timers[0].callback
 			w.close()
 			w.close()

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"runtime/pprof"
 	"sync"
 	"testing"
@@ -332,7 +333,7 @@ func TestHTTP3AdapterResponseEvents(t *testing.T) {
 			writeHTTP3TestHeaders(t, wire, []qpack.HeaderField{{Name: ":status", Value: "200"}})
 			event, err := endpoint.Receive(ctx)
 			response, ok := event.(ResponseHeaders)
-			if err != nil || !ok || response.Response.HTTPVersion != "HTTP/3" || response.Response.StatusCode != 200 || response.ID != 91 {
+			if err != nil || !ok || response.Response.HTTPVersion != "HTTP/3" || response.Response.StatusCode != http.StatusOK || response.ID != 91 {
 				t.Fatalf("response = %+v, error = %v", event, err)
 			}
 			writeHTTP3TestFrame(t, wire, 0, []byte("Hello, World!"))

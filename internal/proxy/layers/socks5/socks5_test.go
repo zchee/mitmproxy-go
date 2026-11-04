@@ -133,44 +133,44 @@ func newFixture(t *testing.T, strategy string, auth *string, failDial bool) *fix
 	return f
 }
 
-func await[T any](t testing.TB, ch <-chan T) T {
-	t.Helper()
+func await[T any](tb testing.TB, ch <-chan T) T {
+	tb.Helper()
 	select {
 	case value := <-ch:
 		return value
 	case <-time.After(layertest.Timeout):
 		buf := make([]byte, 1<<20)
 		n := runtime.Stack(buf, true)
-		t.Fatalf("SOCKS operation did not join:\n%s", buf[:n])
+		tb.Fatalf("SOCKS operation did not join:\n%s", buf[:n])
 		var zero T
 		return zero
 	}
 }
 
-func writeBytes(t testing.TB, conn net.Conn, b []byte, trickle bool) {
-	t.Helper()
+func writeBytes(tb testing.TB, conn net.Conn, b []byte, trickle bool) {
+	tb.Helper()
 	if trickle {
 		for _, c := range b {
 			if _, err := conn.Write([]byte{c}); err != nil {
-				t.Fatal(err)
+				tb.Fatal(err)
 			}
 		}
 	} else if _, err := conn.Write(b); err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 }
 
-func readBytes(t testing.TB, conn net.Conn, want []byte) {
-	t.Helper()
+func readBytes(tb testing.TB, conn net.Conn, want []byte) {
+	tb.Helper()
 	if len(want) == 0 {
 		return
 	}
 	got := make([]byte, len(want))
 	if _, err := io.ReadFull(conn, got); err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	if diff := gocmp.Diff(want, got); diff != "" {
-		t.Fatalf("wire bytes (-want +got):\n%s", diff)
+		tb.Fatalf("wire bytes (-want +got):\n%s", diff)
 	}
 }
 

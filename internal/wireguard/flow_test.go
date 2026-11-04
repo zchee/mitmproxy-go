@@ -6,6 +6,7 @@ package wireguard
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -61,7 +62,7 @@ func TestServerEncryptedFlows(t *testing.T) {
 				select {
 				case stream, ok := <-stack.TCPConns():
 					if !ok {
-						failures <- fmt.Errorf("TCP accept ended before client handshake")
+						failures <- errors.New("TCP accept ended before client handshake")
 						return
 					}
 					defer func() { _ = stream.Close() }()
@@ -91,7 +92,7 @@ func TestServerEncryptedFlows(t *testing.T) {
 				select {
 				case transport, ok := <-stack.UDPConns():
 					if !ok {
-						failures <- fmt.Errorf("UDP accept ended before client datagram")
+						failures <- errors.New("UDP accept ended before client datagram")
 						return
 					}
 					defer func() { _ = transport.Close() }()

@@ -87,11 +87,11 @@ func TestHTTPVersionInterop(t *testing.T) {
 			if _, err := fmt.Fprint(raw, "CONNECT versions.test:443 HTTP/1.1\r\nHost: versions.test:443\r\n\r\n"); err != nil {
 				t.Fatal(err)
 			}
-			connect, err := http.ReadResponse(bufio.NewReader(raw), &http.Request{Method: "CONNECT"})
+			connect, err := http.ReadResponse(bufio.NewReader(raw), &http.Request{Method: http.MethodConnect})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if connect.StatusCode != 200 {
+			if connect.StatusCode != http.StatusOK {
 				t.Fatalf("CONNECT status = %d", connect.StatusCode)
 			}
 			if err := connect.Body.Close(); err != nil {
@@ -104,7 +104,7 @@ func TestHTTPVersionInterop(t *testing.T) {
 			if got := conn.ConnectionState().NegotiatedProtocol; got != clientProtocol {
 				t.Fatalf("client ALPN = %q, want %q", got, clientProtocol)
 			}
-			request, err := http.NewRequestWithContext(t.Context(), "POST", "https://versions.test/echo", bytes.NewBufferString("request-body"))
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://versions.test/echo", bytes.NewBufferString("request-body"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -138,7 +138,7 @@ func TestHTTPVersionInterop(t *testing.T) {
 			if diff := gocmp.Diff("request-body", string(body)); diff != "" {
 				t.Errorf("body (-want +got):\n%s", diff)
 			}
-			if response.StatusCode != 200 || response.ProtoMajor != tt.client {
+			if response.StatusCode != http.StatusOK || response.ProtoMajor != tt.client {
 				t.Fatalf("response = %d %s; body = %q", response.StatusCode, response.Proto, body)
 			}
 			if got := <-protocol; got != tt.server {

@@ -36,6 +36,7 @@ func TestQueuedPacketTransport(t *testing.T) {
 	t.Cleanup(func() { goleak.VerifyNone(t, baseline) })
 	tests := map[string]struct{ run func(*testing.T) }{
 		"FIFO clone empty and truncation": {run: func(t *testing.T) {
+			t.Helper()
 			a, b := queuedPair(t, t.Context())
 			borrowed := []byte("first")
 			for _, data := range [][]byte{borrowed, {}, []byte("truncate"), []byte("last")} {
@@ -66,6 +67,7 @@ func TestQueuedPacketTransport(t *testing.T) {
 			}
 		}},
 		"fixed immutable identity": {run: func(t *testing.T) {
+			t.Helper()
 			a, b := queuedPair(t, t.Context())
 			local, peer := a.LocalAddr().String(), a.RemoteAddr().String()
 			a.LocalAddr().(*net.UDPAddr).Port++
@@ -81,6 +83,7 @@ func TestQueuedPacketTransport(t *testing.T) {
 			}
 		}},
 		"ring wraps without reordering": {run: func(t *testing.T) {
+			t.Helper()
 			a, b := queuedPair(t, t.Context())
 			for i := range 3 * layer.PacketQueueCapacity {
 				if _, err := a.WriteTo([]byte{byte(i)}, nil); err != nil {
@@ -93,6 +96,7 @@ func TestQueuedPacketTransport(t *testing.T) {
 			}
 		}},
 		"invalid identities": {run: func(t *testing.T) {
+			t.Helper()
 			valid := netip.MustParseAddrPort("127.0.0.1:20001")
 			for _, other := range []netip.AddrPort{{}, netip.MustParseAddrPort("127.0.0.1:0"), valid} {
 				if a, b, err := NewPair(t.Context(), valid, other); err == nil || a != nil || b != nil {
@@ -101,6 +105,7 @@ func TestQueuedPacketTransport(t *testing.T) {
 			}
 		}},
 		"cancellation and concurrent Close join": {run: func(t *testing.T) {
+			t.Helper()
 			synctest.Test(t, func(t *testing.T) {
 				ctx, cancel := context.WithCancelCause(t.Context())
 				a, b := queuedPair(t, ctx)
@@ -123,6 +128,7 @@ func TestQueuedPacketTransport(t *testing.T) {
 			})
 		}},
 		"Close releases queue and blocked reader": {run: func(t *testing.T) {
+			t.Helper()
 			synctest.Test(t, func(t *testing.T) {
 				a, b := queuedPair(t, t.Context())
 				if _, err := a.WriteTo([]byte("queued"), nil); err != nil {
@@ -145,6 +151,7 @@ func TestQueuedPacketTransport(t *testing.T) {
 			})
 		}},
 		"deadline changes wake reads and can be cleared": {run: func(t *testing.T) {
+			t.Helper()
 			synctest.Test(t, func(t *testing.T) {
 				a, b := queuedPair(t, t.Context())
 				result := make(chan error, 1)

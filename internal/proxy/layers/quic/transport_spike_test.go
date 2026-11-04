@@ -8,7 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"fmt"
+	"errors"
 	"net"
 	"sync"
 	"testing"
@@ -106,7 +106,7 @@ func TestQUICPacketTransportReplay(t *testing.T) {
 					return
 				}
 				if client.ConnectionState().TLS.NegotiatedProtocol != "h3" {
-					clientDone <- fmt.Errorf("client did not negotiate h3")
+					clientDone <- errors.New("client did not negotiate h3")
 					return
 				}
 				clientDone <- nil

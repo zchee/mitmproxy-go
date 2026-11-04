@@ -63,6 +63,7 @@ func assertWebStopped(t *testing.T, instance *Instance, field string, failure bo
 }
 
 func testWebWireGuardPublication(t *testing.T) {
+	t.Helper()
 	for _, unexpected := range []bool{true, false} {
 		cfg, _, _ := fixture(t)
 		changed := make(chan struct{}, 1)
@@ -145,6 +146,7 @@ func (d *webFailureTun) Close() error {
 }
 
 func testWebTunPublication(t *testing.T) {
+	t.Helper()
 	for _, unexpected := range []bool{true, false} {
 		cfg, _, _ := fixture(t)
 		changed := make(chan struct{}, 1)
@@ -191,6 +193,7 @@ func testWebTunPublication(t *testing.T) {
 }
 
 func testWebLocalPublication(t *testing.T) {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		return
 	}
@@ -249,6 +252,7 @@ func testWebLocalPublication(t *testing.T) {
 }
 
 func testWebCancellationPublication(t *testing.T) {
+	t.Helper()
 	cfg, _, _ := fixture(t)
 	changed := make(chan struct{}, 1)
 	cfg.PresentationChanged = changed

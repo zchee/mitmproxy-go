@@ -42,15 +42,15 @@ import (
 //	                                        proxy work
 func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
-func await[T any](t testing.TB, ch <-chan T) T {
-	t.Helper()
+func await[T any](tb testing.TB, ch <-chan T) T {
+	tb.Helper()
 	select {
 	case result := <-ch:
 		return result
 	case <-time.After(layertest.Timeout):
 		buf := make([]byte, 1<<20)
 		n := runtime.Stack(buf, true)
-		t.Fatalf("operation did not complete:\n%s", buf[:n])
+		tb.Fatalf("operation did not complete:\n%s", buf[:n])
 		var zero T
 		return zero
 	}

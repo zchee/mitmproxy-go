@@ -13,6 +13,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -39,11 +40,11 @@ type distrustSettings struct{ table certs.CADistrust }
 
 func (d *distrustSettings) QUICStartServer(_ context.Context, data *hookdata.QUICTLS) error {
 	if data.Settings == nil {
-		return fmt.Errorf("tlsconfig did not supply settings")
+		return errors.New("tlsconfig did not supply settings")
 	}
 	insecure := data.Settings.VerifyMode != nil && *data.Settings.VerifyMode == hookdata.VerifyNone
 	if (data.Settings.VerifyConnection == nil) != insecure {
-		return fmt.Errorf("tlsconfig did not honor the verification mode")
+		return errors.New("tlsconfig did not honor the verification mode")
 	}
 	// Inject only owned identities at the same immutable callback boundary.
 	// Even an addon-supplied callback must not run for VerifyNone.

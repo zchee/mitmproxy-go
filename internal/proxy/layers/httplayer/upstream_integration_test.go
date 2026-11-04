@@ -153,7 +153,7 @@ func TestLayerUpstreamTunnel(t *testing.T) {
 			}
 			expectRead(t, client, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
 			connect := await(t, connects)
-			if connect.Method != "CONNECT" || connect.RequestURI != "origin.test:443" {
+			if connect.Method != http.MethodConnect || connect.RequestURI != "origin.test:443" {
 				t.Fatalf("upstream request = %s %s, want CONNECT origin.test:443", connect.Method, connect.RequestURI)
 			}
 			if got := connect.Header.Get("Proxy-Authorization"); got != "Basic dGVzdDpwYXNzd29yZA==" {

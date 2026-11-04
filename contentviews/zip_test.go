@@ -36,7 +36,6 @@ func TestZIP(t *testing.T) {
 	t.Run("upstream", func(t *testing.T) {
 		tests := map[string]func(*testing.T){
 			"test_view_zip": func(t *testing.T) {
-				t.Helper()
 				names := []string{"normal.txt", "with spaces.txt", "dir/nested.txt", "file\nwith\nnewlines.txt", "unicode_文件.txt", "café.txt"}
 				view := ZIP{}
 				text, err := view.Prettify(zipFixture(t, names, false), Metadata{ContentType: "application/zip"})
@@ -53,14 +52,12 @@ func TestZIP(t *testing.T) {
 				}
 			},
 			"test_view_zip_empty": func(t *testing.T) {
-				t.Helper()
 				text, err := (ZIP{}).Prettify(zipFixture(t, nil, false), Metadata{})
 				if err != nil || text != "(empty zip file)" {
 					t.Fatalf("empty ZIP=%q %v", text, err)
 				}
 			},
 			"test_render_priority": func(t *testing.T) {
-				t.Helper()
 				view := ZIP{}
 				if view.RenderPriority([]byte("data"), Metadata{ContentType: "application/zip"}) != 1 || view.RenderPriority([]byte("data"), Metadata{ContentType: "text/plain"}) != 0 || view.RenderPriority(nil, Metadata{ContentType: "application/zip"}) != 0 {
 					t.Fatal("ZIP priority mismatch")

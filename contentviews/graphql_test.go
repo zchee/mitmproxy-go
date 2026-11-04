@@ -15,7 +15,6 @@ func TestGraphQL(t *testing.T) {
 	t.Run("upstream", func(t *testing.T) {
 		tests := map[string]func(*testing.T){
 			"test_render_priority": func(t *testing.T) {
-				t.Helper()
 				tests := map[string]struct {
 					data     string
 					media    string
@@ -35,7 +34,6 @@ func TestGraphQL(t *testing.T) {
 				}
 			},
 			"test_format_graphql": func(t *testing.T) {
-				t.Helper()
 				budget := newViewBudget("GraphQL")
 				node, err := parseGraphQLJSON([]byte(`{"query": "query P { \\n }"}`), budget)
 				if err != nil {
@@ -47,14 +45,12 @@ func TestGraphQL(t *testing.T) {
 				}
 			},
 			"test_format_query_list": func(t *testing.T) {
-				t.Helper()
 				text, err := (GraphQL{}).Prettify([]byte(`[{"query": "query P { \\n }"}]`), Metadata{})
 				if err != nil || !strings.HasPrefix(text, "--- 0/0\n") {
 					t.Fatalf("format batch failed: %q %v", text, err)
 				}
 			},
 			"test_view_graphql": func(t *testing.T) {
-				t.Helper()
 				const want = "{\n  \"query\": \"...\"\n}\n---\nquery P { \n }\n"
 				text, err := (GraphQL{}).Prettify([]byte(`{"query": "query P { \n }"}`), Metadata{})
 				if err != nil || text != want {

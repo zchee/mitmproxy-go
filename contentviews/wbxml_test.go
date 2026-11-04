@@ -20,7 +20,6 @@ func TestWBXML(t *testing.T) {
 	t.Run("upstream", func(t *testing.T) {
 		tests := map[string]func(*testing.T){
 			"test_wbxml": func(t *testing.T) {
-				t.Helper()
 				view := WBXML{}
 				text, err := view.Prettify([]byte{3, 1, 0x6a, 0}, Metadata{})
 				if err != nil || text != "<?xml version=\"1.0\" ?>\n" {
@@ -46,7 +45,6 @@ func TestWBXML(t *testing.T) {
 				}
 			},
 			"test_wbxml_unknown_tag": func(t *testing.T) {
-				t.Helper()
 				// mitmproxy v12.3.1 test/mitmproxy/contentviews/test__view_wbxml.py:24–26.
 				text, err := (WBXML{}).Prettify([]byte{3, 1, 0x6a, 0, 0x3f}, Metadata{})
 				if err != nil {
@@ -57,7 +55,6 @@ func TestWBXML(t *testing.T) {
 				}
 			},
 			"test_render_priority": func(t *testing.T) {
-				t.Helper()
 				view := WBXML{}
 				for _, media := range []string{"application/vnd.wap.wbxml", "application/vnd.ms-sync.wbxml"} {
 					if view.RenderPriority([]byte("data"), Metadata{ContentType: media}) != 1 {

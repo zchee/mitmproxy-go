@@ -5,6 +5,7 @@ package tlsconfig
 
 import (
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
@@ -57,7 +58,7 @@ func ipOrDNSName(val string) (certs.GeneralName, error) {
 // (py:mitmproxy/addons/tlsconfig.py:585-633).
 func (t *TLSConfig) getCert(c *hookdata.Context) (*certs.Entry, error) {
 	if t.store == nil {
-		return nil, fmt.Errorf("tlsconfig: certificate store is not configured")
+		return nil, errors.New("tlsconfig: certificate store is not configured")
 	}
 	var altNames []certs.GeneralName
 	var organization, crlDistributionPoint string

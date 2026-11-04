@@ -99,7 +99,7 @@ func (c *Core) Configure(ctx context.Context, updated map[string]struct{}) error
 		value := opts.Str("content_decode_limit")
 		limit, err := human.ParseSize(value)
 		if err != nil || limit < 0 {
-			return &options.OptionsError{Msg: fmt.Sprintf("Invalid content_decode_limit: %s", value), Err: err}
+			return &options.OptionsError{Msg: "Invalid content_decode_limit: " + value, Err: err}
 		}
 		// The decode paths are package-level code shared by every manager in
 		// the process, so the limit is process-global: the last configure wins.

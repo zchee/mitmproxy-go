@@ -7,6 +7,7 @@ package maplocal
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -115,7 +116,7 @@ func fileCandidates(url string, s mapping) ([]string, error) {
 	}
 	var suffix string
 	if len(match.Groups) > 1 {
-		suffix = string(match.Groups[1])
+		suffix = match.Groups[1]
 	} else {
 		suffix = url[match.Spans[0][1]:]
 		suffix, _, _ = strings.Cut(suffix, "?")
@@ -264,7 +265,7 @@ func readCandidates(dir string, candidates []string) (contents []byte, file stri
 			if closeErr != nil {
 				return nil, candidate, closeErr
 			}
-			return nil, candidate, fmt.Errorf("local file is not regular")
+			return nil, candidate, errors.New("local file is not regular")
 		}
 		data, readErr := io.ReadAll(io.LimitReader(handle, maxFileBytes+1))
 		closeErr := handle.Close()

@@ -6,6 +6,7 @@ package dns
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"slices"
 )
@@ -68,7 +69,7 @@ func UnpackHTTPS(data []byte) (HTTPSRecord, error) {
 		return HTTPSRecord{}, &limitError{resource: "HTTPS RDATA", limit: maxWireSize}
 	}
 	if len(data) < 2 {
-		return HTTPSRecord{}, fmt.Errorf("unpack requires a buffer of 2 bytes")
+		return HTTPSRecord{}, errors.New("unpack requires a buffer of 2 bytes")
 	}
 	name, offset, err := unpackName(data, 2, false)
 	if err != nil {
@@ -130,7 +131,7 @@ func (r *ResourceRecord) SetHTTPSALPN(alpn [][]byte) error {
 		value = []byte{}
 		for _, protocol := range alpn {
 			if len(protocol) > 255 {
-				return fmt.Errorf("ALPN protocol ID longer than 255 bytes")
+				return errors.New("ALPN protocol ID longer than 255 bytes")
 			}
 			if len(protocol)+1 > maxWireSize-len(value) {
 				return &limitError{resource: "ALPN parameter", limit: maxWireSize}

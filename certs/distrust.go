@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -24,7 +25,7 @@ func ParseCADistrust(data string) (CADistrust, error) {
 	out := CADistrust{fingerprints: make(map[[sha256.Size]byte]struct{})}
 	for digest := range strings.FieldsSeq(data) {
 		if len(digest) != sha256.Size*2 {
-			return CADistrust{}, fmt.Errorf("certs: CA fingerprint must contain 64 hex digits")
+			return CADistrust{}, errors.New("certs: CA fingerprint must contain 64 hex digits")
 		}
 		var fingerprint [sha256.Size]byte
 		if _, err := hex.Decode(fingerprint[:], []byte(digest)); err != nil {
@@ -36,7 +37,7 @@ func ParseCADistrust(data string) (CADistrust, error) {
 		out.fingerprints[fingerprint] = struct{}{}
 	}
 	if len(out.fingerprints) == 0 {
-		return CADistrust{}, fmt.Errorf("certs: empty CA distrust table")
+		return CADistrust{}, errors.New("certs: empty CA distrust table")
 	}
 	return out, nil
 }
@@ -88,7 +89,7 @@ func (d CADistrust) VerifyPeerCertificate(rawCerts [][]byte, verifiedChains [][]
 func (d CADistrust) CheckChain(chain []*x509.Certificate) error {
 	for _, certificate := range chain {
 		if certificate == nil {
-			return fmt.Errorf("certs: nil certificate in TLS chain")
+			return errors.New("certs: nil certificate in TLS chain")
 		}
 		fingerprint := sha256.Sum256(certificate.Raw)
 		if _, blocked := d.fingerprints[fingerprint]; blocked {

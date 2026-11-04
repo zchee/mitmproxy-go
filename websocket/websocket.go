@@ -11,6 +11,7 @@ package websocket
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"slices"
 	"unicode/utf8"
@@ -104,7 +105,7 @@ func (m *Message) Text() (string, error) {
 		return "", m.noText()
 	}
 	if !utf8.Valid(m.Content) {
-		return "", fmt.Errorf("websocket text message is not valid UTF-8")
+		return "", errors.New("websocket text message is not valid UTF-8")
 	}
 	return string(m.Content), nil
 }

@@ -4,6 +4,7 @@
 package flowio
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -124,7 +125,7 @@ func convert18To19(data *state.Map) error {
 
 	sni, ok := server.Get("sni")
 	if !ok {
-		return fmt.Errorf("invalid flow: server_conn.sni is missing")
+		return errors.New("invalid flow: server_conn.sni is missing")
 	}
 	if sni == true {
 		v, _ := server.Get("address")
@@ -245,7 +246,7 @@ func renderTupleVersion(v any) (string, error) {
 			items = append(items, k)
 		}
 	case nil:
-		return "", fmt.Errorf("invalid flow: the version is missing or None")
+		return "", errors.New("invalid flow: the version is missing or None")
 	default:
 		return "", fmt.Errorf("invalid flow: the version is a %s, not an integer or a tuple", state.TypeName(v))
 	}

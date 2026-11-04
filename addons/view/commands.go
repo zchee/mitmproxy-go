@@ -211,7 +211,7 @@ func (v *View) setReversed(_ context.Context, reversed bool) {
 
 func (v *View) setOrder(ctx context.Context, order string) error {
 	if !slices.Contains(v.orderOptions(ctx), order) {
-		return &command.Error{Msg: fmt.Sprintf("Unknown flow order: %s", order)}
+		return &command.Error{Msg: "Unknown flow order: " + order}
 	}
 	// Rebuild from ascending order, preserving ties in the previous ordering.
 	fs := make([]flow.Flow, 0, v.Len())

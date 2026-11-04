@@ -38,6 +38,7 @@
 package state
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math"
@@ -478,7 +479,7 @@ func Equal(a, b any) bool {
 		return ok && x == y
 	case []byte:
 		y, ok := b.([]byte)
-		return ok && string(x) == string(y)
+		return ok && bytes.Equal(x, y)
 	case []any:
 		y, ok := b.([]any)
 		if !ok || len(x) != len(y) {

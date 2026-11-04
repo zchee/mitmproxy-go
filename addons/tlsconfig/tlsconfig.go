@@ -18,6 +18,7 @@ package tlsconfig
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -302,7 +303,7 @@ func (t *TLSConfig) TLSStartServer(ctx context.Context, d *hookdata.TLS) error {
 	client := d.Context.Client
 	server := d.Context.Server
 	if server.Address == nil {
-		return fmt.Errorf("tlsconfig: starting server TLS without a server address")
+		return errors.New("tlsconfig: starting server TLS without a server address")
 	}
 
 	if server.SNI == nil {
@@ -357,7 +358,7 @@ func (t *TLSConfig) TLSStartServer(ctx context.Context, d *hookdata.TLS) error {
 		cfg.RootCAs = pool
 		cfg.VerifyConnection = t.distrustedCAs.VerifyConnection
 		if *server.SNI == "" {
-			return fmt.Errorf("Cannot validate certificate hostname without SNI") //nolint:staticcheck // Preserve upstream's user-facing diagnostic.
+			return errors.New("Cannot validate certificate hostname without SNI") //nolint:staticcheck // Preserve upstream's user-facing diagnostic.
 		}
 	}
 

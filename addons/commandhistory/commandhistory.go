@@ -174,7 +174,7 @@ func writeHistory(path, text string, flags int) (err error) {
 	if runtime.GOOS == "windows" {
 		text = strings.ReplaceAll(text, "\n", "\r\n")
 	}
-	_, err = io.WriteString(file, text)
+	_, err = file.WriteString(text)
 	return err
 }
 

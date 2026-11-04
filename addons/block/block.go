@@ -6,6 +6,7 @@ package block
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
@@ -36,7 +37,7 @@ func (b *Block) Load(ctx context.Context, loader *addon.Loader) error {
 // and local interception mode are always allowed.
 func (b *Block) ClientConnected(ctx context.Context, client *connection.Client) error {
 	if client.Peername == nil {
-		return fmt.Errorf("block: missing client address")
+		return errors.New("block: missing client address")
 	}
 	host, _, _ := strings.Cut(client.Peername.Host, "%")
 	address, err := netip.ParseAddr(host)

@@ -5,6 +5,7 @@ package script
 
 import (
 	"context"
+	"net/http"
 	"net/netip"
 	"strings"
 	"testing"
@@ -50,7 +51,7 @@ func TestScriptBindings(t *testing.T) {
 			x := f.request()
 			f.hook(addon.RequestHook{Flow: x})
 			r := x.Request
-			if r.Host != "rewritten.test" || r.Port != 8443 || r.Path != "/changed" || r.Method != "POST" || r.Scheme != "https" || string(r.RawContent) != "payload" || r.Headers.Get("Content-Length") != "7" {
+			if r.Host != "rewritten.test" || r.Port != 8443 || r.Path != "/changed" || r.Method != http.MethodPost || r.Scheme != "https" || string(r.RawContent) != "payload" || r.Headers.Get("Content-Length") != "7" {
 				t.Fatalf("request setters failed: %#v; %s", r, f.logs.String())
 			}
 			if host, _ := r.HostHeader(); !strings.Contains(host, "rewritten.test") {
@@ -67,7 +68,7 @@ func TestScriptBindings(t *testing.T) {
 			}
 			x.Response = r
 			f.hook(addon.RequestHook{Flow: x})
-			if r.StatusCode != 201 || r.Reason != "Created" || !r.Stream || gocmp.Diff([]byte{0, 255}, r.RawContent) != "" {
+			if r.StatusCode != http.StatusCreated || r.Reason != "Created" || !r.Stream || gocmp.Diff([]byte{0, 255}, r.RawContent) != "" {
 				t.Fatalf("response fields failed: %#v; %s", r, f.logs.String())
 			}
 		}},

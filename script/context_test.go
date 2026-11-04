@@ -379,7 +379,7 @@ func TestScriptHTTPGet(t *testing.T) {
 			f := newFixture(t)
 			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("X-Large", strings.Repeat("x", httpHeaderLimit+1))
-				w.WriteHeader(200)
+				w.WriteHeader(http.StatusOK)
 			}))
 			defer origin.Close()
 			defer func() {

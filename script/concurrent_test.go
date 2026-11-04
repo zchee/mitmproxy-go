@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -79,37 +80,73 @@ func indentStarlark(body string) string {
 
 func TestScriptConcurrent(t *testing.T) {
 	tests := map[string]struct{ run func(*testing.T) }{
-		"worker_and_merge":           {testWorkerAndMerge},
-		"five_parallel":              {testFiveParallel},
-		"frozen_dict":                {testFrozenDict},
-		"init_twice":                 {func(t *testing.T) { testInitCount(t, true) }},
-		"init_once":                  {func(t *testing.T) { testInitCount(t, false) }},
-		"state_isolation":            {testStateIsolation},
-		"option_alias":               {func(t *testing.T) { testOptionAlias(t, false) }},
-		"worker_services":            {testWorkerServices},
-		"read_after_change":          {func(t *testing.T) { testWorkerRead(t, false) }},
-		"read_after_rollback":        {func(t *testing.T) { testWorkerRead(t, true) }},
-		"direct_call":                {func(t *testing.T) { testDirectCall(t, false) }},
-		"reload_retire":              {func(t *testing.T) { testRetireWorker(t, true, false) }},
-		"remove_retire":              {func(t *testing.T) { testRetireWorker(t, false, false) }},
-		"comment_survives":           {testCommentSurvives},
-		"field_merge":                {testFieldMerge},
-		"websocket_append":           {func(t *testing.T) { testMessageMerge(t, "websocket") }},
-		"tcp_append":                 {func(t *testing.T) { testMessageMerge(t, "tcp") }},
-		"udp_append":                 {func(t *testing.T) { testMessageMerge(t, "udp") }},
-		"connection_read_only":       {testConnectionReadOnly},
-		"kill_actions":               {func(t *testing.T) { testKillActions(t, false) }},
-		"action_order":               {func(t *testing.T) { testKillActions(t, true) }},
-		"semaphore":                  {func(t *testing.T) { testWorkerCapacity(t, false) }},
-		"cancel_no_merge":            {testCancelNoMerge},
-		"init_direct_mode":           {testInitDirectMode},
-		"alias_freeze":               {func(t *testing.T) { testOptionAlias(t, true) }},
-		"reload_same_path":           {func(t *testing.T) { testRetireWorker(t, true, true) }},
-		"waiter_cancel":              {func(t *testing.T) { testWorkerCapacity(t, true) }},
-		"reentrant_command":          {testReentrantWorkerCommand},
-		"retained_copy_command":      {testRetainedCopyCommand},
-		"global_reassign":            {testGlobalReassign},
-		"direct_call_init":           {func(t *testing.T) { testDirectCall(t, true) }},
+		"worker_and_merge": {testWorkerAndMerge},
+		"five_parallel":    {testFiveParallel},
+		"frozen_dict":      {testFrozenDict},
+		"init_twice": {func(t *testing.T) {
+			testInitCount(t, true)
+		}},
+		"init_once": {func(t *testing.T) {
+			testInitCount(t, false)
+		}},
+		"state_isolation": {testStateIsolation},
+		"option_alias": {func(t *testing.T) {
+			testOptionAlias(t, false)
+		}},
+		"worker_services": {testWorkerServices},
+		"read_after_change": {func(t *testing.T) {
+			testWorkerRead(t, false)
+		}},
+		"read_after_rollback": {func(t *testing.T) {
+			testWorkerRead(t, true)
+		}},
+		"direct_call": {func(t *testing.T) {
+			testDirectCall(t, false)
+		}},
+		"reload_retire": {func(t *testing.T) {
+			testRetireWorker(t, true, false)
+		}},
+		"remove_retire": {func(t *testing.T) {
+			testRetireWorker(t, false, false)
+		}},
+		"comment_survives": {testCommentSurvives},
+		"field_merge":      {testFieldMerge},
+		"websocket_append": {func(t *testing.T) {
+			testMessageMerge(t, "websocket")
+		}},
+		"tcp_append": {func(t *testing.T) {
+			testMessageMerge(t, "tcp")
+		}},
+		"udp_append": {func(t *testing.T) {
+			testMessageMerge(t, "udp")
+		}},
+		"connection_read_only": {testConnectionReadOnly},
+		"kill_actions": {func(t *testing.T) {
+			testKillActions(t, false)
+		}},
+		"action_order": {func(t *testing.T) {
+			testKillActions(t, true)
+		}},
+		"semaphore": {func(t *testing.T) {
+			testWorkerCapacity(t, false)
+		}},
+		"cancel_no_merge":  {testCancelNoMerge},
+		"init_direct_mode": {testInitDirectMode},
+		"alias_freeze": {func(t *testing.T) {
+			testOptionAlias(t, true)
+		}},
+		"reload_same_path": {func(t *testing.T) {
+			testRetireWorker(t, true, true)
+		}},
+		"waiter_cancel": {func(t *testing.T) {
+			testWorkerCapacity(t, true)
+		}},
+		"reentrant_command":     {testReentrantWorkerCommand},
+		"retained_copy_command": {testRetainedCopyCommand},
+		"global_reassign":       {testGlobalReassign},
+		"direct_call_init": {func(t *testing.T) {
+			testDirectCall(t, true)
+		}},
 		"backup_order":               {testBackupOrder},
 		"kill_precedence":            {testKillPrecedence},
 		"command_copyback":           {testCommandCopyback},
@@ -222,7 +259,7 @@ func testStateIsolation(t *testing.T) {
 		x := f.request()
 		f.hook(addon.RequestHeadersHook{Flow: x})
 		f.hook(addon.RequestHook{Flow: x})
-		if x.Marked != fmt.Sprint(n+1) || x.Comment != "0" {
+		if x.Marked != strconv.Itoa(n+1) || x.Comment != "0" {
 			t.Fatalf("shared module state: marked=%q comment=%q logs=%s", x.Marked, x.Comment, f.logs.String())
 		}
 	}

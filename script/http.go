@@ -175,7 +175,7 @@ func (g *capabilities) httpGet(thread *starlark.Thread, _ *starlark.Builtin, arg
 	if err != nil {
 		return nil, errors.New("ctx.http_get: invalid URL")
 	}
-	if err = validateHTTPURL(u); err != nil {
+	if err := validateHTTPURL(u); err != nil {
 		return nil, err
 	}
 	l := g.entry.owner
@@ -192,7 +192,7 @@ func (g *capabilities) httpGet(thread *starlark.Thread, _ *starlark.Builtin, arg
 	err = i.blocking(func(ctx context.Context) (err error) {
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
 		if err != nil {
 			return errors.New("ctx.http_get: invalid request")
 		}

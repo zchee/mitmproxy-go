@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -102,9 +103,9 @@ func (f *scriptFixture) request() *flow.HTTPFlow {
 	}
 	client := connection.NewClient(connection.Address{Host: "127.0.0.1", Port: 1234}, connection.Address{Host: "127.0.0.1", Port: 8080}, 0)
 	server := connection.NewServer(&connection.Address{Host: "example.test", Port: 80})
-	flow := flow.NewHTTPFlow(client, server, true)
-	flow.Request = req
-	return flow
+	requestFlow := flow.NewHTTPFlow(client, server, true)
+	requestFlow.Request = req
+	return requestFlow
 }
 
 func (f *scriptFixture) hook(hook addon.Hook) {
@@ -197,7 +198,7 @@ func TestScriptLoader(t *testing.T) {
 			for n := range 3 {
 				flow := f.request()
 				f.hook(addon.RequestHook{Flow: flow})
-				if flow.Comment != fmt.Sprint(n+1) {
+				if flow.Comment != strconv.Itoa(n+1) {
 					t.Fatalf("counter=%q; logs=%s", flow.Comment, f.logs.String())
 				}
 			}

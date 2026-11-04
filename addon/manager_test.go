@@ -143,7 +143,7 @@ func TestHookTable(t *testing.T) {
 	if len(want) != 46 {
 		t.Fatalf("the expected list has %d hooks, want mitmproxy's 46", len(want))
 	}
-	var got []string
+	got := make([]string, 0, len(hookSpecs))
 	for _, s := range hookSpecs {
 		got = append(got, s.hook.Name())
 		if n := s.handler.NumMethod(); n != 1 {
@@ -1721,6 +1721,7 @@ func TestLoadHookWithoutLoader(t *testing.T) {
 		},
 		"error: Trigger logs the refusal instead of a panic": {
 			fire: func(t *testing.T, e *testEnv, a *loaderUser) error {
+				t.Helper()
 				if err := e.m.Add(t.Context(), a); err != nil {
 					t.Fatalf("Add: %v", err)
 				}

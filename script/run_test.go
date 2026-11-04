@@ -85,23 +85,44 @@ func runRecordingSource(names ...string) string {
 
 func TestScriptRun(t *testing.T) {
 	tests := map[string]struct{ run func(*testing.T) }{
-		"depth_one":          {func(t *testing.T) { testRunRefusal(t, false, false); testRunInline(t, false) }},
-		"depth_two":          {func(t *testing.T) { testRunRefusal(t, true, false); testRunInline(t, true); testRunDepthLimit(t) }},
-		"child_depth_one":    {func(t *testing.T) { testRunRefusal(t, false, true) }},
-		"child_depth_two":    {func(t *testing.T) { testRunRefusal(t, true, true) }},
-		"invalid_binding":    {testRunInvalidBinding},
-		"no_other_addons":    {testRunModuleOnly},
-		"init_once":          {testRunInitOnce},
-		"first_error_stops":  {testRunFirstError},
-		"http_sequence":      {func(t *testing.T) { testRunSequence(t, "http") }},
-		"websocket_sequence": {func(t *testing.T) { testRunSequence(t, "websocket") }},
-		"tcp_sequence":       {func(t *testing.T) { testRunSequence(t, "tcp") }},
-		"udp_sequence":       {func(t *testing.T) { testRunSequence(t, "udp") }},
-		"dns_sequence":       {func(t *testing.T) { testRunSequence(t, "dns") }},
-		"dump_replay":        {testRunDumpReplay},
-		"missing_path":       {testRunMissingPath},
-		"nested_addons":      {testRunNestedAddons},
-		"no_on_load":         {testRunNoLoad},
+		"depth_one": {func(t *testing.T) {
+			testRunRefusal(t, false, false)
+			testRunInline(t, false)
+		}},
+		"depth_two": {func(t *testing.T) {
+			testRunRefusal(t, true, false)
+			testRunInline(t, true)
+			testRunDepthLimit(t)
+		}},
+		"child_depth_one": {func(t *testing.T) {
+			testRunRefusal(t, false, true)
+		}},
+		"child_depth_two": {func(t *testing.T) {
+			testRunRefusal(t, true, true)
+		}},
+		"invalid_binding":   {testRunInvalidBinding},
+		"no_other_addons":   {testRunModuleOnly},
+		"init_once":         {testRunInitOnce},
+		"first_error_stops": {testRunFirstError},
+		"http_sequence": {func(t *testing.T) {
+			testRunSequence(t, "http")
+		}},
+		"websocket_sequence": {func(t *testing.T) {
+			testRunSequence(t, "websocket")
+		}},
+		"tcp_sequence": {func(t *testing.T) {
+			testRunSequence(t, "tcp")
+		}},
+		"udp_sequence": {func(t *testing.T) {
+			testRunSequence(t, "udp")
+		}},
+		"dns_sequence": {func(t *testing.T) {
+			testRunSequence(t, "dns")
+		}},
+		"dump_replay":   {testRunDumpReplay},
+		"missing_path":  {testRunMissingPath},
+		"nested_addons": {testRunNestedAddons},
+		"no_on_load":    {testRunNoLoad},
 	}
 	t.Run("contracts", func(t *testing.T) {
 		for name, test := range tests {
@@ -148,7 +169,7 @@ func testRunDepthLimit(t *testing.T) {
 				}
 			}
 		}
-		var want []string
+		want := make([]string, 0, 2*runs*maxScriptRunDepth)
 		for range runs * maxScriptRunDepth {
 			want = append(want, "init", "running")
 		}

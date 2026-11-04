@@ -26,7 +26,7 @@ type requestResult struct {
 func requestAsync(t *testing.T, client *http.Client, target string, barrier <-chan struct{}) <-chan requestResult {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 15*time.Second)
-	req, err := http.NewRequestWithContext(ctx, "GET", target, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
 	if err != nil {
 		cancel()
 		t.Fatal(err)

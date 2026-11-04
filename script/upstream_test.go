@@ -255,7 +255,7 @@ func lifecycleMessages(logs string) []string {
 		if !ok {
 			continue
 		}
-		if len(text) > 2 && strings.Contains("abce", text[:1]) && text[1] == ' ' {
+		if len(text) > 2 && strings.ContainsRune("abce", rune(text[0])) && text[1] == ' ' {
 			out = append(out, text)
 		}
 	}

@@ -5,6 +5,7 @@ package script
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -118,7 +119,7 @@ func TestScriptConcurrentEligibility(t *testing.T) {
 					if err := f.master.Do(t.Context(), func(context.Context) error {
 						module := f.loader.entries[0].module
 						if module == nil || module.concurrent == nil || !module.concurrent.graph.worker {
-							return fmt.Errorf("missing frozen worker instance")
+							return errors.New("missing frozen worker instance")
 						}
 						return nil
 					}); err != nil {

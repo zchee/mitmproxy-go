@@ -162,8 +162,8 @@ func (v *flowValue) set(name string, value starlark.Value) error {
 		if err := x.i.modelCheck(); err != nil {
 			return err
 		}
-		copy := *x.err
-		b.Error = &copy
+		cloned := *x.err
+		b.Error = &cloned
 		return nil
 	case "metadata":
 		x, err := new(conversion).native(value, 0)

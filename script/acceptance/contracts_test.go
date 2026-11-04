@@ -100,31 +100,43 @@ func barrierOrigin(t *testing.T) (string, <-chan struct{}, func()) {
 func TestScriptAcceptance(t *testing.T) {
 	t.Run("contracts", func(t *testing.T) {
 		tests := map[string]struct{ run func(*testing.T) }{
-			"dict_counter":          {dictCounter},
-			"sleep_other_flow":      {func(t *testing.T) { otherFlow(t, false, false) }},
-			"concurrent_other_flow": {func(t *testing.T) { otherFlow(t, true, false) }},
-			"five_parallel":         {func(t *testing.T) { fiveParallel(t, false) }},
-			"frozen_dict":           {frozenDict},
-			"init_counts":           {initCounts},
-			"state_visibility":      {stateVisibility},
-			"option_aliases":        {optionAliases},
-			"worker_services":       {workerServices},
-			"direct_call":           {directCall},
-			"reload_inflight":       {func(t *testing.T) { reloadInflight(t, false) }},
-			"comment_merge":         {commentMerge},
-			"websocket_append":      {websocketAppend},
-			"connection_read_only":  {connectionReadOnly},
-			"kill_live":             {killLive},
-			"invalid_bindings":      {invalidBindings},
-			"reassign_error":        {reassignError},
-			"run_depths":            {runDepths},
-			"run_load_error":        {runLoadError},
-			"nonblocking_parallel":  {func(t *testing.T) { nonblockingParallel(t, false) }},
-			"mtime_reload":          {func(t *testing.T) { mtimeReload(t, false) }},
-			"error_once":            {errorOnce},
-			"steps_abort":           {stepsAbort},
-			"dump_replay":           {dumpReplay},
-			"options_metadata":      {optionsMetadata},
+			"dict_counter": {dictCounter},
+			"sleep_other_flow": {func(t *testing.T) {
+				otherFlow(t, false, false)
+			}},
+			"concurrent_other_flow": {func(t *testing.T) {
+				otherFlow(t, true, false)
+			}},
+			"five_parallel": {func(t *testing.T) {
+				fiveParallel(t, false)
+			}},
+			"frozen_dict":      {frozenDict},
+			"init_counts":      {initCounts},
+			"state_visibility": {stateVisibility},
+			"option_aliases":   {optionAliases},
+			"worker_services":  {workerServices},
+			"direct_call":      {directCall},
+			"reload_inflight": {func(t *testing.T) {
+				reloadInflight(t, false)
+			}},
+			"comment_merge":        {commentMerge},
+			"websocket_append":     {websocketAppend},
+			"connection_read_only": {connectionReadOnly},
+			"kill_live":            {killLive},
+			"invalid_bindings":     {invalidBindings},
+			"reassign_error":       {reassignError},
+			"run_depths":           {runDepths},
+			"run_load_error":       {runLoadError},
+			"nonblocking_parallel": {func(t *testing.T) {
+				nonblockingParallel(t, false)
+			}},
+			"mtime_reload": {func(t *testing.T) {
+				mtimeReload(t, false)
+			}},
+			"error_once":       {errorOnce},
+			"steps_abort":      {stepsAbort},
+			"dump_replay":      {dumpReplay},
+			"options_metadata": {optionsMetadata},
 		}
 		for name, tt := range tests {
 			t.Run(name, tt.run)
@@ -364,7 +376,7 @@ func killLive(t *testing.T) {
 	path := scriptFile(t, "def _request(f):\n    f.kill()\nrequest = concurrent(_request)\ndef error(f):\n    ctx.log(f.error.msg)\n")
 	p := startProxy(t, origin.URL, []string{path})
 	client := proxyClient(t, p)
-	r, err := http.NewRequestWithContext(t.Context(), "GET", origin.URL, nil)
+	r, err := http.NewRequestWithContext(t.Context(), http.MethodGet, origin.URL, http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}

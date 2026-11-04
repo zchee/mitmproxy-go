@@ -31,7 +31,7 @@ import (
 var (
 	dumpBinary    string
 	repoRoot      string
-	listenPattern = regexp.MustCompile(`listening at (127\.0\.0\.1:[0-9]+)`)
+	listenPattern = regexp.MustCompile(`listening at (127\.0\.0\.1:\d+)`)
 )
 
 // TestMain builds the production command, without test-only addon imports.
@@ -40,7 +40,7 @@ func TestMain(m *testing.M) {
 	if !ok {
 		panic("locate acceptance sources")
 	}
-	repoRoot = filepath.Clean(filepath.Join(filepath.Dir(source), "../.."))
+	repoRoot = filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
 	dir, err := os.MkdirTemp("", "script-acceptance-")
 	if err != nil {
 		panic(err)

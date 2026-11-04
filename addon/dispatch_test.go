@@ -313,6 +313,7 @@ func TestConcurrentRefused(t *testing.T) {
 	}{
 		"error: nested dispatch": {
 			run: func(t *testing.T, d *dispatcher, body func(context.Context) error) error {
+				t.Helper()
 				var cerr error
 				err := d.do(t.Context(), func(ctx context.Context) error {
 					return d.do(ctx, func(ctx context.Context) error {

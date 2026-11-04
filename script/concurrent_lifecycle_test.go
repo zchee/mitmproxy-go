@@ -29,7 +29,7 @@ func testWorkerCapacity(t *testing.T, cancelWaiter bool) {
 	if capacity < 5 || capacity > 32 {
 		t.Fatalf("capacity=%d", capacity)
 	}
-	var dones []<-chan error
+	dones := make([]<-chan error, 0, capacity)
 	for range capacity {
 		dones = append(dones, startConcurrent(t, f, t.Context(), addon.RequestHook{Flow: f.request()}))
 	}

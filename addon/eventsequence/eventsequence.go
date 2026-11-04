@@ -13,8 +13,6 @@ import (
 
 	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/flow"
-	"github.com/zchee/mitmproxy-go/tcp"
-	"github.com/zchee/mitmproxy-go/udp"
 	"github.com/zchee/mitmproxy-go/websocket"
 )
 
@@ -88,16 +86,8 @@ func iterateHTTP(f *flow.HTTPFlow) iter.Seq[addon.Hook] {
 
 func iterateTCP(f *flow.TCPFlow) iter.Seq[addon.Hook] {
 	return func(yield func(addon.Hook) bool) {
-		queue := f.Messages
-		f.Messages = make([]*tcp.Message, 0, len(queue))
-		if !yield(addon.TCPStartHook{Flow: f}) {
+		if !yieldMessages(&f.Messages, addon.TCPStartHook{Flow: f}, addon.TCPMessageHook{Flow: f}, yield) {
 			return
-		}
-		for _, m := range queue {
-			f.Messages = append(f.Messages, m)
-			if !yield(addon.TCPMessageHook{Flow: f}) {
-				return
-			}
 		}
 		if f.Error != nil {
 			yield(addon.TCPErrorHook{Flow: f})
@@ -109,16 +99,8 @@ func iterateTCP(f *flow.TCPFlow) iter.Seq[addon.Hook] {
 
 func iterateUDP(f *flow.UDPFlow) iter.Seq[addon.Hook] {
 	return func(yield func(addon.Hook) bool) {
-		queue := f.Messages
-		f.Messages = make([]*udp.Message, 0, len(queue))
-		if !yield(addon.UDPStartHook{Flow: f}) {
+		if !yieldMessages(&f.Messages, addon.UDPStartHook{Flow: f}, addon.UDPMessageHook{Flow: f}, yield) {
 			return
-		}
-		for _, m := range queue {
-			f.Messages = append(f.Messages, m)
-			if !yield(addon.UDPMessageHook{Flow: f}) {
-				return
-			}
 		}
 		if f.Error != nil {
 			yield(addon.UDPErrorHook{Flow: f})
@@ -126,6 +108,21 @@ func iterateUDP(f *flow.UDPFlow) iter.Seq[addon.Hook] {
 			yield(addon.UDPEndHook{Flow: f})
 		}
 	}
+}
+
+func yieldMessages[M any](messages *[]M, start, message addon.Hook, yield func(addon.Hook) bool) bool {
+	queue := *messages
+	*messages = make([]M, 0, len(queue))
+	if !yield(start) {
+		return false
+	}
+	for _, m := range queue {
+		*messages = append(*messages, m)
+		if !yield(message) {
+			return false
+		}
+	}
+	return true
 }
 
 func iterateDNS(f *flow.DNSFlow) iter.Seq[addon.Hook] {

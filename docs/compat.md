@@ -24,11 +24,11 @@ differences themselves.
 | Commands | `mitmdump`, `mitmproxy`, `mitmweb` | `cmd/mitmdump`, `cmd/mitmproxy`, `cmd/mitmweb` | implemented; cross-built release artifacts, native platform acceptance documented per mode |
 | Proxy modes | regular, reverse, upstream, transparent, socks5, dns, wireguard, tun, local | `internal/proxy/modespec`, `internal/proxy/modeserver` | implemented; port-less `local`/`tun` resolution matches `v12.3.1` |
 | Protocol layers | HTTP/1, HTTP/2, HTTP/3 and QUIC, WebSocket, raw TCP/UDP, DTLS, DNS | `internal/proxy/layers/...`, `websocket`, `tcp`, `udp`, `dns` | implemented; see the per-package sections below for intentional differences |
-| Addons | 41 modules under `mitmproxy/addons` | 41 packages under `addons/` (`asgiapp` is split into `apphost` and `onboardingapp`; `script` is replaced by the Starlark loader under `script/`) | implemented |
+| Addons | 41 top-level modules plus the `onboardingapp` package under `mitmproxy/addons` | 41 packages under `addons/` (`asgiapp` maps to `apphost`; `onboardingapp` keeps its name; `script` is replaced by the Starlark loader under `script/`) | implemented |
 | Content views and highlighting | `mitmproxy/contentviews`, `mitmproxy_rs` syntax highlighting | `contentviews`, `contentviews/highlight` | implemented; unknown WBXML tags render `UNKNOWN_TAG_XX` as at `v12.3.1` |
 | Scripting | Python addon scripts | Starlark (`script/`) | intentional replacement; see [Additional compatibility decisions](#additional-compatibility-decisions) |
 | Options and commands | 119 registered upstream options at `v12.3.1` | 117-name manifest after the [comparison policy](#upstream-option-comparison-policy) projects out `emudhra` and `emudhra_old`; help text matches | implemented except the two deferred options |
-| Embedded mitmweb assets | rebuilt for 12.3.0 (`#8358`, `#8492`) | older embedded build retained | deferred (see below) |
+| Embedded mitmweb assets | rebuilt for 12.3.0 ([mitmproxy/mitmproxy#8358](https://github.com/mitmproxy/mitmproxy/pull/8358), [mitmproxy/mitmproxy#8492](https://github.com/mitmproxy/mitmproxy/pull/8492)) | older embedded build retained | deferred (see below) |
 | eMudhra interception and revocation-host blocking | `--emudhra`, `--emudhra-old` | not registered; the defensive distrust policy is independent | deferred (see below) |
 | Differential coverage gaps | — | no direct fuzz target for the cookie parser; the 200×50 console frames have no Python regenerator and are kept under a layout/presentation review | documented limitation |
 

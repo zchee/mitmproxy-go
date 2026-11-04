@@ -128,39 +128,5 @@ func (i *Instance) startWireGuard(ctx context.Context) error {
 
 func (i *Instance) serveWireGuard(source *wireguardSource) {
 	defer close(source.done)
-	defer source.workers.Wait()
-	for {
-		select {
-		case <-source.ctx.Done():
-			return
-		case conn, ok := <-source.stack.TCPConns():
-			if !ok {
-				return
-			}
-			if admitted, _ := i.limiter.acquire(); !admitted {
-				_ = conn.Close()
-				continue
-			}
-			source.workers.Go(func() {
-				defer i.limiter.release()
-				if err := i.handler.Handle(source.ctx, conn, i.mode.String(), i.top); err != nil {
-					i.logger.Error("Handling WireGuard TCP connection", "error", err)
-				}
-			})
-		case conn, ok := <-source.stack.UDPConns():
-			if !ok {
-				return
-			}
-			if admitted, _ := i.limiter.acquire(); !admitted {
-				_ = conn.Close()
-				continue
-			}
-			source.workers.Go(func() {
-				defer i.limiter.release()
-				if err := i.handler.HandlePackets(source.ctx, conn, i.mode.String(), i.top); err != nil {
-					i.logger.Error("Handling WireGuard UDP connection", "error", err)
-				}
-			})
-		}
-	}
+	i.serveStack(source.ctx, source.stack, &source.workers, "WireGuard")
 }

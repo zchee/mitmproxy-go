@@ -52,14 +52,7 @@ func nextDTLSRecord(data []byte, offset int) (body []byte, next int, err error) 
 		return nil, -1, fmt.Errorf("%w: expected DTLS record, got %s instead", ErrMalformed, pyrepr.Bytes(header))
 	}
 	size := int(binary.BigEndian.Uint16(header[11:]))
-	if size == 0 {
-		return nil, -1, fmt.Errorf("%w: record must not be empty", ErrMalformed)
-	}
-	start := offset + dtlsRecordHeaderLen
-	if len(data)-start < size {
-		return data[start:], -1, nil
-	}
-	return data[start : start+size], start + size, nil
+	return recordBody(data, offset+dtlsRecordHeaderLen, size)
 }
 
 // GetDTLSClientHello concatenates ordered record bodies and returns the first

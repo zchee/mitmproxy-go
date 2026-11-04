@@ -109,9 +109,9 @@ func NewHandler(cfg Config) (*Handler, error) {
 // connection expires after the tcp_timeout option's seconds, counted
 // outside hooks and interception waits.
 //
-// Handle returns nil when the connection ended ordinarily, the idle expiry
-// and a client_connected handler's kill included, and an error only for a
-// failure the mode server should log.
+// Handle returns nil when the connection ended ordinarily, including idle
+// expiry, a client_connected handler's kill, and an eager server-connect
+// failure, and an error only for a failure the mode server should log.
 func (h *Handler) Handle(ctx context.Context, conn net.Conn, modeSpec string, top hookdata.LayerSpec) error {
 	if conn == nil {
 		return errors.New("proxy: Handle with a nil connection")

@@ -7,9 +7,11 @@ package modes
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/connection"
+	"github.com/zchee/mitmproxy-go/internal/human"
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer"
 )
 
@@ -54,7 +56,7 @@ func (m *mode) Run(ctx context.Context, c *layer.Context) error {
 		if server != nil {
 			conn, actual, err := c.Pool.Open(ctx, server, layer.OpenOptions{Reuse: true})
 			if err != nil {
-				return err
+				return logEagerConnectFailure(ctx, c, err)
 			}
 			c.Server = c.Record(conn)
 			if err := c.Do(ctx, func(context.Context) error {
@@ -70,4 +72,18 @@ func (m *mode) Run(ctx context.Context, c *layer.Context) error {
 		return err
 	}
 	return child.Run(ctx, c)
+}
+
+func logEagerConnectFailure(ctx context.Context, c *layer.Context, cause error) error {
+	var address string
+	if err := c.Do(ctx, func(context.Context) error {
+		if server := c.Data.Server; server.Address != nil {
+			address = human.FormatAddress(server.Address.Host, server.Address.Port)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	c.Logger.InfoContext(ctx, fmt.Sprintf("server connection to %s failed before connect", address), "error", cause)
+	return nil
 }

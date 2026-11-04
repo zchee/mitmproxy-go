@@ -326,7 +326,7 @@ func TestCiphersClientRestriction(t *testing.T) {
 
 	// TLS 1.3 ignores the suite restriction by design, so the handshake
 	// check pins the client to TLS 1.2.
-	state := handshakeAsServer(t, d.Config, &tls.Config{MaxVersion: tls.VersionTLS12}) //nolint:gosec // The restriction under test applies to TLS 1.2.
+	state := handshakeAsServer(t, d.Config, &tls.Config{MaxVersion: tls.VersionTLS12})
 	if !slices.Contains(want, state.CipherSuite) {
 		t.Fatalf("negotiated suite %#04x, want one of %v", state.CipherSuite, want)
 	}

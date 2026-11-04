@@ -6,6 +6,7 @@ package tlsconfig
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -79,7 +80,7 @@ func (t *TLSConfig) QUICStartServer(_ context.Context, d *hookdata.QUICTLS) erro
 	}
 	client, server := d.Context.Client, d.Context.Server
 	if server.Address == nil {
-		return fmt.Errorf("tlsconfig: starting server QUIC without a server address")
+		return errors.New("tlsconfig: starting server QUIC without a server address")
 	}
 	mode := hookdata.VerifyRequired
 	if t.options.Bool("ssl_insecure") {
@@ -138,7 +139,7 @@ func quicALPN(protocols [][]byte) ([]string, error) {
 	for _, protocol := range protocols {
 		for _, b := range protocol {
 			if b > 127 {
-				return nil, fmt.Errorf("tlsconfig: QUIC ALPN is not ASCII")
+				return nil, errors.New("tlsconfig: QUIC ALPN is not ASCII")
 			}
 		}
 		out = append(out, string(protocol))

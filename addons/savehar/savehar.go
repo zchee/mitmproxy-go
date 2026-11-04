@@ -146,7 +146,7 @@ func (a *Addon) exportHAR(ctx context.Context, flows []flow.Flow, path command.P
 		return err
 	}
 	_, err = file.Write(data)
-	if err = errors.Join(err, file.Close()); err != nil {
+	if err := errors.Join(err, file.Close()); err != nil {
 		return err
 	}
 	slog.Log(ctx, addon.LevelAlert, fmt.Sprintf("HAR file saved (%s bytes).", human.PrettySize(int64(len(data)))))
@@ -191,7 +191,7 @@ func marshalString(enc *jsontext.Encoder, s string) error {
 	invalid := !utf8.ValidString(s)
 	raw := make([]byte, 0, len(s)+2)
 	raw = append(raw, '"')
-	for len(s) > 0 {
+	for s != "" {
 		r, n := utf8.DecodeRuneInString(s)
 		switch {
 		case r == utf8.RuneError && n == 1:
@@ -388,8 +388,9 @@ func stringPairs(fields [][2]string) []map[string]any {
 }
 
 func responseCookies(response *httpmsg.Response) []map[string]any {
-	cookies := make([]map[string]any, 0)
-	for _, c := range response.Cookies() {
+	parsed := response.Cookies()
+	cookies := make([]map[string]any, 0, len(parsed))
+	for _, c := range parsed {
 		var path, domain any = "/", ""
 		if value, ok := c.Attrs.Lookup("path"); ok {
 			path = value

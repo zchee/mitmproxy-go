@@ -230,7 +230,7 @@ func TestSaving(t *testing.T) {
 
 func appendFile(t *testing.T, path, s string) {
 	t.Helper()
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0) //nolint:gosec // The path is a file the test created.
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

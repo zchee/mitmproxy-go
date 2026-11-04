@@ -110,8 +110,7 @@ func readUntil(s string, start int, term string) (string, int) {
 func readQuotedString(s string, start int) (string, int) {
 	var b strings.Builder
 	escaping := false
-	i := start
-	for i = start + 1; i < len(s); i++ {
+	for i := start + 1; i < len(s); i++ {
 		c := s[i]
 		switch {
 		case escaping:

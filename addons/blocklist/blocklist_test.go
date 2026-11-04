@@ -19,7 +19,7 @@ import (
 	"github.com/zchee/mitmproxy-go/options"
 )
 
-func setup(t *testing.T, patterns []string) (*addon.Manager, *options.Manager, *BlockList) {
+func setup(t *testing.T, patterns []string) (*addon.Manager, *options.Manager) {
 	t.Helper()
 	opts := options.New()
 	mgr := addon.NewManager(opts, command.NewManager(), addon.Config{})
@@ -31,7 +31,7 @@ func setup(t *testing.T, patterns []string) (*addon.Manager, *options.Manager, *
 	if err := mgr.Do(t.Context(), func(ctx context.Context) error { return opts.Update(ctx, map[string]any{"block_list": patterns}) }); err != nil {
 		t.Fatal(err)
 	}
-	return mgr, opts, b
+	return mgr, opts
 }
 
 // TestParseSpec ports test_parse_spec_err, adding Python integer syntax cases.
@@ -94,7 +94,7 @@ func TestBlock(t *testing.T) {
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			mgr, _, _ := setup(t, []string{test.pattern})
+			mgr, _ := setup(t, []string{test.pattern})
 			f := testflow.TFlow()
 			if err := f.Request.SetURL(test.url); err != nil {
 				t.Fatal(err)
@@ -117,7 +117,7 @@ func TestBlock(t *testing.T) {
 				if marked != true {
 					t.Fatal("missing metadata")
 				}
-				if string(f.Response.RawContent) != "" || f.Response.Headers.Get("Server") != version.String() {
+				if len(f.Response.RawContent) != 0 || f.Response.Headers.Get("Server") != version.String() {
 					t.Fatal("invalid empty block response")
 				}
 			} else if marked != nil {
@@ -147,7 +147,7 @@ func TestKill(t *testing.T) {
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			mgr, _, _ := setup(t, test.patterns)
+			mgr, _ := setup(t, test.patterns)
 			f := testflow.TFlow()
 			if test.mutate != nil {
 				test.mutate(f)
@@ -170,7 +170,7 @@ func TestKill(t *testing.T) {
 
 // TestConfigureError ports upstream test_configure_err.
 func TestConfigureError(t *testing.T) {
-	mgr, opts, _ := setup(t, []string{"/.*/404"})
+	mgr, opts := setup(t, []string{"/.*/404"})
 	err := mgr.Do(t.Context(), func(ctx context.Context) error {
 		return opts.Update(ctx, map[string]any{"block_list": []string{"lalelu"}})
 	})
@@ -183,7 +183,7 @@ func TestConfigureError(t *testing.T) {
 }
 
 func TestConcurrentDispatch(t *testing.T) {
-	mgr, opts, _ := setup(t, []string{":.*:404"})
+	mgr, opts := setup(t, []string{":.*:404"})
 	var wg sync.WaitGroup
 	for range 32 {
 		wg.Go(func() {

@@ -26,7 +26,7 @@ import (
 	"github.com/zchee/mitmproxy-go/options"
 )
 
-func setup(t *testing.T, patterns []string) (*addon.Manager, *options.Manager, *MapLocal) {
+func setup(t *testing.T, patterns []string) (*addon.Manager, *options.Manager) {
 	t.Helper()
 	opts := options.New()
 	mgr := addon.NewManager(opts, command.NewManager(), addon.Config{})
@@ -38,7 +38,7 @@ func setup(t *testing.T, patterns []string) (*addon.Manager, *options.Manager, *
 	if err := mgr.Do(t.Context(), func(ctx context.Context) error { return opts.Update(ctx, map[string]any{"map_local": patterns}) }); err != nil {
 		t.Fatal(err)
 	}
-	return mgr, opts, m
+	return mgr, opts
 }
 
 // TestFileCandidates ports every vector in upstream test_file_candidates.
@@ -109,7 +109,7 @@ func TestFileCandidates(t *testing.T) {
 // TestConfigure ports upstream TestMapLocal.test_configure.
 func TestConfigure(t *testing.T) {
 	root := t.TempDir()
-	mgr, opts, _ := setup(t, []string{"/foo/bar/" + root})
+	mgr, opts := setup(t, []string{"/foo/bar/" + root})
 	tests := map[string]struct{ pattern, message string }{
 		"error: pattern":    {"/foo/+/" + root, "Invalid regular expression '+'"},
 		"error: path":       {"/foo/.+/" + filepath.Join(root, "missing"), "Invalid file path:"},
@@ -170,7 +170,7 @@ func TestRequest(t *testing.T) {
 			if test.file {
 				target = file
 			}
-			mgr, _, _ := setup(t, []string{test.pattern + target})
+			mgr, _ := setup(t, []string{test.pattern + target})
 			f := testflow.TFlow()
 			if err := f.Request.SetURL(test.url); err != nil {
 				t.Fatal(err)
@@ -210,7 +210,7 @@ func TestRequest(t *testing.T) {
 			t.Fatal(err)
 		}
 		writeFile(t, home, "main-local.js", "home file")
-		mgr, _, _ := setup(t, []string{"|example.com/main.js|~/main-local.js"})
+		mgr, _ := setup(t, []string{"|example.com/main.js|~/main-local.js"})
 		f := testflow.TFlow()
 		if err := f.Request.SetURL("https://example.com/main.js"); err != nil {
 			t.Fatal(err)
@@ -233,7 +233,7 @@ func TestNonexistentFiles(t *testing.T) {
 	old := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(old) })
-	mgr, _, _ := setup(t, []string{"|example.org/css|" + root})
+	mgr, _ := setup(t, []string{"|example.org/css|" + root})
 	f := testflow.TFlow()
 	if err := f.Request.SetURL("https://example.org/css/nonexistent"); err != nil {
 		t.Fatal(err)
@@ -258,7 +258,7 @@ func TestNonexistentFiles(t *testing.T) {
 	if err := handle.Close(); err != nil {
 		t.Fatal(err)
 	}
-	mgr, _, _ = setup(t, []string{"|address|" + file, "|address|" + writeFile(t, root, "fallback", "ok")})
+	mgr, _ = setup(t, []string{"|address|" + file, "|address|" + writeFile(t, root, "fallback", "ok")})
 	f = testflow.TFlow()
 	if err := mgr.Hook(t.Context(), addon.RequestHook{Flow: f}); err != nil {
 		t.Fatal(err)
@@ -294,7 +294,7 @@ func TestTaken(t *testing.T) {
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			mgr, _, _ := setup(t, []string{"|example.org|" + root})
+			mgr, _ := setup(t, []string{"|example.org|" + root})
 			f := testflow.TFlow()
 			if err := f.Request.SetURL(test.url); err != nil {
 				t.Fatal(err)
@@ -336,7 +336,7 @@ func TestRootedFiles(t *testing.T) {
 	}{"skip: external symlink": {"outside", "", 404}, "success: relative internal symlink": {"relative", "inside", 200}}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			mgr, _, _ := setup(t, []string{"|example.org|" + root})
+			mgr, _ := setup(t, []string{"|example.org|" + root})
 			f := testflow.TFlow()
 			if err := f.Request.SetURL("https://example.org/" + test.path); err != nil {
 				t.Fatal(err)
@@ -390,7 +390,7 @@ func TestOptionsAndCommands(t *testing.T) {
 func TestConcurrentDispatch(t *testing.T) {
 	root := t.TempDir()
 	file := writeFile(t, root, "file", "body")
-	mgr, _, _ := setup(t, []string{"|address|" + file})
+	mgr, _ := setup(t, []string{"|address|" + file})
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Go(func() {

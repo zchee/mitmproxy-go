@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/user"
+	osuser "os/user"
 	"runtime"
 	"strings"
 	"sync"
@@ -79,8 +79,8 @@ func (p *ProxyAuth) Configure(_ context.Context, updated map[string]struct{}) er
 				if end == 1 {
 					home, err = os.UserHomeDir()
 				} else {
-					var account *user.User
-					account, err = user.Lookup(path[1:end])
+					var account *osuser.User
+					account, err = osuser.Lookup(path[1:end])
 					if err == nil {
 						home = account.HomeDir
 					}

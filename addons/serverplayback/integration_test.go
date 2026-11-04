@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func replayRequest(t *testing.T, p *proxytest.Proxy, r *httpmsg.Request) (*httpm
 		return nil, err
 	}
 	request := r.Clone()
-	request.Authority = net.JoinHostPort(r.Host, fmt.Sprint(r.Port))
+	request.Authority = net.JoinHostPort(r.Host, strconv.Itoa(r.Port))
 	head := http1.AssembleRequestHead(request, nil, false, nil)
 	if _, err := conn.Write(head); err != nil {
 		return nil, err

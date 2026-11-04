@@ -20,7 +20,7 @@ import (
 // The tagged transport uses the real desktop clipboard rather than a mock;
 // unavailable backend error text belongs to that library, not pyperclip.
 func TestClipboardDisabled(t *testing.T) {
-	_, _, cmds := setup(t)
+	cmds := setup(t)
 	var logs bytes.Buffer
 	old := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))

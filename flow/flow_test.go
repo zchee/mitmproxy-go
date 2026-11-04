@@ -130,15 +130,12 @@ func tTCPFlow(withErr bool) *TCPFlow {
 	return f
 }
 
-func tUDPFlow(withErr bool) *UDPFlow {
+func tUDPFlow() *UDPFlow {
 	f := NewUDPFlow(tClientConn(), tServerConn(), true)
 	f.TimestampCreated = *f.ClientConn.TimestampStart
 	f.Messages = []*udp.Message{
 		{FromClient: true, Content: []byte("hello"), Timestamp: 946681204.2},
 		{FromClient: false, Content: []byte("it's me"), Timestamp: 946681204.5},
-	}
-	if withErr {
-		f.Error = tErr()
 	}
 	return f
 }
@@ -184,7 +181,7 @@ func TestStateKeyOrder(t *testing.T) {
 		"success: http":      {f: tFlow(tflowOpts{resp: true, ws: true}), extra: []string{"request", "response", "websocket"}},
 		"success: http zero": {f: &HTTPFlow{}, extra: []string{"request", "response", "websocket"}},
 		"success: tcp":       {f: tTCPFlow(false), extra: []string{"messages"}},
-		"success: udp":       {f: tUDPFlow(false), extra: []string{"messages"}},
+		"success: udp":       {f: tUDPFlow(), extra: []string{"messages"}},
 		"success: dns":       {f: tDNSFlow(true, false), extra: []string{"request", "response"}},
 		"success: dns zero":  {f: &DNSFlow{}, extra: []string{"request", "response"}},
 	}
@@ -256,6 +253,8 @@ func TestFixtureRoundTrip(t *testing.T) {
 		"success: corrupted_gzip_body (v21)": {
 			rel: "mitmproxy/flows/corrupted_gzip_body.mitm",
 			check: func(t *testing.T, f Flow) {
+				t.Helper()
+
 				h := f.(*HTTPFlow)
 				if h.Request.Host != "127.0.0.1" || h.Request.Port != 5000 || h.Response.StatusCode != 200 {
 					t.Errorf("decoded request/response = %v / %v", h.Request, h.Response)
@@ -274,6 +273,8 @@ func TestFixtureRoundTrip(t *testing.T) {
 			// "QUIC" to "QUICv1"; this fixture has no QUIC connections.
 			migrate: func(m *state.Map) { m.Set("version", int64(21)) },
 			check: func(t *testing.T, f Flow) {
+				t.Helper()
+
 				h := f.(*HTTPFlow)
 				if h.WebSocket == nil || len(h.WebSocket.Messages) != 1 || h.Response.StatusCode != 101 {
 					t.Errorf("websocket flow decoded as %+v", h.WebSocket)
@@ -319,7 +320,7 @@ func TestGetSetState(t *testing.T) {
 		"success: http with error":     {f: tFlow(tflowOpts{err: true})},
 		"success: http with websocket": {f: tFlow(tflowOpts{resp: true, ws: true})},
 		"success: tcp":                 {f: tTCPFlow(true)},
-		"success: udp":                 {f: tUDPFlow(false)},
+		"success: udp":                 {f: tUDPFlow()},
 		"success: dns with response":   {f: tDNSFlow(true, false)},
 		"success: dns with error":      {f: tDNSFlow(false, true)},
 	}
@@ -478,7 +479,7 @@ func TestCopy(t *testing.T) {
 		"success: http error": {f: tFlow(tflowOpts{err: true})},
 		"success: tcp":        {f: tTCPFlow(false)},
 		"success: tcp error":  {f: tTCPFlow(true)},
-		"success: udp":        {f: tUDPFlow(false)},
+		"success: udp":        {f: tUDPFlow()},
 		"success: dns":        {f: tDNSFlow(true, false)},
 		"success: dns error":  {f: tDNSFlow(false, true)},
 	}
@@ -537,7 +538,7 @@ func TestModifiedRightAfterBackup(t *testing.T) {
 	}{
 		"success: http": {f: tFlow(tflowOpts{resp: true})},
 		"success: tcp":  {f: tTCPFlow(false)},
-		"success: udp":  {f: tUDPFlow(false)},
+		"success: udp":  {f: tUDPFlow()},
 		"success: dns":  {f: tDNSFlow(true, false)},
 	}
 	for name, tt := range tests {
@@ -814,7 +815,7 @@ func TestStrings(t *testing.T) {
 	if got := tTCPFlow(false).String(); got != "<TCPFlow (2 messages)>" {
 		t.Errorf("TCPFlow.String() = %q", got)
 	}
-	if got := tUDPFlow(false).String(); got != "<UDPFlow (2 messages)>" {
+	if got := tUDPFlow().String(); got != "<UDPFlow (2 messages)>" {
 		t.Errorf("UDPFlow.String() = %q", got)
 	}
 	if got := tErr().Error(); got != "error" {

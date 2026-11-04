@@ -14,15 +14,15 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 )
 
-func quicVector(t testing.TB, name string) []byte {
-	t.Helper()
+func quicVector(tb testing.TB, name string) []byte {
+	tb.Helper()
 	data, err := os.ReadFile("testdata/quic/" + name + ".hex")
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	packet, err := hex.DecodeString(strings.TrimSpace(string(data)))
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	return packet
 }

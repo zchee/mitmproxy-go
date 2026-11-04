@@ -130,7 +130,7 @@ func unpackRecord(decoder *nameDecoder, offset int) (ResourceRecord, int, error)
 		return ResourceRecord{}, 0, err
 	}
 	if len(data)-offset < 10 {
-		return ResourceRecord{}, 0, fmt.Errorf("unpack requires a buffer of 10 bytes")
+		return ResourceRecord{}, 0, errors.New("unpack requires a buffer of 10 bytes")
 	}
 	r := ResourceRecord{Name: name, Type: int(binary.BigEndian.Uint16(data[offset:])), Class: int(binary.BigEndian.Uint16(data[offset+2:])), TTL: int(binary.BigEndian.Uint32(data[offset+4:]))}
 	length := int(binary.BigEndian.Uint16(data[offset+8:]))
@@ -256,7 +256,7 @@ func (d *nameDecoder) unpack(offset int, compression bool) (string, int, error) 
 			return "", 0, fmt.Errorf("unpack requires a buffer at offset %d", offset)
 		}
 		if visited[offset] {
-			return "", 0, fmt.Errorf("unpack encountered domain name loop")
+			return "", 0, errors.New("unpack encountered domain name loop")
 		}
 		visited[offset] = true
 		if d.work <= 0 {
@@ -275,14 +275,14 @@ func (d *nameDecoder) unpack(offset int, compression bool) (string, int, error) 
 		length := int(d.data[offset])
 		if length&0xc0 == 0xc0 {
 			if !compression {
-				return "", 0, fmt.Errorf("unpack encountered a pointer which is not supported in RDATA")
+				return "", 0, errors.New("unpack encountered a pointer which is not supported in RDATA")
 			}
 			if len(d.data)-offset < 2 {
-				return "", 0, fmt.Errorf("unpack requires a pointer buffer of 2 bytes")
+				return "", 0, errors.New("unpack requires a pointer buffer of 2 bytes")
 			}
 			target := int(binary.BigEndian.Uint16(d.data[offset:]) & 0x3fff)
 			if target >= offset {
-				return "", 0, fmt.Errorf("unpack encountered forward compression pointer or domain name loop")
+				return "", 0, errors.New("unpack encountered forward compression pointer or domain name loop")
 			}
 			if end < 0 {
 				end = offset + 2

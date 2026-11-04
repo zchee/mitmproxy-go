@@ -7,6 +7,7 @@ package apphost
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"net"
@@ -116,7 +117,7 @@ func serve(handler http.Handler, request *http.Request) (response *httpmsg.Respo
 	recorder.Code = 0
 	handler.ServeHTTP(recorder, request)
 	if recorder.Code == 0 {
-		return nil, fmt.Errorf("no response sent")
+		return nil, errors.New("no response sent")
 	}
 	result := recorder.Result()
 	defer func() { _ = result.Body.Close() }()

@@ -432,12 +432,7 @@ func (p *ProxyServer) InjectTCP(ctx context.Context, f flow.Flow, toClient bool,
 		p.logger.Warn("Cannot inject TCP messages into non-TCP flows.")
 		return nil
 	}
-	err := p.handler.Inject(ctx, layer.Injected{Flow: f, Message: tcp.NewMessage(!toClient, message)})
-	if errors.Is(err, proxy.ErrFlowNotLive) {
-		p.logger.Warn("Flow is not from a live connection.")
-		return nil
-	}
-	return err
+	return p.inject(ctx, layer.Injected{Flow: f, Message: tcp.NewMessage(!toClient, message)})
 }
 
 // InjectWebSocket implements inject.websocket. Non-WebSocket and non-live flows
@@ -453,12 +448,7 @@ func (p *ProxyServer) InjectWebSocket(ctx context.Context, f flow.Flow, toClient
 	if isText {
 		opcode = websocket.OpText
 	}
-	err := p.handler.Inject(ctx, layer.Injected{Flow: f, Message: websocket.NewMessage(opcode, !toClient, message)})
-	if errors.Is(err, proxy.ErrFlowNotLive) {
-		p.logger.Warn("Flow is not from a live connection.")
-		return nil
-	}
-	return err
+	return p.inject(ctx, layer.Injected{Flow: f, Message: websocket.NewMessage(opcode, !toClient, message)})
 }
 
 // InjectUDP implements inject.udp. Non-UDP and non-live flows log the upstream
@@ -468,7 +458,11 @@ func (p *ProxyServer) InjectUDP(ctx context.Context, f flow.Flow, toClient bool,
 		p.logger.Warn("Cannot inject UDP messages into non-UDP flows.")
 		return nil
 	}
-	err := p.handler.Inject(ctx, layer.Injected{Flow: f, Message: udp.NewMessage(!toClient, message)})
+	return p.inject(ctx, layer.Injected{Flow: f, Message: udp.NewMessage(!toClient, message)})
+}
+
+func (p *ProxyServer) inject(ctx context.Context, injected layer.Injected) error {
+	err := p.handler.Inject(ctx, injected)
 	if errors.Is(err, proxy.ErrFlowNotLive) {
 		p.logger.Warn("Flow is not from a live connection.")
 		return nil

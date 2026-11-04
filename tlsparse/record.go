@@ -85,10 +85,13 @@ func nextRecord(data []byte, offset int) (body []byte, next int, err error) {
 		return nil, -1, fmt.Errorf("%w: expected TLS record, got %s instead", ErrMalformed, pyrepr.Bytes(header))
 	}
 	size := int(binary.BigEndian.Uint16(header[3:]))
+	return recordBody(data, offset+recordHeaderLen, size)
+}
+
+func recordBody(data []byte, start, size int) (body []byte, next int, err error) {
 	if size == 0 {
 		return nil, -1, fmt.Errorf("%w: record must not be empty", ErrMalformed)
 	}
-	start := offset + recordHeaderLen
 	if len(data)-start < size {
 		return data[start:], -1, nil
 	}

@@ -30,7 +30,7 @@ func dtlsHex(t *testing.T, s string) []byte {
 
 func dtlsRecord(body []byte) []byte {
 	b := []byte{0x16, 0xfe, 0xfd, 0, 0, 0, 0, 0, 0, 0, 0}
-	b = binary.BigEndian.AppendUint16(b, uint16(len(body))) //nolint:gosec // Test messages fit the record length field.
+	b = binary.BigEndian.AppendUint16(b, uint16(len(body)))
 	return append(b, body...)
 }
 
@@ -95,7 +95,7 @@ func TestGetDTLSClientHello(t *testing.T) {
 			}
 		})
 	}
-	for i := range len(single) {
+	for i := range single {
 		got, err := GetDTLSClientHello(single[:i])
 		if got != nil || err != nil {
 			t.Fatalf("prefix %d: %x, %v", i, got, err)
@@ -204,8 +204,8 @@ func TestClientHelloDTLSRawBytes(t *testing.T) {
 			if tt.dtls && wrapped != nil || !tt.dtls && wrapped == nil {
 				t.Fatalf("wrapped record = %x, DTLS = %v", wrapped, tt.dtls)
 			}
-			copy := tt.hello.RawBytes(false)
-			copy[0] ^= 0xff
+			cloned := tt.hello.RawBytes(false)
+			cloned[0] ^= 0xff
 			if diff := cmp.Diff(tt.body, tt.hello.RawBytes(false)); diff != "" {
 				t.Fatalf("RawBytes leaked mutable storage: %s", diff)
 			}

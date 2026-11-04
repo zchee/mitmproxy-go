@@ -6,6 +6,7 @@ package tlsconfig
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -67,7 +68,7 @@ func (t *TLSConfig) dtlsStartServer(_ context.Context, d *hookdata.TLS) error {
 	}
 	client, server := d.Context.Client, d.Context.Server
 	if server.Address == nil {
-		return fmt.Errorf("tlsconfig: starting server DTLS without a server address")
+		return errors.New("tlsconfig: starting server DTLS without a server address")
 	}
 	if server.SNI == nil {
 		sni := server.Address.Host
@@ -105,7 +106,7 @@ func (t *TLSConfig) dtlsStartServer(_ context.Context, d *hookdata.TLS) error {
 			return err
 		}
 		if *server.SNI == "" {
-			return fmt.Errorf("Cannot validate certificate hostname without SNI") //nolint:staticcheck // Preserve upstream's user-facing diagnostic.
+			return errors.New("Cannot validate certificate hostname without SNI") //nolint:staticcheck // Preserve upstream's user-facing diagnostic.
 		}
 	}
 	if sni := *server.SNI; sni != "" {

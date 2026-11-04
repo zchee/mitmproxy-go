@@ -4,6 +4,7 @@
 package httpmsg
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -124,7 +125,7 @@ func validateHeaders(m *Message, isRequest bool, status int) error {
 	}
 	switch {
 	case len(te) > 0 && len(cl) > 0:
-		return fmt.Errorf("message with both transfer-encoding and content-length headers")
+		return errors.New("message with both transfer-encoding and content-length headers")
 	case len(te) > 0:
 		if len(te) > 1 {
 			return fmt.Errorf("multiple transfer-encoding headers: %q", te)

@@ -29,28 +29,28 @@ type goldenRecord struct {
 	Dump                  string `json:"dump,omitzero"`
 }
 
-func loadJSON(t testing.TB, name string, v any) {
-	t.Helper()
+func loadJSON(tb testing.TB, name string, v any) {
+	tb.Helper()
 	data, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	if err := json.Unmarshal(data, v); err != nil {
-		t.Fatalf("decode %s: %v", name, err)
+		tb.Fatalf("decode %s: %v", name, err)
 	}
 }
 
-func loadCorpus(t testing.TB) []string {
-	t.Helper()
+func loadCorpus(tb testing.TB) []string {
+	tb.Helper()
 	var corpus []string
-	loadJSON(t, "parse_corpus.json", &corpus)
+	loadJSON(tb, "parse_corpus.json", &corpus)
 	return corpus
 }
 
-func loadGolden(t testing.TB) golden {
-	t.Helper()
+func loadGolden(tb testing.TB) golden {
+	tb.Helper()
 	var g golden
-	loadJSON(t, "parse_golden.json", &g)
+	loadJSON(tb, "parse_golden.json", &g)
 	return g
 }
 
@@ -82,11 +82,11 @@ func trees(es []Expr) []any {
 	return out
 }
 
-func dumpString(t testing.TB, e Expr) string {
-	t.Helper()
+func dumpString(tb testing.TB, e Expr) string {
+	tb.Helper()
 	var b strings.Builder
 	if err := Dump(&b, e); err != nil {
-		t.Fatalf("Dump(%v) error = %v", e, err)
+		tb.Fatalf("Dump(%v) error = %v", e, err)
 	}
 	return b.String()
 }

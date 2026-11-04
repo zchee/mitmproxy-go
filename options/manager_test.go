@@ -19,45 +19,45 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/pyrepr"
 )
 
-func mustAdd(t testing.TB, m *Manager, name string, typ Type, def any, help string, opts ...AddOption) {
-	t.Helper()
-	if err := m.Add(t.Context(), name, typ, def, help, opts...); err != nil {
-		t.Fatalf("Add(%q): %v", name, err)
+func mustAdd(tb testing.TB, m *Manager, name string, typ Type, def any, help string, opts ...AddOption) {
+	tb.Helper()
+	if err := m.Add(tb.Context(), name, typ, def, help, opts...); err != nil {
+		tb.Fatalf("Add(%q): %v", name, err)
 	}
 }
 
 // newTO mirrors the TO fixture of mitmproxy's test_optmanager.py.
-func newTO(t testing.TB) *Manager {
+func newTO(tb testing.TB) *Manager {
 	m := NewManager()
-	mustAdd(t, m, "one", TypeOptInt, nil, "help")
-	mustAdd(t, m, "two", TypeOptInt, 2, "help")
-	mustAdd(t, m, "bool", TypeBool, false, "help")
-	mustAdd(t, m, "required_int", TypeInt, 2, "help")
+	mustAdd(tb, m, "one", TypeOptInt, nil, "help")
+	mustAdd(tb, m, "two", TypeOptInt, 2, "help")
+	mustAdd(tb, m, "bool", TypeBool, false, "help")
+	mustAdd(tb, m, "required_int", TypeInt, 2, "help")
 	return m
 }
 
 // newTD2 mirrors the TD2 fixture of mitmproxy's test_optmanager.py.
-func newTD2(t testing.TB) *Manager {
+func newTD2(tb testing.TB) *Manager {
 	m := NewManager()
-	mustAdd(t, m, "one", TypeStr, "done", "help")
-	mustAdd(t, m, "two", TypeStr, "dtwo", "help")
-	mustAdd(t, m, "three", TypeStr, "dthree", "help")
-	mustAdd(t, m, "four", TypeStr, "dfour", "help")
+	mustAdd(tb, m, "one", TypeStr, "done", "help")
+	mustAdd(tb, m, "two", TypeStr, "dtwo", "help")
+	mustAdd(tb, m, "three", TypeStr, "dthree", "help")
+	mustAdd(tb, m, "four", TypeStr, "dfour", "help")
 	return m
 }
 
 // newTTypes mirrors the TTypes fixture of mitmproxy's test_optmanager.py,
 // without the float option, which has no Go option type.
-func newTTypes(t testing.TB) *Manager {
+func newTTypes(tb testing.TB) *Manager {
 	m := NewManager()
-	mustAdd(t, m, "str", TypeStr, "str", "help")
-	mustAdd(t, m, "choices", TypeStr, "foo", "help", WithChoices("foo", "bar", "baz"))
-	mustAdd(t, m, "optstr", TypeOptStr, "optstr", "help")
-	mustAdd(t, m, "bool", TypeBool, false, "help")
-	mustAdd(t, m, "bool_on", TypeBool, true, "help")
-	mustAdd(t, m, "int", TypeInt, 0, "help")
-	mustAdd(t, m, "optint", TypeOptInt, 0, "help")
-	mustAdd(t, m, "seqstr", TypeSeq, []string{}, "help")
+	mustAdd(tb, m, "str", TypeStr, "str", "help")
+	mustAdd(tb, m, "choices", TypeStr, "foo", "help", WithChoices("foo", "bar", "baz"))
+	mustAdd(tb, m, "optstr", TypeOptStr, "optstr", "help")
+	mustAdd(tb, m, "bool", TypeBool, false, "help")
+	mustAdd(tb, m, "bool_on", TypeBool, true, "help")
+	mustAdd(tb, m, "int", TypeInt, 0, "help")
+	mustAdd(tb, m, "optint", TypeOptInt, 0, "help")
+	mustAdd(tb, m, "seqstr", TypeSeq, []string{}, "help")
 	return m
 }
 

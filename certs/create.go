@@ -87,7 +87,7 @@ func marshalSubject(attrs []nameAttr) ([]byte, error) {
 		if !utf8.ValidString(attr.val) {
 			return nil, errors.New("certs: subject attribute is not valid UTF-8")
 		}
-		if attr.oid.Equal(oidCommonName) && (len(attr.val) == 0 || len(attr.val) > 64) {
+		if attr.oid.Equal(oidCommonName) && (attr.val == "" || len(attr.val) > 64) {
 			return nil, errors.New("certs: common name must contain between 1 and 64 UTF-8 bytes")
 		}
 		name = append(name, pkix.RelativeDistinguishedNameSET{{

@@ -5,7 +5,7 @@ package master
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"iter"
 	"strings"
 
@@ -34,7 +34,7 @@ func (m *Master) LoadFlow(ctx context.Context, f flow.Flow) error {
 		}
 		reverse := mode.(modespec.ReverseMode)
 		if hf.Request == nil {
-			return fmt.Errorf("master: cannot retarget an HTTP flow without a request")
+			return errors.New("master: cannot retarget an HTTP flow without a request")
 		}
 		// Keep upstream's setter order: host and port update the Host header
 		// using the old scheme, before the scheme itself changes.

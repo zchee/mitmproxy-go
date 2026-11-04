@@ -6,6 +6,7 @@ package tlsconfig
 import (
 	"bytes"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -35,7 +36,7 @@ func dtlsCertificateCallback(store *certs.Store, entry *certs.Entry, upstream []
 	}
 	return func(hello *dtls.ClientHelloInfo) (*tls.Certificate, error) {
 		if hello == nil {
-			return nil, fmt.Errorf("tlsconfig: missing DTLS ClientHello information")
+			return nil, errors.New("tlsconfig: missing DTLS ClientHello information")
 		}
 		sans := names
 		if hello.ServerName != "" {

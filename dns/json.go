@@ -5,6 +5,7 @@ package dns
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/netip"
 	"strconv"
@@ -107,7 +108,7 @@ func recordDataJSON(r *ResourceRecord) any {
 // an error without a partial message; display-only size/status fields are ignored.
 func MessageFromJSON(value *omap.Map[any]) (*Message, error) {
 	if value == nil {
-		return nil, fmt.Errorf("nil DNS JSON message")
+		return nil, errors.New("nil DNS JSON message")
 	}
 	d := state.NewDecoder(value.Clone(), "DNSMessage JSON")
 	m := &Message{
@@ -221,7 +222,7 @@ func recordFromJSON(value any) (ResourceRecord, error) {
 		}
 	}
 	if !isText {
-		return ResourceRecord{}, fmt.Errorf("DNS record data must be text or an HTTPS object")
+		return ResourceRecord{}, errors.New("DNS record data must be text or an HTTPS object")
 	}
 	text = strings.TrimPrefix(text, "0x")
 	text, _, _ = strings.Cut(text, " (")

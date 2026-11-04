@@ -5,7 +5,6 @@ package contentviews
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
@@ -170,7 +169,7 @@ func readGraphJSON(decoder *jsontext.Decoder, constants map[int64]string, budget
 				if err != nil {
 					return nil, err
 				}
-				key := graphUnquote(raw)
+				key := unquoteJSON(raw)
 				value, err := readGraphJSON(decoder, constants, budget, depth+1, true)
 				if err != nil {
 					return nil, err
@@ -199,7 +198,7 @@ func readGraphJSON(decoder *jsontext.Decoder, constants map[int64]string, budget
 		return nil, err
 	}
 	if kind == '"' {
-		node.text = graphUnquote(raw)
+		node.text = unquoteJSON(raw)
 	} else {
 		if kind == '0' && !bytes.ContainsAny(raw, ".eE") && len(bytes.TrimPrefix(raw, []byte("-"))) > 4300 {
 			return nil, fmt.Errorf("GraphQL integer exceeds Python's conversion limit")
@@ -368,74 +367,8 @@ func graphQuote(out *strings.Builder, budget *viewBudget, text string) error {
 	return graphWrite(out, budget, "\"")
 }
 
-func graphUnquote(raw []byte) string {
-	var out []byte
-	for i := 1; i < len(raw)-1; i++ {
-		if raw[i] != '\\' {
-			out = append(out, raw[i])
-			continue
-		}
-		i++
-		switch raw[i] {
-		case 'b':
-			out = append(out, '\b')
-		case 'f':
-			out = append(out, '\f')
-		case 'n':
-			out = append(out, '\n')
-		case 'r':
-			out = append(out, '\r')
-		case 't':
-			out = append(out, '\t')
-		case 'u':
-			code, _ := strconv.ParseUint(string(raw[i+1:i+5]), 16, 16)
-			i += 4
-			r := rune(code)
-			if r >= 0xd800 && r <= 0xdbff && i+6 < len(raw) && raw[i+1] == '\\' && raw[i+2] == 'u' {
-				low, _ := strconv.ParseUint(string(raw[i+3:i+7]), 16, 16)
-				if low >= 0xdc00 && low <= 0xdfff {
-					r = utf16.DecodeRune(r, rune(low))
-					i += 6
-				}
-			}
-			out = graphAppendRune(out, r)
-		default:
-			out = append(out, raw[i])
-		}
-	}
-	return string(out)
-}
-
-func graphAppendRune(out []byte, r rune) []byte {
-	if r >= 0xd800 && r <= 0xdfff {
-		return append(out, byte(0xe0|r>>12), byte(0x80|(r>>6)&63), byte(0x80|r&63))
-	}
-	return utf8.AppendRune(out, r)
-}
-
 func graphJSONUTF8(data []byte, budget *viewBudget) ([]byte, error) {
-	var order binary.ByteOrder
-	width := 1
-	switch {
-	case bytes.HasPrefix(data, []byte{0, 0, 0xfe, 0xff}):
-		order, width, data = binary.BigEndian, 4, data[4:]
-	case bytes.HasPrefix(data, []byte{0xff, 0xfe, 0, 0}):
-		order, width, data = binary.LittleEndian, 4, data[4:]
-	case bytes.HasPrefix(data, []byte{0xfe, 0xff}):
-		order, width, data = binary.BigEndian, 2, data[2:]
-	case bytes.HasPrefix(data, []byte{0xff, 0xfe}):
-		order, width, data = binary.LittleEndian, 2, data[2:]
-	case bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf}):
-		data = data[3:]
-	case len(data) >= 4 && data[0] == 0 && data[1] == 0:
-		order, width = binary.BigEndian, 4
-	case len(data) >= 4 && data[1] == 0 && data[2] == 0 && data[3] == 0:
-		order, width = binary.LittleEndian, 4
-	case len(data) >= 2 && data[0] == 0:
-		order, width = binary.BigEndian, 2
-	case len(data) >= 2 && data[1] == 0:
-		order, width = binary.LittleEndian, 2
-	}
+	data, order, width := detectJSONEncoding(data)
 	if width == 1 {
 		for i := 0; i < len(data); {
 			r, size := utf8.DecodeRune(data[i:])
@@ -478,7 +411,7 @@ func graphJSONUTF8(data []byte, budget *viewBudget) ([]byte, error) {
 		if uint64(size) > budget.limits.InputBytes-min(uint64(len(out)), budget.limits.InputBytes) {
 			return nil, budget.refusal("GraphQL JSON encoding", "input bytes", uint64(len(out)), uint64(size), budget.limits.InputBytes)
 		}
-		out = graphAppendRune(out, r)
+		out = appendJSONRune(out, r)
 	}
 	return out, nil
 }

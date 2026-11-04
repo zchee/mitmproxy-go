@@ -368,7 +368,7 @@ func (v *View) resolve(_ context.Context, spec string) ([]flow.Flow, error) {
 		}
 	}
 	for _, f := range v.store.All() {
-		matched := true
+		var matched bool
 		switch spec {
 		case "@hidden":
 			matched = !v.Contains(f)

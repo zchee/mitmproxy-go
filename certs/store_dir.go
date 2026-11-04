@@ -176,7 +176,7 @@ func createStore(root *os.Root, basename string, keySize int) error {
 }
 
 func writeStoreFile(root *os.Root, name string, content []byte, mode os.FileMode) error {
-	file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode) //nolint:gosec // Public certificates use the process umask; secret files pass 0600.
+	file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
 		return err
 	}

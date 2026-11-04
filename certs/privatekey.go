@@ -126,7 +126,7 @@ func decryptPKCS8(der, password []byte) ([]byte, error) {
 	default:
 		return nil, errors.New("certs: unsupported PBKDF2 hash")
 	}
-	keyLength := 0
+	var keyLength int
 	var newCipher func([]byte) (cipher.Block, error)
 	switch params.Cipher.Algorithm.String() {
 	case "2.16.840.1.101.3.4.1.2":
@@ -136,7 +136,7 @@ func decryptPKCS8(der, password []byte) ([]byte, error) {
 	case "2.16.840.1.101.3.4.1.42":
 		keyLength, newCipher = 32, aes.NewCipher
 	case "1.2.840.113549.3.7":
-		keyLength, newCipher = 24, des.NewTripleDESCipher //nolint:gosec // Existing upstream encrypted PKCS#8 fixture uses triple DES.
+		keyLength, newCipher = 24, des.NewTripleDESCipher
 	default:
 		return nil, errors.New("certs: unsupported PBES2 cipher")
 	}

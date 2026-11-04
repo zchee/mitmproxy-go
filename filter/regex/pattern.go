@@ -537,7 +537,7 @@ func (p *Pattern) template(s string) ([]templatePart, error) {
 		}
 		c := s[i]
 		i++
-		group := -1
+		var group int
 		switch {
 		case c == 'g':
 			if i == len(s) || s[i] != '<' {

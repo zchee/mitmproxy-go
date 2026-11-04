@@ -113,7 +113,7 @@ func fileCandidates(url string, s mapping) ([]string, error) {
 	if err != nil || match == nil {
 		return nil, err
 	}
-	suffix := ""
+	var suffix string
 	if len(match.Groups) > 1 {
 		suffix = string(match.Groups[1])
 	} else {

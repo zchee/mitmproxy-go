@@ -224,7 +224,7 @@ func (ch *ClientHello) RawBytes(wrapInRecord bool) []byte {
 	}
 	out := make([]byte, 0, recordHeaderLen+handshakeHeaderLen+n)
 	out = append(out, 0x16, 0x03, 0x03)
-	out = binary.BigEndian.AppendUint16(out, uint16(n+handshakeHeaderLen)) //nolint:gosec // G115: bounded above.
+	out = binary.BigEndian.AppendUint16(out, uint16(n+handshakeHeaderLen))
 	out = append(out, 0x01, byte(n>>16), byte(n>>8), byte(n))
 	return append(out, ch.raw...)
 }

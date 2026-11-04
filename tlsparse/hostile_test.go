@@ -32,7 +32,7 @@ func buildHello(t testing.TB, bodyLen int) []byte {
 	alpn := []byte("\x00\x0c\x02h2\x08http/1.1")
 	var exts []byte
 	exts = binary.BigEndian.AppendUint16(exts, 0)
-	exts = binary.BigEndian.AppendUint16(exts, uint16(len(sni))) //nolint:gosec // G115: short literal.
+	exts = binary.BigEndian.AppendUint16(exts, uint16(len(sni)))
 	exts = append(exts, sni...)
 	exts = binary.BigEndian.AppendUint16(exts, 0x10)
 	exts = binary.BigEndian.AppendUint16(exts, uint16(len(alpn))) //nolint:gosec // G115: short literal.

@@ -30,7 +30,7 @@ func dtlsHex(t *testing.T, s string) []byte {
 
 func dtlsRecord(body []byte) []byte {
 	b := []byte{0x16, 0xfe, 0xfd, 0, 0, 0, 0, 0, 0, 0, 0}
-	b = binary.BigEndian.AppendUint16(b, uint16(len(body))) //nolint:gosec // Test messages fit the record length field.
+	b = binary.BigEndian.AppendUint16(b, uint16(len(body)))
 	return append(b, body...)
 }
 

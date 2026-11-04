@@ -107,7 +107,7 @@ func TestFromStoreCreate(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		// A regular file measures the existing umask without changing it.
 		probe := filepath.Join(t.TempDir(), "public-mode")
-		if err := os.WriteFile(probe, nil, 0o666); err != nil { //nolint:gosec // Measure the public-file mode after the process umask.
+		if err := os.WriteFile(probe, nil, 0o666); err != nil {
 			t.Fatal(err)
 		}
 		publicInfo, err := os.Stat(probe)
@@ -374,11 +374,11 @@ func TestStoreWritesStayInVerifiedDirectory(t *testing.T) {
 			if err := os.Rename(dir, verified); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Mkdir(dir, 0o777); err != nil { //nolint:gosec // Deliberately unsafe replacement used to exercise the directory boundary.
+			if err := os.Mkdir(dir, 0o777); err != nil {
 				t.Fatal(err)
 			}
 			if runtime.GOOS != "windows" {
-				if err := os.Chmod(dir, 0o777); err != nil { //nolint:gosec // Ignore the process umask for the adversarial replacement.
+				if err := os.Chmod(dir, 0o777); err != nil {
 					t.Fatal(err)
 				}
 			}

@@ -35,7 +35,6 @@ import (
 )
 
 func testFieldMerge(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	entered, release := concurrentBarrier(t, f)
 	f.load(loadConcurrent(f, "f.request.headers['x-worker'] = 'header'\nf.request.method = 'POST'\nf.request.stream = True\nf.response.reason = 'Worker'\nf.error.msg = 'worker-error'\nf.metadata['worker'] = 'owned'\nf.marked = 'worker'\nf.is_replay = 'request'\nctx.sleep(1)"))
@@ -212,7 +211,6 @@ func testFieldMerge(t *testing.T) {
 }
 
 func testMessageMerge(t *testing.T, kind string) {
-	t.Helper()
 	f := newFixture(t)
 	entered, release := concurrentBarrier(t, f)
 	h := f.request()
@@ -303,7 +301,6 @@ func testMessageMerge(t *testing.T, kind string) {
 }
 
 func testBackupOrder(t *testing.T) {
-	t.Helper()
 	for _, editBefore := range []bool{false, true} {
 		f := newFixture(t)
 		entered, release := concurrentBarrier(t, f)
@@ -374,7 +371,6 @@ func (o *killObserver) Update(_ context.Context, flows []flow.Flow) error {
 }
 
 func testKillActions(t *testing.T, ordering bool) {
-	t.Helper()
 	cases := []struct {
 		body   string
 		backup bool
@@ -398,7 +394,6 @@ func testKillActions(t *testing.T, ordering bool) {
 }
 
 func testKillPrecedence(t *testing.T) {
-	t.Helper()
 	tests := map[string]struct{ body string }{
 		"message assignment": {"f.error.msg = 'Connection killed.'"},
 		"error assignment":   {"g = f.copy()\ng.error.msg = 'Connection killed.'\nf.error = g.error"},

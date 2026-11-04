@@ -84,85 +84,67 @@ func TestScriptConcurrent(t *testing.T) {
 		"five_parallel":    {testFiveParallel},
 		"frozen_dict":      {testFrozenDict},
 		"init_twice": {func(t *testing.T) {
-			t.Helper()
 			testInitCount(t, true)
 		}},
 		"init_once": {func(t *testing.T) {
-			t.Helper()
 			testInitCount(t, false)
 		}},
 		"state_isolation": {testStateIsolation},
 		"option_alias": {func(t *testing.T) {
-			t.Helper()
 			testOptionAlias(t, false)
 		}},
 		"worker_services": {testWorkerServices},
 		"read_after_change": {func(t *testing.T) {
-			t.Helper()
 			testWorkerRead(t, false)
 		}},
 		"read_after_rollback": {func(t *testing.T) {
-			t.Helper()
 			testWorkerRead(t, true)
 		}},
 		"direct_call": {func(t *testing.T) {
-			t.Helper()
 			testDirectCall(t, false)
 		}},
 		"reload_retire": {func(t *testing.T) {
-			t.Helper()
 			testRetireWorker(t, true, false)
 		}},
 		"remove_retire": {func(t *testing.T) {
-			t.Helper()
 			testRetireWorker(t, false, false)
 		}},
 		"comment_survives": {testCommentSurvives},
 		"field_merge":      {testFieldMerge},
 		"websocket_append": {func(t *testing.T) {
-			t.Helper()
 			testMessageMerge(t, "websocket")
 		}},
 		"tcp_append": {func(t *testing.T) {
-			t.Helper()
 			testMessageMerge(t, "tcp")
 		}},
 		"udp_append": {func(t *testing.T) {
-			t.Helper()
 			testMessageMerge(t, "udp")
 		}},
 		"connection_read_only": {testConnectionReadOnly},
 		"kill_actions": {func(t *testing.T) {
-			t.Helper()
 			testKillActions(t, false)
 		}},
 		"action_order": {func(t *testing.T) {
-			t.Helper()
 			testKillActions(t, true)
 		}},
 		"semaphore": {func(t *testing.T) {
-			t.Helper()
 			testWorkerCapacity(t, false)
 		}},
 		"cancel_no_merge":  {testCancelNoMerge},
 		"init_direct_mode": {testInitDirectMode},
 		"alias_freeze": {func(t *testing.T) {
-			t.Helper()
 			testOptionAlias(t, true)
 		}},
 		"reload_same_path": {func(t *testing.T) {
-			t.Helper()
 			testRetireWorker(t, true, true)
 		}},
 		"waiter_cancel": {func(t *testing.T) {
-			t.Helper()
 			testWorkerCapacity(t, true)
 		}},
 		"reentrant_command":     {testReentrantWorkerCommand},
 		"retained_copy_command": {testRetainedCopyCommand},
 		"global_reassign":       {testGlobalReassign},
 		"direct_call_init": {func(t *testing.T) {
-			t.Helper()
 			testDirectCall(t, true)
 		}},
 		"backup_order":               {testBackupOrder},
@@ -181,7 +163,6 @@ func TestScriptConcurrent(t *testing.T) {
 }
 
 func testWorkerAndMerge(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	entered, release := concurrentBarrier(t, f)
 	f.load(loadConcurrent(f, "f.request.headers['x-before'] = '1'\nctx.sleep(1)\nf.request.headers['x-concurrent'] = '1'\nif not f.live:\n    fail('invocation lost live state')\nf.comment = f.id"))
@@ -213,7 +194,6 @@ func testWorkerAndMerge(t *testing.T) {
 }
 
 func testFiveParallel(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	entered, release := concurrentBarrier(t, f)
 	f.load(loadConcurrent(f, "ctx.sleep(1)\nf.comment = 'parallel'"))
@@ -240,7 +220,6 @@ func testFiveParallel(t *testing.T) {
 }
 
 func testFrozenDict(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	f.load(f.file("frozen.star", "state = {}\ndef _request(f):\n    f.comment = 'before-error'\n    state['x'] = 1\nrequest = concurrent(_request)\n"))
 	x := f.request()
@@ -253,7 +232,6 @@ func testFrozenDict(t *testing.T) {
 }
 
 func testInitCount(t *testing.T, concurrent bool) {
-	t.Helper()
 	f := newFixture(t)
 	text := "ctx.log('top-init')\ndef _request(f):\n    f.comment = 'ran'\n"
 	want := 1
@@ -275,7 +253,6 @@ func testInitCount(t *testing.T, concurrent bool) {
 }
 
 func testStateIsolation(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	f.load(f.file("state.star", "state = {'n': 0}\ndef requestheaders(f):\n    state['n'] += 1\n    f.marked = str(state['n'])\ndef _request(f):\n    f.comment = str(state['n'])\nrequest = concurrent(_request)\n"))
 	for n := range 2 {
@@ -289,7 +266,6 @@ func testStateIsolation(t *testing.T) {
 }
 
 func testOptionAlias(t *testing.T, freeze bool) {
-	t.Helper()
 	f := newFixture(t)
 	head := "o = ctx.options\n"
 	if freeze {
@@ -309,7 +285,6 @@ func testOptionAlias(t *testing.T, freeze bool) {
 }
 
 func testWorkerServices(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	store, err := eventstore.New()
 	if err != nil {
@@ -355,7 +330,6 @@ func testWorkerServices(t *testing.T) {
 }
 
 func testWorkerRead(t *testing.T, rollback bool) {
-	t.Helper()
 	f := newFixture(t)
 	entered, release := concurrentBarrier(t, f)
 	if rollback {
@@ -391,7 +365,6 @@ func testWorkerRead(t *testing.T, rollback bool) {
 }
 
 func testDirectCall(t *testing.T, init bool) {
-	t.Helper()
 	f := newFixture(t)
 	text := "def _request(f):\n    ctx.log('unexpected-worker')\nrequest = concurrent(_request)\n"
 	if init {
@@ -411,7 +384,6 @@ func testDirectCall(t *testing.T, init bool) {
 }
 
 func testRetireWorker(t *testing.T, reload, samePath bool) {
-	t.Helper()
 	f := newFixture(t)
 	entered, release := concurrentBarrier(t, f)
 	path := loadConcurrent(f, "ctx.sleep(1)\nctx.log('retired-worker-finished')\nf.request.headers['x-retired'] = 'old'")
@@ -536,7 +508,6 @@ func testRetireWorker(t *testing.T, reload, samePath bool) {
 }
 
 func testCommentSurvives(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	entered, release := concurrentBarrier(t, f)
 	f.load(loadConcurrent(f, "ctx.sleep(1)\nf.request.headers['x-worker'] = '1'"))
@@ -556,7 +527,6 @@ func testCommentSurvives(t *testing.T) {
 }
 
 func testConnectionReadOnly(t *testing.T) {
-	t.Helper()
 	for _, assignment := range []string{"f.server_conn.address = ('wrong', 7)", "f.server_conn.sni = 'wrong'", "f.client_conn.error = 'wrong'", "f.server_conn = None"} {
 		f := newFixture(t)
 		f.load(loadConcurrent(f, "f.comment = f.server_conn.address[0]\n"+assignment))
@@ -570,7 +540,6 @@ func testConnectionReadOnly(t *testing.T) {
 }
 
 func testCancelNoMerge(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	entered, release := concurrentBarrier(t, f)
 	f.load(loadConcurrent(f, "f.comment = 'must-not-merge'\nctx.sleep(1)"))
@@ -597,7 +566,6 @@ func testCancelNoMerge(t *testing.T) {
 }
 
 func testInitDirectMode(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	f.load(f.file("direct-init.star", "ctx.options.listen_host = 'init'\nctx.log('direct-second-init')\ndef _request(f):\n    f.comment = ctx.options.listen_host\nrequest = concurrent(_request)\n"))
 	x := f.request()
@@ -609,7 +577,6 @@ func testInitDirectMode(t *testing.T) {
 }
 
 func testGlobalReassign(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	f.load(f.file("reassign.star", "def request(f):\n    pass\nrequest = concurrent(request)\n"))
 	f.wantLog("cannot reassign global request declared at", 1)
@@ -619,7 +586,6 @@ func testGlobalReassign(t *testing.T) {
 }
 
 func testReentrantWorkerCommand(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	if err := f.master.Commands.Register("worker.reenter", func(ctx context.Context) (string, error) {
 		return "reentered", f.master.Do(ctx, func(ctx context.Context) error {

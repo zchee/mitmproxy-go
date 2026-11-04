@@ -102,15 +102,12 @@ func TestScriptAcceptance(t *testing.T) {
 		tests := map[string]struct{ run func(*testing.T) }{
 			"dict_counter": {dictCounter},
 			"sleep_other_flow": {func(t *testing.T) {
-				t.Helper()
 				otherFlow(t, false, false)
 			}},
 			"concurrent_other_flow": {func(t *testing.T) {
-				t.Helper()
 				otherFlow(t, true, false)
 			}},
 			"five_parallel": {func(t *testing.T) {
-				t.Helper()
 				fiveParallel(t, false)
 			}},
 			"frozen_dict":      {frozenDict},
@@ -120,7 +117,6 @@ func TestScriptAcceptance(t *testing.T) {
 			"worker_services":  {workerServices},
 			"direct_call":      {directCall},
 			"reload_inflight": {func(t *testing.T) {
-				t.Helper()
 				reloadInflight(t, false)
 			}},
 			"comment_merge":        {commentMerge},
@@ -132,11 +128,9 @@ func TestScriptAcceptance(t *testing.T) {
 			"run_depths":           {runDepths},
 			"run_load_error":       {runLoadError},
 			"nonblocking_parallel": {func(t *testing.T) {
-				t.Helper()
 				nonblockingParallel(t, false)
 			}},
 			"mtime_reload": {func(t *testing.T) {
-				t.Helper()
 				mtimeReload(t, false)
 			}},
 			"error_once":       {errorOnce},
@@ -151,7 +145,6 @@ func TestScriptAcceptance(t *testing.T) {
 }
 
 func dictCounter(t *testing.T) {
-	t.Helper()
 	origin, seen := ownedOrigin(t, "counter")
 	path := scriptFile(t, `state = {"count": 0}
 def request(f):
@@ -166,7 +159,6 @@ def request(f):
 }
 
 func frozenDict(t *testing.T) {
-	t.Helper()
 	origin, seen := ownedOrigin(t, "resumed")
 	path := scriptFile(t, `state = {"count": 0}
 def _request(f):
@@ -183,7 +175,6 @@ request = concurrent(_request)
 }
 
 func initCounts(t *testing.T) {
-	t.Helper()
 	for _, concurrent := range []bool{false, true} {
 		a := assembledDump(t)
 		source := "ctx.log('initialization-marker')\ndef _request(f):\n    f.comment = 'called'\n"
@@ -207,7 +198,6 @@ func initCounts(t *testing.T) {
 }
 
 func stateVisibility(t *testing.T) {
-	t.Helper()
 	origin, seen := ownedOrigin(t, "state")
 	path := scriptFile(t, `state = {"counter": 0}
 def requestheaders(f):
@@ -227,7 +217,6 @@ request = concurrent(_request)
 }
 
 func optionAliases(t *testing.T) {
-	t.Helper()
 	origin, seen := ownedOrigin(t, "aliases")
 	path := scriptFile(t, `o = ctx.options
 def requestheaders(f):
@@ -254,7 +243,6 @@ func (o *eventObserver) AddLog(ctx context.Context, entry addon.LogEntry) error 
 }
 
 func workerServices(t *testing.T) {
-	t.Helper()
 	a := assembledDump(t)
 	store, err := eventstore.New()
 	if err != nil {
@@ -306,7 +294,6 @@ request = concurrent(_request)
 }
 
 func directCall(t *testing.T) {
-	t.Helper()
 	origin, seen := ownedOrigin(t, "direct")
 	path := scriptFile(t, `def _request(f):
     ctx.log("worker-was-invoked")
@@ -325,7 +312,6 @@ def response(f):
 }
 
 func commentMerge(t *testing.T) {
-	t.Helper()
 	a := assembledDump(t)
 	url, entered, release := barrierOrigin(t)
 	a.load(t, fmt.Sprintf("def _request(f):\n    ctx.http_get(%q)\n    f.request.headers['x-worker'] = 'merged'\nrequest = concurrent(_request)\n", url))
@@ -344,7 +330,6 @@ func commentMerge(t *testing.T) {
 }
 
 func websocketAppend(t *testing.T) {
-	t.Helper()
 	a := assembledDump(t)
 	url, entered, release := barrierOrigin(t)
 	a.load(t, fmt.Sprintf(`def _message(f):
@@ -373,7 +358,6 @@ websocket_message = concurrent(_message)
 }
 
 func connectionReadOnly(t *testing.T) {
-	t.Helper()
 	origin, seen := ownedOrigin(t, "continued")
 	path := scriptFile(t, `def _request(f):
     f.server_conn.address = ("127.0.0.1", 1)
@@ -388,7 +372,6 @@ request = concurrent(_request)
 }
 
 func killLive(t *testing.T) {
-	t.Helper()
 	origin, seen := ownedOrigin(t, "must not forward")
 	path := scriptFile(t, "def _request(f):\n    f.kill()\nrequest = concurrent(_request)\ndef error(f):\n    ctx.log(f.error.msg)\n")
 	p := startProxy(t, origin.URL, []string{path})
@@ -413,7 +396,6 @@ func killLive(t *testing.T) {
 }
 
 func invalidBindings(t *testing.T) {
-	t.Helper()
 	for _, name := range []string{"on_load", "configure", "tls_clienthello", "helper"} {
 		a := assembledDump(t)
 		a.load(t, "def _hook(*args):\n    ctx.log('must-not-run')\n"+name+" = concurrent(_hook)\n")
@@ -425,7 +407,6 @@ func invalidBindings(t *testing.T) {
 }
 
 func reassignError(t *testing.T) {
-	t.Helper()
 	a := assembledDump(t)
 	a.load(t, "def request(f):\n    pass\nrequest = concurrent(request)\n")
 	a.logs.contains(t, "cannot reassign global request")
@@ -433,7 +414,6 @@ func reassignError(t *testing.T) {
 }
 
 func errorOnce(t *testing.T) {
-	t.Helper()
 	origin, seen := ownedOrigin(t, "alive")
 	path := scriptFile(t, "def request(f):\n    fail('deliberate hook failure')\n")
 	p := startProxy(t, origin.URL, []string{path})
@@ -445,7 +425,6 @@ func errorOnce(t *testing.T) {
 }
 
 func stepsAbort(t *testing.T) {
-	t.Helper()
 	origin, seen := ownedOrigin(t, "survived budget")
 	path := scriptFile(t, "def request(f):\n    for i in range(100000):\n        f.comment = str(i)\n")
 	p := startProxy(t, origin.URL, []string{path}, "--set", "script_max_steps=1000")

@@ -86,22 +86,18 @@ func runRecordingSource(names ...string) string {
 func TestScriptRun(t *testing.T) {
 	tests := map[string]struct{ run func(*testing.T) }{
 		"depth_one": {func(t *testing.T) {
-			t.Helper()
 			testRunRefusal(t, false, false)
 			testRunInline(t, false)
 		}},
 		"depth_two": {func(t *testing.T) {
-			t.Helper()
 			testRunRefusal(t, true, false)
 			testRunInline(t, true)
 			testRunDepthLimit(t)
 		}},
 		"child_depth_one": {func(t *testing.T) {
-			t.Helper()
 			testRunRefusal(t, false, true)
 		}},
 		"child_depth_two": {func(t *testing.T) {
-			t.Helper()
 			testRunRefusal(t, true, true)
 		}},
 		"invalid_binding":   {testRunInvalidBinding},
@@ -109,23 +105,18 @@ func TestScriptRun(t *testing.T) {
 		"init_once":         {testRunInitOnce},
 		"first_error_stops": {testRunFirstError},
 		"http_sequence": {func(t *testing.T) {
-			t.Helper()
 			testRunSequence(t, "http")
 		}},
 		"websocket_sequence": {func(t *testing.T) {
-			t.Helper()
 			testRunSequence(t, "websocket")
 		}},
 		"tcp_sequence": {func(t *testing.T) {
-			t.Helper()
 			testRunSequence(t, "tcp")
 		}},
 		"udp_sequence": {func(t *testing.T) {
-			t.Helper()
 			testRunSequence(t, "udp")
 		}},
 		"dns_sequence": {func(t *testing.T) {
-			t.Helper()
 			testRunSequence(t, "dns")
 		}},
 		"dump_replay":   {testRunDumpReplay},
@@ -141,7 +132,6 @@ func TestScriptRun(t *testing.T) {
 }
 
 func testRunDepthLimit(t *testing.T) {
-	t.Helper()
 	for _, mode := range []string{"master", "hook", "worker", "parallel"} {
 		f := newFixture(t)
 		events := runRecorder(t, f)
@@ -225,7 +215,6 @@ func testRunDepthLimit(t *testing.T) {
 }
 
 func testRunRefusal(t *testing.T, nested, child bool) {
-	t.Helper()
 	f := newFixture(t)
 	events := runRecorder(t, f)
 	resident := f.file("resident.star", "def configure(updated):\n    ctx.log('other-configure')\ndef running():\n    ctx.log('other-running')\ndef requestheaders(f):\n    ctx.log('other-requestheaders')\ndef request(f):\n    ctx.log('other-request')\n")
@@ -261,7 +250,6 @@ func testRunRefusal(t *testing.T, nested, child bool) {
 }
 
 func testRunInline(t *testing.T, nested bool) {
-	t.Helper()
 	f := newFixture(t)
 	calls := 0
 	f.loader.sleepWait = func(ctx context.Context, _ time.Duration) error {
@@ -287,7 +275,6 @@ func testRunInline(t *testing.T, nested bool) {
 }
 
 func testRunInvalidBinding(t *testing.T) {
-	t.Helper()
 	tests := map[string]struct{ source, diagnostic string }{
 		"root helper":  {"def f(x):\n    pass\nhelper = concurrent(f)\n", "Concurrent decorator not supported for 'helper' method."},
 		"child helper": {"def f(x):\n    pass\naddons = [module('child', helper=concurrent(f))]\n", "Concurrent decorator not supported for 'helper' method."},
@@ -316,7 +303,6 @@ func testRunInvalidBinding(t *testing.T) {
 }
 
 func testRunModuleOnly(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	resident := f.file("resident.star", "def configure(updated):\n    ctx.log('resident-configure')\ndef running():\n    ctx.log('resident-running')\ndef request(f):\n    ctx.log('resident-request')\n")
 	f.load(resident)
@@ -330,7 +316,6 @@ func testRunModuleOnly(t *testing.T) {
 }
 
 func testRunInitOnce(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	events := runRecorder(t, f)
 	path := f.file("once.star", "ctx.master.commands.call('run.record', 'init')\n"+runRecordingSource("configure", "running", "request"))
@@ -342,7 +327,6 @@ func testRunInitOnce(t *testing.T) {
 }
 
 func testRunFirstError(t *testing.T) {
-	t.Helper()
 	tests := map[string]struct{ at string }{"configure": {"configure"}, "running": {"running"}, "request": {"request"}}
 	for _, test := range tests {
 		f := newFixture(t)
@@ -384,7 +368,6 @@ func testRunFirstError(t *testing.T) {
 }
 
 func testRunSequence(t *testing.T, kind string) {
-	t.Helper()
 	for _, failed := range []bool{false, true} {
 		f := newFixture(t)
 		events := runRecorder(t, f)
@@ -452,7 +435,6 @@ func testRunSequence(t *testing.T, kind string) {
 }
 
 func testRunDumpReplay(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	x := f.request()
 	x.Response, _ = httpmsg.MakeResponse(200, []byte("before"), nil)
@@ -488,7 +470,6 @@ func testRunDumpReplay(t *testing.T) {
 }
 
 func testRunMissingPath(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	for _, path := range []string{filepath.Join(f.dir, "missing.star"), f.dir} {
 		before := f.logs.String()
@@ -503,7 +484,6 @@ func testRunMissingPath(t *testing.T) {
 }
 
 func testRunNestedAddons(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	events := runRecorder(t, f)
 	source := runRecordingSource("configure", "running", "request") + "def child_configure(updated):\n    ctx.master.commands.call('run.record', 'child-configure')\ndef child_running():\n    ctx.master.commands.call('run.record', 'child-running')\ndef child_request(f):\n    ctx.master.commands.call('run.record', 'child-request')\ndef leaf_request(f):\n    ctx.master.commands.call('run.record', 'leaf-request')\naddons = [module('child', configure=child_configure, running=child_running, request=child_request, addons=[module('leaf', request=leaf_request)])]\n"
@@ -519,7 +499,6 @@ func testRunNestedAddons(t *testing.T) {
 }
 
 func testRunNoLoad(t *testing.T) {
-	t.Helper()
 	f := newFixture(t)
 	path := f.file("owned.star", "def keep():\n    ctx.log('keep-called')\ndef on_load(loader):\n    loader.add_command('kept.command', keep)\ndef child_load(loader):\n    fail('child-load-invoked')\ndef request(f):\n    f.comment = 'run-without-load'\naddons = []\n")
 	f.load(path)

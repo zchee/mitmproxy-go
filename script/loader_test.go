@@ -184,7 +184,6 @@ func TestScriptOptions(t *testing.T) {
 func TestScriptLoader(t *testing.T) {
 	tests := map[string]struct{ run func(*testing.T) }{
 		"init_unfrozen": {func(t *testing.T) {
-			t.Helper()
 			f := newFixture(t)
 			f.load(f.file("mutable.star", "state = {}\ndef request(f):\n    state[\"value\"] = f.id\n    f.comment = state[\"value\"]\n"))
 			flow := f.request()
@@ -194,7 +193,6 @@ func TestScriptLoader(t *testing.T) {
 			}
 		}},
 		"counter_persists": {func(t *testing.T) {
-			t.Helper()
 			f := newFixture(t)
 			f.load(f.file("counter.star", "state = {\"n\": 0}\ndef request(f):\n    state[\"n\"] += 1\n    f.comment = str(state[\"n\"])\n"))
 			for n := range 3 {
@@ -206,7 +204,6 @@ func TestScriptLoader(t *testing.T) {
 			}
 		}},
 		"lifecycle_reload": {func(t *testing.T) {
-			t.Helper()
 			f := newFixture(t)
 			var mu sync.Mutex
 			var events []string
@@ -273,7 +270,6 @@ def request(f):
 			f.wantLog("dispatch frame used after", 0)
 		}},
 		"remove_cancel": {func(t *testing.T) {
-			t.Helper()
 			f := newFixture(t)
 			path := f.file("removed.star", "def done():\n    ctx.log(\"removed-done\")\n")
 			f.load(path)
@@ -288,7 +284,6 @@ def request(f):
 			}
 		}},
 		"reorder_no_reinit": {func(t *testing.T) {
-			t.Helper()
 			f := newFixture(t)
 			a := f.file("a.star", "ctx.log(\"init-a\")\ndef request(f):\n    f.comment += \"a\"\n")
 			b := f.file("b.star", "ctx.log(\"init-b\")\ndef request(f):\n    f.comment += \"b\"\n")
@@ -303,7 +298,6 @@ def request(f):
 			f.wantLog("init-b", 1)
 		}},
 		"delete_path": {func(t *testing.T) {
-			t.Helper()
 			f := newFixture(t)
 			path := f.file("deleted.star", "def done():\n    ctx.log(\"deleted-done\")\n")
 			f.load(path)
@@ -317,7 +311,6 @@ def request(f):
 			f.wantLog("deleted-done", 1)
 		}},
 		"parse_error_once": {func(t *testing.T) {
-			t.Helper()
 			f := newFixture(t)
 			f.load(f.file("broken.star", "def request(:\n"))
 			f.poll()
@@ -325,7 +318,6 @@ def request(f):
 			f.wantLog("error in script", 1)
 		}},
 		"step_limit": {func(t *testing.T) {
-			t.Helper()
 			f := newFixture(t)
 			if err := f.master.Options.Update(t.Context(), map[string]any{"script_max_steps": 200}); err != nil {
 				t.Fatal(err)
@@ -335,7 +327,6 @@ def request(f):
 			f.wantLog("too many steps", 1)
 		}},
 		"step_zero": {func(t *testing.T) {
-			t.Helper()
 			f := newFixture(t)
 			f.load(f.file("unlimited.star", "def request(f):\n    for n in range(2000):\n        f.comment = str(n)\n"))
 			flow := f.request()
@@ -345,7 +336,6 @@ def request(f):
 			}
 		}},
 		"step_negative": {func(t *testing.T) {
-			t.Helper()
 			f := newFixture(t)
 			err := f.master.Do(t.Context(), func(ctx context.Context) error {
 				return f.master.Options.Update(ctx, map[string]any{"script_max_steps": -1})
@@ -358,7 +348,6 @@ def request(f):
 			}
 		}},
 		"mtime_monotonic": {func(t *testing.T) {
-			t.Helper()
 			f := newFixture(t)
 			path := f.file("mtime.star", "ctx.log(\"first-init\")\n")
 			f.load(path)
@@ -371,7 +360,6 @@ def request(f):
 			f.wantLog("later-init", 1)
 		}},
 		"partial_startup_cleanup": {func(t *testing.T) {
-			t.Helper()
 			f := newFixture(t)
 			path := f.file("failed-load.star", "def command():\n    pass\ndef on_load(loader):\n    loader.add_command(\"owned.failed\", command)\n    fail(\"load failed\")\n")
 			f.load(path)
@@ -417,7 +405,6 @@ def request(f):
 			}
 		}},
 		"path_replacement": {func(t *testing.T) {
-			t.Helper()
 			f := newFixture(t)
 			target := f.file("target.star", "def request(f):\n    f.comment = \"first\"\n")
 			alias := filepath.Join(f.dir, "selected.star")
@@ -448,7 +435,6 @@ def request(f):
 			}
 		}},
 		"source_size_limit": {func(t *testing.T) {
-			t.Helper()
 			f := newFixture(t)
 			path := f.file("large.star", "#"+strings.Repeat("x", sourceLimit))
 			f.load(path)
@@ -463,7 +449,6 @@ def request(f):
 			}
 		}},
 		"shutdown_join": {func(t *testing.T) {
-			t.Helper()
 			retiring := newFixture(t)
 			path := retiring.file("retire.star", "state = {\"work\": 0, \"done\": 0}\ndef work():\n    state[\"work\"] += 1\ndef on_load(loader):\n    loader.add_command(\"script.afterdone\", work)\ndef request(f):\n    work()\ndef server_disconnected(server):\n    work()\ndef client_disconnected(client):\n    work()\ndef websocket_end(f):\n    work()\ndef update(flows):\n    pass\ndef done():\n    state[\"done\"] += 1\n")
 			retiring.load(path)

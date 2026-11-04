@@ -6,7 +6,6 @@ package script
 import (
 	"errors"
 	"fmt"
-	"slices"
 
 	"go.starlark.net/starlark"
 
@@ -97,17 +96,11 @@ func wrapMessage(i *invocation, native any) starlark.Value {
 				}
 				switch m := native.(type) {
 				case *tcp.Message:
-					x := *m
-					x.Content = slices.Clone(m.Content)
-					return wrapMessage(i, &x), nil
+					return wrapMessage(i, m.Clone()), nil
 				case *udp.Message:
-					x := *m
-					x.Content = slices.Clone(m.Content)
-					return wrapMessage(i, &x), nil
+					return wrapMessage(i, m.Clone()), nil
 				case *websocket.Message:
-					x := *m
-					x.Content = slices.Clone(m.Content)
-					return wrapMessage(i, &x), nil
+					return wrapMessage(i, m.Clone()), nil
 				}
 				return nil, errors.New("unknown message type")
 			}), nil
@@ -154,41 +147,27 @@ func wrapMessage(i *invocation, native any) starlark.Value {
 }
 
 func tcpMessages(i *invocation, f *flow.TCPFlow) starlark.Value {
-	return &messageSequence{i: i, length: func() int { return len(f.Messages) }, at: func(n int) starlark.Value { return wrapMessage(i, f.Messages[n]) }, appendValue: func(v starlark.Value) error {
-		x, ok := v.(*messageValue)
-		if !ok {
-			return errors.New("TCP message required")
-		}
-		if err := x.i.modelCheck(); err != nil {
-			return err
-		}
-		m, ok := x.native.(*tcp.Message)
-		if !ok {
-			return errors.New("TCP message required")
-		}
-		copy := *m
-		copy.Content = slices.Clone(m.Content)
-		f.Messages = append(f.Messages, &copy)
-		return nil
-	}}
+	return wrapMessages(i, &f.Messages, "TCP")
 }
 
 func udpMessages(i *invocation, f *flow.UDPFlow) starlark.Value {
-	return &messageSequence{i: i, length: func() int { return len(f.Messages) }, at: func(n int) starlark.Value { return wrapMessage(i, f.Messages[n]) }, appendValue: func(v starlark.Value) error {
+	return wrapMessages(i, &f.Messages, "UDP")
+}
+
+func wrapMessages[M interface{ Clone() M }](i *invocation, messages *[]M, kind string) starlark.Value {
+	return &messageSequence{i: i, length: func() int { return len(*messages) }, at: func(n int) starlark.Value { return wrapMessage(i, (*messages)[n]) }, appendValue: func(v starlark.Value) error {
 		x, ok := v.(*messageValue)
 		if !ok {
-			return errors.New("UDP message required")
+			return errors.New(kind + " message required")
 		}
 		if err := x.i.modelCheck(); err != nil {
 			return err
 		}
-		m, ok := x.native.(*udp.Message)
+		m, ok := x.native.(M)
 		if !ok {
-			return errors.New("UDP message required")
+			return errors.New(kind + " message required")
 		}
-		copy := *m
-		copy.Content = slices.Clone(m.Content)
-		f.Messages = append(f.Messages, &copy)
+		*messages = append(*messages, m.Clone())
 		return nil
 	}}
 }
@@ -200,23 +179,7 @@ func wrapWebSocket(i *invocation, data *websocket.Data) starlark.Value {
 	return &object{kind: "websocket", check: i.modelCheck, names: []string{"messages", "closed_by_client", "close_code", "close_reason", "timestamp_end"}, get: func(name string) (starlark.Value, error) {
 		switch name {
 		case "messages":
-			return &messageSequence{i: i, length: func() int { return len(data.Messages) }, at: func(n int) starlark.Value { return wrapMessage(i, data.Messages[n]) }, appendValue: func(v starlark.Value) error {
-				x, ok := v.(*messageValue)
-				if !ok {
-					return errors.New("WebSocket message required")
-				}
-				if err := x.i.modelCheck(); err != nil {
-					return err
-				}
-				m, ok := x.native.(*websocket.Message)
-				if !ok {
-					return errors.New("WebSocket message required")
-				}
-				copy := *m
-				copy.Content = slices.Clone(m.Content)
-				data.Messages = append(data.Messages, &copy)
-				return nil
-			}}, nil
+			return wrapMessages(i, &data.Messages, "WebSocket"), nil
 		case "closed_by_client":
 			if data.ClosedByClient == nil {
 				return starlark.None, nil

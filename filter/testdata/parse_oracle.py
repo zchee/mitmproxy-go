@@ -3,7 +3,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "mitmproxy @ git+https://github.com/mitmproxy/mitmproxy@3368a0a",
+#   "mitmproxy @ git+https://github.com/mitmproxy/mitmproxy@51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7",
 #   "orjson",
 # ]
 # ///

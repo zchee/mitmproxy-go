@@ -3,7 +3,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "mitmproxy @ git+https://github.com/mitmproxy/mitmproxy@3368a0a06ae6195aad817a1ece1aaeb6fe0353a1",
+#   "mitmproxy @ git+https://github.com/mitmproxy/mitmproxy@51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7",
 # ]
 # ///
 """Print the installed mitmproxy version, then each argument on its own line."""

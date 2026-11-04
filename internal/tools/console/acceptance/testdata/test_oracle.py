@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.13,<3.14"
 # dependencies = [
-#   "mitmproxy @ git+https://github.com/mitmproxy/mitmproxy@3368a0a06ae6195aad817a1ece1aaeb6fe0353a1",
+#   "mitmproxy @ git+https://github.com/mitmproxy/mitmproxy@51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7",
 #   "orjson",
 #   "pytest",
 # ]
@@ -63,7 +63,7 @@ def test_render(tmp_path: Path, name: str, expected: str) -> None:
     assert frame["width"] == 80 and frame["height"] == 24
     assert len(frame["frame"].split("\n")) == 24
     assert expected in frame["frame"]
-    assert frame["upstream_commit"] == "3368a0a06ae6195aad817a1ece1aaeb6fe0353a1"
+    assert frame["upstream_commit"] == "51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7"
     assert frame["flow_count"] == len(FIXTURES["ids"])
     (tmp_path / "result.json").write_bytes(result.stdout)
 

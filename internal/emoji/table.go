@@ -5,6 +5,10 @@
 // Source commit: 3368a0a06ae6195aad817a1ece1aaeb6fe0353a1.
 // Each emoji.items() pair becomes a Go string pair, preserving dictionary order
 // and escaping non-ASCII characters as Unicode code points.
+// Verified against v12.3.1 on 2026-11-03 21:45:02 JST: all 1843 ordered source
+// pairs match, and go test -tags difftest -race -count=1 -cpu=1 -timeout=10m
+// -json -run '^TestDifferentialTable$' ./internal/emoji passes.
+// This verifies compatibility, not regeneration of the original table.
 
 package emoji
 

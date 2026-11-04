@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.13,<3.14"
 # dependencies = [
-#   "mitmproxy @ git+https://github.com/mitmproxy/mitmproxy@3368a0a06ae6195aad817a1ece1aaeb6fe0353a1",
+#   "mitmproxy @ git+https://github.com/mitmproxy/mitmproxy@51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7",
 #   "orjson",
 # ]
 # ///
@@ -30,7 +30,7 @@ from mitmproxy.tools.console import signals, window
 from mitmproxy.tools.console.master import ConsoleMaster
 from mitmproxy.utils.signals import _SignalMixin
 
-PINNED_COMMIT = "3368a0a06ae6195aad817a1ece1aaeb6fe0353a1"
+PINNED_COMMIT = "51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7"
 REFERENCE_SHA256 = "b000690b8b084fa6c7f7e5dede9cce4400424154bc824aa0d3a2e33e7409a123"
 
 

@@ -43,7 +43,7 @@ func (HTTP3Frames) RenderPriority(_ []byte, metadata Metadata) float64 {
 func (HTTP3Frames) Prettify(data []byte, metadata Metadata) (string, error) {
 	f, ok := metadata.Flow.(*flow.TCPFlow)
 	if !ok || f == nil || metadata.TCPMessage == nil {
-		return "", fmt.Errorf("HTTP/3 view requires a TCP flow and message")
+		return "", errors.New("HTTP/3 view requires a TCP flow and message")
 	}
 	budget := newViewBudget("HTTP/3")
 	if err := budget.checkInput("HTTP/3 input", uint64(len(data))); err != nil {
@@ -57,7 +57,7 @@ func (HTTP3Frames) Prettify(data []byte, metadata Metadata) (string, error) {
 		}
 	}
 	if selected < 0 {
-		return "", fmt.Errorf("HTTP/3 message is not in the flow")
+		return "", errors.New("HTTP/3 message is not in the flow")
 	}
 	if err := budget.chargeNodes("replay messages", uint64(selected+1)); err != nil {
 		return "", err
@@ -83,7 +83,7 @@ func (HTTP3Frames) Prettify(data []byte, metadata Metadata) (string, error) {
 	}
 	for i, message := range f.Messages[:selected+1] {
 		if message == nil {
-			return "", fmt.Errorf("nil HTTP/3 replay message")
+			return "", errors.New("nil HTTP/3 replay message")
 		}
 		if uint64(len(message.Content)) > budget.limits.InputBytes-uint64(inputBytes) {
 			return "", budget.refusal("HTTP/3 replay", "input bytes", uint64(inputBytes), uint64(len(message.Content)), budget.limits.InputBytes)
@@ -263,7 +263,7 @@ func renderHTTP3Headers(data []byte, budget *viewBudget) (string, error) {
 }
 
 func http3UTF8(out *strings.Builder, budget *viewBudget, text string) error {
-	for len(text) != 0 {
+	for text != "" {
 		r, n := utf8.DecodeRuneInString(text)
 		part := text[:n]
 		if r == utf8.RuneError && n == 1 {

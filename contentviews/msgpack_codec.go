@@ -6,6 +6,7 @@ package contentviews
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -40,7 +41,7 @@ func decodeMsgpackValue(data []byte, budget *viewBudget) (msgpackValue, error) {
 	decoder := msgpackDecoder{data: data, budget: budget}
 	value, err := decoder.value(0)
 	if err == nil && decoder.position != len(data) {
-		err = fmt.Errorf("MsgPack decoding: trailing bytes")
+		err = errors.New("MsgPack decoding: trailing bytes")
 	}
 	if err != nil {
 		return msgpackValue{}, err
@@ -164,9 +165,9 @@ func (d *msgpackDecoder) value(depth int) (msgpackValue, error) {
 	case code == def.Uint64 || code == def.Int64 || code == def.Float64:
 		payload = 8
 	case code >= def.Ext8 && code <= def.Ext32 || code >= def.Fixext1 && code <= def.Fixext16:
-		return msgpackValue{}, fmt.Errorf("MsgPack decoding: extension values are unsupported")
+		return msgpackValue{}, errors.New("MsgPack decoding: extension values are unsupported")
 	default:
-		return msgpackValue{}, fmt.Errorf("MsgPack decoding: invalid format code")
+		return msgpackValue{}, errors.New("MsgPack decoding: invalid format code")
 	}
 	if err != nil {
 		return msgpackValue{}, err

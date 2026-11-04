@@ -117,7 +117,7 @@ func (t xmlToken) opening() bool { return t.tag && !t.closing && !t.selfClosing 
 
 func xmlTokens(text string) iter.Seq[xmlToken] {
 	return func(yield func(xmlToken) bool) {
-		for len(text) != 0 {
+		for text != "" {
 			if text[0] != '<' {
 				end := strings.IndexByte(text, '<')
 				if end < 0 {
@@ -216,7 +216,7 @@ func indentXMLText(text string, indent int) string {
 	text = trimPythonSpace(textwrap.Dedent(strings.Repeat(" ", 32) + text))
 	prefix := strings.Repeat(" ", min(indent, 32))
 	var out strings.Builder
-	for len(text) != 0 {
+	for text != "" {
 		end := strings.IndexAny(text, "\n\r\v\f\x1c\x1d\x1e\u0085  ")
 		if end < 0 {
 			end = len(text)

@@ -4,6 +4,7 @@
 package imagemeta
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 )
@@ -63,7 +64,7 @@ func ParseICO(data []byte) ([][2]string, error) {
 			return nil, errShortRead
 		}
 		isPNG := "False"
-		if string(data[start:start+8]) == string(pngMagic) {
+		if bytes.Equal(data[start:start+8], pngMagic) {
 			isPNG = "True"
 		}
 		parts = append(parts, [2]string{

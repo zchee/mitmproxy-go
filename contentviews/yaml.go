@@ -104,7 +104,7 @@ func yamlPairs(pairs [][2]string) (string, error) {
 func yamlSurrogateQuote(text string) string {
 	var out strings.Builder
 	out.WriteByte('"')
-	for len(text) != 0 {
+	for text != "" {
 		r, size := utf8.DecodeRuneInString(text)
 		if r == utf8.RuneError && size == 1 {
 			fmt.Fprintf(&out, "\\uDC%02X", text[0])

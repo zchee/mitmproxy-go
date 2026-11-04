@@ -49,7 +49,7 @@ func (GraphQL) Prettify(data []byte, _ Metadata) (string, error) {
 		return "", err
 	}
 	if !isGraphQL(root) {
-		return "", fmt.Errorf("not a GraphQL message")
+		return "", errors.New("not a GraphQL message")
 	}
 	var out strings.Builder
 	operations := []*graphJSON{root}
@@ -72,7 +72,7 @@ func (GraphQL) Prettify(data []byte, _ Metadata) (string, error) {
 func formatGraphQL(out *strings.Builder, operation *graphJSON, budget *viewBudget) error {
 	query := operation.member("query")
 	if operation.kind != '{' || query == nil || query.kind != '"' {
-		return fmt.Errorf("invalid GraphQL operation")
+		return errors.New("invalid GraphQL operation")
 	}
 	if err := writeGraphJSON(out, operation, budget, 0, true); err != nil {
 		return err
@@ -135,7 +135,7 @@ func parseGraphQLJSON(data []byte, budget *viewBudget) (*graphJSON, error) {
 		return nil, err
 	}
 	if _, err := decoder.ReadToken(); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("trailing GraphQL JSON data")
+		return nil, errors.New("trailing GraphQL JSON data")
 	}
 	return root, nil
 }
@@ -201,7 +201,7 @@ func readGraphJSON(decoder *jsontext.Decoder, constants map[int64]string, budget
 		node.text = unquoteJSON(raw)
 	} else {
 		if kind == '0' && !bytes.ContainsAny(raw, ".eE") && len(bytes.TrimPrefix(raw, []byte("-"))) > 4300 {
-			return nil, fmt.Errorf("GraphQL integer exceeds Python's conversion limit")
+			return nil, errors.New("GraphQL integer exceeds Python's conversion limit")
 		}
 		node.text = string(raw)
 		if constant, found := constants[decoder.InputOffset()]; found {
@@ -279,10 +279,10 @@ func writeGraphJSON(out *strings.Builder, node *graphJSON, budget *viewBudget, d
 	if node.kind != '{' && node.kind != '[' {
 		return graphWrite(out, budget, node.text)
 	}
-	open, close := "{", "}"
+	open, closing := "{", "}"
 	length := len(node.members)
 	if node.kind == '[' {
-		open, close, length = "[", "]", len(node.elements)
+		open, closing, length = "[", "]", len(node.elements)
 	}
 	if err := graphWrite(out, budget, open); err != nil {
 		return err
@@ -321,14 +321,14 @@ func writeGraphJSON(out *strings.Builder, node *graphJSON, budget *viewBudget, d
 			return err
 		}
 	}
-	return graphWrite(out, budget, close)
+	return graphWrite(out, budget, closing)
 }
 
 func graphQuote(out *strings.Builder, budget *viewBudget, text string) error {
 	if err := graphWrite(out, budget, "\""); err != nil {
 		return err
 	}
-	for len(text) != 0 {
+	for text != "" {
 		r, size := utf8.DecodeRuneInString(text)
 		if r == utf8.RuneError && size == 1 && len(text) >= 3 && text[0] == 0xed && text[1] >= 0xa0 && text[1] <= 0xbf && text[2]&0xc0 == 0x80 {
 			r, size = rune(text[0]&15)<<12|rune(text[1]&63)<<6|rune(text[2]&63), 3
@@ -374,7 +374,7 @@ func graphJSONUTF8(data []byte, budget *viewBudget) ([]byte, error) {
 			r, size := utf8.DecodeRune(data[i:])
 			if r == utf8.RuneError && size == 1 {
 				if i+2 >= len(data) || data[i] != 0xed || data[i+1] < 0xa0 || data[i+1] > 0xbf || data[i+2]&0xc0 != 0x80 {
-					return nil, fmt.Errorf("invalid GraphQL JSON encoding")
+					return nil, errors.New("invalid GraphQL JSON encoding")
 				}
 				size = 3
 			}
@@ -383,7 +383,7 @@ func graphJSONUTF8(data []byte, budget *viewBudget) ([]byte, error) {
 		return data, nil
 	}
 	if len(data)%width != 0 {
-		return nil, fmt.Errorf("invalid GraphQL JSON encoding")
+		return nil, errors.New("invalid GraphQL JSON encoding")
 	}
 	out := make([]byte, 0, len(data))
 	for i := 0; i < len(data); i += width {
@@ -391,7 +391,7 @@ func graphJSONUTF8(data []byte, budget *viewBudget) ([]byte, error) {
 		if width == 4 {
 			code := order.Uint32(data[i:])
 			if code > utf8.MaxRune {
-				return nil, fmt.Errorf("invalid GraphQL JSON encoding")
+				return nil, errors.New("invalid GraphQL JSON encoding")
 			}
 			r = rune(code)
 		} else {

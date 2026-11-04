@@ -6,6 +6,7 @@
 package imagemeta
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -121,7 +122,7 @@ func (s *stream) expect(want []byte, what string) error {
 	if err != nil {
 		return err
 	}
-	if string(got) != string(want) {
+	if !bytes.Equal(got, want) {
 		return fmt.Errorf("%s is %q, not %q", what, got, want)
 	}
 	return nil

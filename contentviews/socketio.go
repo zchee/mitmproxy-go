@@ -4,7 +4,7 @@
 package contentviews
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 
 	"github.com/zchee/mitmproxy-go/flow"
@@ -54,7 +54,7 @@ const socketIOStage = "Socket.IO packet"
 
 func parseSocketIO(data []byte) (string, []byte, bool, error) {
 	if len(data) == 0 || data[0] < '0' || data[0] > '6' {
-		return "", nil, false, fmt.Errorf("invalid Engine.IO packet type")
+		return "", nil, false, errors.New("invalid Engine.IO packet type")
 	}
 	engineNames := [...]string{"OPEN", "CLOSE", "PING", "PONG", "MESSAGE", "UPGRADE", "NOOP"}
 	engine := data[0] - '0'
@@ -63,7 +63,7 @@ func parseSocketIO(data []byte) (string, []byte, bool, error) {
 		return "EngineIO." + engineNames[engine], data, engine != 2 && engine != 3, nil
 	}
 	if len(data) == 0 || data[0] < '0' || data[0] > '6' {
-		return "", nil, false, fmt.Errorf("invalid Socket.IO packet type")
+		return "", nil, false, errors.New("invalid Socket.IO packet type")
 	}
 	socketNames := [...]string{"CONNECT", "DISCONNECT", "EVENT", "ACK", "CONNECT_ERROR", "BINARY_EVENT", "BINARY_ACK"}
 	socket := data[0] - '0'

@@ -26,7 +26,7 @@ type requestResult struct {
 func requestAsync(t *testing.T, client *http.Client, target string, barrier <-chan struct{}) <-chan requestResult {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 15*time.Second)
-	req, err := http.NewRequestWithContext(ctx, "GET", target, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
 	if err != nil {
 		cancel()
 		t.Fatal(err)
@@ -71,6 +71,7 @@ func completed(t *testing.T, result <-chan requestResult) requestResult {
 }
 
 func otherFlow(t *testing.T, worker, timed bool) {
+	t.Helper()
 	origin, seen := ownedOrigin(t, "forwarded")
 	source := `def _request(f):
     if f.request.path == "/slow":
@@ -116,6 +117,7 @@ def requestheaders(f):
 }
 
 func fiveParallel(t *testing.T, timed bool) {
+	t.Helper()
 	origin, seen := ownedOrigin(t, "five")
 	var path string
 	var entered <-chan struct{}
@@ -169,6 +171,7 @@ func fiveParallel(t *testing.T, timed bool) {
 }
 
 func reloadInflight(t *testing.T, timed bool) {
+	t.Helper()
 	a := assembledDump(t)
 	a.load(t, "def _request(f):\n    ctx.log('old-worker-entered')\n    ctx.sleep(1)\n    f.request.headers['x-retired-worker'] = 'merged'\n    ctx.log('old-worker-finished')\nrequest = concurrent(_request)\n")
 	f := testflow.TFlow()
@@ -195,6 +198,7 @@ func reloadInflight(t *testing.T, timed bool) {
 }
 
 func nonblockingParallel(t *testing.T, timed bool) {
+	t.Helper()
 	origin, seen := ownedOrigin(t, "nonblocking")
 	p := startProxy(t, origin.URL, []string{examplePath("nonblocking")})
 	client := proxyClient(t, p)
@@ -233,6 +237,7 @@ func nonblockingParallel(t *testing.T, timed bool) {
 }
 
 func mtimeReload(t *testing.T, timed bool) {
+	t.Helper()
 	origin, seen := ownedOrigin(t, "mtime")
 	path := scriptFile(t, "def request(f):\n    f.request.headers['x-generation'] = 'old'\n")
 	p := startProxy(t, origin.URL, []string{path})

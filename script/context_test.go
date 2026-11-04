@@ -26,6 +26,7 @@ import (
 func TestScriptContext(t *testing.T) {
 	tests := map[string]struct{ run func(*testing.T) }{
 		"log": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			store, err := eventstore.New()
 			if err != nil {
@@ -71,6 +72,7 @@ func TestScriptContext(t *testing.T) {
 			}
 		}},
 		"options_read": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("if ctx.options.script_max_steps != 0 or ctx.options.scripts == []:\n    fail(\"current option values\")\nf.comment = ctx.options.listen_host")
 			x := f.request()
@@ -78,6 +80,7 @@ func TestScriptContext(t *testing.T) {
 			f.wantLog("Addon error:", 0)
 		}},
 		"options_write": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("ctx.options.listen_port = 18080\nctx.options.listen_host = \"127.0.0.2\"")
 			f.hook(addon.RequestHook{Flow: f.request()})
@@ -86,6 +89,7 @@ func TestScriptContext(t *testing.T) {
 			}
 		}},
 		"options_alias": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.load(f.file("alias.star", "o = ctx.options\ndef request(f):\n    o.listen_port = 18081\n    f.comment = str(o.listen_port)\n"))
 			x := f.request()
@@ -95,6 +99,7 @@ func TestScriptContext(t *testing.T) {
 			}
 		}},
 		"commands_call": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			var got command.Path
 			if err := f.master.Commands.Register("native.typed", func(_ context.Context, path command.Path, data []byte, n int) ([]byte, error) {
@@ -114,6 +119,7 @@ func TestScriptContext(t *testing.T) {
 			}
 		}},
 		"loader_options": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.load(f.file("options.star", "def on_load(loader):\n    loader.add_option(\"custom\", \"sequence-of-str\", [\"one\"], \"Custom values.\", choices=[\"one\", \"two\"])\n"))
 			opt, ok := f.master.Options.Lookup("custom")
@@ -128,6 +134,7 @@ func TestScriptContext(t *testing.T) {
 			}
 		}},
 		"loader_commands": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.load(f.file("commands.star", "state = {\"count\": 0}\ndef increment():\n    state[\"count\"] += 1\ndef on_load(loader):\n    loader.add_command(\"myaddon.inc\", increment, help=\"Increment the counter.\")\ndef request(f):\n    ctx.master.commands.call(\"myaddon.inc\")\n    f.comment = str(state[\"count\"])\n"))
 			x := f.request()
@@ -141,6 +148,7 @@ func TestScriptContext(t *testing.T) {
 			}
 		}},
 		"shutdown": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.load(f.file("shutdown.star", "def running():\n    ctx.master.shutdown()\n"))
 			if err := f.master.Run(t.Context()); err != nil {
@@ -151,6 +159,7 @@ func TestScriptContext(t *testing.T) {
 			}
 		}},
 		"sleep_depth_one": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			entered := make(chan struct{})
 			release := make(chan struct{})
@@ -190,6 +199,7 @@ func TestScriptContext(t *testing.T) {
 			}
 		}},
 		"sleep_nested_inline": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			called := false
 			f.loader.sleepWait = func(ctx context.Context, d time.Duration) error {
@@ -209,6 +219,7 @@ func TestScriptContext(t *testing.T) {
 			}
 		}},
 		"http_get_depth_one": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			entered := make(chan struct{})
 			release := make(chan struct{})
@@ -246,6 +257,7 @@ func TestScriptContext(t *testing.T) {
 			}
 		}},
 		"http_get_nested_inline": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("origin")) }))
 			defer origin.Close()
@@ -263,6 +275,7 @@ func TestScriptContext(t *testing.T) {
 			}
 		}},
 		"cancel_refresh": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			entered := make(chan struct{})
 			f.loader.sleepWait = func(ctx context.Context, _ time.Duration) error { close(entered); <-ctx.Done(); return ctx.Err() }
@@ -287,6 +300,7 @@ func TestScriptContext(t *testing.T) {
 			}
 		}},
 		"retained_context_reentry": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.load(f.file("reentry.star", "o = ctx.options\ndef nested():\n    o.listen_host = \"nested\"\ndef on_load(loader):\n    loader.add_command(\"script.nested\", nested)\ndef request(f):\n    ctx.master.commands.call(\"script.nested\")\n    f.comment = o.listen_host\n"))
 			x := f.request()
@@ -307,6 +321,7 @@ func TestScriptContext(t *testing.T) {
 func TestScriptHTTPGet(t *testing.T) {
 	tests := map[string]struct{ run func(*testing.T) }{
 		"schemes": {func(t *testing.T) {
+			t.Helper()
 			for _, url := range []string{"file:///etc/passwd", "ftp://example.test/file", "http:///missing"} {
 				f := newFixture(t)
 				f.requestScript(fmt.Sprintf("ctx.http_get(%q)", url))
@@ -315,6 +330,7 @@ func TestScriptHTTPGet(t *testing.T) {
 			}
 		}},
 		"credentials": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("ctx.http_get(\"https://sensitive-user:sensitive-password@example.test/\")")
 			f.hook(addon.RequestHook{Flow: f.request()})
@@ -324,6 +340,7 @@ func TestScriptHTTPGet(t *testing.T) {
 			}
 		}},
 		"timeout": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			if f.loader.client.Timeout != 10*time.Second {
 				t.Fatal("total HTTP budget changed")
@@ -341,6 +358,7 @@ func TestScriptHTTPGet(t *testing.T) {
 			f.wantLog("Addon error:", 1)
 		}},
 		"redirect_limit": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			count := new(atomic.Int64)
 			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -361,6 +379,7 @@ func TestScriptHTTPGet(t *testing.T) {
 			}
 		}},
 		"response_limit": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, _ = w.Write([]byte(strings.Repeat("x", httpBodyLimit+1)))
@@ -376,10 +395,11 @@ func TestScriptHTTPGet(t *testing.T) {
 			f.wantLog("response exceeds", 1)
 		}},
 		"header_limit": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("X-Large", strings.Repeat("x", httpHeaderLimit+1))
-				w.WriteHeader(200)
+				w.WriteHeader(http.StatusOK)
 			}))
 			defer origin.Close()
 			defer func() {
@@ -392,6 +412,7 @@ func TestScriptHTTPGet(t *testing.T) {
 			f.wantLog("Addon error:", 1)
 		}},
 		"cancel": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			entered := make(chan struct{})
 			origin := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { close(entered); <-r.Context().Done() }))
@@ -413,6 +434,7 @@ func TestScriptHTTPGet(t *testing.T) {
 			}
 		}},
 		"transport_reuse": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			peers := make(chan string, 2)
 			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -435,6 +457,7 @@ func TestScriptHTTPGet(t *testing.T) {
 			}
 		}},
 		"proxy_environment": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
 			t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
@@ -457,6 +480,7 @@ func TestScriptHTTPGet(t *testing.T) {
 			}
 		}},
 		"self_proxy": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.loader.cfg.ListenAddrs = nil
 			f.requestScript("ctx.http_get(\"http://127.0.0.1:8080\")")
@@ -467,6 +491,7 @@ func TestScriptHTTPGet(t *testing.T) {
 			f.wantLog("rejects this master's proxy listener", 1)
 		}},
 		"concurrency": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("ctx.http_get(\"http://127.0.0.1:8080\")")
 			entry := f.loader.entries[0]
@@ -483,6 +508,7 @@ func TestScriptHTTPGet(t *testing.T) {
 			}
 		}},
 		"body_close": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			entered := make(chan struct{})
 			canceled := make(chan struct{})

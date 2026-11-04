@@ -37,6 +37,7 @@ func (o *runObserver) Request(ctx context.Context, _ *flow.HTTPFlow) error {
 }
 
 func runDepths(t *testing.T) {
+	t.Helper()
 	for _, nested := range []bool{false, true} {
 		for _, child := range []bool{false, true} {
 			a := assembledDump(t)
@@ -81,6 +82,7 @@ def response(f):
 }
 
 func runLoadError(t *testing.T) {
+	t.Helper()
 	a := assembledDump(t)
 	path := scriptFile(t, "def _load(loader):\n    ctx.log('unexpected load')\non_load = concurrent(_load)\ndef running():\n    ctx.log('unexpected running')\n")
 	if _, err := a.m.Call(t.Context(), "script.run", []flow.Flow{testflow.TFlow()}, command.Path(path)); err != nil {
@@ -92,6 +94,7 @@ func runLoadError(t *testing.T) {
 }
 
 func dumpReplay(t *testing.T) {
+	t.Helper()
 	origin, seen := ownedOrigin(t, "replayed")
 	transform := scriptFile(t, "def request(f):\n    f.request.path = '/transformed'\n    f.request.headers['x-script-run'] = 'recorded-flow'\n")
 	driver := scriptFile(t, fmt.Sprintf("def request(f):\n    ctx.master.commands.call('script.run', [f], %q)\n", transform))
@@ -127,6 +130,7 @@ func dumpReplay(t *testing.T) {
 }
 
 func optionsMetadata(t *testing.T) {
+	t.Helper()
 	p := startProcess(t, "", "-n", "--options")
 	p.wait(t)
 	metadata := strings.ReplaceAll(p.logs.text(), "\n# ", " ")

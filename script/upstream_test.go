@@ -24,6 +24,7 @@ func TestScriptUpstream(t *testing.T) {
 	t.Run("upstream", func(t *testing.T) {
 		tests := map[string]struct{ run func(*testing.T) }{
 			"test_load_script": {func(t *testing.T) {
+				t.Helper()
 				f := newFixture(t)
 				path := f.file("recorder.star", "def child_request(f):\n    f.comment = \"child-called\"\naddons = [module(\"recorder\", request=child_request)]\n")
 				f.load(path)
@@ -42,6 +43,7 @@ func TestScriptUpstream(t *testing.T) {
 				f.wantLog("error in script", 1)
 			}},
 			"test_load_fullname": {func(t *testing.T) {
+				t.Helper()
 				f := newFixture(t)
 				a := f.file("a/addon.star", "def request(f):\n    f.comment += \"a\"\n")
 				b := f.file("b/addon.star", "def request(f):\n    f.comment += \"b\"\n")
@@ -56,6 +58,7 @@ func TestScriptUpstream(t *testing.T) {
 				}
 			}},
 			"test_order": {func(t *testing.T) {
+				t.Helper()
 				f := newFixture(t)
 				recorder := f.file("recorder.star", "def on_load(loader):\n    ctx.log(\"recorder load\")\ndef configure(updated):\n    ctx.log(\"recorder configure\")\ndef running():\n    ctx.log(\"recorder running\")\ndef done():\n    ctx.log(\"recorder done\")\n")
 				shutdown := f.file("shutdown.star", "def running():\n    ctx.master.shutdown()\n")
@@ -81,6 +84,7 @@ func TestScriptUpstream(t *testing.T) {
 		t.Run("TestScript", func(t *testing.T) {
 			tests := map[string]struct{ run func(*testing.T) }{
 				"test_notfound": {func(t *testing.T) {
+					t.Helper()
 					f := newFixture(t)
 					err := f.master.Do(t.Context(), func(ctx context.Context) error {
 						return f.master.Options.Update(ctx, map[string]any{"scripts": []string{f.dir + "/missing.star"}})
@@ -93,6 +97,7 @@ func TestScriptUpstream(t *testing.T) {
 					}
 				}},
 				"test_quotes_around_filename": {func(t *testing.T) {
+					t.Helper()
 					f := newFixture(t)
 					path := f.file("quoted.star", "def request(f):\n    f.comment = \"quoted\"\n")
 					f.load("\"" + path + "\"")
@@ -106,6 +111,7 @@ func TestScriptUpstream(t *testing.T) {
 					}
 				}},
 				"test_simple": {func(t *testing.T) {
+					t.Helper()
 					f := newFixture(t)
 					path := f.file("recorder.star", "events = []\ndef on_load(loader):\n    events.append(\"load\")\ndef configure(updated):\n    events.append(\"configure\")\ndef request(f):\n    events.append(\"request\")\n    f.comment = \",\".join(events)\n")
 					f.load(path)
@@ -116,6 +122,7 @@ func TestScriptUpstream(t *testing.T) {
 					}
 				}},
 				"test_reload": {func(t *testing.T) {
+					t.Helper()
 					f := newFixture(t)
 					path := f.file("reload.star", "ctx.log(\"loaded-first\")\n")
 					f.load(path)
@@ -125,6 +132,7 @@ func TestScriptUpstream(t *testing.T) {
 					f.wantLog("loaded-replacement", 1)
 				}},
 				"test_exception": {func(t *testing.T) {
+					t.Helper()
 					f := newFixture(t)
 					path := f.file("error.star", "def on_load(loader):\n    ctx.log(\"error load\")\ndef request(f):\n    fail(\"Error!\")\n")
 					f.load(path)
@@ -137,12 +145,14 @@ func TestScriptUpstream(t *testing.T) {
 					}
 				}},
 				"test_configure_error": {func(t *testing.T) {
+					t.Helper()
 					f := newFixture(t)
 					f.load(f.file("configure.star", "def configure(updated):\n    fail(\"Options Error\")\n"))
 					f.wantLog("error in script", 1)
 					f.wantLog("Options Error", 1)
 				}},
 				"test_addon": {func(t *testing.T) {
+					t.Helper()
 					f := newFixture(t)
 					f.load(f.file("addon.star", "events = []\ndef on_load(loader):\n    events.append(\"scriptload\")\ndef configure(updated):\n    events.append(\"scriptconfigure\")\ndef child_load(loader):\n    events.append(\"addonload\")\ndef child_configure(updated):\n    events.append(\"addonconfigure\")\ndef request(f):\n    f.comment = \",\".join(events)\naddons = [module(\"child\", on_load=child_load, configure=child_configure)]\n"))
 					flow := f.request()
@@ -159,6 +169,7 @@ func TestScriptUpstream(t *testing.T) {
 		t.Run("TestScriptLoader", func(t *testing.T) {
 			tests := map[string]struct{ run func(*testing.T) }{
 				"test_script_run": {func(t *testing.T) {
+					t.Helper()
 					f := newFixture(t)
 					events := runRecorder(t, f)
 					names := []string{"configure", "running", "requestheaders", "request", "responseheaders", "response"}
@@ -172,11 +183,13 @@ func TestScriptUpstream(t *testing.T) {
 					f.wantLog("Addon error:", 0)
 				}},
 				"test_script_run_nonexistent": {func(t *testing.T) {
+					t.Helper()
 					f := newFixture(t)
 					invokeRun(t, f, f.dir, []flow.Flow{f.request()}, false)
 					f.wantLog("No such script", 1)
 				}},
 				"test_simple": {func(t *testing.T) {
+					t.Helper()
 					f := newFixture(t)
 					f.hook(addon.RunningHook{})
 					path := f.file("simple.star", "def running():\n    ctx.log(\"late-running\")\n")
@@ -191,6 +204,7 @@ func TestScriptUpstream(t *testing.T) {
 					}
 				}},
 				"test_dupes": {func(t *testing.T) {
+					t.Helper()
 					f := newFixture(t)
 					err := f.master.Do(t.Context(), func(ctx context.Context) error {
 						return f.master.Options.Update(ctx, map[string]any{"scripts": []string{"one", "one"}})
@@ -200,6 +214,7 @@ func TestScriptUpstream(t *testing.T) {
 					}
 				}},
 				"test_script_deletion": {func(t *testing.T) {
+					t.Helper()
 					f := newFixture(t)
 					path := f.file("dummy.star", "\n")
 					f.load(path)
@@ -212,6 +227,7 @@ func TestScriptUpstream(t *testing.T) {
 					}
 				}},
 				"test_order": {func(t *testing.T) {
+					t.Helper()
 					f := newFixture(t)
 					f.hook(addon.RunningHook{})
 					paths := make(map[string]string)
@@ -255,7 +271,7 @@ func lifecycleMessages(logs string) []string {
 		if !ok {
 			continue
 		}
-		if len(text) > 2 && strings.Contains("abce", text[:1]) && text[1] == ' ' {
+		if len(text) > 2 && strings.ContainsRune("abce", rune(text[0])) && text[1] == ' ' {
 			out = append(out, text)
 		}
 	}

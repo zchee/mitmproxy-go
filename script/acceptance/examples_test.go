@@ -22,24 +22,60 @@ import (
 func TestScriptExamples(t *testing.T) {
 	t.Run("examples", func(t *testing.T) {
 		tests := map[string]struct{ run func(*testing.T) }{
-			"anatomy":                  {func(t *testing.T) { httpExample(t, "anatomy") }},
-			"anatomy2":                 {func(t *testing.T) { httpExample(t, "anatomy2") }},
-			"commands-simple":          {func(t *testing.T) { httpExample(t, "commands-simple") }},
-			"dns-simple":               {dnsExample},
-			"http-add-header":          {func(t *testing.T) { httpExample(t, "http-add-header") }},
-			"http-modify-form":         {func(t *testing.T) { httpExample(t, "http-modify-form") }},
-			"http-modify-query-string": {func(t *testing.T) { httpExample(t, "http-modify-query-string") }},
-			"http-redirect-requests":   {func(t *testing.T) { httpExample(t, "http-redirect-requests") }},
-			"http-reply-from-proxy":    {func(t *testing.T) { httpExample(t, "http-reply-from-proxy") }},
-			"http-stream-simple":       {func(t *testing.T) { httpExample(t, "http-stream-simple") }},
-			"http-trailers":            {func(t *testing.T) { httpExample(t, "http-trailers") }},
-			"internet-in-mirror":       {func(t *testing.T) { httpExample(t, "internet-in-mirror") }},
-			"log-events":               {logExample},
-			"nonblocking":              {nonblockingExample},
-			"options-simple":           {func(t *testing.T) { httpExample(t, "options-simple") }},
-			"shutdown":                 {shutdownExample},
-			"tcp-simple":               {tcpExample},
-			"websocket-simple":         {websocketExample},
+			"anatomy": {func(t *testing.T) {
+				t.Helper()
+				httpExample(t, "anatomy")
+			}},
+			"anatomy2": {func(t *testing.T) {
+				t.Helper()
+				httpExample(t, "anatomy2")
+			}},
+			"commands-simple": {func(t *testing.T) {
+				t.Helper()
+				httpExample(t, "commands-simple")
+			}},
+			"dns-simple": {dnsExample},
+			"http-add-header": {func(t *testing.T) {
+				t.Helper()
+				httpExample(t, "http-add-header")
+			}},
+			"http-modify-form": {func(t *testing.T) {
+				t.Helper()
+				httpExample(t, "http-modify-form")
+			}},
+			"http-modify-query-string": {func(t *testing.T) {
+				t.Helper()
+				httpExample(t, "http-modify-query-string")
+			}},
+			"http-redirect-requests": {func(t *testing.T) {
+				t.Helper()
+				httpExample(t, "http-redirect-requests")
+			}},
+			"http-reply-from-proxy": {func(t *testing.T) {
+				t.Helper()
+				httpExample(t, "http-reply-from-proxy")
+			}},
+			"http-stream-simple": {func(t *testing.T) {
+				t.Helper()
+				httpExample(t, "http-stream-simple")
+			}},
+			"http-trailers": {func(t *testing.T) {
+				t.Helper()
+				httpExample(t, "http-trailers")
+			}},
+			"internet-in-mirror": {func(t *testing.T) {
+				t.Helper()
+				httpExample(t, "internet-in-mirror")
+			}},
+			"log-events":  {logExample},
+			"nonblocking": {nonblockingExample},
+			"options-simple": {func(t *testing.T) {
+				t.Helper()
+				httpExample(t, "options-simple")
+			}},
+			"shutdown":         {shutdownExample},
+			"tcp-simple":       {tcpExample},
+			"websocket-simple": {websocketExample},
 		}
 		for name, tt := range tests {
 			t.Run(name, tt.run)
@@ -154,6 +190,7 @@ func httpExample(t *testing.T, name string) {
 }
 
 func logExample(t *testing.T) {
+	t.Helper()
 	p := startProcess(t, "", "-n", "-s", examplePath("log-events"))
 	p.wantExit = 1
 	p.wait(t)
@@ -163,11 +200,12 @@ func logExample(t *testing.T) {
 }
 
 func shutdownExample(t *testing.T) {
+	t.Helper()
 	origin, seen := ownedOrigin(t, "unreachable")
 	p := startProxy(t, origin.URL, []string{examplePath("shutdown")})
 	p.route.expect("example.com")
 	client := proxyClient(t, p)
-	r, err := http.NewRequestWithContext(t.Context(), "GET", "http://example.com/path", nil)
+	r, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://example.com/path", http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,9 +225,13 @@ func shutdownExample(t *testing.T) {
 	}
 }
 
-func nonblockingExample(t *testing.T) { nonblockingParallel(t, false) }
+func nonblockingExample(t *testing.T) {
+	t.Helper()
+	nonblockingParallel(t, false)
+}
 
 func dnsExample(t *testing.T) {
+	t.Helper()
 	origin, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -249,6 +291,7 @@ func dnsExample(t *testing.T) {
 }
 
 func tcpExample(t *testing.T) {
+	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -293,6 +336,7 @@ func tcpExample(t *testing.T) {
 }
 
 func websocketExample(t *testing.T) {
+	t.Helper()
 	peer := make(chan net.Conn, 1)
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		conn, _, err := w.(http.Hijacker).Hijack()

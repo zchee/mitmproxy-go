@@ -21,6 +21,7 @@ import (
 )
 
 func testWorkerCapacity(t *testing.T, cancelWaiter bool) {
+	t.Helper()
 	f := newFixture(t)
 	entered, release := concurrentBarrier(t, f)
 	f.load(loadConcurrent(f, "ctx.sleep(1)\nf.comment = 'admitted'"))
@@ -29,7 +30,7 @@ func testWorkerCapacity(t *testing.T, cancelWaiter bool) {
 	if capacity < 5 || capacity > 32 {
 		t.Fatalf("capacity=%d", capacity)
 	}
-	var dones []<-chan error
+	dones := make([]<-chan error, 0, capacity)
 	for range capacity {
 		dones = append(dones, startConcurrent(t, f, t.Context(), addon.RequestHook{Flow: f.request()}))
 	}
@@ -158,6 +159,7 @@ addons = [module("ordinary", request=ordinary, done=child_done), module("worker"
 }
 
 func testCommandCopyback(t *testing.T) {
+	t.Helper()
 	cycle := make([]any, 1)
 	cycle[0] = cycle
 	tests := map[string]struct{ value any }{
@@ -193,6 +195,7 @@ func testCommandCopyback(t *testing.T) {
 }
 
 func testCommandAliases(t *testing.T) {
+	t.Helper()
 	f := newFixture(t)
 	if err := f.master.Commands.Register("worker.aliases", func(_ context.Context, a flow.Flow, values []flow.Flow, b flow.Flow) error {
 		if a != b || len(values) != 2 || values[0] != a || values[1] != a {
@@ -237,6 +240,7 @@ func (c *replayCapture) Update(_ context.Context, flows []flow.Flow) error {
 }
 
 func testRetainedCopyCommand(t *testing.T) {
+	t.Helper()
 	f := newFixture(t)
 	replay := clientplayback.New(f.master)
 	capture := new(replayCapture)
@@ -274,6 +278,7 @@ func testRetainedCopyCommand(t *testing.T) {
 }
 
 func testChildInvalidBinding(t *testing.T) {
+	t.Helper()
 	f := newFixture(t)
 	f.load(f.file("child-invalid.star", "def _request(f):\n    pass\naddons = [module('child', helper=concurrent(_request))]\n"))
 	f.wantLog("Concurrent decorator not supported for 'helper' method.", 1)
@@ -283,6 +288,7 @@ func testChildInvalidBinding(t *testing.T) {
 }
 
 func testChildFrozenPathMismatch(t *testing.T) {
+	t.Helper()
 	for _, variant := range []string{"missing", "name", "arity", "extra"} {
 		f := newFixture(t)
 		if err := f.master.Commands.Register("init.next", func(ctx context.Context) bool {
@@ -317,6 +323,7 @@ func testChildFrozenPathMismatch(t *testing.T) {
 }
 
 func testChildTopologyDrift(t *testing.T) {
+	t.Helper()
 	for _, operation := range []string{"clear", "replace", "reorder"} {
 		f := newFixture(t)
 		entered, release := concurrentBarrier(t, f)

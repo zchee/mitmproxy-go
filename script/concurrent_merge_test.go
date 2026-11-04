@@ -5,9 +5,11 @@ package script
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -33,6 +35,7 @@ import (
 )
 
 func testFieldMerge(t *testing.T) {
+	t.Helper()
 	f := newFixture(t)
 	entered, release := concurrentBarrier(t, f)
 	f.load(loadConcurrent(f, "f.request.headers['x-worker'] = 'header'\nf.request.method = 'POST'\nf.request.stream = True\nf.response.reason = 'Worker'\nf.error.msg = 'worker-error'\nf.metadata['worker'] = 'owned'\nf.marked = 'worker'\nf.is_replay = 'request'\nctx.sleep(1)"))
@@ -61,10 +64,10 @@ func testFieldMerge(t *testing.T) {
 	if err := awaitConcurrent(t, done); err != nil {
 		t.Fatal(err)
 	}
-	if x.Request.Host != "live.test" || x.Request.Path != "/live" || x.Request.Method != "POST" || string(x.Request.RawContent) != "live-body" || !x.Request.Stream || x.Request.StreamFunc == nil || x.Request.Trailers.Get("x-trailer") != "live" {
+	if x.Request.Host != "live.test" || x.Request.Path != "/live" || x.Request.Method != http.MethodPost || string(x.Request.RawContent) != "live-body" || !x.Request.Stream || x.Request.StreamFunc == nil || x.Request.Trailers.Get("x-trailer") != "live" {
 		t.Fatalf("request semantic merge lost unrelated fields: %v; %s", x.Request, f.logs.String())
 	}
-	if x.Response.StatusCode != 201 || x.Response.Reason != "Worker" || string(x.Response.RawContent) != "live-response" || x.Comment != "untouched" || x.Marked != "worker" || x.IsReplay == nil || *x.IsReplay != "request" || x.Error.Msg != "worker-error" || x.Error.Timestamp != 42 {
+	if x.Response.StatusCode != http.StatusCreated || x.Response.Reason != "Worker" || string(x.Response.RawContent) != "live-response" || x.Comment != "untouched" || x.Marked != "worker" || x.IsReplay == nil || *x.IsReplay != "request" || x.Error.Msg != "worker-error" || x.Error.Timestamp != 42 {
 		t.Fatalf("flow/response/error semantic merge failed: %s", f.logs.String())
 	}
 	if value, _ := x.Metadata.Get("live"); value != "retained" {
@@ -157,7 +160,7 @@ func testFieldMerge(t *testing.T) {
 	if err := probe.master.Commands.Register("dns.observe", func(_ context.Context, value flow.Flow) error {
 		model := value.(*flow.DNSFlow)
 		if model.Request != nil || model.ClientConn != nil || model.ServerConn != nil || !model.Modified() {
-			return fmt.Errorf("requestless command argument changed absence or backup")
+			return errors.New("requestless command argument changed absence or backup")
 		}
 		model.Response.ID = 23
 		return nil
@@ -179,8 +182,8 @@ func testFieldMerge(t *testing.T) {
 	probe.wantLog("Addon error:", 0)
 	restored := newFixture(t)
 	restored.load(restored.file("requestless-revert.star", "def _dns(f):\n    if f.request != None or not f.modified():\n        fail('backup clone changed')\n    f.revert()\n    if f.request == None or f.request.question.name != 'genuine.test' or f.modified():\n        fail('revert did not restore the genuine backup')\n    f.comment = 'reverted'\ndns_response = concurrent(_dns)\n"))
-	http := restored.request()
-	model := flow.NewDNSFlow(http.ClientConn, http.ServerConn, true)
+	requestFlow := restored.request()
+	model := flow.NewDNSFlow(requestFlow.ClientConn, requestFlow.ServerConn, true)
 	model.Request = &dns.Message{ID: 5, Questions: []dns.Question{{Name: "genuine.test", Type: dns.TypeA, Class: dns.ClassIN}}}
 	model.Response = &dns.Message{ID: 6}
 	model.Backup()
@@ -209,6 +212,7 @@ func testFieldMerge(t *testing.T) {
 }
 
 func testMessageMerge(t *testing.T, kind string) {
+	t.Helper()
 	f := newFixture(t)
 	entered, release := concurrentBarrier(t, f)
 	h := f.request()
@@ -299,6 +303,7 @@ func testMessageMerge(t *testing.T, kind string) {
 }
 
 func testBackupOrder(t *testing.T) {
+	t.Helper()
 	for _, editBefore := range []bool{false, true} {
 		f := newFixture(t)
 		entered, release := concurrentBarrier(t, f)
@@ -369,6 +374,7 @@ func (o *killObserver) Update(_ context.Context, flows []flow.Flow) error {
 }
 
 func testKillActions(t *testing.T, ordering bool) {
+	t.Helper()
 	cases := []struct {
 		body   string
 		backup bool
@@ -392,6 +398,7 @@ func testKillActions(t *testing.T, ordering bool) {
 }
 
 func testKillPrecedence(t *testing.T) {
+	t.Helper()
 	tests := map[string]struct{ body string }{
 		"message assignment": {"f.error.msg = 'Connection killed.'"},
 		"error assignment":   {"g = f.copy()\ng.error.msg = 'Connection killed.'\nf.error = g.error"},

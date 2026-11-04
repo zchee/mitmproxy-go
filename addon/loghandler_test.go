@@ -211,7 +211,7 @@ func TestLogHandlerOverflow(t *testing.T) {
 	close(c.started)
 
 	got := c.got()
-	var msgs []string
+	msgs := make([]string, 0, len(got))
 	for _, e := range got {
 		_, msg, _ := strings.Cut(e.Msg, "] ")
 		msgs = append(msgs, msg)
@@ -404,8 +404,9 @@ func TestLogHandlerTrailingDrops(t *testing.T) {
 				closeHandler(t, h)
 			}
 
-			var msgs []string
-			for _, e := range c.got() {
+			entries := c.got()
+			msgs := make([]string, 0, len(entries))
+			for _, e := range entries {
 				_, msg, _ := strings.Cut(e.Msg, "] ")
 				if count, ok := strings.CutPrefix(msg, "dropped "); ok && e.Level == slog.LevelWarn {
 					n, _, _ := strings.Cut(count, " ")

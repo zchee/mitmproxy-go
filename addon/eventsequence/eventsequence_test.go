@@ -113,18 +113,27 @@ func TestIterate(t *testing.T) {
 		want []string
 	}{
 		"success: http request and response": {
-			flow: func(t *testing.T) flow.Flow { return httpFlow(t, true, false, false) },
+			flow: func(t *testing.T) flow.Flow {
+				t.Helper()
+				return httpFlow(t, true, false, false)
+			},
 			want: []string{"requestheaders", "request", "responseheaders", "response"},
 		},
 		"success: http websocket takes precedence over error": {
-			flow: func(t *testing.T) flow.Flow { return httpFlow(t, true, true, true) },
+			flow: func(t *testing.T) flow.Flow {
+				t.Helper()
+				return httpFlow(t, true, true, true)
+			},
 			want: []string{
 				"requestheaders", "request", "responseheaders", "response",
 				"websocket_start", "websocket_message", "websocket_message", "websocket_message", "websocket_end",
 			},
 		},
 		"success: http error without response": {
-			flow: func(t *testing.T) flow.Flow { return httpFlow(t, false, false, true) },
+			flow: func(t *testing.T) flow.Flow {
+				t.Helper()
+				return httpFlow(t, false, false, true)
+			},
 			want: []string{"requestheaders", "request", "error"},
 		},
 		"success: http flow without request": {
@@ -192,7 +201,10 @@ func TestIterateMessages(t *testing.T) {
 		want [][]string
 	}{
 		"success: websocket": {
-			flow: func(t *testing.T) flow.Flow { return httpFlow(t, true, true, false) },
+			flow: func(t *testing.T) flow.Flow {
+				t.Helper()
+				return httpFlow(t, true, true, false)
+			},
 			want: [][]string{{}, {"hello"}, {"hello", "hi"}, {"hello", "hi", "\x00\x01"}, {"hello", "hi", "\x00\x01"}},
 		},
 		"success: tcp": {
@@ -279,7 +291,7 @@ func TestAllFlowHooksThroughManager(t *testing.T) {
 			}
 		}
 
-		var want []string
+		want := make([]string, 0, 2*len(events))
 		for _, e := range events {
 			want = append(want, e, "update")
 		}

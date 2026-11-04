@@ -143,7 +143,7 @@ func TestHookTable(t *testing.T) {
 	if len(want) != 46 {
 		t.Fatalf("the expected list has %d hooks, want mitmproxy's 46", len(want))
 	}
-	var got []string
+	got := make([]string, 0, len(hookSpecs))
 	for _, s := range hookSpecs {
 		got = append(got, s.hook.Name())
 		if n := s.handler.NumMethod(); n != 1 {
@@ -937,6 +937,7 @@ func TestConcurrentRefusedInSyncHooks(t *testing.T) {
 		"error: configure fired through InvokeSync": {
 			probe: "configure",
 			fire: func(t *testing.T, e *testEnv, p *syncProbe) error {
+				t.Helper()
 				return e.m.InvokeSync(t.Context(), p, ConfigureHook{Updated: map[string]struct{}{"probe_flag": {}}})
 			},
 			wantMsg: "configure",
@@ -944,6 +945,7 @@ func TestConcurrentRefusedInSyncHooks(t *testing.T) {
 		"error: done fired through InvokeSync": {
 			probe: "done",
 			fire: func(t *testing.T, e *testEnv, p *syncProbe) error {
+				t.Helper()
 				return e.m.InvokeSync(t.Context(), p, DoneHook{})
 			},
 			wantMsg: "done",
@@ -951,6 +953,7 @@ func TestConcurrentRefusedInSyncHooks(t *testing.T) {
 		"error: done of Remove": {
 			probe: "done",
 			fire: func(t *testing.T, e *testEnv, p *syncProbe) error {
+				t.Helper()
 				return e.m.Remove(t.Context(), p)
 			},
 			wantMsg: "done",
@@ -1483,12 +1486,14 @@ func TestConcurrentRefusedInCommand(t *testing.T) {
 	}{
 		"error: command registry Call from outside the hooks": {
 			call: func(t *testing.T, m *Manager) error {
+				t.Helper()
 				_, err := m.Commands().Call(t.Context(), "probe.release")
 				return err
 			},
 		},
 		"error: command registry Call from a hook with its context": {
 			call: func(t *testing.T, m *Manager) error {
+				t.Helper()
 				c := &directReleasingCaller{cmds: m.Commands()}
 				if err := m.Add(t.Context(), c); err != nil {
 					return err
@@ -1501,12 +1506,14 @@ func TestConcurrentRefusedInCommand(t *testing.T) {
 		},
 		"error: Call from outside the hooks": {
 			call: func(t *testing.T, m *Manager) error {
+				t.Helper()
 				_, err := m.Call(t.Context(), "probe.release")
 				return err
 			},
 		},
 		"error: Call re-entered from a hook": {
 			call: func(t *testing.T, m *Manager) error {
+				t.Helper()
 				c := &releasingCaller{m: m}
 				if err := m.Add(t.Context(), c); err != nil {
 					return err
@@ -1716,11 +1723,13 @@ func TestLoadHookWithoutLoader(t *testing.T) {
 	}{
 		"error: InvokeSync returns the refusal": {
 			fire: func(t *testing.T, e *testEnv, a *loaderUser) error {
+				t.Helper()
 				return e.m.InvokeSync(t.Context(), a, LoadHook{})
 			},
 		},
 		"error: Trigger logs the refusal instead of a panic": {
 			fire: func(t *testing.T, e *testEnv, a *loaderUser) error {
+				t.Helper()
 				if err := e.m.Add(t.Context(), a); err != nil {
 					t.Fatalf("Add: %v", err)
 				}

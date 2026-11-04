@@ -313,8 +313,9 @@ func TestConcurrentInFlowHook(t *testing.T) {
 		t.Errorf("Concurrent in a request hook dispatched with Hook: %v", err)
 	}
 
-	var order []string
-	for _, c := range r.Calls() {
+	calls := r.Calls()
+	order := make([]string, 0, len(calls))
+	for _, c := range calls {
 		var f *flow.HTTPFlow
 		if c.Hook == "update" {
 			f = c.Arg.([]flow.Flow)[0].(*flow.HTTPFlow)

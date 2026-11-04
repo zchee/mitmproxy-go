@@ -5,6 +5,7 @@ package script
 
 import (
 	"context"
+	"net/http"
 	"net/netip"
 	"strings"
 	"testing"
@@ -36,6 +37,7 @@ func (f *scriptFixture) requestScript(body string) {
 func TestScriptBindings(t *testing.T) {
 	tests := map[string]struct{ run func(*testing.T) }{
 		"flow": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("f.comment = f.id\nf.marked = \"!\"\nf.is_replay = \"request\"\nf.intercept()\nif not f.intercepted:\n    fail(\"intercept failed\")\nf.resume()\nif f.intercepted or not f.live:\n    fail(\"resume/live changed\")")
 			x := f.request()
@@ -45,12 +47,13 @@ func TestScriptBindings(t *testing.T) {
 			}
 		}},
 		"http_request": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("f.request.host = \"rewritten.test\"\nf.request.port = 8443\nf.request.scheme = \"https\"\nf.request.method = \"POST\"\nf.request.path = \"/changed\"\nf.request.content = b\"payload\"")
 			x := f.request()
 			f.hook(addon.RequestHook{Flow: x})
 			r := x.Request
-			if r.Host != "rewritten.test" || r.Port != 8443 || r.Path != "/changed" || r.Method != "POST" || r.Scheme != "https" || string(r.RawContent) != "payload" || r.Headers.Get("Content-Length") != "7" {
+			if r.Host != "rewritten.test" || r.Port != 8443 || r.Path != "/changed" || r.Method != http.MethodPost || r.Scheme != "https" || string(r.RawContent) != "payload" || r.Headers.Get("Content-Length") != "7" {
 				t.Fatalf("request setters failed: %#v; %s", r, f.logs.String())
 			}
 			if host, _ := r.HostHeader(); !strings.Contains(host, "rewritten.test") {
@@ -58,6 +61,7 @@ func TestScriptBindings(t *testing.T) {
 			}
 		}},
 		"http_response": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("f.response.status_code = 201\nf.response.reason = \"Created\"\nf.response.content = b\"\\x00\\xff\"\nf.response.stream = True")
 			x := f.request()
@@ -67,11 +71,12 @@ func TestScriptBindings(t *testing.T) {
 			}
 			x.Response = r
 			f.hook(addon.RequestHook{Flow: x})
-			if r.StatusCode != 201 || r.Reason != "Created" || !r.Stream || gocmp.Diff([]byte{0, 255}, r.RawContent) != "" {
+			if r.StatusCode != http.StatusCreated || r.Reason != "Created" || !r.Stream || gocmp.Diff([]byte{0, 255}, r.RawContent) != "" {
 				t.Fatalf("response fields failed: %#v; %s", r, f.logs.String())
 			}
 		}},
 		"headers": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("h = f.request.headers\nif h[\"x-a\"] != \"one, two\" or len(h) != 2:\n    fail(\"folding/unique keys\")\nif h.get_all(\"X-A\") != [\"one\", \"two\"]:\n    fail(\"duplicates lost\")\nh[\"x-a\"] = \"replacement\"\nh.set_all(\"X-B\", [\"first\", \"second\"])\nif len(h.items(multi=True)) != 3:\n    fail(\"multi items lost\")\nh.pop(\"x-b\")\nif h.get(\"missing\", \"fallback\") != \"fallback\":\n    fail(\"missing get\")")
 			x := f.request()
@@ -84,6 +89,7 @@ func TestScriptBindings(t *testing.T) {
 			f.wantLog("Addon error:", 0)
 		}},
 		"client_conn": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("f.client_conn.error = \"denied\"\nf.client_conn.sni = \"example.test\"\nif f.client_conn.peername != (\"127.0.0.1\", 1234):\n    fail(\"peer tuple\")")
 			x := f.request()
@@ -94,6 +100,7 @@ func TestScriptBindings(t *testing.T) {
 			}
 		}},
 		"server_conn": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("f.server_conn.address = (\"rewritten.test\", 443)\nf.server_conn.error = \"probe\"\nf.server_conn.tls = True")
 			x := f.request()
@@ -104,6 +111,7 @@ func TestScriptBindings(t *testing.T) {
 			}
 		}},
 		"websocket": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("m = f.websocket.messages[-1]\nif not byteops.startswith(m.content, b\"Hello\"):\n    fail(\"bytes prefix\")\nm.content = byteops.replace(m.content, b\"Hello\", b\"HAPPY\")\nm.drop()\nf.websocket.close_reason = \"script\"\nf.websocket.close_code = 1000")
 			x := f.request()
@@ -115,6 +123,7 @@ func TestScriptBindings(t *testing.T) {
 			}
 		}},
 		"tcp": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.load(f.file("tcp.star", "def tcp_message(f):\n    m = f.messages[-1]\n    m.content = byteops.replace(m.content, b\"foo\", b\"bar\")\n    f.messages.append(m.copy())\n"))
 			x := flow.NewTCPFlow(nil, nil, true)
@@ -125,6 +134,7 @@ func TestScriptBindings(t *testing.T) {
 			}
 		}},
 		"udp": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.load(f.file("udp.star", "def udp_message(f):\n    f.messages[-1].content = b\"\\x00\\xff\"\n    f.messages[-1].from_client = False\n    f.messages.append(f.messages[-1].copy())\n"))
 			x := flow.NewUDPFlow(nil, nil, true)
@@ -135,6 +145,7 @@ func TestScriptBindings(t *testing.T) {
 			}
 		}},
 		"dns": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.load(f.file("dns.star", "def dns_request(f):\n    if f.request.question.name != \"example.test\":\n        fail(\"question missing\")\n    f.response = f.request.fail(dns.response_codes.NXDOMAIN)\n"))
 			x := flow.NewDNSFlow(nil, nil, true)
@@ -145,6 +156,7 @@ func TestScriptBindings(t *testing.T) {
 			}
 		}},
 		"error": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("if f.error.msg != \"before\":\n    fail(\"error wrapper\")\nf.error.msg = \"after\"")
 			x := f.request()
@@ -155,6 +167,7 @@ func TestScriptBindings(t *testing.T) {
 			}
 		}},
 		"metadata": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("f.metadata = {\"counter\": 1, \"binary\": b\"\\xff\", \"nested\": [True, None]}\nf.metadata[\"counter\"] = 2\nif f.metadata[\"nested\"] != [True, None]:\n    fail(\"metadata conversion\")")
 			x := f.request()
@@ -166,6 +179,7 @@ func TestScriptBindings(t *testing.T) {
 			f.wantLog("Addon error:", 0)
 		}},
 		"copy_backup_revert": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("copy = f.copy()\nif copy.id == f.id or copy.live:\n    fail(\"copy identity/live\")\nf.backup()\nf.request.path = \"/changed\"\nif not f.modified():\n    fail(\"backup not observed\")\nf.revert()\nif f.modified():\n    fail(\"backup not cleared\")\nf.comment = copy.id")
 			x := f.request()
@@ -177,6 +191,7 @@ func TestScriptBindings(t *testing.T) {
 			f.wantLog("Addon error:", 0)
 		}},
 		"invalid_assignment": {func(t *testing.T) {
+			t.Helper()
 			for _, body := range []string{"f.request.port = 18446744073709551616", "f.request.content = \"not bytes\"", "f.request.headers.set_all(\"X-A\", [\"good\", 1])", "f.request.port = -1"} {
 				f := newFixture(t)
 				f.requestScript(body)
@@ -190,6 +205,7 @@ func TestScriptBindings(t *testing.T) {
 			}
 		}},
 		"bytes_ownership": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.load(f.file("bytes.star", "state = {}\ndef request(f):\n    if \"saved\" not in state:\n        state[\"saved\"] = f.request.content\n    else:\n        f.request.content = state[\"saved\"]\n"))
 			x := f.request()
@@ -205,9 +221,11 @@ func TestScriptBindings(t *testing.T) {
 			}
 		}},
 		"retained_handle_lifetime": {func(t *testing.T) {
+			t.Helper()
 			testRetainedHandleLifetime(t)
 		}},
 		"form": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("f.request.urlencoded_form[\"mitmproxy\"] = \"rocks\"\nf.request.urlencoded_form[\"other\"] = \"space value\"")
 			x := f.request()
@@ -217,6 +235,7 @@ func TestScriptBindings(t *testing.T) {
 			}
 		}},
 		"query": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("f.request.query[\"Key\"] = \"upper\"\nf.request.query[\"key\"] = \"lower\"\nif len(f.request.query) != 2:\n    fail(\"query is case-sensitive\")")
 			x := f.request()
@@ -226,6 +245,7 @@ func TestScriptBindings(t *testing.T) {
 			}
 		}},
 		"response_make": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.requestScript("f.response = http.Response.make(200, b\"Hello World\\xff\", {\"Content-Type\": \"text/plain\"})\nf.response.trailers = http.Headers([(b\"X-Trailer\", b\"present\")])")
 			x := f.request()
@@ -235,6 +255,7 @@ func TestScriptBindings(t *testing.T) {
 			}
 		}},
 		"dns_records": {func(t *testing.T) {
+			t.Helper()
 			f := newFixture(t)
 			f.load(f.file("records.star", "def dns_request(f):\n    record = dns.ResourceRecord.AAAA(f.request.question.name, \"::1\", ttl=60)\n    f.response = f.request.succeed([record])\n    if f.response.answers[0].ipv6_address != \"::1\":\n        fail(\"record address\")\n"))
 			x := flow.NewDNSFlow(nil, nil, true)

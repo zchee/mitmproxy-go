@@ -87,7 +87,7 @@ func testWebAuthPolicy(t *testing.T) {
 		"same_site":                        {method: "PUT", path: "/flows/42", authorization: "Bearer route-test", xsrf: "valid", site: "same-site", status: 403},
 		"same_origin":                      {method: "PUT", path: "/flows/42", authorization: "Bearer route-test", xsrf: "valid", site: "same-origin", status: 200},
 		"bad_bearer_blocks_query_fallback": {method: "GET", path: "/flows?token=route-test", authorization: "Bearer wrong", status: 403},
-		"static_is_public":                 {method: "GET", path: "/static/index-Be7e-cwP.js", status: 200},
+		"static_is_public":                 {method: "GET", path: "/static/index-DA3bdZbQ.js", status: 200},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

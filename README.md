@@ -19,7 +19,8 @@ These are comparison baselines, not a claim of complete behavioural catch-up. Re
 and [deferred differences](docs/compat.md#deferred-differences-against-mitmproxy-1231-and-mitmproxy_rs-01215)
 remain documented separately. The Python differential oracle and its active fixture generators use `v12.3.1`.
 The option manifest contains 117 projected names: comparisons exclude exactly `emudhra` and `emudhra_old`, whose
-features remain unimplemented. Historical fixture-production revisions and the older embedded web assets are retained.
+features remain unimplemented. Historical fixture-production revisions are retained; the embedded mitmweb frontend
+is the `v12.3.1` build.
 
 ## Status
 

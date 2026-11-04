@@ -24,7 +24,7 @@ import (
 var assets embed.FS
 
 // The pinned commit time makes validators reproducible despite embed's zero mtimes.
-var assetModified = time.Unix(1791038697, 0).UTC()
+var assetModified = time.Unix(1792970709, 0).UTC()
 
 var loginPage = template.Must(template.ParseFS(assets, "templates/login.html"))
 

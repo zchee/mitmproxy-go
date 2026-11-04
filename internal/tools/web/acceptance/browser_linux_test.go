@@ -448,8 +448,8 @@ func recordBrowserAssets(t *testing.T, tuple webInputTuple, write func(string, [
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 10 {
-		t.Fatalf("frontend static count=%d, want 10", len(entries))
+	if len(entries) != 4 {
+		t.Fatalf("frontend static count=%d, want 4", len(entries))
 	}
 	files := map[string]string{"/": "mitmproxy/tools/web/index.html"}
 	for _, entry := range entries {

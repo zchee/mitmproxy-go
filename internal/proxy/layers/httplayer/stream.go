@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -155,7 +156,7 @@ func (s *httpStream) requestHeaders(ctx context.Context, event RequestHeaders) (
 		}
 		return s.fail(ctx, message, RequestValidationFailed)
 	}
-	if event.Request.Method == "CONNECT" {
+	if event.Request.Method == http.MethodConnect {
 		return s.handleConnect(ctx, event)
 	}
 	// The cleartext preface remains visible to request hooks, so the default
@@ -240,7 +241,7 @@ func (s *httpStream) responseHeaders(ctx context.Context, event ResponseHeaders)
 	if !s.requestSent || s.response.headers || event.Response == nil {
 		return streamOutput{}, fmt.Errorf("HTTP stream %d received invalid response headers", s.id)
 	}
-	if event.Response.StatusCode == 101 {
+	if event.Response.StatusCode == http.StatusSwitchingProtocols {
 		s.upgrade.serverResponse = event.Response.Clone()
 	}
 	if s.route.validateInboundHeaders {
@@ -269,7 +270,7 @@ func (s *httpStream) responseHeaders(ctx context.Context, event ResponseHeaders)
 			}, nil
 		}
 	}
-	if event.Response.StatusCode >= 100 && event.Response.StatusCode < 200 && event.Response.StatusCode != 101 {
+	if event.Response.StatusCode >= 100 && event.Response.StatusCode < 200 && event.Response.StatusCode != http.StatusSwitchingProtocols {
 		return streamOutput{events: []Event{event}}, nil
 	}
 	s.response.headers = true

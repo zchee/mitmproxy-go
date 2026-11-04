@@ -255,7 +255,7 @@ func TestHTTP3DefaultHandlerPairing(t *testing.T) {
 					}
 				} else {
 					write(t, client.(*net.TCPConn), "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 3\r\n\r\nabc")
-					response, err := http.ReadResponse(bufio.NewReader(client), &http.Request{Method: "POST"})
+					response, err := http.ReadResponse(bufio.NewReader(client), &http.Request{Method: http.MethodPost})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -264,7 +264,7 @@ func TestHTTP3DefaultHandlerPairing(t *testing.T) {
 						t.Fatal(err)
 					}
 					_ = response.Body.Close()
-					if response.StatusCode != 200 {
+					if response.StatusCode != http.StatusOK {
 						t.Fatal("default Handler response:", response.StatusCode)
 					}
 				}

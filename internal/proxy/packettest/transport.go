@@ -57,12 +57,12 @@ func NewPair(ctx context.Context, left, right netip.AddrPort) (*Transport, *Tran
 		return nil, nil, errors.New("packettest: pair requires distinct valid UDP identities with nonzero ports")
 	}
 	pair := &packetPair{changed: make(chan struct{})}
-	a := &Transport{pair: pair, local: left, parentDone: make(chan struct{})}
-	b := &Transport{pair: pair, local: right, parentDone: make(chan struct{})}
+	a := &Transport{pair: pair, local: left, parent: ctx, parentDone: make(chan struct{})}
+	b := &Transport{pair: pair, local: right, parent: ctx, parentDone: make(chan struct{})}
 	a.peer, b.peer = b, a
 	for _, p := range []*Transport{a, b} {
-		p.parent = ctx
-		p.ctx, p.cancel = context.WithCancelCause(context.WithoutCancel(ctx))
+		peerCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+		p.ctx, p.cancel = peerCtx, cancel
 		p.stopParent = context.AfterFunc(ctx, func() {
 			defer close(p.parentDone)
 			p.pair.mu.Lock()

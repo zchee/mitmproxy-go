@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -217,7 +218,7 @@ func TestHTTP1KeepAliveBuffer(t *testing.T) {
 				}
 				got := <-next
 				head, ok := got.event.(RequestHeaders)
-				if got.err != nil || !ok || head.ID != 3 || head.Request.Method != "POST" || endpoint.done() {
+				if got.err != nil || !ok || head.ID != 3 || head.Request.Method != http.MethodPost || endpoint.done() {
 					t.Fatalf("same-connection next request: event=%#v error=%v done=%t", got.event, got.err, endpoint.done())
 				}
 				var receivedBody strings.Builder

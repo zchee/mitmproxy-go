@@ -41,7 +41,7 @@ func AssembleResponseHead(response *httpmsg.Response, original *ResponseHead, ad
 
 func requestLine(r *httpmsg.Request) []byte {
 	target := r.Path
-	if strings.ToUpper(r.Method) == "CONNECT" {
+	if strings.EqualFold(r.Method, "CONNECT") {
 		target = r.Authority
 	} else if r.Authority != "" {
 		target = r.Scheme + "://" + r.Authority + r.Path

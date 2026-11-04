@@ -225,7 +225,7 @@ func (s *http2Stream) send(ctx context.Context, event Event) error {
 		status, respond := event.Code.HTTPStatusCode()
 		if !s.sentHeaders && respond {
 			body := formatError(status, event.Message, event.Cause)
-			if err := s.engine.Send(ctx, h2.Event{Kind: h2.Headers, Identity: s.identity, Headers: []hpack.HeaderField{{Name: ":status", Value: fmt.Sprint(status)}, {Name: "server", Value: version.String()}, {Name: "content-type", Value: "text/html"}}}); err != nil {
+			if err := s.engine.Send(ctx, h2.Event{Kind: h2.Headers, Identity: s.identity, Headers: []hpack.HeaderField{{Name: ":status", Value: strconv.Itoa(status)}, {Name: "server", Value: version.String()}, {Name: "content-type", Value: "text/html"}}}); err != nil {
 				return err
 			}
 			s.sentHeaders, s.sentEnd = true, true

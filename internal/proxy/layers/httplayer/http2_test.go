@@ -6,6 +6,7 @@ package httplayer
 import (
 	"context"
 	"net"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -81,7 +82,7 @@ func TestHTTP2ClientEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	headers, ok := event.(ResponseHeaders)
-	if !ok || headers.ID != 42 || headers.Response.HTTPVersion != "HTTP/2.0" || headers.Response.StatusCode != 200 {
+	if !ok || headers.ID != 42 || headers.Response.HTTPVersion != "HTTP/2.0" || headers.Response.StatusCode != http.StatusOK {
 		t.Fatalf("response head = %#v", event)
 	}
 	if diff := gocmp.Diff([]string{"one", "two"}, headers.Response.Headers.GetAll("x-test")); diff != "" {

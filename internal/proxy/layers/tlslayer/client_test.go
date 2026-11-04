@@ -354,6 +354,7 @@ func TestClientTLSBuild(t *testing.T) {
 
 func TestClientTLSConformance(t *testing.T) {
 	layertest.Conformance(t, func(t *testing.T) layertest.Session {
+		t.Helper()
 		config, peerConfig := tlsConfigs(t)
 		s := newClientSession(t, &clientObserver{config: config})
 		s.c.Server = proxy.Record(s.raw)

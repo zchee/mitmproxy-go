@@ -108,12 +108,12 @@ func TestH2CUpgradePreservesStreamOneAndHooks(t *testing.T) {
 				t.Fatal(err)
 			}
 			buffered := bufio.NewReader(conn)
-			response, err := http.ReadResponse(buffered, &http.Request{Method: "POST"})
+			response, err := http.ReadResponse(buffered, &http.Request{Method: http.MethodPost})
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !tt.upgrade {
-				if response.StatusCode == 101 {
+				if response.StatusCode == http.StatusSwitchingProtocols {
 					t.Fatal("ineligible request was upgraded")
 				}
 				body, err := io.ReadAll(response.Body)
@@ -123,12 +123,12 @@ func TestH2CUpgradePreservesStreamOneAndHooks(t *testing.T) {
 				if err := response.Body.Close(); err != nil {
 					t.Fatal(err)
 				}
-				if tt.size > h2.InitialStreamWindow && (response.StatusCode != 200 || string(body) != "/upgrade:"+strconv.Itoa(tt.size)) {
+				if tt.size > h2.InitialStreamWindow && (response.StatusCode != http.StatusOK || string(body) != "/upgrade:"+strconv.Itoa(tt.size)) {
 					t.Fatalf("oversized fallback = %d %q", response.StatusCode, body)
 				}
 				return
 			}
-			if response.StatusCode != 101 {
+			if response.StatusCode != http.StatusSwitchingProtocols {
 				t.Fatalf("upgrade response = %d", response.StatusCode)
 			}
 			framer := http2.NewFramer(conn, buffered)

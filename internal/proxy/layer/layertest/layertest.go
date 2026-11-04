@@ -80,7 +80,7 @@ func Conformance(t *testing.T, setup func(*testing.T) Session) {
 			if tt.replay {
 				// One-byte reads model a fragmented sniff without hiding bytes
 				// in a bufio.Reader that the child cannot access.
-				for i := range len(out) {
+				for i := range out {
 					var b [1]byte
 					if _, err := io.ReadFull(input, b[:]); err != nil {
 						fail(t, "record prefix", err)
@@ -131,20 +131,20 @@ func Conformance(t *testing.T, setup func(*testing.T) Session) {
 	}
 }
 
-func fail(t testing.TB, what string, err error) {
-	t.Helper()
+func fail(tb testing.TB, what string, err error) {
+	tb.Helper()
 	buf := make([]byte, 1<<20)
 	n := runtime.Stack(buf, true)
-	t.Fatalf("%s: %v\n%s", what, err, buf[:n])
+	tb.Fatalf("%s: %v\n%s", what, err, buf[:n])
 }
 
-func receive[T any](t testing.TB, ch <-chan T) T {
-	t.Helper()
+func receive[T any](tb testing.TB, ch <-chan T) T {
+	tb.Helper()
 	select {
 	case v := <-ch:
 		return v
 	case <-time.After(Timeout):
-		fail(t, "wait", context.DeadlineExceeded)
+		fail(tb, "wait", context.DeadlineExceeded)
 	}
 	var zero T
 	return zero
@@ -152,11 +152,11 @@ func receive[T any](t testing.TB, ch <-chan T) T {
 
 // NoDirectHooks rejects direct manager dispatch in non-test source files of
 // the working package. It checks syntax, so comments and strings are ignored.
-func NoDirectHooks(t testing.TB) {
-	t.Helper()
+func NoDirectHooks(tb testing.TB) {
+	tb.Helper()
 	entries, err := os.ReadDir(".")
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	for _, entry := range entries {
 		name := entry.Name()
@@ -166,7 +166,7 @@ func NoDirectHooks(t testing.TB) {
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, filepath.Clean(name), nil, 0)
 		if err != nil {
-			t.Fatal(err)
+			tb.Fatal(err)
 		}
 		ast.Inspect(file, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
@@ -175,7 +175,7 @@ func NoDirectHooks(t testing.TB) {
 			}
 			sel, ok := call.Fun.(*ast.SelectorExpr)
 			if ok && (sel.Sel.Name == "Hook" || sel.Sel.Name == "HookFunc") {
-				t.Errorf("%s: layer must dispatch through Hooks.Fire or Hooks.FireFunc", fset.Position(sel.Pos()))
+				tb.Errorf("%s: layer must dispatch through Hooks.Fire or Hooks.FireFunc", fset.Position(sel.Pos()))
 			}
 			return true
 		})
@@ -184,11 +184,11 @@ func NoDirectHooks(t testing.TB) {
 
 // Pipe returns a real TCP socket pair with working half-close semantics.
 // Both endpoints have generous hang-detector deadlines and close in cleanup.
-func Pipe(t testing.TB) (a, b layer.Conn) {
-	t.Helper()
+func Pipe(tb testing.TB) (a, b layer.Conn) {
+	tb.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	defer func() { _ = listener.Close() }()
 	type result struct {
@@ -199,17 +199,17 @@ func Pipe(t testing.TB) (a, b layer.Conn) {
 	go func() { c, err := listener.Accept(); accepted <- result{c, err} }()
 	dialed, err := net.DialTimeout("tcp", listener.Addr().String(), Timeout)
 	if err != nil {
-		fail(t, "dial", err)
+		fail(tb, "dial", err)
 	}
-	t.Cleanup(func() { _ = dialed.Close() })
-	acc := receive(t, accepted)
+	tb.Cleanup(func() { _ = dialed.Close() })
+	acc := receive(tb, accepted)
 	if acc.err != nil {
-		fail(t, "accept", acc.err)
+		fail(tb, "accept", acc.err)
 	}
-	t.Cleanup(func() { _ = acc.conn.Close() })
+	tb.Cleanup(func() { _ = acc.conn.Close() })
 	for _, c := range []net.Conn{dialed, acc.conn} {
 		if err := c.SetDeadline(time.Now().Add(Timeout)); err != nil {
-			fail(t, "set deadline", err)
+			fail(tb, "set deadline", err)
 		}
 	}
 	return dialed.(*net.TCPConn), acc.conn.(*net.TCPConn)

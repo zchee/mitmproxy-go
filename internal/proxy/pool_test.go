@@ -80,11 +80,11 @@ func (d *poolDialer) dial(ctx context.Context, srv *connection.Server) (layer.Co
 	return memoryConn{Conn: a, input: a}, nil
 }
 
-// peer returns the remote end of the i-th dialed transport.
-func (d *poolDialer) peer(i int) net.Conn {
+// peer returns the remote end of the first dialed transport.
+func (d *poolDialer) peer() net.Conn {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.peers[i]
+	return d.peers[0]
 }
 
 func (d *poolDialer) count() int {
@@ -466,7 +466,7 @@ func TestPoolRetire(t *testing.T) {
 			read := make(chan string, 1)
 			go func() {
 				var body [8]byte
-				_, err := io.ReadFull(dialer.peer(0), body[:])
+				_, err := io.ReadFull(dialer.peer(), body[:])
 				if err != nil {
 					read <- err.Error()
 					return
@@ -543,7 +543,7 @@ func TestPoolSetupFailure(t *testing.T) {
 	if diff := gocmp.Diff(want, serverHooks(recorder)); diff != "" {
 		t.Errorf("hooks (-want +got):\n%s", diff)
 	}
-	if _, err := dialer.peer(0).Read(make([]byte, 1)); err == nil {
+	if _, err := dialer.peer().Read(make([]byte, 1)); err == nil {
 		t.Fatal("transport still open after failed setup")
 	}
 	if _, _, err := pool.Open(t.Context(), targetServer(), layer.OpenOptions{Reuse: true}); !errors.Is(err, setupErr) {
@@ -635,7 +635,7 @@ func TestPoolTracksTransportClose(t *testing.T) {
 	}
 	// The peer's half-close reaches the pool as EOF: the connection can no
 	// longer satisfy a new request, so reuse dials again instead.
-	if err := dialer.peer(0).Close(); err != nil {
+	if err := dialer.peer().Close(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := conn.Read(make([]byte, 1)); !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) {

@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -552,7 +553,7 @@ func TestServerTLSAlternateTarget(t *testing.T) {
 	}
 	if err := s.manager.Do(t.Context(), func(context.Context) error {
 		if s.c.Data.Server == target {
-			return fmt.Errorf("context server was replaced by the target")
+			return errors.New("context server was replaced by the target")
 		}
 		if !target.TLS || !target.TLSEstablished() {
 			return fmt.Errorf("target metadata not published: tls=%t established=%t", target.TLS, target.TLSEstablished())

@@ -122,6 +122,7 @@ func TestServerTLSPolicyAndSetupOrder(t *testing.T) {
 
 func TestServerTLSConformance(t *testing.T) {
 	layertest.Conformance(t, func(t *testing.T) layertest.Session {
+		t.Helper()
 		serverConfig, clientConfig := tlsConfigs(t)
 		s := newServerSession(t, &tlsObserver{config: clientConfig})
 		s.c.Server = proxy.Record(s.raw)

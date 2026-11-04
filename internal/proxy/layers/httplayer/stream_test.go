@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"sync/atomic"
 	"testing"
 
@@ -321,7 +322,7 @@ func TestStreamSyntheticResponseAndInformational(t *testing.T) {
 				}
 			} else {
 				info := ResponseHeaders{ID: 1, Response: &httpmsg.Response{HTTPVersion: "HTTP/1.1", StatusCode: 103}, EndStream: true}
-				if got := drainStream(t, s, info); len(got) != 1 || got[0].(ResponseHeaders).Response.StatusCode != 103 {
+				if got := drainStream(t, s, info); len(got) != 1 || got[0].(ResponseHeaders).Response.StatusCode != http.StatusEarlyHints {
 					t.Fatalf("informational output: %v", got)
 				}
 				drainStream(t, s, responseHead("0"))
@@ -396,7 +397,7 @@ func TestStreamExpectContinue(t *testing.T) {
 		t.Fatalf("continue output = %v, want one informational head", events)
 	}
 	response := events[0].(ResponseHeaders).Response
-	if response.StatusCode != 100 || response.Reason != "Continue" || len(response.Headers) != 0 {
+	if response.StatusCode != http.StatusContinue || response.Reason != "Continue" || len(response.Headers) != 0 {
 		t.Fatalf("continue response = %+v", response)
 	}
 	drainStream(t, s, RequestData{ID: 1, Data: []byte("abc")})

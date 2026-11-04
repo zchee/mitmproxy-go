@@ -177,12 +177,9 @@ func upstreamReceive[T any](t *testing.T, ctx context.Context, channel <-chan T)
 	}
 }
 
-func upstreamResponse(t *testing.T, stream *quic.Stream, status, body string) {
+func upstreamNoContent(t *testing.T, stream *quic.Stream) {
 	t.Helper()
-	h3test.WriteHeaders(t, stream, []qpack.HeaderField{{Name: ":status", Value: status}})
-	if body != "" {
-		h3test.WriteFrame(t, stream, 0, []byte(body))
-	}
+	h3test.WriteHeaders(t, stream, []qpack.HeaderField{{Name: ":status", Value: "204"}})
 	if err := stream.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +200,7 @@ func TestHTTP3UpstreamIgnorePush(t *testing.T) {
 		t.Fatal(err)
 	}
 	h3test.ReadMessage(t, origin)
-	upstreamResponse(t, origin, "204", "")
+	upstreamNoContent(t, origin)
 	h3test.ReadMessage(t, stream)
 	s.finish(t, "/no-push", []string{"requestheaders", "request", "responseheaders", "response"})
 	s.cancel()
@@ -269,7 +266,7 @@ func TestHTTP3UpstreamStreamConcurrency(t *testing.T) {
 	if fields[2].Value != "/second" || origin.StreamID() != 0 {
 		t.Fatalf("overtaking request = %v id=%d", fields, origin.StreamID())
 	}
-	upstreamResponse(t, origin, "204", "")
+	upstreamNoContent(t, origin)
 	h3test.ReadMessage(t, second)
 	s.finish(t, "/second", []string{"requestheaders", "request", "responseheaders", "response"})
 	if err := s.c.Do(s.ctx, func(context.Context) error { f.Resume(); return nil }); err != nil {
@@ -283,7 +280,7 @@ func TestHTTP3UpstreamStreamConcurrency(t *testing.T) {
 	if fields[2].Value != "/first" || origin.StreamID() != 4 {
 		t.Fatalf("resumed request = %v id=%d", fields, origin.StreamID())
 	}
-	upstreamResponse(t, origin, "204", "")
+	upstreamNoContent(t, origin)
 	h3test.ReadMessage(t, first)
 	s.finish(t, "/first", []string{"requestheaders", "request", "responseheaders", "response"})
 }
@@ -321,7 +318,7 @@ func TestHTTP3UpstreamKillStream(t *testing.T) {
 	if fields[2].Value != "/survivor" {
 		t.Fatalf("killed request reached origin: %v", fields)
 	}
-	upstreamResponse(t, origin, "204", "")
+	upstreamNoContent(t, origin)
 	h3test.ReadMessage(t, free)
 	s.finish(t, "/survivor", []string{"requestheaders", "request", "responseheaders", "response"})
 }
@@ -360,7 +357,7 @@ func TestHTTP3UpstreamEarlyServerData(t *testing.T) {
 	if fields[2].Value != "/early-settings" {
 		t.Fatalf("request after early settings = %v", fields)
 	}
-	upstreamResponse(t, origin, "204", "")
+	upstreamNoContent(t, origin)
 	h3test.ReadMessage(t, stream)
 	s.finish(t, "/early-settings", []string{"requestheaders", "request", "responseheaders", "response"})
 }
@@ -381,7 +378,7 @@ func TestHTTP3UpstreamCancelDuringResponseHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	h3test.ReadMessage(t, origin)
-	upstreamResponse(t, origin, "204", "")
+	upstreamNoContent(t, origin)
 	f := upstreamReceive(t, s.ctx, paused)
 	stream.CancelRead(quic.StreamErrorCode(h3.ErrCodeRequestCancelled))
 	stream.CancelWrite(quic.StreamErrorCode(h3.ErrCodeRequestCancelled))
@@ -494,7 +491,7 @@ func TestHTTP3UpstreamConcurrentAcquisition(t *testing.T) {
 			t.Fatal(err)
 		}
 		h3test.ReadMessage(t, stream)
-		upstreamResponse(t, stream, "204", "")
+		upstreamNoContent(t, stream)
 	}
 	h3test.ReadMessage(t, first)
 	h3test.ReadMessage(t, second)
@@ -626,7 +623,7 @@ func TestHTTP3UpstreamStopSending(t *testing.T) {
 				t.Fatal(err)
 			}
 			h3test.ReadMessage(t, origin)
-			upstreamResponse(t, origin, "204", "")
+			upstreamNoContent(t, origin)
 			h3test.ReadMessage(t, free)
 			s.finish(t, "/after-stop", []string{"requestheaders", "request", "responseheaders", "response"})
 		})

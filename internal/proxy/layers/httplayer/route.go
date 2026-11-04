@@ -5,6 +5,7 @@ package httplayer
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/zchee/mitmproxy-go/connection"
 	"github.com/zchee/mitmproxy-go/httpmsg"
@@ -44,7 +45,7 @@ func validateRequest(mode httpMode, request *httpmsg.Request, validateInboundHea
 	default:
 		return "Invalid request scheme: " + request.Scheme
 	}
-	if mode == modeTransparent && request.Method == "CONNECT" {
+	if mode == modeTransparent && request.Method == http.MethodConnect {
 		return "mitmproxy received an HTTP CONNECT request even though it is not running in " +
 			"regular/upstream mode. This usually indicates a misconfiguration, " +
 			"please see the mitmproxy mode documentation for details."

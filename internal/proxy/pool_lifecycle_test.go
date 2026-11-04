@@ -95,7 +95,7 @@ func TestPoolUpgradeFailureCached(t *testing.T) {
 	if _, ok := pool.Lookup(srv); ok {
 		t.Fatal("failed upgrade remained available")
 	}
-	if _, err := dialer.peer(0).Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+	if _, err := dialer.peer().Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
 		t.Fatalf("failed upgrade did not close the socket: %v", err)
 	}
 	if _, fresh, err := pool.Open(t.Context(), srv, layer.OpenOptions{}); err != nil || fresh == srv || fresh.ID == srv.ID {
@@ -117,40 +117,25 @@ func TestPoolRealHalfClose(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			closer, responder, wantState := conn, peer, connection.CanRead
 			if tt.peerFirst {
-				if err := peer.CloseWrite(); err != nil {
-					t.Fatal(err)
-				}
-				requireReplay(t, conn, []byte{})
-				if srv.State != connection.CanWrite {
-					t.Fatalf("state = %v, want can-write", srv.State)
-				}
-				written := make(chan error, 1)
-				go func() {
-					_, err := conn.Write([]byte("reply"))
-					written <- errors.Join(err, conn.CloseWrite())
-				}()
-				requireReplay(t, peer, []byte("reply"))
-				if err := await(t, written); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				if err := conn.CloseWrite(); err != nil {
-					t.Fatal(err)
-				}
-				requireReplay(t, peer, []byte{})
-				if srv.State != connection.CanRead {
-					t.Fatalf("state = %v, want can-read", srv.State)
-				}
-				written := make(chan error, 1)
-				go func() {
-					_, err := peer.Write([]byte("reply"))
-					written <- errors.Join(err, peer.CloseWrite())
-				}()
-				requireReplay(t, conn, []byte("reply"))
-				if err := await(t, written); err != nil {
-					t.Fatal(err)
-				}
+				closer, responder, wantState = peer, conn, connection.CanWrite
+			}
+			if err := closer.CloseWrite(); err != nil {
+				t.Fatal(err)
+			}
+			requireReplay(t, responder, []byte{})
+			if srv.State != wantState {
+				t.Fatalf("state = %v, want %v", srv.State, wantState)
+			}
+			written := make(chan error, 1)
+			go func() {
+				_, err := responder.Write([]byte("reply"))
+				written <- errors.Join(err, responder.CloseWrite())
+			}()
+			requireReplay(t, closer, []byte("reply"))
+			if err := await(t, written); err != nil {
+				t.Fatal(err)
 			}
 			if srv.State != connection.Closed || srv.TimestampEnd == nil {
 				t.Fatalf("fully closed server = %v", srv)

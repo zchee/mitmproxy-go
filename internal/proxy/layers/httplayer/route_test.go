@@ -15,9 +15,9 @@ import (
 	"github.com/zchee/mitmproxy-go/options"
 )
 
-func routeRequest(t *testing.T, method, target, version string, headers httpmsg.Headers) *httpmsg.Request {
+func routeRequest(t *testing.T, method, target string, headers httpmsg.Headers) *httpmsg.Request {
 	t.Helper()
-	request := &httpmsg.Request{Method: method, HTTPVersion: version, Headers: headers}
+	request := &httpmsg.Request{Method: method, HTTPVersion: "HTTP/1.1", Headers: headers}
 	if method == "CONNECT" {
 		request.Authority = target
 	} else {
@@ -48,11 +48,11 @@ func TestValidateRequest(t *testing.T) {
 		"success: plain request passes": {
 			mode:     modeRegular,
 			validate: true,
-			request:  routeRequest(t, "GET", "http://example.com/", "HTTP/1.1", nil),
+			request:  routeRequest(t, "GET", "http://example.com/", nil),
 		},
 		"success: smuggling candidate accepted when validation is off": {
 			mode: modeRegular,
-			request: routeRequest(t, "POST", "http://example.com/", "HTTP/1.1", httpmsg.Headers{
+			request: routeRequest(t, "POST", "http://example.com/", httpmsg.Headers{
 				{Name: []byte("Transfer-Encoding"), Value: []byte("chunked")},
 				{Name: []byte("Content-Length"), Value: []byte("3")},
 			}),
@@ -69,7 +69,7 @@ func TestValidateRequest(t *testing.T) {
 		"error: connect in transparent mode": {
 			mode:     modeTransparent,
 			validate: true,
-			request:  routeRequest(t, "CONNECT", "example.com:443", "HTTP/1.1", nil),
+			request:  routeRequest(t, "CONNECT", "example.com:443", nil),
 			want: "mitmproxy received an HTTP CONNECT request even though it is not running in " +
 				"regular/upstream mode. This usually indicates a misconfiguration, " +
 				"please see the mitmproxy mode documentation for details.",
@@ -77,7 +77,7 @@ func TestValidateRequest(t *testing.T) {
 		"error: ambiguous framing refused": {
 			mode:     modeRegular,
 			validate: true,
-			request: routeRequest(t, "POST", "http://example.com/", "HTTP/1.1", httpmsg.Headers{
+			request: routeRequest(t, "POST", "http://example.com/", httpmsg.Headers{
 				{Name: []byte("Transfer-Encoding"), Value: []byte("chunked")},
 				{Name: []byte("Content-Length"), Value: []byte("3")},
 			}),
@@ -131,7 +131,7 @@ func TestInboundValidationDefault(t *testing.T) {
 				t.Fatal(err)
 			}
 			route := l.(*httpLayer).exchangeRoute(c)
-			request := routeRequest(t, "POST", "http://example.com/", "HTTP/1.1", httpmsg.Headers{
+			request := routeRequest(t, "POST", "http://example.com/", httpmsg.Headers{
 				{Name: []byte("Transfer-Encoding"), Value: []byte("chunked")},
 				{Name: []byte("Content-Length"), Value: []byte("3")},
 			})
@@ -168,7 +168,7 @@ func TestNormalizeRequest(t *testing.T) {
 		"success: regular absolute form becomes origin form": {
 			route:   routeConfig{mode: modeRegular},
 			server:  &connection.Server{},
-			request: routeRequest(t, "GET", "http://example.com/x", "HTTP/1.1", nil),
+			request: routeRequest(t, "GET", "http://example.com/x", nil),
 			want: &httpmsg.Request{
 				Method: "GET", Scheme: "http", Host: "example.com", Port: 80,
 				Path: "/x", HTTPVersion: "HTTP/1.1",

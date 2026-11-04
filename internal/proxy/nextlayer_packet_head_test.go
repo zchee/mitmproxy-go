@@ -67,7 +67,7 @@ func TestNextPacketHeadDeadline(t *testing.T) {
 			}
 			clock.advance(time.Nanosecond)
 			result := await(t, done)
-			var timeout packetHeadTimeout
+			var timeout packetHeadTimeoutError
 			if !errors.As(result.err, &timeout) || !timeout.Timeout() || result.layer != nil {
 				t.Fatalf("expiry result = %+v", result)
 			}
@@ -100,7 +100,7 @@ func TestNextPacketHeadDeadlineDuringHook(t *testing.T) {
 	await(t, entered)
 	clock.advance(layer.HeadReadTimeout)
 	result := await(t, done)
-	var timeout packetHeadTimeout
+	var timeout packetHeadTimeoutError
 	if !errors.As(result.err, &timeout) || result.layer != nil {
 		t.Fatalf("in-hook expiry = %+v", result)
 	}

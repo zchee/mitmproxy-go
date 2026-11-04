@@ -121,33 +121,33 @@ func WithTrustedCA(ca *x509.Certificate) Option {
 
 // Start boots the proxy and returns once it accepts connections. Fatal
 // configuration, listen and certificate errors fail the test immediately.
-func Start(t testing.TB, opts ...Option) *Proxy {
-	t.Helper()
+func Start(tb testing.TB, opts ...Option) *Proxy {
+	tb.Helper()
 	cfg := &config{options: make(map[string]any), origins: make(map[string]*Origin)}
 	for _, opt := range opts {
 		opt(cfg)
 	}
 	for host, origin := range cfg.origins {
 		if !strings.HasSuffix(host, ".test") || origin == nil {
-			t.Fatalf("proxytest: WithOrigin requires a .test host and non-nil origin: %q", host)
+			tb.Fatalf("proxytest: WithOrigin requires a .test host and non-nil origin: %q", host)
 		}
 	}
-	confdir := t.TempDir()
+	confdir := tb.TempDir()
 	var startupErrors bytes.Buffer
 	check := errorcheck.New(errorcheck.Config{Stderr: &startupErrors, RepeatErrorsOnStderr: true})
 	logger := slog.New(check.LogHandler())
 	m := master.New(master.Config{Logger: logger})
-	lifetime, cancel := context.WithCancel(t.Context())
-	t.Cleanup(func() {
+	lifetime, cancel := context.WithCancel(tb.Context())
+	tb.Cleanup(func() {
 		cancel()
 		if err := m.Close(context.WithoutCancel(lifetime)); err != nil {
-			t.Error(err)
+			tb.Error(err)
 		}
 	})
 	if err := m.Do(lifetime, func(ctx context.Context) error {
 		return m.Options.Update(ctx, map[string]any{"confdir": confdir, "listen_host": "127.0.0.1", "listen_port": new(0)})
 	}); err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	recorder := &addontest.Recorder{}
 	var dialer layer.Dialer
@@ -161,59 +161,59 @@ func Start(t testing.TB, opts ...Option) *Proxy {
 		Logger: logger,
 	})
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	dialer = originDialer(cfg.origins, server.Dialer())
 	ready := &startup{ready: make(chan struct{}), check: check}
 	addons := append([]any{check, server, nextlayer.New(m.Options), tlsconfig.New(m.Options), recorder}, cfg.addons...)
 	addons = append(addons, ready)
 	if err := m.Addons.Add(lifetime, addons...); err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	values := map[string]any{"confdir": confdir, "listen_host": "127.0.0.1", "listen_port": new(int)}
-	if bundle := trustBundle(t, confdir, cfg); bundle != "" {
+	if bundle := trustBundle(tb, confdir, cfg); bundle != "" {
 		values["ssl_verify_upstream_trusted_ca"] = &bundle
 	}
 	maps.Copy(values, cfg.options)
 	if err := m.Do(lifetime, func(ctx context.Context) error { return m.Options.Update(ctx, values) }); err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	done := make(chan struct{})
 	var runErr error
 	go func() { runErr = m.Run(lifetime); close(done) }()
-	t.Cleanup(func() {
+	tb.Cleanup(func() {
 		cancel()
-		wait(t, done, "master shutdown")
+		wait(tb, done, "master shutdown")
 		if runErr != nil {
-			t.Errorf("proxytest: master failed: %v\n%s", runErr, startupErrors.String())
+			tb.Errorf("proxytest: master failed: %v\n%s", runErr, startupErrors.String())
 		}
 	})
 	select {
 	case <-ready.ready:
 	case <-done:
-		t.Fatalf("proxytest: master stopped before running: %v\n%s", runErr, startupErrors.String())
+		tb.Fatalf("proxytest: master stopped before running: %v\n%s", runErr, startupErrors.String())
 	case <-time.After(30 * time.Second):
-		failHang(t, "master startup")
+		failHang(tb, "master startup")
 	}
 	// Cross the dispatch barrier after the final running handler returned.
 	if err := m.Do(lifetime, func(context.Context) error { return nil }); err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	if err := check.ShutdownIfErrored(lifetime); err != nil {
 		cancel()
 		// Master may still be reporting the same error to the collector output.
-		wait(t, done, "failed master startup")
-		t.Fatalf("proxytest: startup failed: %v\n%s", err, startupErrors.String())
+		wait(tb, done, "failed master startup")
+		tb.Fatalf("proxytest: startup failed: %v\n%s", err, startupErrors.String())
 	}
 	confdir = m.Options.Str("confdir")
-	ca := readCA(t, confdir)
+	ca := readCA(tb, confdir)
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
 	var addr string
 	if addrs := server.ListenAddrs(); len(addrs) > 0 {
 		addr = addrs[0].String()
 	} else if m.Options.Bool("server") {
-		t.Fatal("proxytest: no listening address")
+		tb.Fatal("proxytest: no listening address")
 	}
 	return &Proxy{Addr: addr, Master: m, ConfDir: confdir, CA: ca, CAPool: pool, Recorder: recorder, Server: server}
 }
@@ -232,23 +232,23 @@ func (s *startup) Running(ctx context.Context) error {
 	return nil
 }
 
-func wait(t testing.TB, done <-chan struct{}, operation string) {
-	t.Helper()
+func wait(tb testing.TB, done <-chan struct{}, operation string) {
+	tb.Helper()
 	select {
 	case <-done:
 	case <-time.After(30 * time.Second):
-		failHang(t, operation)
+		failHang(tb, operation)
 	}
 }
 
-func failHang(t testing.TB, operation string) {
-	t.Helper()
+func failHang(tb testing.TB, operation string) {
+	tb.Helper()
 	buf := make([]byte, 1<<20)
-	t.Fatalf("proxytest: %s hung\n%s", operation, buf[:runtime.Stack(buf, true)])
+	tb.Fatalf("proxytest: %s hung\n%s", operation, buf[:runtime.Stack(buf, true)])
 }
 
-func trustBundle(t testing.TB, confdir string, cfg *config) string {
-	t.Helper()
+func trustBundle(tb testing.TB, confdir string, cfg *config) string {
+	tb.Helper()
 	seen := make(map[*x509.Certificate]bool)
 	var bundle []byte
 	add := func(ca *x509.Certificate) {
@@ -269,24 +269,24 @@ func trustBundle(t testing.TB, confdir string, cfg *config) string {
 	}
 	path := filepath.Join(confdir, "proxytest-trusted-ca.pem")
 	if err := os.WriteFile(path, bundle, 0o600); err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	return path
 }
 
-func readCA(t testing.TB, confdir string) *x509.Certificate {
-	t.Helper()
+func readCA(tb testing.TB, confdir string) *x509.Certificate {
+	tb.Helper()
 	raw, err := os.ReadFile(filepath.Join(confdir, options.ConfBasename+"-ca-cert.pem")) //nolint:gosec // The test chooses the configuration directory holding its generated public CA.
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	block, _ := pem.Decode(raw)
 	if block == nil {
-		t.Fatal("proxytest: CA file holds no PEM block")
+		tb.Fatal("proxytest: CA file holds no PEM block")
 	}
 	ca, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	return ca
 }
@@ -323,21 +323,21 @@ func originDialer(origins map[string]*Origin, dial layer.Dialer) layer.Dialer {
 // connection on its own goroutine. The handler owns the connection; the
 // origin closes it afterwards. The origin closes when the test ends, after
 // the running handlers have returned.
-func StartOrigin(t testing.TB, handler func(net.Conn)) *Origin {
-	t.Helper()
+func StartOrigin(tb testing.TB, handler func(net.Conn)) *Origin {
+	tb.Helper()
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
-	serve(t, listener, handler)
+	serve(tb, listener, handler)
 	return &Origin{Addr: listener.Addr().String()}
 }
 
 // StartEchoOrigin starts a plaintext origin that writes every received byte
 // back to its sender.
-func StartEchoOrigin(t testing.TB) *Origin {
-	t.Helper()
-	return StartOrigin(t, echo)
+func StartEchoOrigin(tb testing.TB) *Origin {
+	tb.Helper()
+	return StartOrigin(tb, echo)
 }
 
 func echo(conn net.Conn) {
@@ -359,17 +359,17 @@ func echo(conn net.Conn) {
 // leaf covering names, which may be DNS names or IP addresses. A nil handler
 // echoes. The handler receives the connection after the TLS handshake
 // configuration is attached; the handshake itself completes on first use.
-func StartTLSOrigin(t testing.TB, names []string, handler func(net.Conn)) *Origin {
-	t.Helper()
+func StartTLSOrigin(tb testing.TB, names []string, handler func(net.Conn)) *Origin {
+	tb.Helper()
 	if len(names) == 0 {
-		t.Fatal("proxytest: StartTLSOrigin requires at least one name")
+		tb.Fatal("proxytest: StartTLSOrigin requires at least one name")
 	}
 	if handler == nil {
 		handler = echo
 	}
 	caKey, ca, err := certs.CreateCA("mitmproxy-go proxytest", "proxytest origin CA", 2048)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	sans := make([]certs.GeneralName, 0, len(names))
 	for _, name := range names {
@@ -381,21 +381,21 @@ func StartTLSOrigin(t testing.TB, names []string, handler func(net.Conn)) *Origi
 	}
 	leaf, err := certs.DummyCert(caKey, ca, names[0], sans, "", "")
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{{Certificate: [][]byte{leaf.X509().Raw, ca.X509().Raw}, PrivateKey: caKey, Leaf: leaf.X509()}},
 	}
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
-	serve(t, listener, func(conn net.Conn) { handler(tls.Server(conn, tlsConfig)) })
+	serve(tb, listener, func(conn net.Conn) { handler(tls.Server(conn, tlsConfig)) })
 	return &Origin{Addr: listener.Addr().String(), CA: ca.X509(), Leaf: leaf.X509()}
 }
 
-func serve(t testing.TB, listener net.Listener, handler func(net.Conn)) {
-	t.Helper()
+func serve(tb testing.TB, listener net.Listener, handler func(net.Conn)) {
+	tb.Helper()
 	var mu sync.Mutex
 	closed := false
 	accepted := make(map[net.Conn]struct{})
@@ -425,7 +425,7 @@ func serve(t testing.TB, listener net.Listener, handler func(net.Conn)) {
 			})
 		}
 	})
-	t.Cleanup(func() {
+	tb.Cleanup(func() {
 		_ = listener.Close()
 		mu.Lock()
 		closed = true
@@ -435,6 +435,6 @@ func serve(t testing.TB, listener net.Listener, handler func(net.Conn)) {
 		mu.Unlock()
 		done := make(chan struct{})
 		go func() { workers.Wait(); close(done) }()
-		wait(t, done, "origin shutdown")
+		wait(tb, done, "origin shutdown")
 	})
 }

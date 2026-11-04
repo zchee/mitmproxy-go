@@ -106,6 +106,7 @@ func TestIgnoreHalfClose(t *testing.T) {
 // The ignore path replays recorded bytes and passes the shared conformance suite.
 func TestIgnoreConformance(t *testing.T) {
 	layertest.Conformance(t, func(t *testing.T) layertest.Session {
+		t.Helper()
 		s := newSession(t, nil)
 		return layertest.Session{
 			Client: s.client, Server: s.server,

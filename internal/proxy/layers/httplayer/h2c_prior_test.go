@@ -36,7 +36,7 @@ func TestH2CPriorKnowledgeWithoutDisableAddon(t *testing.T) {
 			}}
 			transport.Protocols.SetUnencryptedHTTP2(true)
 			t.Cleanup(transport.CloseIdleConnections)
-			request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://origin.test/cleartext", nil)
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://origin.test/cleartext", http.NoBody)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -4,6 +4,7 @@
 package modes
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
@@ -44,7 +45,7 @@ func configureReverse(c *layer.Context) (reverseScheme, error) {
 	}
 	reverse, ok := parsed.(modespec.ReverseMode)
 	if !ok {
-		return reverseScheme{}, fmt.Errorf("modes: reverse layer requires a reverse proxy mode")
+		return reverseScheme{}, errors.New("modes: reverse layer requires a reverse proxy mode")
 	}
 	entry, ok := reverseSchemes[reverse.Scheme]
 	if !ok {

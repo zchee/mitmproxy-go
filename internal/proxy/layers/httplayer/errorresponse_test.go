@@ -5,6 +5,7 @@ package httplayer
 
 import (
 	"errors"
+	"net/http"
 	"strconv"
 	"testing"
 
@@ -84,7 +85,7 @@ func TestMakeErrorResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.StatusCode != 502 || response.Reason != "Bad Gateway" || response.HTTPVersion != "HTTP/1.1" {
+	if response.StatusCode != http.StatusBadGateway || response.Reason != "Bad Gateway" || response.HTTPVersion != "HTTP/1.1" {
 		t.Fatalf("status line = %d %q %q", response.StatusCode, response.Reason, response.HTTPVersion)
 	}
 	if diff := gocmp.Diff(string(formatError(502, "Connection failed", nil)), string(response.RawContent)); diff != "" {

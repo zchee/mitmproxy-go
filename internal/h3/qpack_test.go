@@ -92,7 +92,7 @@ func TestQPACKBounds(t *testing.T) {
 		fields []HeaderField
 		block  []byte
 	}{
-		"encoded section over cap": {block: bytes.Repeat([]byte{0}, qpackHeaderLimit+1)},
+		"encoded section over cap": {block: make([]byte, qpackHeaderLimit+1)},
 		"decoded field over cap":   {fields: []HeaderField{{Name: "x", Value: strings.Repeat("a", qpackHeaderLimit)}}},
 		"decoded cumulative overhead over cap": {
 			block: append([]byte{0, 0}, bytes.Repeat([]byte{0xc1}, qpackHeaderLimit/34+1)...),

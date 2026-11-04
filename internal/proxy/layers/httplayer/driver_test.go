@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
 	"slices"
 	"sync"
 	"testing"
@@ -283,7 +284,7 @@ func TestDriverEarlyResponseWhileUploadBlocked(t *testing.T) {
 		if _, ok := event.(ResponseEndOfMessage); ok {
 			break
 		}
-		if head, ok := event.(ResponseHeaders); ok && head.Response.StatusCode != 413 {
+		if head, ok := event.(ResponseHeaders); ok && head.Response.StatusCode != http.StatusRequestEntityTooLarge {
 			t.Fatalf("response head = %d", head.Response.StatusCode)
 		}
 	}

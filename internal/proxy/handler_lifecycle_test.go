@@ -109,9 +109,9 @@ func TestHandlerServerActivity(t *testing.T) {
 			go func() {
 				var err error
 				if tt.write {
-					_, err = io.ReadFull(dialer.peer(0), make([]byte, 1))
+					_, err = io.ReadFull(dialer.peer(), make([]byte, 1))
 				} else {
-					_, err = dialer.peer(0).Write([]byte("x"))
+					_, err = dialer.peer().Write([]byte("x"))
 				}
 				peer <- err
 			}()

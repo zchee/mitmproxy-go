@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -160,13 +161,13 @@ func (c *http1Conn) readCtx(ctx context.Context, read func() (int, error)) (int,
 // readHeadCtx bounds a complete head independently of incoming-byte activity.
 // The first client head is timed immediately; later request heads and origin
 // responses wait for their first byte, leaving idle time to the watchdog.
-func (c *http1Conn) readHeadCtx(ctx context.Context, waitByte bool, read func() (int, error)) (int, error) {
+func (c *http1Conn) readHeadCtx(ctx context.Context, waitByte bool, read func() (int, error)) error {
 	if waitByte {
 		if _, err := c.readCtx(ctx, func() (int, error) {
 			_, err := c.br.Peek(1)
 			return 0, err
 		}); err != nil {
-			return 0, err
+			return err
 		}
 	}
 	clock := c.clock
@@ -185,11 +186,11 @@ func (c *http1Conn) readHeadCtx(ctx context.Context, waitByte bool, read func() 
 		}
 		cancel(nil)
 	}()
-	n, err := c.readCtx(headCtx, read)
+	_, err := c.readCtx(headCtx, read)
 	if err != nil && headCtx.Err() != nil {
-		return n, context.Cause(headCtx)
+		return context.Cause(headCtx)
 	}
-	return n, err
+	return err
 }
 
 // writeCtx writes all of b honoring ctx. The caller holds the send gate, so
@@ -274,10 +275,10 @@ func (c *http1Conn) writeLastChunk(ctx context.Context, trailers httpmsg.Headers
 // shouldMakePipe reports whether the exchange switches to a raw byte stream,
 // as after a 101 upgrade or a successful CONNECT.
 func shouldMakePipe(request *httpmsg.Request, response *httpmsg.Response) bool {
-	if response.StatusCode == 101 {
+	if response.StatusCode == http.StatusSwitchingProtocols {
 		return true
 	}
-	return response.StatusCode == 200 && strings.ToUpper(request.Method) == "CONNECT"
+	return response.StatusCode == http.StatusOK && strings.EqualFold(request.Method, "CONNECT")
 }
 
 // connectionDone reports whether the connection cannot carry another

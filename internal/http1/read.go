@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"regexp"
 	"slices"
 	"strconv"
@@ -185,7 +186,7 @@ func readRequestLine(line []byte) (*httpmsg.Request, []byte, error) {
 	switch {
 	case target == "*" || strings.HasPrefix(target, "/"):
 		req.Path = target
-	case req.Method == "CONNECT":
+	case req.Method == http.MethodConnect:
 		req.Authority = target
 		host, port, err := httpmsg.ParseAuthorityBytes(parts[1], true)
 		if err != nil || port <= 0 {

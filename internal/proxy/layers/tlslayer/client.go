@@ -202,7 +202,7 @@ func (l *clientTLS) collectClientHello(ctx context.Context, c *layer.Context) (*
 // tls_failed_client hook, in that order.
 func (l *clientTLS) handshakeFailed(ctx context.Context, c *layer.Context, data *hookdata.TLS, explanation string, level slog.Level) error {
 	c.Logger.Log(ctx, level, "Client TLS handshake failed. "+explanation)
-	failure := &handshakeFailure{explanation: explanation}
+	failure := &handshakeError{explanation: explanation}
 	_, hookErr := c.Hooks.FireFunc(ctx, func(context.Context) error {
 		if data.Context == nil {
 			data.Context = c.Data

@@ -22,11 +22,11 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/proxy/layer/layertest"
 )
 
-func tlsConfigs(t testing.TB) (*tls.Config, *tls.Config) {
-	t.Helper()
+func tlsConfigs(tb testing.TB) (*tls.Config, *tls.Config) {
+	tb.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	cert := &x509.Certificate{
 		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "example.com"},
@@ -35,11 +35,11 @@ func tlsConfigs(t testing.TB) (*tls.Config, *tls.Config) {
 	}
 	der, err := x509.CreateCertificate(rand.Reader, cert, cert, &key.PublicKey, key)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	leaf, err := x509.ParseCertificate(der)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	roots := x509.NewCertPool()
 	roots.AddCert(leaf)

@@ -14,7 +14,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -23,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -380,7 +380,7 @@ func newWireSession(t *testing.T, optsMap map[string]any, observe *wireObserver)
 			t.Fatal(err)
 		}
 		addr := s.mode.ListenAddrs()[0]
-		peer, err = net.ResolveUDPAddr("udp", net.JoinHostPort(addr.Host, fmt.Sprint(addr.Port)))
+		peer, err = net.ResolveUDPAddr("udp", net.JoinHostPort(addr.Host, strconv.Itoa(addr.Port)))
 		if err != nil {
 			_ = socket.Close()
 			t.Fatal(err)

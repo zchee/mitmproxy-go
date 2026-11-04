@@ -47,11 +47,11 @@ func nativeHTTP2Client(t *testing.T, p *proxytest.Proxy) *http.ClientConn {
 	if _, err := fmt.Fprint(raw, "CONNECT versions.test:443 HTTP/1.1\r\nHost: versions.test:443\r\n\r\n"); err != nil {
 		t.Fatal(err)
 	}
-	response, err := http.ReadResponse(bufio.NewReader(raw), &http.Request{Method: "CONNECT"})
+	response, err := http.ReadResponse(bufio.NewReader(raw), &http.Request{Method: http.MethodConnect})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.StatusCode != 200 {
+	if response.StatusCode != http.StatusOK {
 		t.Fatalf("CONNECT status = %d", response.StatusCode)
 	}
 	if err := response.Body.Close(); err != nil {
@@ -115,7 +115,7 @@ func TestHTTP2InterceptedStreamIsolation(t *testing.T) {
 			client := nativeHTTP2Client(t, p)
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			first, err := http.NewRequestWithContext(ctx, "GET", "https://versions.test/paused", nil)
+			first, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://versions.test/paused", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -135,7 +135,7 @@ func TestHTTP2InterceptedStreamIsolation(t *testing.T) {
 					t.Fatal("cancelled stream succeeded")
 				}
 			}
-			request, err := http.NewRequestWithContext(t.Context(), "GET", "https://versions.test/other", nil)
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://versions.test/other", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -150,7 +150,7 @@ func TestHTTP2InterceptedStreamIsolation(t *testing.T) {
 			if err := response.Body.Close(); err != nil {
 				t.Fatal(err)
 			}
-			if response.StatusCode != 200 || string(body) != "/other" {
+			if response.StatusCode != http.StatusOK || string(body) != "/other" {
 				t.Fatalf("sibling response = %d %q", response.StatusCode, body)
 			}
 			if !tt.cancel {

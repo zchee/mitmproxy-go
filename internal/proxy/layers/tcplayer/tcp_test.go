@@ -392,6 +392,7 @@ func TestCancelUnblocksReaders(t *testing.T) {
 
 func TestConformance(t *testing.T) {
 	layertest.Conformance(t, func(t *testing.T) layertest.Session {
+		t.Helper()
 		s := newSession(t, nil)
 		return layertest.Session{
 			Client: s.client, Server: s.server,

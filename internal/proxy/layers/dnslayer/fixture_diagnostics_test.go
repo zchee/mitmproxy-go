@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -72,7 +73,7 @@ func diagnosticDNSID(data []byte) string {
 	if len(data) < 2 {
 		return "short"
 	}
-	return fmt.Sprint(binary.BigEndian.Uint16(data[:2]))
+	return strconv.FormatUint(uint64(binary.BigEndian.Uint16(data[:2])), 10)
 }
 
 func (p *retentionDiagnosticPeer) Write(data []byte) (int, error) {

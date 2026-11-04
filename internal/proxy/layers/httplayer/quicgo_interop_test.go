@@ -126,11 +126,11 @@ func TestHTTPTCPClientHTTP3Origin(t *testing.T) {
 					}
 				}
 			} else {
-				response, err := http.ReadResponse(bufio.NewReader(session.client), &http.Request{Method: "POST"})
+				response, err := http.ReadResponse(bufio.NewReader(session.client), &http.Request{Method: http.MethodPost})
 				if err != nil {
 					t.Fatal(err)
 				}
-				if response.StatusCode != 200 || response.Proto != "HTTP/1.1" {
+				if response.StatusCode != http.StatusOK || response.Proto != "HTTP/1.1" {
 					t.Fatal("HTTP1 response status/version lost:", response)
 				}
 				body, err = io.ReadAll(response.Body)

@@ -29,21 +29,6 @@ const (
 	handover
 )
 
-func (s stage) String() string {
-	switch s {
-	case greeting, methods:
-		return "greeting"
-	case credentials, username, password:
-		return "authentication"
-	case request, address:
-		return "CONNECT"
-	case handover:
-		return "handover"
-	default:
-		return "unknown"
-	}
-}
-
 // A frame never exceeds two credential lengths and their three framing bytes.
 // Reads stop at each field boundary, leaving application bytes on the transport.
 type parser struct {

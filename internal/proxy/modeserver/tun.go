@@ -102,12 +102,16 @@ func (i *Instance) startTun(ctx context.Context) error {
 
 func (i *Instance) serveTun(source *tunSource) {
 	defer close(source.done)
-	defer source.workers.Wait()
+	i.serveStack(source.ctx, source.stack, &source.workers, "TUN")
+}
+
+func (i *Instance) serveStack(ctx context.Context, stack *netstack.Stack, workers *sync.WaitGroup, name string) {
+	defer workers.Wait()
 	for {
 		select {
-		case <-source.ctx.Done():
+		case <-ctx.Done():
 			return
-		case conn, ok := <-source.stack.TCPConns():
+		case conn, ok := <-stack.TCPConns():
 			if !ok {
 				return
 			}
@@ -115,13 +119,13 @@ func (i *Instance) serveTun(source *tunSource) {
 				_ = conn.Close()
 				continue
 			}
-			source.workers.Go(func() {
+			workers.Go(func() {
 				defer i.limiter.release()
-				if err := i.handler.Handle(source.ctx, conn, i.mode.String(), i.top); err != nil {
-					i.logger.Error("Handling TUN TCP connection", "error", err)
+				if err := i.handler.Handle(ctx, conn, i.mode.String(), i.top); err != nil {
+					i.logger.Error("Handling "+name+" TCP connection", "error", err)
 				}
 			})
-		case conn, ok := <-source.stack.UDPConns():
+		case conn, ok := <-stack.UDPConns():
 			if !ok {
 				return
 			}
@@ -129,10 +133,10 @@ func (i *Instance) serveTun(source *tunSource) {
 				_ = conn.Close()
 				continue
 			}
-			source.workers.Go(func() {
+			workers.Go(func() {
 				defer i.limiter.release()
-				if err := i.handler.HandlePackets(source.ctx, conn, i.mode.String(), i.top); err != nil {
-					i.logger.Error("Handling TUN UDP connection", "error", err)
+				if err := i.handler.HandlePackets(ctx, conn, i.mode.String(), i.top); err != nil {
+					i.logger.Error("Handling "+name+" UDP connection", "error", err)
 				}
 			})
 		}

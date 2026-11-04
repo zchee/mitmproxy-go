@@ -142,7 +142,7 @@ func TestWireGuardModeEncryptedFlows(t *testing.T) {
 				}
 				body, err := io.ReadAll(response.Body)
 				_ = response.Body.Close()
-				if err != nil || response.StatusCode != 200 || string(body) != "wireguard-http" {
+				if err != nil || response.StatusCode != http.StatusOK || string(body) != "wireguard-http" {
 					t.Fatalf("HTTP reply = %q, status=%d, %v", body, response.StatusCode, err)
 				}
 			} else {

@@ -342,6 +342,7 @@ func TestConformance(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			layertest.Conformance(t, func(t *testing.T) layertest.Session {
+				t.Helper()
 				clientPeer, client := layertest.Pipe(t)
 				serverPeer, server := layertest.Pipe(t)
 				c := newContext(t, tt.mode)

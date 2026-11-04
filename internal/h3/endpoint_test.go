@@ -116,9 +116,9 @@ func newEndpointPairContexts(t *testing.T, ctx, serverCtx context.Context, cance
 	roots.AddCert(ca.X509())
 	serverTLS := &tls.Config{MinVersion: tls.VersionTLS13, NextProtos: []string{"h3"}, Certificates: []tls.Certificate{{Certificate: [][]byte{leaf.X509().Raw}, PrivateKey: key}}}
 	clientTLS := &tls.Config{MinVersion: tls.VersionTLS13, NextProtos: []string{"h3"}, RootCAs: roots, ServerName: "localhost"}
-	var transports []*quicTransport
-	var sockets []net.PacketConn
-	var conns []*quicConnection
+	transports := make([]*quicTransport, 0, 2)
+	sockets := make([]net.PacketConn, 0, 2)
+	conns := make([]*quicConnection, 0, 2)
 	var listener *quicListener
 	var finished []<-chan error
 	t.Cleanup(func() {

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -33,7 +34,7 @@ func (h websocketHandshake) validate() error {
 		{h.clientRequest, h.clientResponse}, {h.serverRequest, h.serverResponse},
 	} {
 		request, response := pair.request, pair.response
-		if request == nil || response == nil || request.Method != "GET" || response.StatusCode != 101 ||
+		if request == nil || response == nil || request.Method != http.MethodGet || response.StatusCode != http.StatusSwitchingProtocols ||
 			!strings.EqualFold(request.Headers.Get("Upgrade"), "websocket") ||
 			!strings.EqualFold(response.Headers.Get("Upgrade"), "websocket") ||
 			!headerToken(request.Headers, "Connection", "upgrade") || !headerToken(response.Headers, "Connection", "upgrade") ||

@@ -312,7 +312,7 @@ func capturedText(tokens []chroma.Token, index int, language string) bool {
 			return true
 		}
 		if token.Type.InCategory(chroma.Name) {
-			if !javascriptProperty(tokens, index) && len(token.Value) > 0 && token.Value[0] >= 'A' && token.Value[0] <= 'Z' && !uppercaseConstant(token.Value) {
+			if !javascriptProperty(tokens, index) && token.Value != "" && token.Value[0] >= 'A' && token.Value[0] <= 'Z' && !uppercaseConstant(token.Value) {
 				return false
 			}
 			return true
@@ -335,8 +335,8 @@ func refineYAMLTags(tokens []chroma.Token) ([]chroma.Token, error) {
 			if next.Type == chroma.Literal {
 				end := strings.IndexAny(next.Value, " \t\r\n,[]{}")
 				if strings.HasPrefix(next.Value, "<") {
-					if close := strings.IndexByte(next.Value, '>'); close >= 0 {
-						end = close + 1
+					if closing := strings.IndexByte(next.Value, '>'); closing >= 0 {
+						end = closing + 1
 					}
 				}
 				if end < 0 {

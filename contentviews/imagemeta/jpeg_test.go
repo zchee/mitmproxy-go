@@ -267,7 +267,7 @@ func TestParseJPEGMalformed(t *testing.T) {
 func TestParseJPEGTruncated(t *testing.T) {
 	t.Parallel()
 	data := testutil.Fixture(t, "mitmproxy/image_parser/example.jpg")
-	for i := range len(data) {
+	for i := range data {
 		if _, err := ParseJPEG(data[:i]); err == nil && !atJPEGSegmentBoundary(data, i) {
 			t.Fatalf("ParseJPEG(data[:%d]) succeeded inside a segment", i)
 		}

@@ -44,7 +44,7 @@ func (r schemaSourceRoot) canonical(name string) (string, error) {
 	}
 	relative, err := filepath.Rel(r.path, resolved)
 	if err != nil || !filepath.IsLocal(relative) {
-		return "", fmt.Errorf("protobuf source escapes configured root")
+		return "", errors.New("protobuf source escapes configured root")
 	}
 	return filepath.ToSlash(relative), nil
 }
@@ -55,10 +55,10 @@ func loadProtobufSchema(ctx context.Context, roots []string, limits schemaLimits
 		limits = schemaLimits{Files: 1024, FileBytes: 16 << 20, TotalBytes: 64 << 20, Depth: 64}
 	}
 	if limits.Files <= 0 || limits.Files > 1024 || limits.FileBytes == 0 || limits.FileBytes > 16<<20 || limits.TotalBytes == 0 || limits.TotalBytes > 64<<20 || limits.Depth <= 0 || limits.Depth > 64 {
-		return nil, fmt.Errorf("invalid protobuf schema limits")
+		return nil, errors.New("invalid protobuf schema limits")
 	}
 	if len(roots) == 0 || len(roots) > limits.Files {
-		return nil, fmt.Errorf("invalid protobuf schema root count")
+		return nil, errors.New("invalid protobuf schema root count")
 	}
 	var directories []schemaSourceRoot
 	defer func() {
@@ -116,7 +116,7 @@ func loadProtobufSchema(ctx context.Context, roots []string, limits schemaLimits
 			return err
 		}
 		if !info.IsDir() {
-			return fmt.Errorf("protobuf schema directory changed")
+			return errors.New("protobuf schema directory changed")
 		}
 		seenDirectories[resolved] = true
 		var names []string
@@ -195,7 +195,7 @@ func loadProtobufSchema(ctx context.Context, roots []string, limits schemaLimits
 		}
 	}
 	if len(inputs) == 0 {
-		return nil, fmt.Errorf("no protobuf definitions found")
+		return nil, errors.New("no protobuf definitions found")
 	}
 	sources := map[string]protocompile.SearchResult{}
 	dependencies := map[string][]string{}
@@ -213,7 +213,7 @@ func loadProtobufSchema(ctx context.Context, roots []string, limits schemaLimits
 			return 0, budget.refusal(stage, "import depth", 0, uint64(depth), uint64(limits.Depth))
 		}
 		if states[name] == 1 {
-			return 0, fmt.Errorf("protobuf import cycle")
+			return 0, errors.New("protobuf import cycle")
 		}
 		if states[name] == 2 {
 			if depth+heights[name]-1 > limits.Depth {
@@ -222,7 +222,7 @@ func loadProtobufSchema(ctx context.Context, roots []string, limits schemaLimits
 			return heights[name], nil
 		}
 		if !fs.ValidPath(name) || strings.ContainsRune(name, '\\') {
-			return 0, fmt.Errorf("invalid protobuf import path")
+			return 0, errors.New("invalid protobuf import path")
 		}
 		var file *os.File
 		for _, directory := range directories {
@@ -260,7 +260,7 @@ func loadProtobufSchema(ctx context.Context, roots []string, limits schemaLimits
 			return 0, err
 		}
 		if !info.Mode().IsRegular() {
-			return 0, fmt.Errorf("protobuf source is not a regular file")
+			return 0, errors.New("protobuf source is not a regular file")
 		}
 		if info.Size() < 0 || uint64(info.Size()) > limits.FileBytes {
 			return 0, budget.refusal(stage, "file bytes", 0, uint64(info.Size()), limits.FileBytes)
@@ -277,7 +277,7 @@ func loadProtobufSchema(ctx context.Context, roots []string, limits schemaLimits
 			return 0, err
 		}
 		if int64(len(data)) != info.Size() {
-			return 0, fmt.Errorf("protobuf source changed while reading")
+			return 0, errors.New("protobuf source changed while reading")
 		}
 		total += uint64(len(data))
 		handler := reporter.NewHandler(nil)
@@ -368,7 +368,7 @@ func (s *protobufSchema) messageDescriptor(requestPath string, isResponse bool) 
 			return file.Messages().Get(0), nil
 		}
 	}
-	return nil, fmt.Errorf("no protobuf message definition")
+	return nil, errors.New("no protobuf message definition")
 }
 
 func (s *protobufSchema) newMessage(requestPath string, isResponse bool) (*dynamicpb.Message, error) {

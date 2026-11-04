@@ -109,7 +109,8 @@ func expandProtobufDefinitions(path string) (string, error) {
 	}
 	name := path[1:end]
 	home, err := os.UserHomeDir()
-	if runtime.GOOS == "windows" {
+	switch {
+	case runtime.GOOS == "windows":
 		if err != nil {
 			if suffix, found := os.LookupEnv("HOMEPATH"); found {
 				home = os.Getenv("HOMEDRIVE") + suffix
@@ -117,25 +118,25 @@ func expandProtobufDefinitions(path string) (string, error) {
 		}
 		if name != "" && name != os.Getenv("USERNAME") {
 			if filepath.Base(home) != os.Getenv("USERNAME") {
-				return "", fmt.Errorf("cannot resolve protobuf definitions home")
+				return "", errors.New("cannot resolve protobuf definitions home")
 			}
 			home = filepath.Join(filepath.Dir(home), name)
 		}
-	} else if name != "" {
+	case name != "":
 		account, lookupErr := user.Lookup(name)
 		if lookupErr != nil {
-			return "", fmt.Errorf("cannot resolve protobuf definitions home")
+			return "", errors.New("cannot resolve protobuf definitions home")
 		}
 		home = account.HomeDir
-	} else if err != nil {
+	case err != nil:
 		account, lookupErr := user.Current()
 		if lookupErr != nil {
-			return "", fmt.Errorf("cannot resolve protobuf definitions home")
+			return "", errors.New("cannot resolve protobuf definitions home")
 		}
 		home = account.HomeDir
 	}
 	if home == "" {
-		return "", fmt.Errorf("cannot resolve protobuf definitions home")
+		return "", errors.New("cannot resolve protobuf definitions home")
 	}
 	var expanded strings.Builder
 	expanded.WriteString(strings.TrimRight(home, separators))

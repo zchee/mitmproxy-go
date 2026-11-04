@@ -77,7 +77,7 @@ func lossyUTF8(text string) string {
 	}
 	var result strings.Builder
 	result.Grow(len(text))
-	for len(text) > 0 {
+	for text != "" {
 		r, size := utf8.DecodeRuneInString(text)
 		if r != utf8.RuneError || size != 1 {
 			result.WriteString(text[:size])

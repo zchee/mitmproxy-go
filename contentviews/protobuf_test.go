@@ -79,7 +79,7 @@ func TestProtobufRoundTrip(t *testing.T) {
 			})
 		}
 		t.Run("direct", func(t *testing.T) {
-			tests := map[string]func(t *testing.T){
+			tests := map[string]func(*testing.T){
 				"test_invalid_protobuf": func(t *testing.T) {
 					if got, err := (Protobuf{}).Prettify([]byte{0xff, 0xff}, Metadata{}); err == nil {
 						t.Fatalf("Prettify(ffff) = %q, want an error", got)
@@ -118,7 +118,7 @@ func TestProtobufDefinitions(t *testing.T) {
 		t.Run("existing_definition", func(t *testing.T) {
 			const varintPrettyYAML = "example: 150\n"
 			metadata := Metadata{ProtobufDefinitions: protobufFixture("simple.proto")}
-			tests := map[string]func(t *testing.T){
+			tests := map[string]func(*testing.T){
 				"prettify": func(t *testing.T) {
 					got, err := Protobuf{}.Prettify(protobufRoundTrips["varint"].proto, metadata)
 					if err != nil {

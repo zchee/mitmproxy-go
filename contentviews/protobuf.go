@@ -103,7 +103,7 @@ func prettifyProtobufWith(data []byte, descriptor protoreflect.MessageDescriptor
 	}
 	node, err := protobufMessageYAML(data, descriptor, budget)
 	if err != nil {
-		return "", fmt.Errorf("Error parsing protobuf: %w", err) //nolint:staticcheck // The Rust view's user-facing error.
+		return "", fmt.Errorf("Error parsing protobuf: %w", err)
 	}
 	text, err := dumpBoundedYAML(node, budget, yamlEmitOptions{InlineCommentGap: 2})
 	if err != nil {

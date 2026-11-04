@@ -13,21 +13,21 @@ import (
 	"testing"
 )
 
-func zipFixture(t testing.TB, names []string, nonUTF8 bool) []byte {
-	t.Helper()
+func zipFixture(tb testing.TB, names []string, nonUTF8 bool) []byte {
+	tb.Helper()
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
 	for _, name := range names {
 		file, err := writer.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Store, NonUTF8: nonUTF8})
 		if err != nil {
-			t.Fatal(err)
+			tb.Fatal(err)
 		}
 		if _, err := file.Write([]byte("content")); err != nil {
-			t.Fatal(err)
+			tb.Fatal(err)
 		}
 	}
 	if err := writer.Close(); err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	return buffer.Bytes()
 }

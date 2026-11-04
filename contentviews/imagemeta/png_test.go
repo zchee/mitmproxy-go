@@ -237,7 +237,7 @@ func TestParsePNGMalformed(t *testing.T) {
 func TestParsePNGTruncated(t *testing.T) {
 	t.Parallel()
 	data := testutil.Fixture(t, "mitmproxy/image_parser/ct0n0g04.png")
-	for i := range len(data) {
+	for i := range data {
 		if _, err := ParsePNG(data[:i]); err == nil {
 			// The chunk loop also ends at the end of the data, so a cut
 			// exactly between chunks parses; a cut inside a chunk must not.

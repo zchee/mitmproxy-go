@@ -6,6 +6,7 @@ package contentviews
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -84,7 +85,7 @@ func TestWBXMLTables(t *testing.T) {
 			}
 		}
 	}
-	if count != 535 || fmt.Sprintf("%x", hash.Sum(nil)) != "7cdfd4dabffa8d2c6cd42fc1cba0d42c1f90d5ec97edf7e70cdfb0d013e2c055" {
+	if count != 535 || hex.EncodeToString(hash.Sum(nil)) != "7cdfd4dabffa8d2c6cd42fc1cba0d42c1f90d5ec97edf7e70cdfb0d013e2c055" {
 		t.Fatal("WBXML vocabulary differs from the pinned source")
 	}
 }

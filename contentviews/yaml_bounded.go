@@ -400,31 +400,31 @@ func cloneBoundedYAML(node *yaml.Node, budget *viewBudget, gap int) (*yaml.Node,
 		}
 		active[node] = true
 		defer delete(active, node)
-		copy := *node
-		copy.Content = nil
-		copy.Alias = nil
-		if gap > 1 && copy.LineComment != "" {
-			comment, hasHash := strings.CutPrefix(copy.LineComment, "#")
+		cloned := *node
+		cloned.Content = nil
+		cloned.Alias = nil
+		if gap > 1 && cloned.LineComment != "" {
+			comment, hasHash := strings.CutPrefix(cloned.LineComment, "#")
 			if !hasHash {
 				comment = " " + comment
 			}
-			copy.LineComment = "#\x00" + comment
+			cloned.LineComment = "#\x00" + comment
 		}
 		for _, child := range node.Content {
 			next, err := clone(child, depth)
 			if err != nil {
 				return nil, err
 			}
-			copy.Content = append(copy.Content, next)
+			cloned.Content = append(cloned.Content, next)
 		}
 		if node.Alias != nil {
 			next, err := clone(node.Alias, depth)
 			if err != nil {
 				return nil, err
 			}
-			copy.Alias = next
+			cloned.Alias = next
 		}
-		return &copy, nil
+		return &cloned, nil
 	}
 	return clone(node, 0)
 }
@@ -433,7 +433,7 @@ func emitBoundedYAML(dst *boundedViewWriter, node *yaml.Node, opts yamlEmitOptio
 	if opts.InlineCommentGap < 0 || opts.InlineCommentGap > 2 {
 		return fmt.Errorf("%s: YAML emission: comment gap must be 0, 1 or 2", dst.budget.view)
 	}
-	copy, err := cloneBoundedYAML(node, dst.budget, opts.InlineCommentGap)
+	cloned, err := cloneBoundedYAML(node, dst.budget, opts.InlineCommentGap)
 	if err != nil {
 		return err
 	}
@@ -447,7 +447,7 @@ func emitBoundedYAML(dst *boundedViewWriter, node *yaml.Node, opts yamlEmitOptio
 	if err != nil {
 		return err
 	}
-	if err := dumper.Dump(copy); err != nil {
+	if err := dumper.Dump(cloned); err != nil {
 		return err
 	}
 	if err := dumper.Close(); err != nil {

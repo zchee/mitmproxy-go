@@ -5,7 +5,7 @@ package contentviews
 
 import (
 	"encoding/binary"
-	"fmt"
+	"errors"
 	"strings"
 	"unicode/utf8"
 )
@@ -53,33 +53,33 @@ func (MQTT) Prettify(data []byte, _ Metadata) (string, error) {
 
 func mqttBody(data []byte) ([]byte, error) {
 	if len(data) < 2 {
-		return nil, fmt.Errorf("truncated MQTT fixed header")
+		return nil, errors.New("truncated MQTT fixed header")
 	}
 	length, shift := 0, 0
 	for i := 1; i < len(data); i++ {
 		if i > 3 {
-			return nil, fmt.Errorf("malformed MQTT remaining length")
+			return nil, errors.New("malformed MQTT remaining length")
 		}
 		length |= int(data[i]&127) << shift
 		if data[i]&128 == 0 {
 			if length != len(data)-i-1 {
-				return nil, fmt.Errorf("MQTT remaining length does not match input")
+				return nil, errors.New("MQTT remaining length does not match input")
 			}
 			return data[i+1:], nil
 		}
 		shift += 7
 	}
-	return nil, fmt.Errorf("truncated MQTT remaining length")
+	return nil, errors.New("truncated MQTT remaining length")
 }
 
 func mqttField(body []byte, offset int) ([]byte, int, error) {
 	if len(body)-offset < 2 {
-		return nil, offset, fmt.Errorf("truncated MQTT field length")
+		return nil, offset, errors.New("truncated MQTT field length")
 	}
 	length := int(binary.BigEndian.Uint16(body[offset : offset+2]))
 	offset += 2
 	if length > len(body)-offset {
-		return nil, offset, fmt.Errorf("truncated MQTT field")
+		return nil, offset, errors.New("truncated MQTT field")
 	}
 	return body[offset : offset+length], offset + length, nil
 }
@@ -91,12 +91,12 @@ func mqttPublish(body []byte, qos byte, budget *viewBudget) (string, error) {
 	}
 	if qos == 1 || qos == 2 {
 		if len(body)-offset < 2 {
-			return "", fmt.Errorf("truncated MQTT packet identifier")
+			return "", errors.New("truncated MQTT packet identifier")
 		}
 		offset += 2
 	}
 	if offset == len(body) {
-		return "", fmt.Errorf("empty MQTT publish payload")
+		return "", errors.New("empty MQTT publish payload")
 	}
 	const prefix, middle, suffix = "[PUBLISH] '", "' to topic '", "'"
 	if err := budget.chargeOutput("publish output", uint64(len(prefix)+len(middle)+len(suffix))); err != nil {
@@ -115,7 +115,7 @@ func mqttPublish(body []byte, qos byte, budget *viewBudget) (string, error) {
 
 func mqttSubscribe(body []byte, budget *viewBudget) (string, error) {
 	if len(body) < 2 {
-		return "", fmt.Errorf("truncated MQTT subscription identifier")
+		return "", errors.New("truncated MQTT subscription identifier")
 	}
 	const prefix = "[SUBSCRIBE] sent topic filters: "
 	if err := budget.chargeOutput("subscribe output", uint64(len(prefix))); err != nil {
@@ -133,11 +133,11 @@ func mqttSubscribe(body []byte, budget *viewBudget) (string, error) {
 			return "", err
 		}
 		if next == len(body) {
-			return "", fmt.Errorf("truncated MQTT subscription QoS")
+			return "", errors.New("truncated MQTT subscription QoS")
 		}
 		offset = next + 1
 		if !utf8.Valid(topic) {
-			return "", fmt.Errorf("invalid MQTT topic text")
+			return "", errors.New("invalid MQTT topic text")
 		}
 		if err := budget.chargeMaterialization("MQTT scalar", uint64(len(topic))); err != nil {
 			return "", err
@@ -166,7 +166,7 @@ func mqttSubscribe(body []byte, budget *viewBudget) (string, error) {
 
 func mqttConnect(body []byte, budget *viewBudget) (string, error) {
 	if len(body) < 10 {
-		return "", fmt.Errorf("truncated MQTT connect header")
+		return "", errors.New("truncated MQTT connect header")
 	}
 	flags := body[7]
 	names := []int{0}
@@ -184,7 +184,7 @@ func mqttConnect(body []byte, budget *viewBudget) (string, error) {
 	fieldCount := 0
 	for offset := 10; offset < len(body); {
 		if fieldCount == len(names) {
-			return "", fmt.Errorf("unexpected MQTT connect field")
+			return "", errors.New("unexpected MQTT connect field")
 		}
 		field, next, err := mqttField(body, offset)
 		if err != nil {
@@ -202,7 +202,7 @@ func mqttConnect(body []byte, budget *viewBudget) (string, error) {
 			continue
 		}
 		if !utf8.Valid(field) {
-			return "", fmt.Errorf("invalid MQTT connect text")
+			return "", errors.New("invalid MQTT connect text")
 		}
 		if err := budget.chargeNodes("connect field", 1); err != nil {
 			return "", err
@@ -213,7 +213,7 @@ func mqttConnect(body []byte, budget *viewBudget) (string, error) {
 		values[index] = string(field)
 	}
 	if fieldCount == 0 {
-		return "", fmt.Errorf("empty MQTT connect payload")
+		return "", errors.New("empty MQTT connect payload")
 	}
 	labels := [...]string{"[CONNECT]\n\nClient Id: ", "\nWill Topic: ", "\nWill Message: ", "\nUser Name: ", "\nPassword: "}
 	size := 1

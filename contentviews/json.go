@@ -300,8 +300,8 @@ func appendJSONRune(out []byte, r rune) []byte {
 	return utf8.AppendRune(out, r)
 }
 
-// jsonUTF8 follows Python json.detect_encoding and the surrogatepass codec.
-func jsonUTF8(data []byte) ([]byte, error) {
+// detectJSONEncoding follows Python json.detect_encoding and strips a BOM.
+func detectJSONEncoding(data []byte) ([]byte, binary.ByteOrder, int) {
 	var order binary.ByteOrder
 	width := 1
 	switch {
@@ -324,6 +324,12 @@ func jsonUTF8(data []byte) ([]byte, error) {
 	case len(data) >= 2 && data[1] == 0:
 		order, width = binary.LittleEndian, 2
 	}
+	return data, order, width
+}
+
+// jsonUTF8 follows Python json.detect_encoding and the surrogatepass codec.
+func jsonUTF8(data []byte) ([]byte, error) {
+	data, order, width := detectJSONEncoding(data)
 	invalid := errors.New("contentviews: invalid JSON Unicode encoding")
 	if width == 1 {
 		for i := 0; i < len(data); {

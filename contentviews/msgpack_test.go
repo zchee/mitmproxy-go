@@ -60,7 +60,7 @@ func mustHex(t *testing.T, text string) []byte {
 
 func TestMsgPack(t *testing.T) {
 	t.Run("upstream", func(t *testing.T) {
-		tests := map[string]func(t *testing.T){
+		tests := map[string]func(*testing.T){
 			"test_msgpack_deserialize": func(t *testing.T) {
 				got, err := MsgPack{}.Prettify(testMsgPack, Metadata{})
 				if err != nil {
@@ -157,7 +157,7 @@ func TestMsgPack(t *testing.T) {
 
 	t.Run("registry", func(t *testing.T) {
 		registry := NewRegistry()
-		var names []string
+		names := make([]string, 0, len(registry.views))
 		for _, view := range registry.views {
 			names = append(names, view.name)
 		}

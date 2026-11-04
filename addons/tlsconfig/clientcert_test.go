@@ -128,7 +128,10 @@ func TestClientCertificateStaysInDirectory(t *testing.T) {
 			wantEmpty: true,
 		},
 		"attack: zone traversal in a parsed ClientHello": {
-			sni:       func(t *testing.T) string { return clientHelloSNI(t, "::1%a/../../secret") },
+			sni: func(t *testing.T) string {
+				t.Helper()
+				return clientHelloSNI(t, "::1%a/../../secret")
+			},
 			host:      "example.org",
 			wantEmpty: true,
 		},

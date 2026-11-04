@@ -21,7 +21,7 @@ import (
 	"github.com/zchee/mitmproxy-go/options"
 )
 
-func setup(t *testing.T) (*Addon, *addon.Manager, *command.Manager) {
+func setup(t *testing.T) *command.Manager {
 	t.Helper()
 	opts := options.New()
 	cmds := command.NewManager()
@@ -30,7 +30,7 @@ func setup(t *testing.T) (*Addon, *addon.Manager, *command.Manager) {
 	if err := m.Add(t.Context(), a); err != nil {
 		t.Fatal(err)
 	}
-	return a, m, cmds
+	return cmds
 }
 
 // TestExtract ports test_extract, test_extract_websocket, test_extract_str,
@@ -86,7 +86,7 @@ func TestExtract(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, _, cmds := setup(t)
+			cmds := setup(t)
 			got, err := cmds.Call(t.Context(), "cut", []flow.Flow{f}, command.CutSpec{tt.spec})
 			if err != nil {
 				t.Fatal(err)
@@ -154,7 +154,7 @@ func TestExtract(t *testing.T) {
 
 // TestSave ports test_cut_save and all real-filesystem test_cut_save_open cases.
 func TestSave(t *testing.T) {
-	_, _, cmds := setup(t)
+	cmds := setup(t)
 	f := testflow.TFlow(testflow.WithResponse)
 	path := filepath.Join(t.TempDir(), "cuts")
 	tests := map[string]struct {
@@ -268,7 +268,7 @@ func TestCSV(t *testing.T) {
 }
 
 func TestTables(t *testing.T) {
-	_, _, cmds := setup(t)
+	cmds := setup(t)
 	tests := map[string]struct{ signature string }{
 		"cut":      {"cut flows cuts -> data[][]"},
 		"cut.save": {"cut.save flows cuts path"},

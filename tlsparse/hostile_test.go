@@ -20,8 +20,8 @@ import (
 // handshake header) whose total length is bodyLen bytes, with the SNI
 // example.com and the ALPN protocols h2 and http/1.1, padded to the length
 // with one unknown extension.
-func buildHello(t testing.TB, bodyLen int) []byte {
-	t.Helper()
+func buildHello(tb testing.TB, bodyLen int) []byte {
+	tb.Helper()
 	b := []byte{0x03, 0x03}
 	b = append(b, make([]byte, 32)...) // random
 	b = append(b, 0)                   // session_id length
@@ -41,7 +41,7 @@ func buildHello(t testing.TB, bodyLen int) []byte {
 	// One unknown (padding) extension brings the message to bodyLen.
 	pad := bodyLen - len(b) - 2 - len(exts) - 4
 	if pad < 0 {
-		t.Fatalf("bodyLen %d is too small for the fixed fields", bodyLen)
+		tb.Fatalf("bodyLen %d is too small for the fixed fields", bodyLen)
 	}
 	exts = binary.BigEndian.AppendUint16(exts, 0x15)
 	exts = binary.BigEndian.AppendUint16(exts, uint16(pad)) //nolint:gosec // G115: bounded by bodyLen.
@@ -50,7 +50,7 @@ func buildHello(t testing.TB, bodyLen int) []byte {
 	b = binary.BigEndian.AppendUint16(b, uint16(len(exts))) //nolint:gosec // G115: bounded by bodyLen.
 	b = append(b, exts...)
 	if len(b) != bodyLen {
-		t.Fatalf("built body is %d bytes, want %d", len(b), bodyLen)
+		tb.Fatalf("built body is %d bytes, want %d", len(b), bodyLen)
 	}
 	return b
 }
@@ -114,7 +114,7 @@ func TestGetClientHelloByteAtATime(t *testing.T) {
 			if n := (len(msg) + tt.recordSize - 1) / tt.recordSize; n < tt.minRecords {
 				t.Fatalf("message spans %d records, want at least %d", n, tt.minRecords)
 			}
-			for i := range len(data) {
+			for i := range data {
 				got, err := tlsparse.GetClientHello(data[:i])
 				if got != nil || err != nil {
 					t.Fatalf("GetClientHello(data[:%d]) = %x, %v; want nil, nil", i, got, err)
@@ -270,7 +270,7 @@ func TestNewClientHelloTruncated(t *testing.T) {
 	t.Parallel()
 
 	body := buildHello(t, 700)
-	for i := range len(body) {
+	for i := range body {
 		ch, err := tlsparse.NewClientHello(body[:i])
 		switch i {
 		case 43, 45, 65, 83:

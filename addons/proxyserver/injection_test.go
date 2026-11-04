@@ -6,9 +6,9 @@ package proxyserver_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
@@ -98,9 +98,9 @@ func TestInjectWebSocket(t *testing.T) {
 					if wantOpcode == gows.OpcodeBinary {
 						message = `binary\x00\xffmessage`
 					}
-					args := []string{"@all", fmt.Sprint(toClient), message}
+					args := []string{"@all", strconv.FormatBool(toClient), message}
 					if tt.isText != nil {
-						args = append(args, fmt.Sprint(*tt.isText))
+						args = append(args, strconv.FormatBool(*tt.isText))
 					}
 					if _, err := p.Master.Commands.CallStrings(t.Context(), "inject.websocket", args); err != nil {
 						t.Fatal(err)
@@ -214,7 +214,7 @@ func TestInjectUDP(t *testing.T) {
 					if len(tt.payload) != 0 {
 						message = `\x00\xff\n\x00`
 					}
-					if _, err := p.Master.Commands.CallStrings(t.Context(), "inject.udp", []string{"@all", fmt.Sprint(toClient), message}); err != nil {
+					if _, err := p.Master.Commands.CallStrings(t.Context(), "inject.udp", []string{"@all", strconv.FormatBool(toClient), message}); err != nil {
 						t.Fatal(err)
 					}
 				} else if _, err := p.Master.Call(t.Context(), "inject.udp", f, toClient, tt.payload); err != nil {

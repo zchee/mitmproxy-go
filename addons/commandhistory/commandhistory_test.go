@@ -6,12 +6,12 @@ package commandhistory
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -397,7 +397,7 @@ func TestConcurrentCommands(t *testing.T) {
 			for _, invocation := range []struct {
 				name string
 				args []any
-			}{{"add", []any{fmt.Sprint(i)}}, {"filter", []any{""}}, {"prev", nil}, {"next", nil}, {"get", nil}} {
+			}{{"add", []any{strconv.Itoa(i)}}, {"filter", []any{""}}, {"prev", nil}, {"next", nil}, {"get", nil}} {
 				if _, err := cmds.Call(t.Context(), "commands.history."+invocation.name, invocation.args...); err != nil {
 					t.Error(err)
 				}
@@ -409,7 +409,7 @@ func TestConcurrentCommands(t *testing.T) {
 	slices.Sort(got)
 	var want []string
 	for i := range 64 {
-		want = append(want, fmt.Sprint(i))
+		want = append(want, strconv.Itoa(i))
 	}
 	slices.Sort(want)
 	if diff := cmp.Diff(want, got); diff != "" {

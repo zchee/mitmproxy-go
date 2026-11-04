@@ -95,7 +95,7 @@ func TestGetDTLSClientHello(t *testing.T) {
 			}
 		})
 	}
-	for i := range len(single) {
+	for i := range single {
 		got, err := GetDTLSClientHello(single[:i])
 		if got != nil || err != nil {
 			t.Fatalf("prefix %d: %x, %v", i, got, err)
@@ -204,8 +204,8 @@ func TestClientHelloDTLSRawBytes(t *testing.T) {
 			if tt.dtls && wrapped != nil || !tt.dtls && wrapped == nil {
 				t.Fatalf("wrapped record = %x, DTLS = %v", wrapped, tt.dtls)
 			}
-			copy := tt.hello.RawBytes(false)
-			copy[0] ^= 0xff
+			cloned := tt.hello.RawBytes(false)
+			cloned[0] ^= 0xff
 			if diff := cmp.Diff(tt.body, tt.hello.RawBytes(false)); diff != "" {
 				t.Fatalf("RawBytes leaked mutable storage: %s", diff)
 			}

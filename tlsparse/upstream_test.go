@@ -33,11 +33,11 @@ import (
 //	  test_dtls_*                               not applicable: DTLS is not parsed yet
 //	  TestServerTLS.*, TestClientTLS.*          the TLS layer's tests, not the parser's
 
-func mustHex(t testing.TB, s string) []byte {
-	t.Helper()
+func mustHex(tb testing.TB, s string) []byte {
+	tb.Helper()
 	b, err := hex.DecodeString(s)
 	if err != nil {
-		t.Fatalf("hex %q: %v", s, err)
+		tb.Fatalf("hex %q: %v", s, err)
 	}
 	return b
 }
@@ -264,14 +264,14 @@ func TestHandshakeRecordContentsErrors(t *testing.T) {
 
 // handshakeNoExtensions is client_hello_no_extensions of the layer tests:
 // the no-extensions body with its handshake header.
-func handshakeNoExtensions(t testing.TB) []byte {
-	return cat(mustHex(t, "01000061"), mustHex(t, clientHelloNoExtensions))
+func handshakeNoExtensions(tb testing.TB) []byte {
+	return cat(mustHex(tb, "01000061"), mustHex(tb, clientHelloNoExtensions))
 }
 
 // recordWithExtensions is client_hello_with_extensions of the layer tests:
 // one record holding the whole handshake message.
-func recordWithExtensions(t testing.TB) []byte {
-	return cat(mustHex(t, "16030300bb010000b7"), mustHex(t, clientHelloExtensions))
+func recordWithExtensions(tb testing.TB) []byte {
+	return cat(mustHex(tb, "16030300bb010000b7"), mustHex(tb, clientHelloExtensions))
 }
 
 func TestGetClientHelloUpstream(t *testing.T) {

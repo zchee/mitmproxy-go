@@ -13,6 +13,7 @@ import (
 	"math/big"
 	rand "math/rand/v2"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -364,7 +365,7 @@ func manyKeyDict(n int) *omap.Map[any] {
 func manyKeys(n int) string {
 	var payload strings.Builder
 	for i, k := range manyKeyNames(n) {
-		v := fmt.Sprint(i)
+		v := strconv.Itoa(i)
 		fmt.Fprintf(&payload, "%d:%s;%d:%s#", len(k), k, len(v), v)
 	}
 	return fmt.Sprintf("%d:%s}", payload.Len(), payload.String())
@@ -513,7 +514,7 @@ func TestMaxDepthBoundary(t *testing.T) {
 	if _, err := Loads(deeper); !errors.As(err, &se) || !strings.Contains(err.Error(), "deeper than 1000") {
 		t.Errorf("Loads past the depth limit: error = %v, want a depth SyntaxError", err)
 	}
-	dictDeeper := fmt.Appendf(nil, "%d:1:k;%d:%s]}", len(enc)+4+len(fmt.Sprint(len(enc)))+2, len(enc), enc)
+	dictDeeper := fmt.Appendf(nil, "%d:1:k;%d:%s]}", len(enc)+4+len(strconv.Itoa(len(enc)))+2, len(enc), enc)
 	if _, err := Loads(dictDeeper); err == nil || !strings.Contains(err.Error(), "deeper than 1000") {
 		t.Errorf("Loads of a dict past the depth limit: error = %v", err)
 	}
@@ -714,7 +715,7 @@ func randomObject(r *rand.Rand, depth int) any {
 		for range n {
 			k := make([]string, r.IntN(101))
 			for i := range k {
-				k[i] = fmt.Sprint(32 + r.IntN(95))
+				k[i] = strconv.Itoa(32 + r.IntN(95))
 			}
 			d.Set("["+strings.Join(k, ", ")+"]", randomObject(r, depth+1))
 		}

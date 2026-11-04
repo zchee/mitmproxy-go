@@ -49,18 +49,18 @@ func TestUpstreamView(t *testing.T) {
 		}},
 		"test_order_generators_http": {func(t *testing.T, v *View) {
 			f := testflow.TFlow(testflow.WithResponse)
-			checkKey(t, f, 946681200, "GET", "http://address:22/path", 14)
+			checkKey(t, f, "GET", "http://address:22/path", 14)
 		}},
 		"test_order_generators_dns": {func(t *testing.T, v *View) {
 			f := testflow.TDNSFlow(testflow.WithResponse)
-			checkKey(t, f, 946681200, "QUERY", "dns.google", 8)
+			checkKey(t, f, "QUERY", "dns.google", 8)
 			f.Response = nil
 			if generate("size", f).number != 0 {
 				t.Fatal("DNS without response has size")
 			}
 		}},
-		"test_order_generators_tcp": {func(t *testing.T, v *View) { checkKey(t, testflow.TTCPFlow(), 946681200, "TCP", "address:22", 12) }},
-		"test_order_generators_udp": {func(t *testing.T, v *View) { checkKey(t, testflow.TUDPFlow(), 946681200, "UDP", "address:22", 12) }},
+		"test_order_generators_tcp": {func(t *testing.T, v *View) { checkKey(t, testflow.TTCPFlow(), "TCP", "address:22", 12) }},
+		"test_order_generators_udp": {func(t *testing.T, v *View) { checkKey(t, testflow.TUDPFlow(), "UDP", "address:22", 12) }},
 		"test_simple": {func(t *testing.T, v *View) {
 			f, f2, f3 := fixture("GET", 1), fixture("GET", 3), fixture("GET", 2)
 			if v.StoreCount() != 0 {
@@ -532,9 +532,9 @@ func equalFlows(t *testing.T, want, got []flow.Flow) {
 	}
 }
 
-func checkKey(t *testing.T, f flow.Flow, start float64, method, url string, size int) {
+func checkKey(t *testing.T, f flow.Flow, method, url string, size int) {
 	t.Helper()
-	if generate("time", f).number != start || generate("method", f).text != method || generate("url", f).text != url || generate("size", f).number != float64(size) {
+	if generate("time", f).number != 946681200 || generate("method", f).text != method || generate("url", f).text != url || generate("size", f).number != float64(size) {
 		t.Fatalf("keys: time=%v method=%v url=%v size=%v", generate("time", f), generate("method", f), generate("url", f), generate("size", f))
 	}
 }

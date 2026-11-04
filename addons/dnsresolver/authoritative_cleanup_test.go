@@ -20,13 +20,18 @@ func TestAuthoritativeServerCleanup(t *testing.T) {
 	const fatalFixtureEnv = "DNSRESOLVER_FATAL_FIXTURE"
 	fixtures := map[string]func(*testing.T) netip.AddrPort{
 		"paired origin": func(t *testing.T) netip.AddrPort {
+			t.Helper()
+
 			address, _ := authoritativeServer(t, false, func(request *dns.Message) *dns.Message {
 				return request.Succeed(nil)
 			})
 			return address
 		},
-		"UDP origin":            dnsServer,
-		"authoritative library": func(t *testing.T) netip.AddrPort { return startAcceptanceUpstream(t).address },
+		"UDP origin": dnsServer,
+		"authoritative library": func(t *testing.T) netip.AddrPort {
+			t.Helper()
+			return startAcceptanceUpstream(t).address
+		},
 	}
 	if name := os.Getenv(fatalFixtureEnv); name != "" {
 		fixture, ok := fixtures[name]

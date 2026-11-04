@@ -13,11 +13,11 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 )
 
-func quicHex(t testing.TB, text string) []byte {
-	t.Helper()
+func quicHex(tb testing.TB, text string) []byte {
+	tb.Helper()
 	out, err := hex.DecodeString(text)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	return out
 }
@@ -82,12 +82,12 @@ func quicCryptoFrame(offset uint64, data []byte) []byte {
 	return append(out, data...)
 }
 
-func quicTestInitial(t testing.TB, payload []byte, pn uint32, pnLen int, version uint32) []byte {
-	t.Helper()
-	dcid := quicHex(t, "8394c8f03e515708")
+func quicTestInitial(tb testing.TB, payload []byte, pn uint32, pnLen int, version uint32) []byte {
+	tb.Helper()
+	dcid := quicHex(tb, "8394c8f03e515708")
 	hp, aead, iv, err := quicInitialKeys(version, dcid)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	first := byte(0xc0)
 	if version == quicVersion2 {

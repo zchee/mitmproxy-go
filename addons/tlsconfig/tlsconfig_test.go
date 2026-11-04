@@ -471,7 +471,7 @@ func TestTLSStartServer(t *testing.T) {
 	trustedRoot := "mitmproxy-net/verificationcerts/trusted-root.crt"
 	tests := map[string]struct {
 		opts    map[string]any
-		setup   func(t *testing.T, c *hookdata.Context)
+		setup   func(c *hookdata.Context)
 		wantErr string
 		origin  *serverPEM
 		mutate  func(*tls.Config)
@@ -479,7 +479,7 @@ func TestTLSStartServer(t *testing.T) {
 		check   func(t *testing.T, c *hookdata.Context, d *hookdata.TLS, clientState, serverState tls.ConnectionState)
 	}{
 		"error: empty sni opts out of verification": {
-			setup: func(t *testing.T, c *hookdata.Context) {
+			setup: func(c *hookdata.Context) {
 				c.Server.Address = &connection.Address{Host: "example.mitmproxy.org", Port: 443}
 				c.Server.SNI = new("")
 			},
@@ -489,7 +489,7 @@ func TestTLSStartServer(t *testing.T) {
 			wantErr: "server address",
 		},
 		"error: handshake with an untrusted server fails": {
-			setup: func(t *testing.T, c *hookdata.Context) {
+			setup: func(c *hookdata.Context) {
 				c.Client.ALPNOffers = bss("h2")
 				c.Client.CipherList = []string{"TLS_AES_256_GCM_SHA384", "ECDHE-RSA-AES128-SHA"}
 				c.Server.Address = &connection.Address{Host: "example.mitmproxy.org", Port: 443}
@@ -499,18 +499,20 @@ func TestTLSStartServer(t *testing.T) {
 		},
 		"success: verified handshake by dns name": {
 			opts: map[string]any{"ssl_verify_upstream_trusted_ca": trustedRoot},
-			setup: func(t *testing.T, c *hookdata.Context) {
+			setup: func(c *hookdata.Context) {
 				c.Server.Address = &connection.Address{Host: "example.mitmproxy.org", Port: 443}
 			},
 			origin: &trustedLeaf,
 		},
 		"success: verified handshake by ip address": {
 			opts: map[string]any{"ssl_verify_upstream_trusted_ca": trustedRoot},
-			setup: func(t *testing.T, c *hookdata.Context) {
+			setup: func(c *hookdata.Context) {
 				c.Server.Address = &connection.Address{Host: "192.0.2.42", Port: 443}
 			},
 			origin: &trustedLeafIP,
 			check: func(t *testing.T, c *hookdata.Context, d *hookdata.TLS, clientState, serverState tls.ConnectionState) {
+				t.Helper()
+
 				if got, want := d.Config.ServerName, "192.0.2.42"; got != want {
 					t.Errorf("ServerName = %q, want %q", got, want)
 				}
@@ -518,7 +520,7 @@ func TestTLSStartServer(t *testing.T) {
 		},
 		"success: insecure skips verification": {
 			opts: map[string]any{"ssl_insecure": true, "http2": false},
-			setup: func(t *testing.T, c *hookdata.Context) {
+			setup: func(c *hookdata.Context) {
 				c.Server.Address = &connection.Address{Host: "example.mitmproxy.org", Port: 443}
 			},
 			origin: &selfSigned,
@@ -528,12 +530,14 @@ func TestTLSStartServer(t *testing.T) {
 				"ssl_verify_upstream_trusted_ca": trustedRoot,
 				"client_certs":                   "mitmproxy-net/verificationcerts/trusted-client-cert.pem",
 			},
-			setup: func(t *testing.T, c *hookdata.Context) {
+			setup: func(c *hookdata.Context) {
 				c.Server.Address = &connection.Address{Host: "example.mitmproxy.org", Port: 443}
 			},
 			origin: &trustedLeaf,
 			mutate: func(cfg *tls.Config) { cfg.ClientAuth = tls.RequireAnyClientCert },
 			check: func(t *testing.T, c *hookdata.Context, d *hookdata.TLS, clientState, serverState tls.ConnectionState) {
+				t.Helper()
+
 				if len(serverState.PeerCertificates) == 0 {
 					t.Error("origin received no client certificate")
 				}
@@ -544,12 +548,14 @@ func TestTLSStartServer(t *testing.T) {
 				"ssl_verify_upstream_trusted_ca": trustedRoot,
 				"client_certs":                   "mitmproxy-net/verificationcerts",
 			},
-			setup: func(t *testing.T, c *hookdata.Context) {
+			setup: func(c *hookdata.Context) {
 				c.Server.Address = &connection.Address{Host: "example.mitmproxy.org", Port: 443}
 			},
 			origin: &trustedLeaf,
 			mutate: func(cfg *tls.Config) { cfg.ClientAuth = tls.RequireAnyClientCert },
 			check: func(t *testing.T, c *hookdata.Context, d *hookdata.TLS, clientState, serverState tls.ConnectionState) {
+				t.Helper()
+
 				if len(serverState.PeerCertificates) == 0 {
 					t.Error("origin received no client certificate for its server name")
 				}
@@ -557,12 +563,14 @@ func TestTLSStartServer(t *testing.T) {
 		},
 		"success: alpn offers mirror the client": {
 			opts: map[string]any{"ssl_insecure": true},
-			setup: func(t *testing.T, c *hookdata.Context) {
+			setup: func(c *hookdata.Context) {
 				c.Client.ALPNOffers = bss("h2", "http/1.1", "foo")
 				c.Server.Address = &connection.Address{Host: "example.mitmproxy.org", Port: 443}
 			},
 			origin: &selfSigned,
 			check: func(t *testing.T, c *hookdata.Context, d *hookdata.TLS, clientState, serverState tls.ConnectionState) {
+				t.Helper()
+
 				if diff := gocmp.Diff(bss("h2", "http/1.1", "foo"), c.Server.ALPNOffers); diff != "" {
 					t.Errorf("server ALPN offers mismatch (-want +got):\n%s", diff)
 				}
@@ -573,12 +581,14 @@ func TestTLSStartServer(t *testing.T) {
 		},
 		"success: sni from the client hello": {
 			opts: map[string]any{"ssl_insecure": true},
-			setup: func(t *testing.T, c *hookdata.Context) {
+			setup: func(c *hookdata.Context) {
 				c.Client.SNI = new("🌈.sni.example")
 				c.Server.Address = &connection.Address{Host: "example.mitmproxy.org", Port: 443}
 			},
 			origin: &selfSigned,
 			check: func(t *testing.T, c *hookdata.Context, d *hookdata.TLS, clientState, serverState tls.ConnectionState) {
+				t.Helper()
+
 				if c.Server.SNI == nil || *c.Server.SNI != "🌈.sni.example" {
 					t.Errorf("server SNI = %v, want the client's", c.Server.SNI)
 				}
@@ -593,11 +603,13 @@ func TestTLSStartServer(t *testing.T) {
 				"ciphers_server":         "ECDHE-RSA-AES128-GCM-SHA256",
 				"tls_version_server_max": "TLS1_2",
 			},
-			setup: func(t *testing.T, c *hookdata.Context) {
+			setup: func(c *hookdata.Context) {
 				c.Server.Address = &connection.Address{Host: "example.mitmproxy.org", Port: 443}
 			},
 			origin: &selfSigned,
 			check: func(t *testing.T, c *hookdata.Context, d *hookdata.TLS, clientState, serverState tls.ConnectionState) {
+				t.Helper()
+
 				if got, want := clientState.CipherSuite, tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256; got != uint16(want) {
 					t.Fatalf("negotiated suite = %#x, want %#x", got, want)
 				}
@@ -609,11 +621,13 @@ func TestTLSStartServer(t *testing.T) {
 		},
 		"success: curve preference applies": {
 			opts: map[string]any{"ssl_insecure": true, "tls_ecdh_curve_server": "secp384r1"},
-			setup: func(t *testing.T, c *hookdata.Context) {
+			setup: func(c *hookdata.Context) {
 				c.Server.Address = &connection.Address{Host: "example.mitmproxy.org", Port: 443}
 			},
 			origin: &selfSigned,
 			check: func(t *testing.T, c *hookdata.Context, d *hookdata.TLS, clientState, serverState tls.ConnectionState) {
+				t.Helper()
+
 				if diff := gocmp.Diff([]tls.CurveID{tls.CurveP384}, d.Config.CurvePreferences); diff != "" {
 					t.Errorf("CurvePreferences mismatch (-want +got):\n%s", diff)
 				}
@@ -641,7 +655,7 @@ func TestTLSStartServer(t *testing.T) {
 			}
 			connCtx := testContext(opts)
 			if tt.setup != nil {
-				tt.setup(t, connCtx)
+				tt.setup(connCtx)
 			}
 			d := &hookdata.TLS{Conn: &connCtx.Server.Connection, Context: connCtx}
 			err := tc.TLSStartServer(t.Context(), d)

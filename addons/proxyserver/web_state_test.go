@@ -96,6 +96,8 @@ func testWebStateReconcile(t *testing.T) {
 // Monitor transitions are injected completed presentation publications here.
 // The source-specific monitor and cancellation paths are exercised in modeserver.
 func testWebStateMonitor(t *testing.T, kind, field, value string) {
+	t.Helper()
+
 	m, ps := webStateFixture(t)
 	states := make(chan ServerSnapshot, 4)
 	if err := m.Do(t.Context(), func(context.Context) error {

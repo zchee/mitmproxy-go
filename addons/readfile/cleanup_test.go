@@ -264,7 +264,7 @@ func TestLoadFlowsCanceledBeforeRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = input.Close(); _ = output.Close() })
-	if _, err := output.Write([]byte("invalid")); err != nil {
+	if _, err := output.WriteString("invalid"); err != nil {
 		t.Fatal(err)
 	}
 	_, r, logs := newReader(t, input)

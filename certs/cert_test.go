@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/pem"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,14 +84,14 @@ func TestCertSimple(t *testing.T) {
 
 func TestCertConvert(t *testing.T) {
 	c := fixtureCert(t, "mitmproxy-net/text_cert")
-	copy, err := certs.ParseCert(c.PEM())
+	decoded, err := certs.ParseCert(c.PEM())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c == copy || !c.Equal(copy) || !c.Equal(certs.NewCert(c.X509())) {
+	if c == decoded || !c.Equal(decoded) || !c.Equal(certs.NewCert(c.X509())) {
 		t.Error("PEM round trip must create a distinct, equal certificate")
 	}
-	if diff := gocmp.Diff(c.PEM(), copy.PEM()); diff != "" {
+	if diff := gocmp.Diff(c.PEM(), decoded.PEM()); diff != "" {
 		t.Errorf("PEM round trip (-want +got):\n%s", diff)
 	}
 }
@@ -186,7 +187,7 @@ func TestCertSubjectIssuer(t *testing.T) {
 		if c.CN() != "" {
 			t.Errorf("CN() = %q, want empty", c.CN())
 		}
-		if !bytes.HasPrefix([]byte(c.String()), []byte("<Cert(cn=None,")) {
+		if !strings.HasPrefix(c.String(), "<Cert(cn=None,") {
 			t.Errorf("String() = %q, want None for missing CN", c.String())
 		}
 	})

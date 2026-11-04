@@ -133,10 +133,7 @@ func testAssetManifest(t *testing.T) {
 	}
 	want := []string{
 		"UPSTREAM_LICENSE", "index.html", "static/favicon.ico",
-		"static/fontawesome-webfont-B-jkhYfk.woff2", "static/fontawesome-webfont-CDK5bt4p.woff",
-		"static/fontawesome-webfont-CQDK8MU3.ttf", "static/fontawesome-webfont-D13rzr4g.svg",
-		"static/fontawesome-webfont-G5YE5S7X.eot", "static/index-Be7e-cwP.js",
-		"static/index-DhPPoJ7G.css", "static/vendor-BS4xPthR.js", "static/vendor-Cg3S-P9H.css",
+		"static/index-BgAKWRDq.css", "static/index-DA3bdZbQ.js", "static/vendor-DXVK1cAY.js",
 		"templates/login.html",
 	}
 	slices.Sort(paths)
@@ -211,13 +208,13 @@ func testAssetMethods(t *testing.T) {
 func testAssetCache(t *testing.T) {
 	server := httptest.NewServer(StaticHandler())
 	t.Cleanup(server.Close)
-	const name = "static/index-Be7e-cwP.js"
+	const name = "static/index-DA3bdZbQ.js"
 	body, err := assets.ReadFile(name)
 	if err != nil {
 		t.Fatal(err)
 	}
 	etag := fmt.Sprintf(`"%x"`, sha512.Sum512(body))
-	modified := time.Unix(1791038697, 0).UTC().Format(http.TimeFormat)
+	modified := time.Unix(1792970709, 0).UTC().Format(http.TimeFormat)
 	tests := map[string]struct {
 		query   string
 		headers http.Header
@@ -233,14 +230,14 @@ func testAssetCache(t *testing.T) {
 		"weak_etag":        {headers: http.Header{"If-None-Match": {"W/" + etag}}, status: 304},
 		"any_etag":         {headers: http.Header{"If-None-Match": {"*"}}, status: 304},
 		"modified":         {headers: http.Header{"If-Modified-Since": {modified}}, status: 304},
-		"old_modified":     {headers: http.Header{"If-Modified-Since": {time.Unix(1791038696, 0).UTC().Format(http.TimeFormat)}}, status: 200},
+		"old_modified":     {headers: http.Header{"If-Modified-Since": {time.Unix(1792970708, 0).UTC().Format(http.TimeFormat)}}, status: 200},
 		"invalid_modified": {headers: http.Header{"If-Modified-Since": {"invalid"}}, status: 200},
 		"etag_precedence":  {headers: http.Header{"If-None-Match": {`"other"`}, "If-Modified-Since": {modified}}, status: 200},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			before := time.Now().UTC().Add(315360000 * time.Second).Truncate(time.Second)
-			response, body := fetchAsset(t, server, "GET", "/static/index-Be7e-cwP.js"+test.query, test.headers)
+			response, body := fetchAsset(t, server, "GET", "/static/index-DA3bdZbQ.js"+test.query, test.headers)
 			after := time.Now().UTC().Add(315360000 * time.Second)
 			if response.StatusCode != test.status {
 				t.Fatalf("status = %d, want %d", response.StatusCode, test.status)
@@ -270,7 +267,7 @@ func testAssetCache(t *testing.T) {
 func testAssetRange(t *testing.T) {
 	server := httptest.NewServer(StaticHandler())
 	t.Cleanup(server.Close)
-	body, err := assets.ReadFile("static/index-Be7e-cwP.js")
+	body, err := assets.ReadFile("static/index-DA3bdZbQ.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +283,7 @@ func testAssetRange(t *testing.T) {
 		"suffix":        {rangeValue: "bytes=-10", status: 206, body: body[len(body)-10:], content: fmt.Sprintf("bytes %d-%d/%d", len(body)-10, len(body)-1, len(body))},
 		"open_end":      {rangeValue: fmt.Sprintf("bytes=%d-", len(body)-10), status: 206, body: body[len(body)-10:], content: fmt.Sprintf("bytes %d-%d/%d", len(body)-10, len(body)-1, len(body))},
 		"matching_etag": {rangeValue: "bytes=0-9", ifRange: etag, status: 206, body: body[:10], content: fmt.Sprintf("bytes 0-9/%d", len(body))},
-		"matching_date": {rangeValue: "bytes=0-9", ifRange: time.Unix(1791038697, 0).UTC().Format(http.TimeFormat), status: 206, body: body[:10], content: fmt.Sprintf("bytes 0-9/%d", len(body))},
+		"matching_date": {rangeValue: "bytes=0-9", ifRange: time.Unix(1792970709, 0).UTC().Format(http.TimeFormat), status: 206, body: body[:10], content: fmt.Sprintf("bytes 0-9/%d", len(body))},
 		"stale_etag":    {rangeValue: "bytes=0-9", ifRange: `"old"`, status: 200, body: body},
 		"unsatisfiable": {rangeValue: fmt.Sprintf("bytes=%d-", len(body)), status: 416, content: fmt.Sprintf("bytes */%d", len(body))},
 	}
@@ -296,7 +293,7 @@ func testAssetRange(t *testing.T) {
 			if test.ifRange != "" {
 				headers.Set("If-Range", test.ifRange)
 			}
-			response, got := fetchAsset(t, server, "GET", "/static/index-Be7e-cwP.js", headers)
+			response, got := fetchAsset(t, server, "GET", "/static/index-DA3bdZbQ.js", headers)
 			if response.StatusCode != test.status || response.Header.Get("Content-Range") != test.content {
 				t.Fatalf("range status = %d, headers = %v", response.StatusCode, response.Header)
 			}
@@ -323,11 +320,11 @@ func testAssetPaths(t *testing.T) {
 		"escaped_traversal": {path: "/static/%2e%2e%2findex.html", status: 403},
 		"double_escaped":    {path: "/static/%252e%252e%252findex.html", status: 404},
 		"absolute_path":     {path: "/static/%2findex.html", status: 403},
-		"escaped_name":      {path: "/static/%69ndex-Be7e-cwP.js", status: 200},
-		"escaped_separator": {path: "/static/a%2f..%2findex-Be7e-cwP.js", status: 200},
-		"nul":               {path: "/static/index-Be7e-cwP.js%00", status: 404},
+		"escaped_name":      {path: "/static/%69ndex-DA3bdZbQ.js", status: 200},
+		"escaped_separator": {path: "/static/a%2f..%2findex-DA3bdZbQ.js", status: 200},
+		"nul":               {path: "/static/index-DA3bdZbQ.js%00", status: 404},
 		"backslash":         {path: "/static/..%5cindex.html", status: 404},
-		"post":              {path: "/static/index-Be7e-cwP.js", method: "POST", status: 405},
+		"post":              {path: "/static/index-DA3bdZbQ.js", method: "POST", status: 405},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

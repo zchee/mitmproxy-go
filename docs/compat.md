@@ -28,16 +28,15 @@ differences themselves.
 | Content views and highlighting | `mitmproxy/contentviews`, `mitmproxy_rs` syntax highlighting | `contentviews`, `contentviews/highlight` | implemented; unknown WBXML tags render `UNKNOWN_TAG_XX` as at `v12.3.1` |
 | Scripting | Python addon scripts | Starlark (`script/`) | intentional replacement; see [Additional compatibility decisions](#additional-compatibility-decisions) |
 | Options and commands | 119 registered upstream options at `v12.3.1` | 117-name manifest after the [comparison policy](#upstream-option-comparison-policy) projects out `emudhra` and `emudhra_old`; help text matches | implemented except the two deferred options |
-| Embedded mitmweb assets | rebuilt for 12.3.0 ([mitmproxy/mitmproxy#8358](https://github.com/mitmproxy/mitmproxy/pull/8358), [mitmproxy/mitmproxy#8492](https://github.com/mitmproxy/mitmproxy/pull/8492)) | older embedded build retained | deferred (see below) |
+| Embedded mitmweb assets | rebuilt for 12.3.0 ([mitmproxy/mitmproxy#8358](https://github.com/mitmproxy/mitmproxy/pull/8358), [mitmproxy/mitmproxy#8492](https://github.com/mitmproxy/mitmproxy/pull/8492)) | `internal/tools/web` embeds the `v12.3.1` build byte-exact, with its manifest and copied references | implemented; see [internal/tools/web](#internaltoolsweb) |
 | eMudhra interception and revocation-host blocking | `--emudhra`, `--emudhra-old` | not registered; the defensive distrust policy is independent | deferred (see below) |
 | Differential coverage gaps | — | no direct fuzz target for the cookie parser; the 200×50 console frames have no Python regenerator and are kept under a layout/presentation review | documented limitation |
 
 ## Deferred differences against mitmproxy 12.3.1 and mitmproxy_rs 0.12.15
 
-The deferred changes below are the embedded mitmweb asset update and the two eMudhra interception features.
-Upstream paths and line numbers in this table refer specifically to `v12.3.1`; Go paths refer to the current
-implementation. Matching the comparison baseline elsewhere does not implement either deferred change or
-relabel retained assets and copied references.
+The deferred changes below are the two eMudhra interception features. Upstream paths and line numbers in
+this table refer specifically to `v12.3.1`; Go paths refer to the current implementation. Matching the
+comparison baseline elsewhere does not implement the deferred change or relabel copied references.
 
 The Python differential oracle is at `v12.3.1` (`51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7`), together with
 the active oracle scripts, option extractor, options golden generator and console acceptance oracle.
@@ -53,7 +52,6 @@ compares the ordered source pairs without claiming a generator was rerun.
 
 | Upstream change | Go location | Present Go behaviour | What catch-up needs |
 |---|---|---|---|
-| Resizable flow-table columns and improved flow-details splitter ([mitmproxy/mitmproxy#8358](https://github.com/mitmproxy/mitmproxy/pull/8358), [mitmproxy/mitmproxy#8492](https://github.com/mitmproxy/mitmproxy/pull/8492)); static assets rebuilt for 12.3.0. | `internal/tools/web/assets.tsv:1`, `internal/tools/web/static/`; copied references under `testdata/mitmproxy/tools/web/`. | Embedded mitmweb assets and their manifest retain the build from `3368a0a`; the newer UI is not bundled. | Import and verify the new upstream build, update its manifest and copied references, and rerun browser/schema acceptance. |
 | Add `--emudhra` and `--emudhra-old`, including associated revocation-host blocking (`mitmproxy/tools/cmdline.py:79-80`, `mitmproxy/addons/tlsconfig.py:219-231,518-535,696-701`; [mitmproxy/mitmproxy#8500](https://github.com/mitmproxy/mitmproxy/pull/8500), [mitmproxy/mitmproxy#8503](https://github.com/mitmproxy/mitmproxy/pull/8503), [mitmproxy/mitmproxy#8516](https://github.com/mitmproxy/mitmproxy/pull/8516)). | `certs/distrust.go:54-98`; [existing defensive policy](#addonstlsconfig) | Neither interception option is implemented. The independent defensive distrust policy remains; it is not equivalent to these upstream features. | A separate explicit feature/policy decision and corresponding option, CLI, certificate-chain and request-handling acceptance; the baseline update authorizes none of these. |
 
 Vendored reference sources also retain their production revisions. At `v12.3.1`, the copied WBXML test adds an
@@ -601,16 +599,22 @@ must pass independently before the carrier is relied on.
 
 | Upstream behaviour | Go behaviour | Reason |
 |---|---|---|
-| Tornado's static handler derives `Last-Modified` from the file's checkout mtime (`py:mitmproxy/tools/web/app.py:925-928` at `3368a0a`; inherited Tornado 6.5.10 `tornado/web.py:3229-3250`). | The embedded static handler uses the pinned upstream commit timestamp, Unix `1791038697`, for every static asset (`internal/tools/web/assets.go:23-27,153-167`). | Embedded files have zero mtimes; a fixed source timestamp makes validators reproducible across builds and checkouts. |
+| Tornado's static handler derives `Last-Modified` from the file's checkout mtime (`py:mitmproxy/tools/web/app.py:925-928` at `51c1d6b2`; inherited Tornado 6.5.10 `tornado/web.py:3229-3250`). | The embedded static handler uses the `v12.3.1` commit timestamp, Unix `1792970709`, for every static asset (`internal/tools/web/assets.go:23-27,153-167`). | Embedded files have zero mtimes; a fixed source timestamp makes validators reproducible across builds and checkouts. |
+| The `v12.3.1` `index.html` keeps a development-template `<link rel="stylesheet" href="src/css/vendor.less">` beside the hashed bundle links; the Tornado handler table has no route for `/src/css/vendor.less`, so its default handler answers 404 (`py:mitmproxy/tools/web/app.py:889-914` at `51c1d6b2`). | The byte-exact index is served unchanged and the composed router answers the same path with 404 (`internal/tools/web/routes.go:85-118`). | The index is an upstream reference, not a Go template; the failed stylesheet request is identical to upstream's and the bundle does not depend on it. |
 
-Reproduced on purpose: the ten static files and index are byte-exact upstream
-references with the MIT notice. Static ETags are quoted SHA-512 digests; JavaScript
+Reproduced on purpose: the four static files and index are the `v12.3.1` build
+(rebuilt upstream for 12.3.0 with resizable flow-table columns and the improved
+flow-details splitter), byte-exact with the MIT notice. The import was taken from
+the `v12.3.1` git tree and cross-checked byte-for-byte against the
+`mitmproxy-12.3.1-py3-none-any.whl` wheel on PyPI (SHA-256
+`87afb808ac8d55383dbe6aa30eadeb0fedaeffd26210e7e23c25c9cd43bdb36a`); the
+comparison receipt is retained outside the repository. Static ETags are quoted SHA-512 digests; JavaScript
 uses `text/javascript` independently of the host MIME registry. Ordinary static
 responses add no explicit `Cache-Control`; a `v` query parameter selects
 `max-age=315360000` and `Expires`. Static files remain unauthenticated, as upstream;
 index authentication belongs to the composed backend, not `IndexHandler` itself.
-The static handler and index remain the same pinned frontend (`py:mitmproxy/tools/web/app.py:52-55,361-368,925-928`
-at `3368a0a`; `internal/tools/web/assets.go:23-24,31-112`, `assets.tsv:1-16`, `UPSTREAM_LICENSE:1-19`).
+The static handler and index serve that pinned frontend (`py:mitmproxy/tools/web/app.py:52-55,361-368,925-928`
+at `51c1d6b2`; `internal/tools/web/assets.go:23-24,31-112`, `assets.tsv:1-10`, `UPSTREAM_LICENSE:1-19`).
 
 ### Routes and metadata
 

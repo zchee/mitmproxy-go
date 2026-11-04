@@ -4,6 +4,7 @@
 package script
 
 import (
+	"errors"
 	"fmt"
 
 	"go.starlark.net/starlark"
@@ -53,7 +54,7 @@ func (c *conversion) native(v starlark.Value, depth int) (any, error) {
 	case starlark.Int:
 		n, ok := v.Int64()
 		if !ok {
-			return nil, fmt.Errorf("integer exceeds signed 64-bit range")
+			return nil, errors.New("integer exceeds signed 64-bit range")
 		}
 		return n, nil
 	case *flowValue:
@@ -66,7 +67,7 @@ func (c *conversion) native(v starlark.Value, depth int) (any, error) {
 			c.active = make(map[starlark.Value]bool)
 		}
 		if c.active[v] {
-			return nil, fmt.Errorf("conversion contains a cycle")
+			return nil, errors.New("conversion contains a cycle")
 		}
 		c.active[v] = true
 		defer delete(c.active, v)
@@ -100,7 +101,7 @@ func (c *conversion) native(v starlark.Value, depth int) (any, error) {
 			c.active = make(map[starlark.Value]bool)
 		}
 		if c.active[v] {
-			return nil, fmt.Errorf("conversion contains a cycle")
+			return nil, errors.New("conversion contains a cycle")
 		}
 		c.active[v] = true
 		defer delete(c.active, v)
@@ -223,7 +224,7 @@ func (c *conversion) value(i *invocation, v any, depth int) (starlark.Value, err
 			if err != nil {
 				return nil, err
 			}
-			if err = out.SetKey(starlark.String(key), value); err != nil {
+			if err := out.SetKey(starlark.String(key), value); err != nil {
 				return nil, err
 			}
 		}
@@ -318,10 +319,10 @@ func commandArgument(typ command.Type, v starlark.Value) (any, error) {
 	case "Flows":
 		seq, ok := v.(starlark.Indexable)
 		if !ok {
-			return nil, fmt.Errorf("expected flow sequence")
+			return nil, errors.New("expected flow sequence")
 		}
 		if seq.Len() > conversionLimit {
-			return nil, fmt.Errorf("too many flows")
+			return nil, errors.New("too many flows")
 		}
 		out := make([]flow.Flow, seq.Len())
 		for n := range seq.Len() {
@@ -342,19 +343,19 @@ func commandArgument(typ command.Type, v starlark.Value) (any, error) {
 		}
 		rows, ok := x.([]any)
 		if !ok {
-			return nil, fmt.Errorf("expected data rows")
+			return nil, errors.New("expected data rows")
 		}
 		out := make(command.Data, len(rows))
 		for n, row := range rows {
 			cells, ok := row.([]any)
 			if !ok {
-				return nil, fmt.Errorf("expected data row")
+				return nil, errors.New("expected data row")
 			}
 			for _, cell := range cells {
 				switch cell.(type) {
 				case string, []byte:
 				default:
-					return nil, fmt.Errorf("data cells must be strings or bytes")
+					return nil, errors.New("data cells must be strings or bytes")
 				}
 			}
 			out[n] = cells

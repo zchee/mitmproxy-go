@@ -116,11 +116,11 @@ func mergeSnapshot(f flow.Flow) *state.Map {
 }
 
 func newFlowMerge(live flow.Flow) (*flowMerge, error) {
-	copy, err := invocationClone(live)
+	cloned, err := invocationClone(live)
 	if err != nil {
 		return nil, err
 	}
-	return &flowMerge{live: live, copy: copy, baseline: mergeSnapshot(copy), messageIndices: make(map[string][]int)}, nil
+	return &flowMerge{live: live, copy: cloned, baseline: mergeSnapshot(cloned), messageIndices: make(map[string][]int)}, nil
 }
 
 func (m *flowMerge) checkpoint(action string) {

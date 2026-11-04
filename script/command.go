@@ -87,12 +87,12 @@ func (o *commandOwnership) argument(value any, depth int) (any, error) {
 		}
 		out := make([]flow.Flow, len(value))
 		for n, f := range value {
-			copy, err := o.argument(f, depth+1)
+			cloned, err := o.argument(f, depth+1)
 			if err != nil {
 				return nil, err
 			}
-			if copy != nil {
-				out[n] = copy.(flow.Flow)
+			if cloned != nil {
+				out[n] = cloned.(flow.Flow)
 			}
 		}
 		return out, nil
@@ -114,11 +114,11 @@ func (o *commandOwnership) argument(value any, depth int) (any, error) {
 		}
 		out := make(command.Data, len(value))
 		for n, row := range value {
-			copy, err := o.argument(row, depth+1)
+			cloned, err := o.argument(row, depth+1)
 			if err != nil {
 				return nil, err
 			}
-			out[n] = copy.([]any)
+			out[n] = cloned.([]any)
 		}
 		return out, nil
 	case []any:
@@ -143,14 +143,14 @@ func (o *commandOwnership) argument(value any, depth int) (any, error) {
 		}
 		out := state.NewMap(value.Len())
 		for key, x := range value.All() {
-			copy, err := o.argument(x, depth+1)
+			cloned, err := o.argument(x, depth+1)
 			if err != nil {
 				return nil, err
 			}
 			if value.IsBytesKey(key) {
-				out.SetBytesKey(key, copy)
+				out.SetBytesKey(key, cloned)
 			} else {
-				out.Set(key, copy)
+				out.Set(key, cloned)
 			}
 		}
 		return out, nil
@@ -166,12 +166,12 @@ func (o *commandOwnership) copyFlow(f flow.Flow) (flow.Flow, error) {
 	if prior := o.flows[f]; prior != nil {
 		return prior, nil
 	}
-	copy, err := invocationClone(f)
+	cloned, err := invocationClone(f)
 	if err != nil {
 		return nil, err
 	}
-	o.flows[f] = copy
-	return copy, nil
+	o.flows[f] = cloned
+	return cloned, nil
 }
 
 func (o *commandOwnership) copyBack() error {

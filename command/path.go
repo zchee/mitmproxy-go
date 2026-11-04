@@ -134,7 +134,7 @@ func pyDirname(p string) string {
 		seps = `\/`
 		volume = filepath.VolumeName(p)
 		p = p[len(volume):]
-		if len(p) > 0 && os.IsPathSeparator(p[0]) {
+		if p != "" && os.IsPathSeparator(p[0]) {
 			root, p = p[:1], p[1:]
 		}
 	}

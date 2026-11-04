@@ -91,7 +91,7 @@ func expandTabs(s string) string {
 	}
 	var b strings.Builder
 	col := 0
-	for len(s) > 0 {
+	for s != "" {
 		_, size := utf8.DecodeRuneInString(s)
 		switch s[0] {
 		case '\t':

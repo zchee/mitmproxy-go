@@ -5,6 +5,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -340,10 +341,10 @@ var (
 )
 
 // errInvalidChoice is mitmproxy's text for a value outside a closed set.
-var errInvalidChoice = fmt.Errorf("Invalid choice.") //nolint:staticcheck // mitmproxy's message, shown to users verbatim.
+var errInvalidChoice = errors.New("Invalid choice.") //nolint:staticcheck // mitmproxy's message, shown to users verbatim.
 
 // errDataArgument reports a Data identity used as a command-line argument.
-var errDataArgument = fmt.Errorf("data cannot be passed as argument")
+var errDataArgument = errors.New("data cannot be passed as argument")
 
 // cutSpecPrefixes are the selectors a cut specification may start with
 // (mitmproxy's _CutSpecType.valid_prefixes).
@@ -502,8 +503,8 @@ const escapeSequences = `\\([\\'"abfnrtv]` +
 	`|[0-7]{1,3}` + // character with octal value
 	`|x..` + // character with hex value
 	`|N\{[^}]+\}` + // character name in the Unicode database
-	`|u....` + // character with 16-bit hex value
-	`|U........` + // character with 32-bit hex value
+	`|u.{4}` + // character with 16-bit hex value
+	`|U.{8}` + // character with 32-bit hex value
 	`)`
 
 var escapeSequencesRE = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(escapeSequences) })

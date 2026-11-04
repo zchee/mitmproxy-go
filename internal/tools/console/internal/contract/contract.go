@@ -362,6 +362,19 @@ type ErrorMsg struct {
 	Err    error
 }
 
+// ReplayPending removes queued messages until update returns a command.
+// Messages after that command remain queued for its completion.
+func ReplayPending(pending *[]tea.Msg, update func(tea.Msg) (tea.Cmd, bool)) tea.Cmd {
+	for len(*pending) > 0 {
+		next := (*pending)[0]
+		*pending = (*pending)[1:]
+		if cmd, _ := update(next); cmd != nil {
+			return cmd
+		}
+	}
+	return nil
+}
+
 // SnapshotMsg delivers an admitted snapshot after dispatch has been released.
 type SnapshotMsg struct {
 	Snapshot Snapshot

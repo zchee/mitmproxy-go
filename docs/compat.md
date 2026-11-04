@@ -12,6 +12,26 @@ so that it is not mistaken for a port bug.
 
 Anything not listed here is meant to behave as upstream does; a difference that is not on this page is a bug.
 
+## Port status against upstream
+
+This section summarises where the port stands against the comparison baselines; the sections below record the
+differences themselves.
+
+| Area | Upstream | Port | Status |
+|---|---|---|---|
+| Comparison baseline (Python) | mitmproxy `v12.3.1` (`51c1d6b2d8d3367a773411eb7a3eeccec82b3ea7`), flow format version 21 | Differential oracle, option extractor, options golden generator and console acceptance oracle all run at this commit | current |
+| Comparison baseline (Rust) | mitmproxy-rs `v0.12.15` (`a1ce1d9bfd35d3a593ace483015c9cbcd40ddff8`) | Redirector wheels, highlighting goldens and the vendored IPC schema at `0.12.15` | current |
+| Commands | `mitmdump`, `mitmproxy`, `mitmweb` | `cmd/mitmdump`, `cmd/mitmproxy`, `cmd/mitmweb` | implemented; cross-built release artifacts, native platform acceptance documented per mode |
+| Proxy modes | regular, reverse, upstream, transparent, socks5, dns, wireguard, tun, local | `internal/proxy/modespec`, `internal/proxy/modeserver` | implemented; port-less `local`/`tun` resolution matches `v12.3.1` |
+| Protocol layers | HTTP/1, HTTP/2, HTTP/3 and QUIC, WebSocket, raw TCP/UDP, DTLS, DNS | `internal/proxy/layers/...`, `websocket`, `tcp`, `udp`, `dns` | implemented; see the per-package sections below for intentional differences |
+| Addons | 41 modules under `mitmproxy/addons` | 41 packages under `addons/` (`asgiapp` is split into `apphost` and `onboardingapp`; `script` is replaced by the Starlark loader under `script/`) | implemented |
+| Content views and highlighting | `mitmproxy/contentviews`, `mitmproxy_rs` syntax highlighting | `contentviews`, `contentviews/highlight` | implemented; unknown WBXML tags render `UNKNOWN_TAG_XX` as at `v12.3.1` |
+| Scripting | Python addon scripts | Starlark (`script/`) | intentional replacement; see [Additional compatibility decisions](#additional-compatibility-decisions) |
+| Options and commands | 119 registered upstream options at `v12.3.1` | 117-name manifest after the [comparison policy](#upstream-option-comparison-policy) projects out `emudhra` and `emudhra_old`; help text matches | implemented except the two deferred options |
+| Embedded mitmweb assets | rebuilt for 12.3.0 (`#8358`, `#8492`) | older embedded build retained | deferred (see below) |
+| eMudhra interception and revocation-host blocking | `--emudhra`, `--emudhra-old` | not registered; the defensive distrust policy is independent | deferred (see below) |
+| Differential coverage gaps | — | no direct fuzz target for the cookie parser; the 200×50 console frames have no Python regenerator and are kept under a layout/presentation review | documented limitation |
+
 ## Deferred differences against mitmproxy 12.3.1 and mitmproxy_rs 0.12.15
 
 The deferred changes below are the embedded mitmweb asset update and the two eMudhra interception features.
@@ -1465,7 +1485,7 @@ separate from frontend/IPC integration.
 
 | Upstream | Go | Reason |
 |---|---|---|
-| Installed Python packages resolve redirector resources (`mitmproxy-rs/mitmproxy-rs/src/server/local_redirector.rs:104-137`). | AcquireArtifact verifies pinned 0.12.11 platform-wheel SHA-256 in private staging, bounds archive entries/extracted bytes and atomically publishes/revalidates the cache. Explicit executable/macOS app overrides avoid downloads. | No Python resource lookup; cached native payloads must preserve verified integrity. |
+| Installed Python packages resolve redirector resources (`mitmproxy-rs/mitmproxy-rs/src/server/local_redirector.rs:104-137`). | AcquireArtifact verifies pinned 0.12.15 platform-wheel SHA-256 in private staging, bounds archive entries/extracted bytes and atomically publishes/revalidates the cache. Explicit executable/macOS app overrides avoid downloads. | No Python resource lookup; cached native payloads must preserve verified integrity. |
 | macOS copies/updates the app into /Applications using archive/Info.plist mtimes and MITMPROXY_KEEP_REDIRECTOR (`mitmproxy-rs/mitmproxy-rs/src/server/local_redirector.rs:138-155,171-213`). | Requires an installed app or explicit executable/app override. Acquisition returns a verified tar but does not install it or approve the extension. | Automatic installation/updating and OS approval remain separate native acceptance work, not reproduced or waived. |
 | macOS starts its helper before a five-second control wait (`mitmproxy-rs/src/packet_sources/macos.rs:37-67,85-95`). | Starter completion/control connection share a bounded startup context; lifetime cancellation and Close release/join controller work. | Bound owned launch/IPC work; OS approval remains manual. |
 | macOS handshake tasks have no explicit aggregate admission bound (`mitmproxy-rs/src/packet_sources/macos.rs:123-159,185-198`). | Bounds per-flow handshake/admission concurrency and pending TCP/UDP queues. Messages cap at 8 MiB; reads do not allocate solely from a prefix. Raw TCP tail is untouched. | Bound incomplete/unconsumed IPC state without mixing flows. |

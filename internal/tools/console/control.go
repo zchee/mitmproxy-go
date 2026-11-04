@@ -231,11 +231,12 @@ func reduce(state contract.State, a contract.Action) (contract.State, error) {
 		}
 		next.QuitPrompt = false
 	case "pop":
-		if pane.Overlay != nil {
+		switch {
+		case pane.Overlay != nil:
 			pane.Overlay = nil
-		} else if len(pane.Stack) > 1 {
+		case len(pane.Stack) > 1:
 			pane.Stack = pane.Stack[:len(pane.Stack)-1]
-		} else {
+		default:
 			next.QuitPrompt = true
 		}
 	case "pane":

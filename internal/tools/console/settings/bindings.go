@@ -111,14 +111,7 @@ func (b *Bindings) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 		}()
 		b.busy = false
 		b.err = result.err
-		for len(b.pending) > 0 {
-			next := b.pending[0]
-			b.pending = b.pending[1:]
-			if cmd, _ := b.Update(next); cmd != nil {
-				return cmd, true
-			}
-		}
-		return nil, true
+		return contract.ReplayPending(&b.pending, b.Update), true
 	}
 	key, ok := msg.(tea.KeyPressMsg)
 	name := key.String()

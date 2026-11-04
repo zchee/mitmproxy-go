@@ -81,7 +81,7 @@ func currentServer(c *Controller) *serverGeneration {
 
 func getDebug(t *testing.T, x *serverFixture, path string) ([]byte, int) {
 	t.Helper()
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+x.c.Status().Address+path, nil)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+x.c.Status().Address+path, http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +355,7 @@ func TestDebugServer(t *testing.T) {
 			requestDone := make(chan struct{})
 			go func() {
 				defer close(requestDone)
-				request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+g.address+"/owned-join?seconds=300", nil)
+				request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+g.address+"/owned-join?seconds=300", http.NoBody)
 				if err != nil {
 					t.Error(err)
 					return

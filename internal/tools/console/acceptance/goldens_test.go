@@ -53,7 +53,7 @@ func presentation(view tea.View) framePresentation {
 	for row, line := range strings.Split(view.Content, "\n") {
 		column := 0
 		var state byte
-		for len(line) > 0 {
+		for line != "" {
 			sequence, width, consumed, next := ansi.DecodeSequence(line, state, nil)
 			if consumed == 0 {
 				break

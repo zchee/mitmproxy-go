@@ -69,14 +69,7 @@ func (r *Reference) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 		}()
 		r.busy = false
 		r.err = result.err
-		for len(r.pending) > 0 {
-			next := r.pending[0]
-			r.pending = r.pending[1:]
-			if cmd, _ := r.Update(next); cmd != nil {
-				return cmd, true
-			}
-		}
-		return nil, true
+		return contract.ReplayPending(&r.pending, r.Update), true
 	}
 	key, ok := msg.(tea.KeyPressMsg)
 	name := key.String()

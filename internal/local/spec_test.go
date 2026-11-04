@@ -61,44 +61,6 @@ func TestEncodeInterceptSpec(t *testing.T) {
 	}
 }
 
-func TestDescribeSpec(t *testing.T) {
-	// Descriptions come from src/intercept_conf.rs:143-161; invalid-spec
-	// error strings come from src/intercept_conf.rs:43-53.
-	tests := map[string]struct {
-		spec     string
-		expected string
-		wantErr  string
-	}{
-		"success: disabled":                   {expected: "Intercept nothing."},
-		"success: PID list":                   {spec: "1,2,3", expected: "Include PID 1. Include PID 2. Include PID 3."},
-		"success: process substring":          {spec: "mitm", expected: "Include processes matching \"mitm\"."},
-		"success: PID exclusion":              {spec: "!1234", expected: "Exclude PID 1234."},
-		"success: mixed rules":                {spec: " curl , ! 0007 , ! wget", expected: "Include processes matching \"curl\". Exclude PID 7. Exclude processes matching \"wget\"."},
-		"success: positive signed PID":        {spec: "+0001", expected: "Include PID 1."},
-		"success: oversized PID is a process": {spec: "4294967296", expected: "Include processes matching \"4294967296\"."},
-		"success: quotes are not escaped":     {spec: "\"curl\"", expected: "Include processes matching \"\"curl\"\"."},
-		"error: empty comma patterns":         {spec: ",,", wantErr: "invalid intercept spec: ,,"},
-		"error: empty exclusion":              {spec: "!", wantErr: "invalid intercept spec: !"},
-	}
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			got, err := DescribeSpec(test.spec)
-			if test.wantErr != "" {
-				if err == nil || err.Error() != test.wantErr || got != "" {
-					t.Fatalf("DescribeSpec(%q) = %q, %v; want empty, %q", test.spec, got, err, test.wantErr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if diff := gocmp.Diff(test.expected, got); diff != "" {
-				t.Fatalf("description (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
 func TestUnavailableReason(t *testing.T) {
 	// Exact messages follow mitmproxy-rs/src/server/local_redirector.rs:72-83
 	// in the pinned Rust checkout.

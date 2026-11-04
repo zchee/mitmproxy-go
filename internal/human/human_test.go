@@ -213,23 +213,6 @@ func TestPrettyDuration(t *testing.T) {
 	}
 }
 
-func TestPrettyOptDuration(t *testing.T) {
-	tests := map[string]struct {
-		secs *float64
-		want string
-	}{
-		"upstream: none": {secs: nil, want: ""},
-		"success: value": {secs: new(1.123), want: "1.12s"},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			if diff := gocmp.Diff(tt.want, PrettyOptDuration(tt.secs)); diff != "" {
-				t.Errorf("PrettyOptDuration mismatch (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
 func TestNoAddress(t *testing.T) {
 	// Upstream: format_address(None) == "<no address>".
 	if diff := gocmp.Diff("<no address>", NoAddress); diff != "" {
@@ -250,35 +233,31 @@ func TestFormatTimestamp(t *testing.T) {
 	tokyo := loadLocation(t, "Asia/Tokyo")
 	newYork := loadLocation(t, "America/New_York")
 	tests := map[string]struct {
-		ts       float64
-		loc      *time.Location
-		want     string
-		wantMill string
+		ts   float64
+		loc  *time.Location
+		want string
 	}{
-		"utc: epoch":                     {ts: 0, loc: time.UTC, want: "1970-01-01 00:00:00", wantMill: "1970-01-01 00:00:00.000"},
-		"utc: fraction rounds to us":     {ts: 1.9999999, loc: time.UTC, want: "1970-01-01 00:00:01", wantMill: "1970-01-01 00:00:02.000"},
-		"utc: negative half second":      {ts: -0.5, loc: time.UTC, want: "1969-12-31 23:59:59", wantMill: "1969-12-31 23:59:59.500"},
-		"utc: negative one and a half":   {ts: -1.5, loc: time.UTC, want: "1969-12-31 23:59:58", wantMill: "1969-12-31 23:59:58.500"},
-		"utc: negative half millisecond": {ts: -0.0005, loc: time.UTC, want: "1969-12-31 23:59:59", wantMill: "1969-12-31 23:59:59.999"},
-		"utc: microseconds truncated":    {ts: 1700000000.123456, loc: time.UTC, want: "2023-11-14 22:13:20", wantMill: "2023-11-14 22:13:20.123"},
-		"utc: half millisecond":          {ts: 1700000000.0005, loc: time.UTC, want: "2023-11-14 22:13:20", wantMill: "2023-11-14 22:13:20.000"},
-		"utc: carries into next second":  {ts: 1700000000.9999996, loc: time.UTC, want: "2023-11-14 22:13:20", wantMill: "2023-11-14 22:13:21.000"},
-		"utc: just under a millisecond":  {ts: 1700000000.0004995, loc: time.UTC, want: "2023-11-14 22:13:20", wantMill: "2023-11-14 22:13:20.000"},
-		"utc: 1.5 milliseconds":          {ts: 1e9 + 0.0015, loc: time.UTC, want: "2001-09-09 01:46:40", wantMill: "2001-09-09 01:46:40.001"},
-		"utc: last second of 9999":       {ts: 253402300799, loc: time.UTC, want: "9999-12-31 23:59:59", wantMill: "9999-12-31 23:59:59.000"},
-		"zone: tokyo":                    {ts: 1700000000.5, loc: tokyo, want: "2023-11-15 07:13:20", wantMill: "2023-11-15 07:13:20.500"},
-		"zone: new york first 1am":       {ts: 1699160400, loc: newYork, want: "2023-11-05 01:00:00", wantMill: "2023-11-05 01:00:00.000"},
-		"zone: new york second 1am":      {ts: 1699164000.25, loc: newYork, want: "2023-11-05 01:00:00", wantMill: "2023-11-05 01:00:00.250"},
-		"zone: new york after fall-back": {ts: 1699167600, loc: newYork, want: "2023-11-05 02:00:00", wantMill: "2023-11-05 02:00:00.000"},
-		"zone: new york spring-forward":  {ts: 1678604400, loc: newYork, want: "2023-03-12 03:00:00", wantMill: "2023-03-12 03:00:00.000"},
+		"utc: epoch":                     {ts: 0, loc: time.UTC, want: "1970-01-01 00:00:00"},
+		"utc: fraction rounds to us":     {ts: 1.9999999, loc: time.UTC, want: "1970-01-01 00:00:01"},
+		"utc: negative half second":      {ts: -0.5, loc: time.UTC, want: "1969-12-31 23:59:59"},
+		"utc: negative one and a half":   {ts: -1.5, loc: time.UTC, want: "1969-12-31 23:59:58"},
+		"utc: negative half millisecond": {ts: -0.0005, loc: time.UTC, want: "1969-12-31 23:59:59"},
+		"utc: microseconds truncated":    {ts: 1700000000.123456, loc: time.UTC, want: "2023-11-14 22:13:20"},
+		"utc: half millisecond":          {ts: 1700000000.0005, loc: time.UTC, want: "2023-11-14 22:13:20"},
+		"utc: carries into next second":  {ts: 1700000000.9999996, loc: time.UTC, want: "2023-11-14 22:13:20"},
+		"utc: just under a millisecond":  {ts: 1700000000.0004995, loc: time.UTC, want: "2023-11-14 22:13:20"},
+		"utc: 1.5 milliseconds":          {ts: 1e9 + 0.0015, loc: time.UTC, want: "2001-09-09 01:46:40"},
+		"utc: last second of 9999":       {ts: 253402300799, loc: time.UTC, want: "9999-12-31 23:59:59"},
+		"zone: tokyo":                    {ts: 1700000000.5, loc: tokyo, want: "2023-11-15 07:13:20"},
+		"zone: new york first 1am":       {ts: 1699160400, loc: newYork, want: "2023-11-05 01:00:00"},
+		"zone: new york second 1am":      {ts: 1699164000.25, loc: newYork, want: "2023-11-05 01:00:00"},
+		"zone: new york after fall-back": {ts: 1699167600, loc: newYork, want: "2023-11-05 02:00:00"},
+		"zone: new york spring-forward":  {ts: 1678604400, loc: newYork, want: "2023-03-12 03:00:00"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			if diff := gocmp.Diff(tt.want, FormatTimestamp(tt.ts, tt.loc)); diff != "" {
 				t.Errorf("FormatTimestamp(%v) mismatch (-want +got):\n%s", tt.ts, diff)
-			}
-			if diff := gocmp.Diff(tt.wantMill, FormatTimestampWithMilli(tt.ts, tt.loc)); diff != "" {
-				t.Errorf("FormatTimestampWithMilli(%v) mismatch (-want +got):\n%s", tt.ts, diff)
 			}
 		})
 	}
@@ -295,8 +274,7 @@ func TestFormatTimestampNow(t *testing.T) {
 		layout string
 		trunc  time.Duration
 	}{
-		"upstream: format_timestamp":            {format: FormatTimestamp, layout: time.DateTime, trunc: time.Second},
-		"upstream: format_timestamp_with_milli": {format: FormatTimestampWithMilli, layout: "2006-01-02 15:04:05.000", trunc: time.Millisecond},
+		"upstream: format_timestamp": {format: FormatTimestamp, layout: time.DateTime, trunc: time.Second},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -52,7 +52,7 @@ func TestObservabilityCLI(t *testing.T) {
 				for _, listing := range []string{"--options", "--commands"} {
 					args := []string{"--set", "confdir=" + t.TempDir(), "--set", "mode=regular@" + reserved.Addr().String(), "--set", "otel_exporter_endpoint=" + collector.URL, "--set", "pprof_addr=" + reserved.Addr().String(), listing}
 					childCtx, stop := context.WithTimeout(t.Context(), 30*time.Second)
-					cmd := exec.CommandContext(childCtx, binary, args...) //nolint:gosec // The path is the executable built into this test's private directory.
+					cmd := exec.CommandContext(childCtx, binary, args...)
 					output, err := cmd.CombinedOutput()
 					stop()
 					if err != nil {
@@ -75,7 +75,7 @@ func TestObservabilityCLI(t *testing.T) {
 				defer collector.Close()
 				childCtx, stop := context.WithTimeout(t.Context(), 30*time.Second)
 				defer stop()
-				cmd := exec.CommandContext(childCtx, binary, "--set", "otel_exporter_endpoint="+collector.URL, "--set", "pprof_addr="+strings.TrimPrefix(collector.URL, "http://"), "--version") //nolint:gosec // The path is the executable built into this test's private directory.
+				cmd := exec.CommandContext(childCtx, binary, "--set", "otel_exporter_endpoint="+collector.URL, "--set", "pprof_addr="+strings.TrimPrefix(collector.URL, "http://"), "--version")
 				output, err := cmd.CombinedOutput()
 				if err != nil {
 					t.Fatalf("version exit: %v\n%s", err, output)

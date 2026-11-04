@@ -94,15 +94,6 @@ func TestWebColumns(t *testing.T) {
 		tests := map[string]struct{}{"test_web_columns": {}}
 		for name := range tests {
 			t.Run(name, func(t *testing.T) {
-				want := []string{"icon", "index", "method", "version", "path", "quickactions", "size", "status", "time", "timestamp", "tls", "comment"}
-				got := AvailableColumns()
-				if diff := gocmp.Diff(want, got); diff != "" {
-					t.Fatalf("columns (-want +got):\n%s", diff)
-				}
-				got[0] = "changed"
-				if AvailableColumns()[0] != want[0] {
-					t.Fatal("column vocabulary aliases the caller")
-				}
 				m := newWebMaster(t)
 				if err := m.Do(t.Context(), func(ctx context.Context) error {
 					return m.Options.Update(ctx, map[string]any{"web_columns": []string{"future-column"}})

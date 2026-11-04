@@ -102,7 +102,7 @@ func (p *runningProbe) Running(context.Context) error { close(p.ready); return n
 
 var (
 	teatestConstructors atomic.Int64
-	listenerWaitHeader  = regexp.MustCompile(`^goroutine [0-9]+ \[chan receive(?:, [0-9]+ minutes)?\]:$`)
+	listenerWaitHeader  = regexp.MustCompile(`^goroutine \d+ \[chan receive(?:, \d+ minutes)?\]:$`)
 )
 
 func isSignalListener(block string) bool {

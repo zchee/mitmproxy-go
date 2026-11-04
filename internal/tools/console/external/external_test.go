@@ -31,7 +31,7 @@ func TestMain(m *testing.M) {
 		case "failure":
 			os.Exit(17)
 		case "wait":
-			if _, err := io.WriteString(os.Stdout, "ready\n"); err != nil {
+			if _, err := os.Stdout.WriteString("ready\n"); err != nil {
 				os.Exit(3)
 			}
 			var data [1]byte

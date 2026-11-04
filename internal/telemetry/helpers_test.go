@@ -51,7 +51,7 @@ func newOwnedCollector(t *testing.T, tls bool) *ownedCollector {
 		data, err := io.ReadAll(io.LimitReader(r.Body, (1<<20)+1))
 		if err != nil || len(data) > 1<<20 {
 			t.Errorf("collector request exceeds bounds or read failed: %v", err)
-			w.WriteHeader(400)
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		c.mu.Lock()
@@ -63,7 +63,7 @@ func newOwnedCollector(t *testing.T, tls bool) *ownedCollector {
 			var request tracecollector.ExportTraceServiceRequest
 			if err := proto.Unmarshal(data, &request); err != nil {
 				t.Error(err)
-				w.WriteHeader(400)
+				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 			c.traces = append(c.traces, request.ResourceSpans...)
@@ -71,17 +71,17 @@ func newOwnedCollector(t *testing.T, tls bool) *ownedCollector {
 			var request metriccollector.ExportMetricsServiceRequest
 			if err := proto.Unmarshal(data, &request); err != nil {
 				t.Error(err)
-				w.WriteHeader(400)
+				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 			c.metrics = append(c.metrics, request.ResourceMetrics...)
 		default:
 			t.Errorf("unexpected collector path: %s", r.URL.Path)
-			w.WriteHeader(404)
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 		w.Header().Set("Content-Type", "application/x-protobuf")
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 	})
 	if tls {
 		c.server = httptest.NewTLSServer(handler)

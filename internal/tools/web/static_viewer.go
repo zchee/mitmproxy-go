@@ -22,7 +22,6 @@ import (
 	"github.com/zchee/mitmproxy-go/flowio"
 	"github.com/zchee/mitmproxy-go/flowio/flowjson"
 	"github.com/zchee/mitmproxy-go/httpmsg"
-	"github.com/zchee/mitmproxy-go/internal/version"
 	"github.com/zchee/mitmproxy-go/options"
 )
 
@@ -385,16 +384,6 @@ func (e *viewerExport) write(ctx context.Context, files map[string][]byte) error
 		return err
 	}
 	return writeViewerFiles(ctx, e.stage, files)
-}
-
-func (e *viewerExport) saveSettings(ctx context.Context) error {
-	body, err := viewerJSON(struct {
-		Version string `json:"version"`
-	}{version.Version})
-	if err != nil {
-		return err
-	}
-	return writeViewerFiles(ctx, e.stage, map[string][]byte{"settings.json": body})
 }
 
 func writeViewerFiles(ctx context.Context, root *os.Root, files map[string][]byte) error {

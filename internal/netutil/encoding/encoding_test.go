@@ -16,11 +16,11 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-func mustHex(t testing.TB, s string) []byte {
-	t.Helper()
+func mustHex(tb testing.TB, s string) []byte {
+	tb.Helper()
 	b, err := hex.DecodeString(s)
 	if err != nil {
-		t.Fatalf("hex.DecodeString(%q): %v", s, err)
+		tb.Fatalf("hex.DecodeString(%q): %v", s, err)
 	}
 	return b
 }
@@ -87,11 +87,11 @@ func decodeLimit3(data []byte, encoding string) ([]byte, error) {
 }
 
 // mustEncode encodes s with the named encoding.
-func mustEncode(t testing.TB, s, encoding string) []byte {
-	t.Helper()
+func mustEncode(tb testing.TB, s, encoding string) []byte {
+	tb.Helper()
 	b, err := Encode([]byte(s), encoding)
 	if err != nil {
-		t.Fatalf("Encode(%q, %q) error: %v", s, encoding, err)
+		tb.Fatalf("Encode(%q, %q) error: %v", s, encoding, err)
 	}
 	return b
 }
@@ -422,7 +422,7 @@ func TestRoundTripLarge(t *testing.T) {
 // roughly like an HTML or JSON body.
 func benchPayload(n int) []byte {
 	words := []string{"mitmproxy", "flow", "request", "response", "header", "content", "{", "}", "\"key\":", "1234", "\n"}
-	r := rand.New(rand.NewPCG(1, 2)) //nolint:gosec // A fixed seed keeps the benchmark payload reproducible.
+	r := rand.New(rand.NewPCG(1, 2))
 	var buf bytes.Buffer
 	for buf.Len() < n {
 		fmt.Fprintf(&buf, "%s ", words[r.IntN(len(words))])

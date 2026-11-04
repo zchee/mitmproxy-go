@@ -80,7 +80,7 @@ func TestWebAssets(t *testing.T) {
 
 func fetchAsset(t *testing.T, server *httptest.Server, method, path string, headers http.Header) (*http.Response, []byte) {
 	t.Helper()
-	request, err := http.NewRequestWithContext(t.Context(), method, server.URL+path, nil)
+	request, err := http.NewRequestWithContext(t.Context(), method, server.URL+path, http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -102,9 +102,11 @@ func scriptCLICase(t *testing.T, binary, name string) {
 		terminalArgs := append([]string{"-q", "-e", "-F", transcript, binary}, args...)
 		if runtime.GOOS == "linux" {
 			quoted := "'" + strings.ReplaceAll(binary, "'", "'\\''") + "'"
+			var quotedArgs strings.Builder
 			for _, arg := range args {
-				quoted += " '" + strings.ReplaceAll(arg, "'", "'\\''") + "'"
+				quotedArgs.WriteString(" '" + strings.ReplaceAll(arg, "'", "'\\''") + "'")
 			}
+			quoted += quotedArgs.String()
 			terminalArgs = []string{"-q", "-f", "-e", "-c", "exec " + quoted, transcript}
 		}
 		cmd = exec.CommandContext(ctx, terminal, terminalArgs...)

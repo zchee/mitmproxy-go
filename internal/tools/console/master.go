@@ -185,7 +185,7 @@ func New(ctx context.Context, cfg Config) (*Master, error) {
 	m.Bridge, err = NewBridge(context.WithoutCancel(ctx), BridgeConfig{Master: base, View: m.View, Events: m.Events, Project: flowlist.Project, Listeners: func() []string {
 		var listeners []string
 		for _, address := range ps.ListenAddrs() {
-			listeners = append(listeners, fmt.Sprint(address))
+			listeners = append(listeners, address.String())
 		}
 		return listeners
 	}})

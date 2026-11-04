@@ -115,14 +115,7 @@ func (o *Options) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 		}()
 		o.busy = false
 		o.err = result.err
-		for len(o.pending) > 0 {
-			next := o.pending[0]
-			o.pending = o.pending[1:]
-			if cmd, _ := o.Update(next); cmd != nil {
-				return cmd, true
-			}
-		}
-		return nil, true
+		return contract.ReplayPending(&o.pending, o.Update), true
 	}
 	switch msg.(type) {
 	case tea.KeyPressMsg, tea.PasteMsg:

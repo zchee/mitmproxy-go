@@ -83,7 +83,7 @@ func updateHTTP(f *flow.HTTPFlow, part, key string, value jsontext.Value) error 
 		headers := make(httpmsg.Headers, 0, len(pairs))
 		for _, pair := range pairs {
 			if len(pair) != 2 {
-				return fmt.Errorf("header requires two values")
+				return errors.New("header requires two values")
 			}
 			headers = append(headers, httpmsg.Field{Name: []byte(pair[0]), Value: []byte(pair[1])})
 		}

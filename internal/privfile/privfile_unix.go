@@ -38,14 +38,14 @@ func openPrivate(path string, appendMode bool) (_ *os.File, err error) {
 	if stat.Mode&unix.S_IFMT != unix.S_IFREG {
 		return nil, &os.PathError{Op: "open private output", Path: path, Err: errors.New("not a regular file")}
 	}
-	if stat.Uid != uint32(os.Geteuid()) { //nolint:gosec // Unix effective uid is a nonnegative uid_t.
+	if stat.Uid != uint32(os.Geteuid()) {
 		return nil, &os.PathError{Op: "open private output", Path: path, Err: errors.New("file owner is not the effective user")}
 	}
-	if err = file.Chmod(0o600); err != nil {
+	if err := file.Chmod(0o600); err != nil {
 		return nil, err
 	}
 	if !appendMode {
-		if err = file.Truncate(0); err != nil {
+		if err := file.Truncate(0); err != nil {
 			return nil, err
 		}
 	}

@@ -3,8 +3,7 @@
 
 // Package strutil holds the string and byte helpers of mitmproxy's
 // mitmproxy/utils/strutils.py: escaping bytes for display and back, binary
-// and XML sniffing, hex dumps, and protecting regions of source text from
-// regular-expression rewrites.
+// and XML sniffing, and line-based content limits.
 //
 // Upstream's always_bytes and always_str are not ported: in Go they are the
 // []byte and string conversions, and the text codecs they select belong to
@@ -14,7 +13,6 @@ package strutil
 import (
 	"errors"
 	"fmt"
-	"iter"
 	"strings"
 	"unicode/utf8"
 )
@@ -235,117 +233,6 @@ func IsXML(s []byte) bool {
 		return c == '<'
 	}
 	return false
-}
-
-// CleanHangingNewline removes one trailing line feed, which many editors
-// add silently to the last line of a document.
-func CleanHangingNewline(t string) string {
-	return strings.TrimSuffix(t, "\n")
-}
-
-// HexDumpLine is one line of a hex dump covering up to 16 bytes.
-type HexDumpLine struct {
-	// Offset is the position of the first byte as 10 lowercase hex digits.
-	Offset string
-	// Hex holds the bytes as space-separated hex pairs, padded to 47
-	// characters.
-	Hex string
-	// Text holds the bytes with each one outside printable ASCII shown as
-	// ".".
-	Text string
-}
-
-// HexDump returns the lines of a hex dump of s, 16 bytes per line.
-func HexDump(s []byte) iter.Seq[HexDumpLine] {
-	return func(yield func(HexDumpLine) bool) {
-		for i := 0; i < len(s); i += 16 {
-			part := s[i:min(i+16, len(s))]
-			hex := make([]byte, 0, 47)
-			text := make([]byte, len(part))
-			for j, c := range part {
-				if j > 0 {
-					hex = append(hex, ' ')
-				}
-				hex = append(hex, hexDigits[c>>4], hexDigits[c&0xf])
-				if c < 0x20 || c >= 0x7f {
-					c = '.'
-				}
-				text[j] = c
-			}
-			line := HexDumpLine{
-				Offset: fmt.Sprintf("%010x", i),
-				Hex:    fmt.Sprintf("%-47s", hex),
-				Text:   string(text),
-			}
-			if !yield(line) {
-				return
-			}
-		}
-	}
-}
-
-// AreaFinder locates special areas in a text. *regexp.Regexp implements it;
-// an engine with lookaround, which upstream's patterns use and Go's regexp
-// lacks, can be adapted to it.
-type AreaFinder interface {
-	FindAllStringIndex(s string, n int) [][]int
-}
-
-// SplitSpecialAreas splits data into code and special areas, alternating
-// and starting with code: [code, area, code, area, ..., code]. Joining the
-// parts gives data back.
-//
-// Upstream joins its patterns with "|" in one capturing group and compiles
-// them with re.MULTILINE; a *regexp.Regexp used here needs the (?m) flag
-// for the same behaviour.
-func SplitSpecialAreas(data string, areas AreaFinder) []string {
-	matches := areas.FindAllStringIndex(data, -1)
-	parts := make([]string, 0, 2*len(matches)+1)
-	prev := 0
-	for _, m := range matches {
-		parts = append(parts, data[prev:m[0]], data[m[0]:m[1]])
-		prev = m[1]
-	}
-	return append(parts, data[prev:])
-}
-
-// privateUseBase is the start of the Unicode private use area that
-// EscapeSpecialAreas moves protected characters into.
-const privateUseBase = 0xe000
-
-// EscapeSpecialAreas replaces every character of controlCharacters that
-// occurs inside a special area with the private use character
-// U+E000 + its code point, so that later regular-expression rewrites of the
-// code leave the special areas alone. UnescapeSpecialAreas reverts it.
-//
-// Every character in controlCharacters must lie between U+0001 and U+00FF.
-func EscapeSpecialAreas(data string, areas AreaFinder, controlCharacters string) string {
-	var b strings.Builder
-	b.Grow(len(data))
-	for i, part := range SplitSpecialAreas(data, areas) {
-		if i%2 == 0 {
-			b.WriteString(part)
-			continue
-		}
-		b.WriteString(strings.Map(func(r rune) rune {
-			if r > 0 && r < 0x100 && strings.ContainsRune(controlCharacters, r) {
-				return r + privateUseBase
-			}
-			return r
-		}, part))
-	}
-	return b.String()
-}
-
-// UnescapeSpecialAreas maps every character from U+E000 to U+E0FF back to
-// U+0000 to U+00FF, inverting EscapeSpecialAreas.
-func UnescapeSpecialAreas(data string) string {
-	return strings.Map(func(r rune) rune {
-		if privateUseBase <= r && r <= privateUseBase+0xff {
-			return r - privateUseBase
-		}
-		return r
-	}, data)
 }
 
 // CutAfterNLines returns content up to and including its n-th line feed, or

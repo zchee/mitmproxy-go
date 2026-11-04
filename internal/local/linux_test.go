@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -206,7 +207,7 @@ func TestLinuxNative(t *testing.T) {
 	for name, test := range tests {
 		index++
 		t.Run(name, func(t *testing.T) {
-			dir := filepath.Join(root, fmt.Sprint(index))
+			dir := filepath.Join(root, strconv.Itoa(index))
 			path := syntheticMacOSStarter(t, dir, false)
 			r := NewLinuxRedirector(dir, path).(*linuxRedirector)
 			r.hostOS = "linux"

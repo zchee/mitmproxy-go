@@ -154,15 +154,16 @@ func writeFlowColumn(output *strings.Builder, text, tag string, palette *Palette
 	start, previous, inValue := 0, "", false
 	for index, character := range text {
 		attribute := "text"
-		if character == '…' {
+		switch {
+		case character == '…':
 			attribute = "focus"
-		} else if tag == "host" {
+		case tag == "host":
 			if index >= tld {
 				attribute = "url_domain"
 			} else if index != tld-1 && index >= sld {
 				attribute = "url_extension"
 			}
-		} else {
+		default:
 			switch {
 			case index < query && character == '/', index < query && index > slash && character == '.', index == query:
 				attribute = "url_punctuation"

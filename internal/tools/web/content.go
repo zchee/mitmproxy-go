@@ -23,12 +23,12 @@ import (
 
 var downloadFilename = regexp.MustCompile(`filename=([-\pL\pN_" .()]+)`)
 
-var decimalLineLimit = regexp.MustCompile(`^[+-]?[0-9](?:_?[0-9])*$`)
+var decimalLineLimit = regexp.MustCompile(`^[+-]?\d(?:_?\d)*$`)
 
 func lineLimit(value string) (int, error) {
 	value = strings.Trim(value, " \t\n\r\v\f")
 	if !decimalLineLimit.MatchString(value) {
-		return 0, fmt.Errorf("invalid content line limit")
+		return 0, errors.New("invalid content line limit")
 	}
 	value = strings.ReplaceAll(value, "_", "")
 	digits := len(value)
@@ -37,7 +37,7 @@ func lineLimit(value string) (int, error) {
 	}
 	// Match the pinned Python runtime's decimal conversion guard.
 	if digits > 4300 {
-		return 0, fmt.Errorf("content line limit exceeds the decimal digit guard")
+		return 0, errors.New("content line limit exceeds the decimal digit guard")
 	}
 	limit, err := strconv.Atoi(value)
 	// Any larger magnitude has identical cutoff semantics for a bounded body.
@@ -136,7 +136,7 @@ func (a *application) flowContent(w http.ResponseWriter, r *http.Request, name s
 	metadata := contentviews.Metadata{Flow: snapshot, ProtobufDefinitions: definitions}
 	render := func(message any, fromClient *bool, timestamp *float64) (map[string]any, error) {
 		if limit < 0 {
-			return nil, fmt.Errorf("content line limit must be positive")
+			return nil, errors.New("content line limit must be positive")
 		}
 		pretty := contentviews.PrettifyMessageWithMetadata(message, metadata, viewName, nil, limit)
 		value := map[string]any{"text": pretty.Text, "view_name": pretty.ViewName, "syntax_highlight": pretty.SyntaxHighlight, "description": pretty.Description}
@@ -202,7 +202,7 @@ func (a *application) flowContent(w http.ResponseWriter, r *http.Request, name s
 			}
 		}
 	default:
-		return fmt.Errorf("contentview requires HTTP, TCP or UDP flow")
+		return errors.New("contentview requires HTTP, TCP or UDP flow")
 	}
 	return writeJSON(w, values)
 }
@@ -210,7 +210,7 @@ func (a *application) flowContent(w http.ResponseWriter, r *http.Request, name s
 func httpMessage(f flow.Flow, part string) (*httpmsg.Message, error) {
 	value, ok := f.(*flow.HTTPFlow)
 	if !ok {
-		return nil, fmt.Errorf("HTTP content requires an HTTP flow")
+		return nil, errors.New("HTTP content requires an HTTP flow")
 	}
 	switch part {
 	case "request":

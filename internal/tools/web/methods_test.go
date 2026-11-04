@@ -81,7 +81,7 @@ func TestWebRouteMethods(t *testing.T) {
 							if method == "HEAD" {
 								want = ""
 							}
-							if response.StatusCode != 405 || response.ContentLength != 87 || string(body) != want || response.Header.Get("Content-Type") != "text/html; charset=UTF-8" {
+							if response.StatusCode != http.StatusMethodNotAllowed || response.ContentLength != 87 || string(body) != want || response.Header.Get("Content-Type") != "text/html; charset=UTF-8" {
 								t.Fatalf("%s %s unsupported: status=%d headers=%v body=%q", method, path, response.StatusCode, response.Header, body)
 							}
 							continue
@@ -95,7 +95,7 @@ func TestWebRouteMethods(t *testing.T) {
 							continue
 						}
 						response, body := h.fetch(t, method, path, []byte(input), "application/json")
-						if response.StatusCode != 200 {
+						if response.StatusCode != http.StatusOK {
 							t.Fatalf("%s %s: status=%d body=%q", method, path, response.StatusCode, body)
 						}
 						shape := test.shape
@@ -144,7 +144,7 @@ func TestWebRouteMethods(t *testing.T) {
 								t.Fatalf("HTML response=%q", body)
 							}
 						case "id":
-							if strings.ContainsAny(string(body), "\"{}\n") || len(body) == 0 {
+							if bytes.ContainsAny(body, "\"{}\n") || len(body) == 0 {
 								t.Fatalf("duplicate body=%q", body)
 							}
 						case "png":
@@ -299,7 +299,7 @@ func TestWebRouteAuth(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			h := newRouteHarness(t)
-			request, err := http.NewRequestWithContext(t.Context(), test.method, h.server.URL+test.path, nil)
+			request, err := http.NewRequestWithContext(t.Context(), test.method, h.server.URL+test.path, http.NoBody)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -309,7 +309,7 @@ func TestWebRouteAuth(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer func() { _ = response.Body.Close() }()
-			if response.StatusCode != 403 {
+			if response.StatusCode != http.StatusForbidden {
 				t.Fatalf("unauthenticated status=%d", response.StatusCode)
 			}
 		})

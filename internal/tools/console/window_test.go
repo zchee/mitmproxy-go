@@ -312,8 +312,8 @@ func TestConsoleQuickHelp(t *testing.T) {
 			b, _ := testBridge(t)
 			snapshot, err := b.capture(b.generation.Load())
 			mustConsole(t, err)
-			copy := snapshot.Clone()
-			copy.HelpBindings[0].Contexts[0] = "changed"
+			cloned := snapshot.Clone()
+			cloned.HelpBindings[0].Contexts[0] = "changed"
 			if snapshot.HelpBindings[0].Contexts[0] == "changed" {
 				t.Fatal("help bindings share mutable contexts across snapshots")
 			}

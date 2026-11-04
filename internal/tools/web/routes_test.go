@@ -114,7 +114,7 @@ func newRouteHarness(t *testing.T, eventSize ...int) *routeHarness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/", nil)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/", http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,9 +188,9 @@ func (h *routeHarness) status(t *testing.T, method, path string, body []byte, co
 	return data
 }
 
-func (h *routeHarness) put(t *testing.T, path, body string, want int) []byte {
+func (h *routeHarness) put(t *testing.T, path, body string, want int) {
 	t.Helper()
-	return h.status(t, "PUT", path, []byte(body), "application/json", want)
+	h.status(t, "PUT", path, []byte(body), "application/json", want)
 }
 
 func TestWebRoutes(t *testing.T) {
@@ -350,7 +350,7 @@ func TestWebRoutes(t *testing.T) {
 				h.status(t, "POST", "/flows/42/revert", nil, "", 200)
 				h.do(t, func(context.Context) error {
 					f := h.app.view.GetByID("42")
-					if f.Modified() || f.(*flow.HTTPFlow).Request.Method != "GET" {
+					if f.Modified() || f.(*flow.HTTPFlow).Request.Method != http.MethodGet {
 						t.Fatal("revert failed")
 					}
 					return nil
@@ -504,7 +504,7 @@ func TestWebRoutes(t *testing.T) {
 					t.Fatalf("missing path error=%q", got)
 				}
 				response, body := h.fetch(t, "GET", "/executable-icon?path=invalid_path", nil, "")
-				if response.StatusCode != 200 || response.Header.Get("Content-Type") != "image/png" || !bytes.Equal(body, transparentPNG) {
+				if response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") != "image/png" || !bytes.Equal(body, transparentPNG) {
 					t.Fatalf("fallback status=%d headers=%v body=%x", response.StatusCode, response.Header, body)
 				}
 			}},

@@ -6,6 +6,7 @@ package telemetry
 import (
 	"context"
 	"math"
+	"net/http"
 	"net/netip"
 	"runtime"
 	"strconv"
@@ -193,7 +194,7 @@ func (c *Controller) OnHookComplete(_ context.Context, hook addon.Hook) {
 		websocketEnabled := c.master != nil && c.master.Options.Bool("websocket")
 		if h.Response != nil {
 			upgrade, _ := h.Response.Headers.Lookup("Upgrade")
-			if h.Response.StatusCode == 101 && strings.EqualFold(strings.TrimSpace(upgrade), "websocket") && websocketEnabled {
+			if h.Response.StatusCode == http.StatusSwitchingProtocols && strings.EqualFold(strings.TrimSpace(upgrade), "websocket") && websocketEnabled {
 				entry.pending = true
 				entry.terminalObserved = time.Now()
 				return
@@ -367,12 +368,13 @@ func (c *Controller) copyScalars(entry *flowState, f flow.Flow, hook string) {
 		}
 		if hook == "tcp_message" && len(value.Messages) > 0 {
 			last := value.Messages[len(value.Messages)-1]
-			if last == nil {
+			switch {
+			case last == nil:
 				entry.messageKnown = false
-			} else if len(value.Messages) == entry.messageCount+1 {
+			case len(value.Messages) == entry.messageCount+1:
 				entry.addMessage(last.FromClient, len(last.Content))
 				entry.lastTCP = weak.Make(last)
-			} else if len(value.Messages) != entry.messageCount || entry.lastTCP != weak.Make(last) {
+			case len(value.Messages) != entry.messageCount || entry.lastTCP != weak.Make(last):
 				entry.messageKnown = false
 			}
 			entry.messageCount = len(value.Messages)
@@ -388,12 +390,13 @@ func (c *Controller) copyScalars(entry *flowState, f flow.Flow, hook string) {
 		}
 		if hook == "udp_message" && len(value.Messages) > 0 {
 			last := value.Messages[len(value.Messages)-1]
-			if last == nil {
+			switch {
+			case last == nil:
 				entry.messageKnown = false
-			} else if len(value.Messages) == entry.messageCount+1 {
+			case len(value.Messages) == entry.messageCount+1:
 				entry.addMessage(last.FromClient, len(last.Content))
 				entry.lastUDP = weak.Make(last)
-			} else if len(value.Messages) != entry.messageCount || entry.lastUDP != weak.Make(last) {
+			case len(value.Messages) != entry.messageCount || entry.lastUDP != weak.Make(last):
 				entry.messageKnown = false
 			}
 			entry.messageCount = len(value.Messages)
@@ -450,7 +453,7 @@ func (c *Controller) copyServerHost(attrs *scalarAttributes, base *flow.Base) {
 }
 
 func (c *Controller) copyString(attrs *scalarAttributes, key, value string, limit int, method bool) {
-	valid := len(value) > 0 && len(value) <= limit
+	valid := value != "" && len(value) <= limit
 	if valid {
 		if !method {
 			if ip, err := netip.ParseAddr(value); err == nil && ip.Zone() == "" {

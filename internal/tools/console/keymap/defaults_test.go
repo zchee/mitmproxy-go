@@ -200,7 +200,7 @@ func TestConsoleDefaultBindings(t *testing.T) {
 					if actual.Command != b.Command || actual.Help != b.Help {
 						t.Fatalf("installed binding differs: %+v", actual)
 					}
-					if command, ok := k.Handle(ctx, b.KeySpec(), true); !ok || command != b.Command {
+					if got, ok := k.Handle(ctx, b.KeySpec(), true); !ok || got != b.Command {
 						t.Fatal("context lookup/translation differs")
 					}
 				}

@@ -278,7 +278,7 @@ func (a *application) serve(w http.ResponseWriter, r *http.Request, name string,
 				}
 				raw, ok := object.Get("arguments")
 				if !ok {
-					return fmt.Errorf("missing command arguments")
+					return errors.New("missing command arguments")
 				}
 				if err := json.Unmarshal(raw, &arguments); err != nil {
 					response = map[string]any{"error": err.Error()}
@@ -315,13 +315,14 @@ func (a *application) serve(w http.ResponseWriter, r *http.Request, name string,
 			return err
 		case "flows_resume", "flows_kill":
 			for _, f := range a.view.Flows() {
-				if name == "flows_resume" && f.Common().Intercepted() {
+				switch {
+				case name == "flows_resume" && f.Common().Intercepted():
 					f.Common().Resume()
-				} else if name == "flows_kill" && f.Common().Killable() {
+				case name == "flows_kill" && f.Common().Killable():
 					if err := f.Common().Kill(); err != nil {
 						return err
 					}
-				} else {
+				default:
 					continue
 				}
 				if err := a.view.Update(ctx, []flow.Flow{f}); err != nil {

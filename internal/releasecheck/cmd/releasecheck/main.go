@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	json "encoding/json/v2"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -27,11 +28,11 @@ import (
 
 func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
 	goTool, err := toolchainGo()
 	if err == nil {
 		err = run(ctx, goTool, os.Args[1:])
 	}
+	cancel()
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -48,48 +49,48 @@ func toolchainGo() (string, error) {
 		return "", err
 	}
 	if !filepath.IsAbs(tool) {
-		return "", fmt.Errorf("toolchain path must be absolute")
+		return "", errors.New("toolchain path must be absolute")
 	}
 	info, err := os.Stat(tool)
 	if err != nil {
 		return "", err
 	}
 	if !info.Mode().IsRegular() || (runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0) {
-		return "", fmt.Errorf("toolchain is not a regular executable")
+		return "", errors.New("toolchain is not a regular executable")
 	}
 	return tool, nil
 }
 
 func run(ctx context.Context, goTool string, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: releasecheck tag VERSION | publish-tag VERSION | record VERSION GOOS GOARCH BIN_DIR | checksums DIR VERSION | verify DIR VERSION --go-version VERSION [--source-root ABSOLUTE_CHECKOUT]")
+		return errors.New("usage: releasecheck tag VERSION | publish-tag VERSION | record VERSION GOOS GOARCH BIN_DIR | checksums DIR VERSION | verify DIR VERSION --go-version VERSION [--source-root ABSOLUTE_CHECKOUT]")
 	}
 	switch args[0] {
 	case "tag", "publish-tag":
 		if len(args) != 2 {
-			return fmt.Errorf("tag expects one version")
+			return errors.New("tag expects one version")
 		}
 		if err := releasecheck.ValidateTag(args[1]); err != nil {
 			return err
 		}
 		if args[0] == "publish-tag" && !releasecheck.PublishAllowed(args[1]) {
-			return fmt.Errorf("test tags cannot publish releases")
+			return errors.New("test tags cannot publish releases")
 		}
 		_, err := fmt.Fprintln(os.Stdout, args[1])
 		return err
 	case "record":
 		if len(args) != 5 {
-			return fmt.Errorf("record expects version, GOOS, GOARCH and binary directory")
+			return errors.New("record expects version, GOOS, GOARCH and binary directory")
 		}
 		return record(ctx, goTool, args[1], releasecheck.Target{GOOS: args[2], GOARCH: args[3]}, args[4])
 	case "checksums":
 		if len(args) != 3 {
-			return fmt.Errorf("checksums expects an artifact directory and version")
+			return errors.New("checksums expects an artifact directory and version")
 		}
 		return verify(ctx, goTool, args[1], releasecheck.Source{Tag: args[2], GoVersion: runtime.Version()}, ".", true)
 	case "verify":
 		if len(args) < 3 {
-			return fmt.Errorf("verify expects an artifact directory and version, then --go-version and optional --source-root")
+			return errors.New("verify expects an artifact directory and version, then --go-version and optional --source-root")
 		}
 		flags := flag.NewFlagSet("verify", flag.ContinueOnError)
 		goVersion := flags.String("go-version", "", "required independently asserted Go version, including experiment suffixes; consistency does not prove publisher authenticity")
@@ -98,7 +99,7 @@ func run(ctx context.Context, goTool string, args []string) error {
 			return err
 		}
 		if flags.NArg() != 0 || !strings.HasPrefix(*goVersion, "go1.") || strings.ContainsFunc(*goVersion, unicode.IsSpace) {
-			return fmt.Errorf("verify requires --go-version with an independently asserted go-prefixed version without whitespace")
+			return errors.New("verify requires --go-version with an independently asserted go-prefixed version without whitespace")
 		}
 		if *sourceRoot == "" {
 			root, err := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel").Output()
@@ -108,7 +109,7 @@ func run(ctx context.Context, goTool string, args []string) error {
 			*sourceRoot = strings.TrimSpace(string(root))
 		}
 		if !filepath.IsAbs(*sourceRoot) {
-			return fmt.Errorf("verify --source-root must be absolute")
+			return errors.New("verify --source-root must be absolute")
 		}
 		return verify(ctx, goTool, args[1], releasecheck.Source{Tag: args[2], GoVersion: *goVersion}, *sourceRoot, false)
 	default:
@@ -129,14 +130,14 @@ func sourceMetadata(ctx context.Context, goTool, root string, source releasechec
 		return releasecheck.Source{}, nil, fmt.Errorf("read source root: %w", err)
 	}
 	if !info.IsDir() {
-		return releasecheck.Source{}, nil, fmt.Errorf("source root must be a directory")
+		return releasecheck.Source{}, nil, errors.New("source root must be a directory")
 	}
 	status, err := exec.CommandContext(ctx, "git", "-C", root, "status", "--porcelain").Output() //nolint:gosec // The absolute existing directory is operator-trusted and passed as one argv to a fixed git operation, without a shell.
 	if err != nil {
 		return releasecheck.Source{}, nil, fmt.Errorf("read source status: %w", err)
 	}
 	if len(status) != 0 {
-		return releasecheck.Source{}, nil, fmt.Errorf("source checkout must be clean")
+		return releasecheck.Source{}, nil, errors.New("source checkout must be clean")
 	}
 	commit, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "HEAD").Output() //nolint:gosec // The preceding status verified this operator-trusted directory is clean; its root is one argv to a fixed operation, without a shell.
 	if err != nil {
@@ -318,14 +319,14 @@ func verify(ctx context.Context, goTool, dir string, source releasecheck.Source,
 			return closeErr
 		}
 		if len(data) > 1<<20 {
-			return fmt.Errorf("release provenance exceeds size bound")
+			return errors.New("release provenance exceeds size bound")
 		}
 		var provenance releasecheck.Provenance
 		if err := json.Unmarshal(data, &provenance, json.RejectUnknownMembers(true)); err != nil {
 			return err
 		}
 		if provenance.Target != target {
-			return fmt.Errorf("release target metadata mismatch")
+			return errors.New("release target metadata mismatch")
 		}
 		if err := releasecheck.ValidateProvenance(provenance, source, modules); err != nil {
 			return err
@@ -361,7 +362,7 @@ func verify(ctx context.Context, goTool, dir string, source releasecheck.Source,
 		return err
 	}
 	if len(manifest) > 64<<10 {
-		return fmt.Errorf("checksum manifest exceeds size bound")
+		return errors.New("checksum manifest exceeds size bound")
 	}
 	return releasecheck.ValidateChecksums(manifest, digests, expected)
 }

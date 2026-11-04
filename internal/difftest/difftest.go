@@ -36,15 +36,15 @@ const Enabled = enabled
 
 // UV returns the path of the uv executable. It skips the test when the binary
 // was built without the difftest build tag or when uv is not installed.
-func UV(t testing.TB) string {
-	t.Helper()
+func UV(tb testing.TB) string {
+	tb.Helper()
 
 	if !Enabled {
-		t.Skip("differential test: build with -tags difftest to run it")
+		tb.Skip("differential test: build with -tags difftest to run it")
 	}
 	uv, err := exec.LookPath("uv")
 	if err != nil {
-		t.Skipf("differential test: uv is not installed: %v", err)
+		tb.Skipf("differential test: uv is not installed: %v", err)
 	}
 	return uv
 }
@@ -53,10 +53,10 @@ func UV(t testing.TB) string {
 // installed, feeds it stdin, and returns its standard output. It fails the
 // test, showing the standard error, if the script exits with an error, and it
 // skips the test as UV does.
-func Python(t testing.TB, script string, stdin []byte) []byte {
-	t.Helper()
+func Python(tb testing.TB, script string, stdin []byte) []byte {
+	tb.Helper()
 
-	return run(t, stdin, "run", "--quiet", "--no-project", "--python", PythonVersion,
+	return run(tb, stdin, "run", "--quiet", "--no-project", "--python", PythonVersion,
 		"--with", Requirement, "python", "-c", script)
 }
 
@@ -64,25 +64,25 @@ func Python(t testing.TB, script string, stdin []byte) []byte {
 // standard output. The script declares its own dependencies in an inline
 // script metadata block (PEP 723), which should pin mitmproxy to Requirement.
 // It fails and skips the test as Python does.
-func Script(t testing.TB, path string, args ...string) []byte {
-	t.Helper()
+func Script(tb testing.TB, path string, args ...string) []byte {
+	tb.Helper()
 
-	return run(t, nil, append([]string{"run", "--quiet", "--python", PythonVersion, "--script", path}, args...)...)
+	return run(tb, nil, append([]string{"run", "--quiet", "--python", PythonVersion, "--script", path}, args...)...)
 }
 
 // run runs uv with args, feeding it stdin, and returns its standard output.
-func run(t testing.TB, stdin []byte, args ...string) []byte {
-	t.Helper()
+func run(tb testing.TB, stdin []byte, args ...string) []byte {
+	tb.Helper()
 
 	// The arguments are the calling test's own script and file paths, not
 	// external input; running uv with them is what this package is for.
-	cmd := exec.CommandContext(t.Context(), UV(t), args...) //nolint:gosec // G204: arguments come from the calling test.
+	cmd := exec.CommandContext(tb.Context(), UV(tb), args...) //nolint:gosec // G204: arguments come from the calling test.
 	cmd.Stdin = bytes.NewReader(stdin)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("difftest: %s: %v\nstderr:\n%s", cmd, err, stderr.Bytes())
+		tb.Fatalf("difftest: %s: %v\nstderr:\n%s", cmd, err, stderr.Bytes())
 	}
 	return out
 }

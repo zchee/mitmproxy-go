@@ -200,15 +200,6 @@ func PrettyDuration(secs float64) string {
 	return pyFixed(secs*1000, 0) + "ms"
 }
 
-// PrettyOptDuration is PrettyDuration for an optional duration: nil formats
-// as "", as upstream's pretty_duration(None) does.
-func PrettyOptDuration(secs *float64) string {
-	if secs == nil {
-		return ""
-	}
-	return PrettyDuration(*secs)
-}
-
 // pyFixed formats f with prec decimals as Python's "{:.<prec>f}" does,
 // which spells the non-finite values "nan", "inf" and "-inf".
 func pyFixed(f float64, prec int) string {
@@ -231,28 +222,6 @@ func pyFixed(f float64, prec int) string {
 // outside the years 1 to 9999.
 func FormatTimestamp(ts float64, loc *time.Location) string {
 	return time.Unix(int64(math.Floor(ts)), 0).In(loc).Format(time.DateTime)
-}
-
-// FormatTimestampWithMilli formats a Unix timestamp in seconds as
-// "2006-01-02 15:04:05.000" in loc, as upstream's
-// format_timestamp_with_milli does in the local time zone. Like Python's
-// datetime.fromtimestamp, it first rounds the timestamp to the nearest
-// microsecond, ties to even, and then drops the last three digits, so
-// 1.9999999 prints as second 2 and -0.0005 as 23:59:59.999.
-//
-// ts must be finite, as for FormatTimestamp.
-func FormatTimestampWithMilli(ts float64, loc *time.Location) string {
-	sec, frac := math.Modf(ts)
-	us := math.RoundToEven(frac * 1e6)
-	switch {
-	case us >= 1e6:
-		us -= 1e6
-		sec++
-	case us < 0:
-		us += 1e6
-		sec--
-	}
-	return time.Unix(int64(sec), int64(us)*int64(time.Microsecond)).In(loc).Format("2006-01-02 15:04:05.000")
 }
 
 // FormatAddress formats a host and port as upstream's format_address does.

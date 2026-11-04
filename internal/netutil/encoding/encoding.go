@@ -12,9 +12,8 @@
 // result cache is not replicated, and upstream's fallback to Python text
 // codecs (such as "utf8") is not provided: those names are unknown here.
 //
-// [Decode] places no limit on the decompressed size, as upstream places
-// none; its zstd decoder keeps libzstd's default maximum window of 128 MiB.
-// [DecodeLimit] is the bounded variant for bodies from the network.
+// [DecodeLimit] bounds decompressed bodies from the network and keeps the
+// zstd decoder's default maximum window of 128 MiB.
 package encoding
 
 import (
@@ -38,7 +37,7 @@ import (
 	"github.com/zchee/mitmproxy-go/internal/pyrepr"
 )
 
-// ErrUnknownEncoding is wrapped by the error Decode and Encode return for an
+// ErrUnknownEncoding is wrapped by the error DecodeLimit and Encode return for an
 // encoding name they do not support.
 var ErrUnknownEncoding = errors.New("unknown encoding")
 
@@ -47,7 +46,7 @@ var ErrUnknownEncoding = errors.New("unknown encoding")
 // window larger than the bound DecodeLimit allows for that limit.
 var ErrSizeLimit = errors.New("decoded size exceeds the limit")
 
-// Error describes a failed Decode or Encode call.
+// Error describes a failed decoding or encoding operation.
 type Error struct {
 	// Op is "decoding" or "encoding".
 	Op string
@@ -117,9 +116,6 @@ func (e *Error) Unwrap() error { return e.Err }
 // encodings lists the supported names in upstream's table order.
 var encodings = []string{"none", "identity", "gzip", "deflate", "deflateraw", "br", "zstd"}
 
-// Encodings returns the encoding names Decode and Encode accept.
-func Encodings() []string { return slices.Clone(encodings) }
-
 // zstdWindowLimit matches libzstd's default ZSTD_WINDOWLOG_LIMIT_DEFAULT of
 // 27, the limit Python's compression.zstd decoder applies.
 const zstdWindowLimit = 1 << 27
@@ -134,19 +130,10 @@ var (
 	})
 )
 
-// Decode decodes data that was encoded with the named encoding.
-//
-// The identity encodings ("identity" and "none") return data itself. Every
-// other encoding returns a newly allocated slice.
-func Decode(data []byte, encoding string) ([]byte, error) {
-	return decode(data, encoding, unlimited)
-}
-
-// DecodeLimit is [Decode] with a bound on the decoded size. Once the output
+// DecodeLimit decodes data with a bound on the decoded size. Once the output
 // grows beyond limit bytes, it stops decoding and returns an error wrapping
 // [ErrSizeLimit]; output of exactly limit bytes is accepted, and a negative
-// limit is treated as zero. Under the limit the result is the same as
-// Decode's.
+// limit is treated as zero.
 //
 // What DecodeLimit allocates depends on the limit and on the window the
 // input declares, not on the decoded size the input claims. Measured per
@@ -169,10 +156,10 @@ func DecodeLimit(data []byte, encoding string, limit int64) ([]byte, error) {
 	return decode(data, encoding, max(limit, 0))
 }
 
-// unlimited is the limit passed by Decode.
+// unlimited disables the decoded-size bound.
 const unlimited = -1
 
-// decode implements Decode and DecodeLimit. A negative limit means no limit.
+// decode applies the named content decoding. A negative limit means no limit.
 func decode(data []byte, encoding string, limit int64) ([]byte, error) {
 	encoding = strings.ToLower(encoding)
 	var (

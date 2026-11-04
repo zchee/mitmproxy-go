@@ -6,7 +6,7 @@ package flowlist
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"slices"
 	"strings"
 
@@ -225,11 +225,11 @@ func (m *Model) Update(message tea.Msg) (tea.Cmd, bool) {
 				}
 				flows, ok := value.([]flow.Flow)
 				if !ok {
-					return fmt.Errorf("invalid flow view result")
+					return errors.New("invalid flow view result")
 				}
 				index := slices.IndexFunc(flows, func(f flow.Flow) bool { return f.Common().ID == clickedID })
 				if index < 0 {
-					return fmt.Errorf("selected flow is no longer visible")
+					return errors.New("selected flow is no longer visible")
 				}
 				if _, err := m.host.Call(ctx, "view.focus.go", index); err != nil {
 					return err

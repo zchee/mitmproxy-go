@@ -123,7 +123,7 @@ func TestWebGzip(t *testing.T) {
 		h := newRouteHarness(t)
 		for _, method := range []string{"GET", "HEAD"} {
 			response, body := h.fetch(t, method, "/flows/42", nil, "")
-			if response.StatusCode != 405 {
+			if response.StatusCode != http.StatusMethodNotAllowed {
 				t.Fatal(response.StatusCode)
 			}
 			want := ""

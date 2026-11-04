@@ -77,11 +77,12 @@ func Compose(state contract.State, panes []string, width, height int, footer []s
 		rendered[i] = strings.Join(lines, "\n")
 	}
 	var body string
-	if len(rendered) == 1 {
+	switch {
+	case len(rendered) == 1:
 		body = rendered[0]
-	} else if state.Layout == "horizontal" {
+	case state.Layout == "horizontal":
 		body = lipgloss.JoinHorizontal(lipgloss.Top, rendered[0], " ", rendered[1])
-	} else {
+	default:
 		body = strings.Join(rendered, "\n")
 	}
 	if len(footer) > 0 {

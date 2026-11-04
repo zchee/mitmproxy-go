@@ -6,6 +6,7 @@ package style
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -253,17 +254,18 @@ func formatHTTPRow(r contract.Row, layout string, width int, focused bool, palet
 	}
 	if layout == "table" {
 		status, size := "", "     "
-		if r.HasResponse {
-			status = fmt.Sprint(r.StatusCode)
+		switch {
+		case r.HasResponse:
+			status = strconv.Itoa(r.StatusCode)
 			if r.ContentMissing {
 				content, contentTag = "[content missing]", "content_none"
 			} else if r.Size == 0 {
 				content, contentTag = "[no content]", "content_none"
 			}
-		} else if r.Error != "" {
+		case r.Error != "":
 			status, content = "err", r.Error
 			statusTag, contentTag = "error", "error"
-		} else {
+		default:
 			statusTag = "text"
 		}
 		if r.Size != 0 {

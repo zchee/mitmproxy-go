@@ -117,7 +117,7 @@ func allLabelsValid(host string) bool {
 // isValidLabel reports whether label is 1 to 63 letters, digits, hyphens
 // or underscores.
 func isValidLabel(label string) bool {
-	if len(label) == 0 || len(label) > 63 {
+	if label == "" || len(label) > 63 {
 		return false
 	}
 	for i := range len(label) {
@@ -150,7 +150,7 @@ func decodesAsIDNA(host string) bool {
 			return false
 		}
 		reencoded, ok := labelToASCII(decoded)
-		if !ok || reencoded != strings.ToLower(label) {
+		if !ok || !strings.EqualFold(reencoded, label) {
 			return false
 		}
 	}
@@ -165,7 +165,7 @@ func encodeIDNA(host string) (string, bool) {
 	if isASCII(host) {
 		labels := strings.Split(host, ".")
 		for _, label := range labels[:len(labels)-1] {
-			if len(label) == 0 || len(label) > 63 {
+			if label == "" || len(label) > 63 {
 				return "", false
 			}
 		}
@@ -195,7 +195,7 @@ func encodeIDNA(host string) (string, bool) {
 // labelToASCII mirrors the IDNA 2003 ToASCII operation on a single label.
 func labelToASCII(label string) (string, bool) {
 	if isASCII(label) {
-		return label, len(label) > 0 && len(label) < 64
+		return label, label != "" && len(label) < 64
 	}
 	// A non-ASCII label must not already carry the ACE prefix.
 	if strings.HasPrefix(strings.ToLower(label), acePrefix) {
@@ -205,7 +205,7 @@ func labelToASCII(label string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	return encoded, len(encoded) > 0 && len(encoded) < 64
+	return encoded, encoded != "" && len(encoded) < 64
 }
 
 func isASCII(s string) bool {

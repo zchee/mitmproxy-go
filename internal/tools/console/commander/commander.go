@@ -163,7 +163,8 @@ func (m *Model) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 	default:
 		return nil, false
 	}
-	if key, ok := msg.(tea.KeyPressMsg); ok {
+	switch key := msg.(type) {
+	case tea.KeyPressMsg:
 		if key.String() == "esc" {
 			return m.finish(false, ""), true
 		}
@@ -211,8 +212,8 @@ func (m *Model) Update(msg tea.Msg) (cmd tea.Cmd, consumed bool) {
 				m.buffer.Insert(key.Text)
 			}
 		}
-	} else if paste, ok := msg.(tea.PasteMsg); ok {
-		m.buffer.Insert(paste.Content)
+	case tea.PasteMsg:
+		m.buffer.Insert(key.Content)
 	}
 	return m.complete(false, true), true
 }

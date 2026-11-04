@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
 	"os"
@@ -178,7 +177,7 @@ func (p *Process) read() ([]byte, error) {
 		return nil, err
 	}
 	if !before.Mode().IsRegular() {
-		return nil, fmt.Errorf("editor output is not a regular file")
+		return nil, errors.New("editor output is not a regular file")
 	}
 	file, err := p.root.Open(p.name)
 	if err != nil {

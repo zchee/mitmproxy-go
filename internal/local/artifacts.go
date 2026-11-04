@@ -149,7 +149,7 @@ func acquireArtifact(ctx context.Context, cache string, artifact artifactSpec, c
 }
 
 func downloadArtifact(ctx context.Context, root *os.Root, path string, artifact artifactSpec, client *http.Client) error {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, artifact.url, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, artifact.url, http.NoBody)
 	if err != nil {
 		return err
 	}

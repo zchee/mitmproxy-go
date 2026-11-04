@@ -12,6 +12,7 @@ import (
 	"crypto/sha256"
 	"debug/buildinfo"
 	json "encoding/json/v2"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -131,7 +132,7 @@ func build(ctx context.Context, experimental bool) (_ *Family, err error) {
 		}
 	}
 	if family.PlainGoVersion == "" {
-		return nil, fmt.Errorf("repository go.mod has no go directive")
+		return nil, errors.New("repository go.mod has no go directive")
 	}
 	family.Environment = []string{"GOENV=off", "GOTOOLCHAIN=" + family.PlainGoVersion, "GOFLAGS=", "GOWORK=off"}
 	if experimental {
@@ -210,7 +211,7 @@ func build(ctx context.Context, experimental bool) (_ *Family, err error) {
 					family.GoVersion = info.GoVersion
 				}
 				if info.GoVersion != family.GoVersion {
-					return nil, fmt.Errorf("fixture toolchains disagree")
+					return nil, errors.New("fixture toolchains disagree")
 				}
 				body, err := os.ReadFile(binary) //nolint:gosec // The path is an owned fixture output under the private temporary directory.
 				if err != nil {

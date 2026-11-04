@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"debug/buildinfo"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -22,7 +23,7 @@ import (
 
 const modulePath = "github.com/zchee/mitmproxy-go"
 
-var tagPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?(\+[0-9A-Za-z.]+)?$`)
+var tagPattern = regexp.MustCompile(`^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?(\+[0-9A-Za-z.]+)?$`)
 
 // Target identifies one supported cross-build platform.
 type Target struct {
@@ -132,7 +133,7 @@ func ValidateProvenance(p Provenance, source Source, modules []string) error {
 		return err
 	}
 	if !validHex(source.Commit, 40) || !validHex(source.Tree, 40) || !strings.HasPrefix(source.GoVersion, "go1.") || p.Source != source {
-		return fmt.Errorf("release source provenance mismatch")
+		return errors.New("release source provenance mismatch")
 	}
 	names, err := BinaryNames(p.Target)
 	if err != nil {
@@ -143,7 +144,7 @@ func ValidateProvenance(p Provenance, source Source, modules []string) error {
 		return err
 	}
 	if p.CGOEnabled != "0" || p.LDFlags != flags || len(modules) == 0 || !slices.Equal(p.ModuleVersions, modules) || len(p.Binaries) != len(names) {
-		return fmt.Errorf("incomplete release build provenance")
+		return errors.New("incomplete release build provenance")
 	}
 	seen := make(map[string]bool)
 	for _, binary := range p.Binaries {
@@ -205,8 +206,8 @@ func ValidateChecksums(manifest []byte, digests map[string][sha256.Size]byte, ex
 	if err != nil {
 		return err
 	}
-	if string(manifest) != string(want) {
-		return fmt.Errorf("checksum manifest differs from the exact sorted release file set")
+	if !bytes.Equal(manifest, want) {
+		return errors.New("checksum manifest differs from the exact sorted release file set")
 	}
 	return nil
 }
@@ -226,12 +227,12 @@ func ValidateArchive(input io.Reader, p Provenance, license [sha256.Size]byte) e
 	digests := make(map[string]string)
 	for _, binary := range p.Binaries {
 		if !slices.Contains(names, binary.Name) || digests[binary.Name] != "" || !validHex(binary.SHA256, 64) {
-			return fmt.Errorf("invalid archive executable metadata")
+			return errors.New("invalid archive executable metadata")
 		}
 		digests[binary.Name] = binary.SHA256
 	}
 	if len(digests) != len(names) {
-		return fmt.Errorf("incomplete archive executable metadata")
+		return errors.New("incomplete archive executable metadata")
 	}
 	digests["LICENSE"] = hex.EncodeToString(license[:])
 	compressed, err := gzip.NewReader(input)
@@ -265,7 +266,7 @@ func ValidateArchive(input io.Reader, p Provenance, license [sha256.Size]byte) e
 		}
 		total += header.Size
 		if total > 1<<30 {
-			return fmt.Errorf("release archive exceeds size bound")
+			return errors.New("release archive exceeds size bound")
 		}
 		hash := sha256.New()
 		if file == "LICENSE" {
@@ -289,7 +290,7 @@ func ValidateArchive(input io.Reader, p Provenance, license [sha256.Size]byte) e
 		return fmt.Errorf("verify gzip trailer: %w", err)
 	}
 	if len(trailer) > 10<<10 || len(bytes.Trim(trailer, "\x00")) != 0 {
-		return fmt.Errorf("unexpected data after release tar terminator")
+		return errors.New("unexpected data after release tar terminator")
 	}
 	return nil
 }

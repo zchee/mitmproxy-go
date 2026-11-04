@@ -6,6 +6,7 @@ package keymap
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -43,7 +44,7 @@ func New(change func()) *Keymap { return &Keymap{change: change} }
 
 func validate(contexts []string) error {
 	if len(contexts) == 0 {
-		return fmt.Errorf("Must specify at least one context.") //nolint:staticcheck // Preserve upstream's binding validation error.
+		return errors.New("Must specify at least one context.") //nolint:staticcheck // Preserve upstream's binding validation error.
 	}
 	for _, ctx := range contexts {
 		if !slices.Contains(Contexts(), ctx) {
@@ -69,16 +70,17 @@ func (k *Keymap) Add(binding Binding) error {
 	slices.Sort(binding.Contexts)
 	binding.Contexts = slices.Compact(binding.Contexts)
 	for i, b := range k.bindings {
-		if b.Key == binding.Key && strings.TrimSpace(b.Command) == strings.TrimSpace(binding.Command) {
-			contexts := append(slices.Clone(b.Contexts), binding.Contexts...)
-			slices.Sort(contexts)
-			k.bindings[i].Contexts = slices.Compact(contexts)
-			if binding.Help != "" {
-				k.bindings[i].Help = binding.Help
-			}
-			k.changed()
-			return nil
+		if b.Key != binding.Key || strings.TrimSpace(b.Command) != strings.TrimSpace(binding.Command) {
+			continue
 		}
+		contexts := append(slices.Clone(b.Contexts), binding.Contexts...)
+		slices.Sort(contexts)
+		k.bindings[i].Contexts = slices.Compact(contexts)
+		if binding.Help != "" {
+			k.bindings[i].Help = binding.Help
+		}
+		k.changed()
+		return nil
 	}
 	k.remove(binding.Key, binding.Contexts)
 	k.bindings = append(k.bindings, binding)

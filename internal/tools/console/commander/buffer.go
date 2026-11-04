@@ -146,7 +146,7 @@ func (b *Buffer) Complete(result contract.Completion, forward bool) {
 		fragment := string(runes[start:b.cursor])
 		prefix := result.Prefix
 		var quote rune
-		if len(fragment) > 0 && (fragment[0] == '\'' || fragment[0] == '"') {
+		if fragment != "" && (fragment[0] == '\'' || fragment[0] == '"') {
 			quote = rune(fragment[0])
 			prefix = strings.TrimPrefix(prefix, string(quote))
 			prefix = strings.TrimSuffix(prefix, string(quote))
@@ -168,15 +168,16 @@ func (b *Buffer) Complete(result contract.Completion, forward bool) {
 		b.cycle = &completionCycle{choices: choices, prefix: string(runes[:start]), suffix: string(runes[end:]), quote: quote, position: -1}
 	}
 	c := b.cycle
-	if c.position < 0 {
+	switch {
+	case c.position < 0:
 		if forward {
 			c.position = 0
 		} else {
 			c.position = len(c.choices) - 1
 		}
-	} else if forward {
+	case forward:
 		c.position = (c.position + 1) % len(c.choices)
-	} else {
+	default:
 		c.position = (c.position + len(c.choices) - 1) % len(c.choices)
 	}
 	value := command.Quote(c.choices[c.position])

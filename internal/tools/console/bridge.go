@@ -99,8 +99,11 @@ func NewBridge(ctx context.Context, cfg BridgeConfig) (*Bridge, error) {
 	}
 	b.stopParent = context.AfterFunc(ctx, cancel)
 	if err := cfg.Master.Do(ctx, func(context.Context) error {
-		b.unsubscribe = append(b.unsubscribe, cfg.View.Notify(b.Invalidate), cfg.Events.Observe(func(eventstore.Event) { b.Invalidate() }))
-		b.unsubscribe = append(b.unsubscribe, cfg.Master.Options.Subscribe(func(context.Context, map[string]struct{}) error { b.Invalidate(); return nil }))
+		b.unsubscribe = append(b.unsubscribe,
+			cfg.View.Notify(b.Invalidate),
+			cfg.Events.Observe(func(eventstore.Event) { b.Invalidate() }),
+			cfg.Master.Options.Subscribe(func(context.Context, map[string]struct{}) error { b.Invalidate(); return nil }),
+		)
 		return nil
 	}); err != nil {
 		b.stopParent()
@@ -149,10 +152,10 @@ func (b *Bridge) Call(ctx context.Context, name string, args ...any) (any, error
 		}
 		switch value := value.(type) {
 		case flow.Flow:
-			copy := value.Copy()
-			copy.Common().ID = value.Common().ID
-			copy.Common().Live = value.Common().Live
-			result = copy
+			cloned := value.Copy()
+			cloned.Common().ID = value.Common().ID
+			cloned.Common().Live = value.Common().Live
+			result = cloned
 		case []flow.Flow:
 			copies := make([]flow.Flow, len(value))
 			for i, f := range value {

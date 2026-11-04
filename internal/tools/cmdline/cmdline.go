@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -291,7 +292,7 @@ func (v *optionValue) String() string {
 	case nil:
 		return ""
 	case *int:
-		return fmt.Sprint(*value)
+		return strconv.Itoa(*value)
 	case *string:
 		return *value
 	default:

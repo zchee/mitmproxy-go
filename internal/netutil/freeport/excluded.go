@@ -4,6 +4,7 @@
 package freeport
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -43,7 +44,7 @@ func parseExcludedPorts(output string) ([]portRange, error) {
 		ranges = append(ranges, portRange{first, last})
 	}
 	if !inTable {
-		return nil, fmt.Errorf("excluded port range table missing")
+		return nil, errors.New("excluded port range table missing")
 	}
 	return ranges, nil
 }

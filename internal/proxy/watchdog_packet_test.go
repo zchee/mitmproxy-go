@@ -14,14 +14,12 @@ func TestPacketWatchdogBaseline(t *testing.T) {
 		run func(*testing.T, *watchdog, *manualClock, *atomic.Int32)
 	}{
 		"expires at twenty seconds": {run: func(t *testing.T, w *watchdog, clock *manualClock, count *atomic.Int32) {
-			t.Helper()
 			clock.advance(20*time.Second - time.Nanosecond)
 			requireExpirations(t, count, 0)
 			clock.advance(time.Nanosecond)
 			requireExpirations(t, count, 1)
 		}},
 		"datagram resets baseline": {run: func(t *testing.T, w *watchdog, clock *manualClock, count *atomic.Int32) {
-			t.Helper()
 			clock.advance(19 * time.Second)
 			w.activity()
 			clock.advance(time.Second)
@@ -30,7 +28,6 @@ func TestPacketWatchdogBaseline(t *testing.T) {
 			requireExpirations(t, count, 1)
 		}},
 		"short hook keeps datagram baseline": {run: func(t *testing.T, w *watchdog, clock *manualClock, count *atomic.Int32) {
-			t.Helper()
 			clock.advance(5 * time.Second)
 			w.disarm()
 			clock.advance(10 * time.Second)
@@ -39,7 +36,6 @@ func TestPacketWatchdogBaseline(t *testing.T) {
 			requireExpirations(t, count, 1)
 		}},
 		"overdue hook expires on rearm": {run: func(t *testing.T, w *watchdog, clock *manualClock, count *atomic.Int32) {
-			t.Helper()
 			w.disarm()
 			clock.advance(time.Minute)
 			requireExpirations(t, count, 0)
@@ -48,7 +44,6 @@ func TestPacketWatchdogBaseline(t *testing.T) {
 			requireExpirations(t, count, 1)
 		}},
 		"datagram during hook updates baseline": {run: func(t *testing.T, w *watchdog, clock *manualClock, count *atomic.Int32) {
-			t.Helper()
 			w.disarm()
 			clock.advance(30 * time.Second)
 			w.activity()
@@ -60,7 +55,6 @@ func TestPacketWatchdogBaseline(t *testing.T) {
 			requireExpirations(t, count, 1)
 		}},
 		"nested hook rearms only after last return": {run: func(t *testing.T, w *watchdog, clock *manualClock, count *atomic.Int32) {
-			t.Helper()
 			w.disarm()
 			w.disarm()
 			clock.advance(time.Minute)

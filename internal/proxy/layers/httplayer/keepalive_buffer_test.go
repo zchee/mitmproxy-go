@@ -80,14 +80,12 @@ func TestHTTP1KeepAliveBuffer(t *testing.T) {
 			"connection_close_preserved":         {close: true},
 			"bounded_wait_cancellation":          {bytes: 1 << 20, cancel: true},
 			"connection_upgrade_token_refused": {run: func(t *testing.T) {
-				t.Helper()
 				for _, side := range []string{"request", "response"} {
 					t.Logf("Connection upgrade token on %s", side)
 					checkHTTP1LatePolicy(t, side)
 				}
 			}},
 			"late_until_close_response_refused": {run: func(t *testing.T) {
-				t.Helper()
 				checkHTTP1LatePolicy(t, "until-close")
 			}},
 		}

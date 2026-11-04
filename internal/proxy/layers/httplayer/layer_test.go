@@ -62,7 +62,6 @@ type pooled struct {
 }
 
 func newPipePool(t *testing.T) *pipePool {
-	t.Helper()
 	return &pipePool{t: t, origins: make(chan layer.Conn, 2), cached: make(map[string]pooled)}
 }
 

@@ -424,7 +424,7 @@ const (
 // view's YAML loader does: the YAML 1.2 core schema, with 0x, 0o and 0b
 // integers in either sign and without digit separators.
 func yamlCoreScalarKind(text string) yamlCoreKind {
-	if _, ok := parseYAMLNull(text); ok {
+	if parseYAMLNull(text) {
 		return yamlCoreNull
 	}
 	if _, ok := parseYAMLBool(text); ok {
@@ -441,12 +441,12 @@ func yamlCoreScalarKind(text string) yamlCoreKind {
 	return yamlCoreString
 }
 
-func parseYAMLNull(text string) (struct{}, bool) {
+func parseYAMLNull(text string) bool {
 	switch text {
 	case "", "~", "null", "Null", "NULL":
-		return struct{}{}, true
+		return true
 	}
-	return struct{}{}, false
+	return false
 }
 
 func parseYAMLBool(text string) (value, ok bool) {
@@ -756,7 +756,7 @@ func yamlMsgpackScalar(node *yaml.Node, budget *viewBudget) (msgpackValue, error
 	if node.Style&yaml.TaggedStyle != 0 && node.Tag != "!" {
 		switch node.Tag {
 		case "!!null":
-			if _, ok := parseYAMLNull(text); !ok || text == "" {
+			if !parseYAMLNull(text) || text == "" {
 				return msgpackValue{}, errors.New("invalid value for !!null")
 			}
 			kind = yamlCoreNull
@@ -794,7 +794,7 @@ func yamlMsgpackScalar(node *yaml.Node, budget *viewBudget) (msgpackValue, error
 			return msgpackValue{}, errors.New("invalid value for !!int")
 		}
 		if negative {
-			return msgpackValue{Code: def.Int64, Scalar: int64(value)}, nil //nolint:gosec // The bits came from a negative int64.
+			return msgpackValue{Code: def.Int64, Scalar: int64(value)}, nil
 		}
 		return msgpackValue{Code: def.Uint64, Scalar: value}, nil
 	case yamlCoreFloat:

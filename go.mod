@@ -10,16 +10,16 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	codeberg.org/miekg/dns v0.6.128
 	github.com/alecthomas/chroma/v2 v2.27.0
-	github.com/andybalholm/brotli v1.2.7
+	github.com/andybalholm/brotli v1.2.8
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/charmbracelet/x/exp/teatest/v2 v2.0.0-20261101151554-27ecf3e4d454
 	github.com/charmbracelet/x/term v0.2.2
-	github.com/chromedp/cdproto v0.159.0
-	github.com/chromedp/chromedp v0.21.1
+	github.com/chromedp/cdproto v0.159.2
+	github.com/chromedp/chromedp v0.22.1
 	github.com/dlclark/regexp2 v1.12.0
-	github.com/ebitengine/purego v0.11.2
+	github.com/ebitengine/purego v0.11.3
 	github.com/go-ldap/ldap/v3 v3.4.15
 	github.com/google/btree v1.1.3
 	github.com/google/go-cmp v0.7.0
@@ -27,12 +27,12 @@ require (
 	github.com/klauspost/compress v1.20.3
 	github.com/pion/dtls/v3 v3.1.15
 	github.com/quic-go/qpack v0.6.0
-	github.com/quic-go/quic-go v0.64.1
+	github.com/quic-go/quic-go v0.65.0
 	github.com/rivo/uniseg v0.4.7
 	github.com/shamaton/msgpack/v3 v3.2.6
 	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	github.com/zchee/gows v0.1.1
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.47.0

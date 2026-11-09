@@ -29,7 +29,7 @@ rejected() {
   if "$@" >| "$WORK/rejected.stdout" 2>| "$WORK/rejected.stderr"; then
     fail 'invalid release input was accepted'
   fi
-  grep -Eq "$expected" "$WORK/rejected.stderr" || fail 'rejection did not identify the violated contract'
+  grep -Eq "$expected" "$WORK/rejected.stderr" || fail "rejection did not identify the violated contract: $(<"$WORK/rejected.stderr")"
 }
 for identity in A B; do
   gpg --batch --pinentry-mode loopback --passphrase '' --quick-generate-key "Release fixture $identity <fixture-$identity@example.invalid>" ed25519 sign 1d
@@ -100,6 +100,6 @@ printf 'PASS sidecars_missing_refused\n'
 
 # The real core verifier must reject these deliberately invalid artifact bytes before any external verification.
 go -C "$ROOT" build -o "$WORK/releasecheck" ./internal/releasecheck/cmd/releasecheck
-rejected 'provenance|invalid character|unexpected end|source checkout must be clean' bash "$POLICY" verify-publication "$ROOT" "$CORE" "$SIDECARS" "$TAG" go1.27.3 "$(git -C "$ROOT" rev-parse HEAD)"
+rejected 'release target metadata mismatch|source checkout must be clean' bash "$POLICY" verify-publication "$ROOT" "$CORE" "$SIDECARS" "$TAG" go1.27.3 "$(git -C "$ROOT" rev-parse HEAD)"
 [[ ! -s "$WORK/rejected.stdout" ]] || fail 'unverified artifacts produced publication output'
 printf 'PASS publish_requires_verified\n'

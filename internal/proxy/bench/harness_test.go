@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -32,13 +33,17 @@ import (
 	"github.com/quic-go/quic-go/http3"
 	"github.com/zchee/gows"
 
+	"github.com/zchee/mitmproxy-go/addon"
 	"github.com/zchee/mitmproxy-go/addon/hookdata"
 	"github.com/zchee/mitmproxy-go/addons/nextlayer"
 	"github.com/zchee/mitmproxy-go/addons/proxyserver"
 	"github.com/zchee/mitmproxy-go/addons/tlsconfig"
 	"github.com/zchee/mitmproxy-go/flow"
+	"github.com/zchee/mitmproxy-go/internal/http1"
 	"github.com/zchee/mitmproxy-go/internal/proxy"
 	"github.com/zchee/mitmproxy-go/internal/proxy/packettransport"
+	"github.com/zchee/mitmproxy-go/internal/telemetry"
+	"github.com/zchee/mitmproxy-go/internal/version"
 	"github.com/zchee/mitmproxy-go/master"
 
 	_ "github.com/zchee/mitmproxy-go/internal/proxy/layers/httplayer"
@@ -126,6 +131,9 @@ type harness struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	master      *master.Master
+	telemetry   *telemetry.Controller
+	collector   *ownedCollector
+	listeners   []netip.AddrPort
 	connections *proxy.Connections
 	accepted    atomic.Int64
 	origins     atomic.Int64
@@ -142,7 +150,7 @@ type harness struct {
 	closed      bool
 }
 
-func newHarness(tb testing.TB, parent context.Context, protocol string, count, size int) *harness {
+func newHarness(tb testing.TB, parent context.Context, protocol string, count, size int, enabled bool) *harness {
 	tb.Helper()
 	ctx, cancel := context.WithTimeout(parent, 5*time.Minute)
 	h := &harness{ctx: ctx, cancel: cancel, connections: new(proxy.Connections), errors: make(chan error, 2*count+8), started: make(chan struct{}, count)}
@@ -153,9 +161,26 @@ func newHarness(tb testing.TB, parent context.Context, protocol string, count, s
 	})
 	origin := h.startOrigin(tb, protocol, size)
 	logger := slog.New(slog.DiscardHandler)
-	m := master.New(master.Config{Logger: logger})
+	masterConfig := master.Config{Logger: logger}
+	var fidelity *http1.FidelityCounter
+	if enabled {
+		h.collector = newOwnedCollector()
+		fidelity = new(http1.FidelityCounter)
+		h.telemetry = telemetry.New(telemetry.Config{
+			Fidelity: fidelity, Connections: h.connections.Len,
+			Listeners: func() []netip.AddrPort { return h.listeners },
+			Version:   version.Version, Logger: logger,
+		})
+		masterConfig.OnHookComplete = h.telemetry.OnHookComplete
+		masterConfig.OnDispatchStart = h.telemetry.OnDispatchStart
+		masterConfig.OnDispatchEnd = h.telemetry.OnDispatchEnd
+	}
+	m := master.New(masterConfig)
 	h.master = m
-	cfg := proxy.Config{Manager: m.Addons, Options: m.Options, Connections: h.connections, Logger: logger}
+	if h.telemetry != nil {
+		h.telemetry.Bind(m)
+	}
+	cfg := proxy.Config{Manager: m.Addons, Options: m.Options, Connections: h.connections, HTTPFidelity: fidelity, Logger: logger}
 	defaults, err := proxyserver.New(cfg)
 	if err != nil {
 		tb.Fatal(err)
@@ -168,6 +193,11 @@ func newHarness(tb testing.TB, parent context.Context, protocol string, count, s
 		}
 		if err := m.Addons.Add(ctx, defaults, nextlayer.New(m.Options), security); err != nil {
 			return err
+		}
+		if h.telemetry != nil {
+			if err := m.Addons.Add(ctx, h.telemetry); err != nil {
+				return err
+			}
 		}
 		if protocol == "ws" {
 			if err := m.Addons.Add(ctx, &boundedHistory{}); err != nil {
@@ -202,6 +232,27 @@ func newHarness(tb testing.TB, parent context.Context, protocol string, count, s
 	}
 	mode := "reverse:" + scheme + "://" + origin
 	address := h.startProxy(tb, handler, mode, protocol)
+	if h.telemetry != nil {
+		listener, err := netip.ParseAddrPort(address)
+		if err != nil {
+			tb.Fatal(err)
+		}
+		h.listeners = []netip.AddrPort{listener}
+		if err := m.Do(ctx, func(ctx context.Context) error {
+			if err := m.Options.Update(ctx, map[string]any{"otel_exporter_endpoint": h.collector.server.URL}); err != nil {
+				return err
+			}
+			return m.Addons.Hook(ctx, addon.RunningHook{})
+		}); err != nil {
+			tb.Fatal(err)
+		}
+		if err := h.telemetry.Sync(ctx); err != nil {
+			tb.Fatal(err)
+		}
+		if status := h.telemetry.Status(); !status.Enabled || status.ExportFailures != 0 {
+			tb.Fatalf("telemetry startup: %+v", status)
+		}
+	}
 	for range count {
 		var exchange func() error
 		var closePeer func() error
@@ -587,10 +638,24 @@ func (h *harness) close() error {
 	if h.connections.Len() != 0 {
 		result = errors.Join(result, errors.New("proxy retained a joined client connection"))
 	}
+	if h.telemetry != nil {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(h.ctx), 10*time.Second)
+		result = errors.Join(result, h.telemetry.Close(ctx))
+		cancel()
+		if status := h.telemetry.Status(); status.Enabled || !status.Stopped || status.ActiveFlows != 0 || status.ActiveConnections != 0 || status.ExportFailures != 0 {
+			result = errors.Join(result, fmt.Errorf("telemetry shutdown: %+v", status))
+		}
+	}
 	if h.master != nil {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(h.ctx), 10*time.Second)
 		result = errors.Join(result, h.master.Close(ctx))
 		cancel()
+	}
+	if h.collector != nil {
+		h.collector.server.Close()
+		if spans, metrics, failures := h.collector.spans.Load(), h.collector.metrics.Load(), h.collector.failures.Load(); spans == 0 || metrics == 0 || failures != 0 {
+			result = errors.Join(result, fmt.Errorf("owned collector: spans=%d metrics=%d failures=%d", spans, metrics, failures))
+		}
 	}
 	for {
 		select {

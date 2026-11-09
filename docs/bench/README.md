@@ -145,9 +145,34 @@ Run all uninstrumented proxy scenarios without relinquishing that reservation:
 GOMAXPROCS=8 go test -tags proxybench -run '^$' -bench '^BenchmarkProxyThroughput$' -benchmem -benchtime=3s -count=5 -cpu=8 -timeout=120m ./internal/proxy/bench
 ```
 
-A telemetry-enabled comparison is a separately named workload, not an environment
-switch; it does not replace the uninstrumented baseline. That series requires the
-owned collector integration and is not supplied by the uninstrumented harness.
+A telemetry-enabled comparison has the explicit parent
+`BenchmarkProxyThroughputTelemetry` with the **identical 24 scenario paths** and
+units above. It is not an environment switch and never replaces the required
+uninstrumented baseline. Enabled means the real `internal/telemetry.Controller`
+is bound to this harness's Master observation/dispatch callbacks, instance
+fidelity counter, connection registry and actual proxy listener tuple. Its
+`otel_exporter_endpoint` points only to an owned healthy loopback OTLP/HTTP
+collector; the controller is synchronized before peers warm up. Production
+sampling, bounded batching/queues and metric export intervals are unchanged.
+
+The collector decodes bounded protobuf trace/metric requests, retains only atomic
+aggregate counts and returns successful OTLP responses; it is not an in-memory
+exporter. Its CPU/allocation and exporter work are included while timing runs.
+After peers, proxy and origin are stopped and joined, the controller is closed
+outside dispatch **before Master.Close**, with the collector still serving.
+Teardown checks acknowledged controller shutdown, zero active flows/connections,
+zero export/collector failures and actual receipt of both spans and metrics.
+WebSocket spans finish on connection teardown, not per echoed message. Normal
+queue saturation may drop spans under sustained load; this diagnostic series
+does not claim lossless export or impose a throughput threshold. Setup, final
+flush, joined teardown and collector shutdown remain outside timing. Matrix
+correctness exercises both series inside every existing scenario terminal.
+
+Run the enabled series under the same uninterrupted reservation:
+
+```sh
+GOMAXPROCS=8 go test -tags proxybench -run '^$' -bench '^BenchmarkProxyThroughputTelemetry$' -benchmem -benchtime=3s -count=5 -cpu=8 -timeout=120m ./internal/proxy/bench
+```
 
 Two bounded diagnostic probes examined the
 `h1/connections=256/bytes=1048576` residual. The first reproduced it once in five
@@ -157,10 +182,10 @@ second used corrected instrumentation and passed five of five repetitions withou
 reaching the residual. The diagnosis ended **INCONCLUSIVE/BLOCKER**, not a repair
 or a performance result.
 
-No product or harness repair was authored. [PR #270](https://github.com/zchee/mitmproxy-go/pull/270)
-remains an open draft at retained head `f663154` and has not landed. Telemetry-enabled
-benchmark measurements and result fields remain pending; the existing 23-scenario
-baseline is unchanged.
+No product or harness repair was authored. The retained benchmark patch from
+[PR #270](https://github.com/zchee/mitmproxy-go/pull/270) is included here without a
+repair claim. Telemetry-enabled benchmark measurements and result fields remain
+pending; the existing 23-scenario baseline is unchanged.
 
 Save raw outputs as `<host>-<date>.txt` and provenance/interpretation as the matching
 `.md`, with host/toolchain/date/source commit but no operational tracking IDs.

@@ -8,6 +8,13 @@ on:
 permissions:
   contents: read
 
+env:
+  GOENV: "off"
+  GOEXPERIMENT: ""
+  GOFLAGS: ""
+  GOTOOLCHAIN: local
+  GOWORK: "off"
+
 jobs:
   build:
     name: release build (${{ matrix.goos }}/${{ matrix.goarch }})
@@ -31,11 +38,18 @@ jobs:
       - name: Read the Go version from go.mod
         id: go
         shell: bash
-        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          version="$(bash hack/release-policy.sh go-version "$GITHUB_WORKSPACE")"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
       - uses: cloudx-io/setup-go@v1
         with:
           go-version: ${{ steps.go.outputs.version }}
           cache-key-prefix: release-${{ matrix.goos }}-${{ matrix.goarch }}
+      - name: Verify the selected plain Go compiler
+        env:
+          EXPECTED_GO_VERSION: ${{ steps.go.outputs.version }}
+        run: bash hack/release-policy.sh verify-toolchain "$GITHUB_WORKSPACE" "go${EXPECTED_GO_VERSION}"
       - name: Build and package the three commands
         shell: bash
         env:
@@ -82,11 +96,18 @@ jobs:
       - name: Read the Go version from go.mod
         id: go
         shell: bash
-        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          version="$(bash hack/release-policy.sh go-version "$GITHUB_WORKSPACE")"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
       - uses: cloudx-io/setup-go@v1
         with:
           go-version: ${{ steps.go.outputs.version }}
           cache-key-prefix: release-verification
+      - name: Verify the selected plain Go compiler
+        env:
+          EXPECTED_GO_VERSION: ${{ steps.go.outputs.version }}
+        run: bash hack/release-policy.sh verify-toolchain "$GITHUB_WORKSPACE" "go${EXPECTED_GO_VERSION}"
       - uses: actions/download-artifact@v8
         with:
           pattern: release-*
@@ -129,11 +150,18 @@ jobs:
       - name: Read the Go version from go.mod
         id: go
         shell: bash
-        run: echo "version=$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' go.mod)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          version="$(bash hack/release-policy.sh go-version "$GITHUB_WORKSPACE")"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
       - uses: cloudx-io/setup-go@v1
         with:
           go-version: ${{ steps.go.outputs.version }}
           cache-key-prefix: release-verification
+      - name: Verify the selected plain Go compiler
+        env:
+          EXPECTED_GO_VERSION: ${{ steps.go.outputs.version }}
+        run: bash hack/release-policy.sh verify-toolchain "$GITHUB_WORKSPACE" "go${EXPECTED_GO_VERSION}"
       - uses: actions/download-artifact@v8
         with:
           name: release-verified-${{ github.sha }}

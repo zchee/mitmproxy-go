@@ -16,11 +16,14 @@ case "$command:$#" in
 esac
 [[ "$root" = /* ]] || fail 'source root must be absolute'
 [[ -d "$root" ]] || fail 'source root must be a directory'
-[[ -z "$(git -C "$root" rev-parse --show-prefix)" ]] || fail 'source root must be the checkout root'
-[[ -z "$(git -C "$root" status --porcelain)" ]] || fail 'source checkout must be clean'
-module="$(git -C "$root" show HEAD:go.mod)"
+prefix="$(git -C "$root" rev-parse --show-prefix)" || fail 'cannot read source root'
+[[ -z "$prefix" ]] || fail 'source root must be the checkout root'
+status="$(git -C "$root" status --porcelain)" || fail 'cannot read source status'
+[[ -z "$status" ]] || fail 'source checkout must be clean'
+module="$(git -C "$root" show HEAD:go.mod)" || fail 'cannot read committed go.mod'
 version=''
 while IFS= read -r line; do
+  [[ ! "$line" =~ ^[[:space:]]*toolchain([[:space:]]|$) ]] || fail 'toolchain directives are not allowed for releases'
   if [[ "$line" =~ ^[[:space:]]*go[[:space:]] ]]; then
     [[ -z "$version" ]] || fail 'duplicate go directive'
     [[ "$line" =~ ^[[:space:]]*go[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+)([[:space:]]*(//.*)?)$ ]] || fail 'invalid plain Go version in go.mod'
@@ -31,8 +34,9 @@ done <<< "$module"
 
 if [[ "$command" = verify-toolchain ]]; then
   [[ "$3" = "go$version" ]] || fail 'expected Go version differs from trusted go.mod'
-  [[ -z "$(go env GOEXPERIMENT)" ]] || fail 'release Go experiments must be empty'
-  actual="$(go version)"
+  experiments="$(go env GOEXPERIMENT)" || fail 'cannot read Go experiments'
+  [[ -z "$experiments" ]] || fail 'release Go experiments must be empty'
+  actual="$(go version)" || fail 'cannot read selected compiler version'
   [[ "$actual" = "go version go$version "* ]] || fail 'selected compiler differs from trusted go.mod'
   platform="${actual#"go version go$version "}"
   [[ "$platform" =~ ^[a-z0-9]+/[a-z0-9]+$ ]] || fail 'selected compiler is not plain Go'

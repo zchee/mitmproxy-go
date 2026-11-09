@@ -5,15 +5,18 @@ version: "2"
 linters:
   default: none
   enable:
+    - copyloopvar
     - errcheck
     - godot
     - goheader
     - gosec
     - govet
+    - ineffassign
     - misspell
     - revive
     - staticcheck
     - unused
+    - wastedassign
   settings:
     godot:
       # Godoc comments on declarations end with a period; revive has no rule

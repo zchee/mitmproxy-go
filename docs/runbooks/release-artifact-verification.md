@@ -8,15 +8,21 @@ The verifier never executes an archived binary.
 ## Supply an independent toolchain expectation
 
 `verify` requires `--go-version` with the complete expected embedded Go version,
-including the `go` prefix and any experiment suffix. Obtain it independently from
-a trusted build receipt, operator policy or the trusted source's release-toolchain
-policy. Do not copy it from the artifacts under test or the verifier's own runtime.
-
-For a family built with plain Go 1.27.3, replace the artifact path and tag with the
-family you intend to check:
+including the `go` prefix. Derive it from the committed `go.mod` in an independently
+trusted, clean source checkout, not from the artifacts or the verifier's own runtime.
+The policy helper returns the numeric version, so add the `go` prefix:
 
 ```sh
-go run ./internal/releasecheck/cmd/releasecheck verify /absolute/path/to/artifact-family v0.0.0-test.20261028 --go-version go1.27.3
+EXPECTED_GO_VERSION="go$(bash hack/release-policy.sh go-version /absolute/path/to/trusted-clean-checkout)"
+```
+
+Release builds use that plain compiler with an explicitly empty `GOEXPERIMENT`.
+The examples below select `GOTOOLCHAIN=go1.27.3` for building the verifier; its runtime
+is not the expected artifact compiler's source of truth. Replace the artifact path
+and tag with the family you intend to check:
+
+```sh
+GOTOOLCHAIN=go1.27.3 GOEXPERIMENT= go run ./internal/releasecheck/cmd/releasecheck verify /absolute/path/to/artifact-family v0.0.0-test.20261028 --go-version "$EXPECTED_GO_VERSION"
 ```
 
 The six provenance documents and the actual embedded build information of all
@@ -37,7 +43,7 @@ pinned source commit used for the family, not whichever checkout happens to host
 the newer verifier. The artifact directory cannot select the expected source.
 
 ```sh
-go run ./internal/releasecheck/cmd/releasecheck verify /absolute/path/to/artifact-family v0.0.0-test.20261028 --go-version go1.27.3 --source-root /absolute/path/to/trusted-clean-checkout
+GOTOOLCHAIN=go1.27.3 GOEXPERIMENT= go run ./internal/releasecheck/cmd/releasecheck verify /absolute/path/to/artifact-family v0.0.0-test.20261028 --go-version "$EXPECTED_GO_VERSION" --source-root /absolute/path/to/trusted-clean-checkout
 ```
 
 The reader's commit and runtime can differ from the expected source and compiler.

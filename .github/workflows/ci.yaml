@@ -19,6 +19,32 @@ defaults:
     shell: bash
 
 jobs:
+  release-policy:
+    name: release policy
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    env:
+      GOENV: "off"
+      GOEXPERIMENT: ""
+      GOFLAGS: ""
+      GOTOOLCHAIN: local
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Read the release compiler
+        id: go
+        run: |
+          version="$(bash hack/release-policy.sh go-version "$GITHUB_WORKSPACE")"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+      - uses: cloudx-io/setup-go@v1
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache-key-prefix: release-policy
+      - name: Verify local publication contracts
+        run: bash hack/test-release-policy.sh
+
   test:
     name: test (${{ matrix.os }}, go ${{ matrix.go }})
     strategy:

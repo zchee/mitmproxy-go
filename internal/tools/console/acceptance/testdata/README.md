@@ -1,6 +1,6 @@
 # Console fixture verification
 
-The retained 200x50 flowlist, flowview and commander cell goldens and presentation JSON were verified against v12.3.1 by independent source-layout review on 2026-11-03; historical generation attribution is unchanged. The review compared all upstream console sources between 3368a0a and v12.3.1 (only a quickhelp.py docstring typo changed), checked the 12 retained frame/presentation files against execution base e77dcd3f, compared fresh v12.3.1 Python 80x24 frames with retained measurements and tracked goldens, and inspected passing receipts for all six Go cell/presentation checks. The historical golden-provenance.json remains unchanged; its file digests for flowlist and commander presentation JSON at both sizes predate later presentation-only commits and are not the current-file verification basis. No Python 200x50 regenerator exists; this verification does not establish Python-regenerated 200x50 output or native/browser terminal acceptance.
+The retained 200x50 flowlist, flowview and commander cell goldens and presentation JSON were verified against v12.3.1 by independent source-layout review on 2026-11-03; historical generation attribution is unchanged. The review compared all upstream console sources between 3368a0a and v12.3.1 (only a quickhelp.py docstring typo changed), checked the 12 retained frame/presentation files against execution base e77dcd3f, compared fresh v12.3.1 Python 80x24 frames with retained measurements and tracked goldens, and inspected passing receipts for all six Go cell/presentation checks. The historical attribution in golden-provenance.json remains unchanged; its stale file digests and byte lengths for flowlist and commander presentation JSON at both sizes were corrected by the current-byte verification recorded below. No Python 200x50 regenerator exists; this verification does not establish Python-regenerated 200x50 output or native/browser terminal acceptance.
 
 ## Command record
 
@@ -59,3 +59,18 @@ uv run --quiet --python 3.13 --script internal/tools/console/acceptance/testdata
 ```sh
 uv run --quiet --python 3.13 --script internal/tools/console/acceptance/testdata/test_qa_capture.py -rA
 ```
+
+## Current-byte verification
+
+The four flowlist/commander presentation digests and byte lengths were refreshed by direct measurement of the tracked files after presentation-only revisions 8a0b4f2 and 8bdcc65. This verifies current bytes; it is not regeneration, a new layout review or a new 200x50 Python oracle. No frame, presentation byte or historical attribution changed.
+
+To repeat the measurement from `internal/tools/console/acceptance`:
+
+```sh
+for path in testdata/presentation/flowlist-80x24.json testdata/presentation/flowlist-200x50.json testdata/presentation/commander-80x24.json testdata/presentation/commander-200x50.json; do
+  shasum -a 256 "$path"
+  wc -c "$path"
+done
+```
+
+Verification time from `date`: 2026-11-10 00:45:28 JST.

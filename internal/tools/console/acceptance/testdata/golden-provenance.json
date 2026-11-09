@@ -16,8 +16,8 @@
     },
     {
       "path": "testdata/presentation/flowlist-80x24.json",
-      "sha256": "f63ff376103ad8b16fc5284888241e3075574e9b42f9e7e4c78d3c9890f6287f",
-      "bytes": 2302
+      "sha256": "88de5721a6613b27a83328f194539fb5038fb802cbb513dad15c1a60e2a86aac",
+      "bytes": 3498
     },
     {
       "path": "testdata/TestConsoleGoldens/frames/flowlist/200x50.golden",
@@ -26,8 +26,8 @@
     },
     {
       "path": "testdata/presentation/flowlist-200x50.json",
-      "sha256": "788163ca503b18865181228a64938b3bc6e8883004a90f551a587ec5e4c1d902",
-      "bytes": 4616
+      "sha256": "3c6d4444002bb42fc1bc42782861f219c48813d6422c0085cadac316fd01fc8b",
+      "bytes": 8173
     },
     {
       "path": "testdata/TestConsoleGoldens/frames/flowview/80x24.golden",
@@ -56,8 +56,8 @@
     },
     {
       "path": "testdata/presentation/commander-80x24.json",
-      "sha256": "f519c2f70112d887e86ce7115e8b4f1c3e1eae915a36dbd4ee20b150a99561df",
-      "bytes": 2611
+      "sha256": "7a9ee097ff15fa5609f2d0a5247e26d62603df3c1dd32affc6d887613eb21f31",
+      "bytes": 3807
     },
     {
       "path": "testdata/TestConsoleGoldens/frames/commander/200x50.golden",
@@ -66,8 +66,8 @@
     },
     {
       "path": "testdata/presentation/commander-200x50.json",
-      "sha256": "3b512a3fd89156ae1b8a302745c989ba35eaf9f28728c7918f401acee57b4c3f",
-      "bytes": 4925
+      "sha256": "b648e1e64687784cc2d4503eaf493ff90b3ac01c8d83027fdd510ba30f1fe009",
+      "bytes": 8482
     }
   ]
 }

@@ -182,10 +182,10 @@ second used corrected instrumentation and passed five of five repetitions withou
 reaching the residual. The diagnosis ended **INCONCLUSIVE/BLOCKER**, not a repair
 or a performance result.
 
-No product or harness repair was authored. [PR #270](https://github.com/zchee/mitmproxy-go/pull/270)
-remains an open draft at retained head `f663154` and has not landed. Telemetry-enabled
-benchmark measurements and result fields remain pending; the existing 23-scenario
-baseline is unchanged.
+No product or harness repair was authored. The retained benchmark patch from
+[PR #270](https://github.com/zchee/mitmproxy-go/pull/270) is included here without a
+repair claim. Telemetry-enabled benchmark measurements and result fields remain
+pending; the existing 23-scenario baseline is unchanged.
 
 Save raw outputs as `<host>-<date>.txt` and provenance/interpretation as the matching
 `.md`, with host/toolchain/date/source commit but no operational tracking IDs.

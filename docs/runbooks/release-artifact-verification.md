@@ -172,6 +172,66 @@ executable path; retain an older verified directory for rollback. Native
 local-mode redirectors are separate installations, and cross-building is not
 native platform acceptance.
 
+## Install from source
+
+Use an independently pinned clean checkout at the approved tag's commit, after
+verifying the source tag as above. Set `GOBIN` to an absolute directory outside
+the checkout. To reproduce the plain compiler string, source installs require
+`GOTOOLCHAIN=go1.27.3` and an empty `GOEXPERIMENT`. Run one command for each tool:
+
+```sh
+/usr/bin/env GOTOOLCHAIN=go1.27.3 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go -C "$SOURCE" install ./cmd/mitmdump
+```
+
+```sh
+/usr/bin/env GOTOOLCHAIN=go1.27.3 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go -C "$SOURCE" install ./cmd/mitmproxy
+```
+
+```sh
+/usr/bin/env GOTOOLCHAIN=go1.27.3 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go -C "$SOURCE" install ./cmd/mitmweb
+```
+
+Unlike the workflow's preinstalled compiler selected with `GOTOOLCHAIN=local`,
+these commands select the named compiler: `local` can select an unrelated
+development launcher. Ordinary source builds report `0.1.0-dev`; release linker
+injection is not part of these commands. A `go build` of the same command packages
+is also supported. Version-suffixed
+`go install github.com/zchee/mitmproxy-go/cmd/<tool>@<version>` is unsupported while
+the YAML replacement remains in `go.mod`. Do not remove that replacement to
+force an install; it supplies the maintained parser hook used by bounded YAML
+consumers.
+
+For each tool retain the install exit status, executable hash, complete
+`--version` output and `go version -m` output. `--version` has exactly three lines:
+`Mitmproxy-go: 0.1.0-dev`, `Go: <independently expected plain compiler>` and
+`Platform: <expected native goos>/<expected native goarch>`. Require the
+corresponding `github.com/zchee/mitmproxy-go/cmd/<tool>` main-package path, VCS
+revision equal to the approved commit, `vcs.modified=false` and the pinned YAML
+replacement in build information. Main-module `(devel)` or a pseudo-version
+derived from the approved commit is valid for this installation method. Keep
+the checkout clean before and after; put installed binaries and receipts outside
+it.
+
+## Withdraw a published version
+
+Withdrawal is a maintainer action, not an automatic rollback. Set `TAG` to the
+affected public version and `WITHDRAWAL_NOTES` to an absolute Markdown file
+containing the explicit reason, affected scope and fixed patch version. Keep
+the original artifacts, checksums, signatures and tag intact. Mark the release
+prerelease and replace its notes with the reviewed withdrawal notice:
+
+```sh
+gh release edit "$TAG" --repo zchee/mitmproxy-go --prerelease --notes-file "$WITHDRAWAL_NOTES"
+```
+
+Remove that version from installation recommendations and publish the fixed patch
+version through the ordinary verification process. Never move the tag or replace
+its assets. Deletion requires a separate explicit decision; it cannot recall
+users' downloads, Go-proxy caches or checksum-database records, and the version
+must never be reused. GitHub prerelease marking does not retract a Go module
+version; any needed `retract` directive belongs to the module owner and retains
+its reason in release notes.
+
 ## Release approval boundary
 
 Three tag-ruleset documents are **prepared, not applied**: creation restriction
@@ -183,8 +243,7 @@ ruleset requires separate approval and a readback of the effective configuration
 
 This verification procedure authorizes no tag push, release publication or
 deletion. The production-signer positive proof and hosted OIDC/signature/attestation
-acceptance remain pending until the final signed proof tag. Supported channels,
-withdrawal instructions and the first public release's residual limits are
-finalized with the remaining release documentation; neither successful local
-verification nor deletion of a disposable proof tag authorizes changing a public
-version.
+acceptance require the final signed proof tag. The
+[release notes](../releases/v0.1.0.md) describe supported channels and residual
+limits. Neither successful local verification nor deletion of a disposable proof
+tag authorizes changing a public version.

@@ -158,7 +158,7 @@ reaching the residual. The diagnosis ended **INCONCLUSIVE/BLOCKER**, not a repai
 or a performance result.
 
 No product or harness repair was authored. [PR #270](https://github.com/zchee/mitmproxy-go/pull/270)
-remains an open draft at retained head `f663154` and has not landed. Telemetry-enabled
+remains an open draft at retained head `883d09b` and is not part of this release. Telemetry-enabled
 benchmark measurements and result fields remain pending; the existing 23-scenario
 baseline is unchanged.
 

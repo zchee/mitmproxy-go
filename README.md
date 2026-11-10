@@ -84,6 +84,27 @@ Run one proxy at a time when reusing port 8080. Each command provides `--help`, 
 Ctrl-C stops mitmdump and mitmweb; in mitmproxy it opens a Quit confirmation prompt. SIGTERM requests orderly shutdown.
 Restart with changed flags or configuration to change startup settings; configuration files are not watched for edits.
 
+For installed commands, use a verified release archive or an independently pinned, clean source checkout. From
+that checkout, with `GOBIN` set to an absolute directory outside the tree, install each command separately:
+
+```sh
+/usr/bin/env GOTOOLCHAIN=go1.27.3 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go install ./cmd/mitmdump
+```
+
+```sh
+/usr/bin/env GOTOOLCHAIN=go1.27.3 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go install ./cmd/mitmproxy
+```
+
+```sh
+/usr/bin/env GOTOOLCHAIN=go1.27.3 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go install ./cmd/mitmweb
+```
+
+These source builds report `0.1.0-dev`; they do not run release linker injection. To reproduce the plain compiler
+string, source installs require `GOTOOLCHAIN=go1.27.3` and an empty `GOEXPERIMENT`. Version-suffixed `go install`
+is unsupported while the YAML replacement remains in `go.mod`. See the
+[source installation checks](docs/runbooks/release-artifact-verification.md#install-from-source).
+Homebrew, apt, container images and automatic updates are not promised distribution channels.
+
 ## Optional telemetry and diagnostics
 
 All three tools register `otel_exporter_endpoint` and `pprof_addr` as string options, both empty (disabled) by default.
@@ -125,24 +146,32 @@ for size-known, privacy and cumulative `http_fidelity` semantics.
 
 ## Release artifacts
 
-[The release workflow](.github/workflows/release.yaml) runs on pushed `v*` tags and validates a bounded ASCII version:
-`v<digits>.<digits>.<digits>` with optional `-` prerelease and `+` build suffixes containing only ASCII letters, digits
-and dots, at most 64 bytes overall. Tags beginning `v0.0.0-test.` build and verify artifacts but never publish a GitHub
-Release. Other valid tags publish only after artifact verification. This describes the workflow, not a claim that a
-public release already exists.
+The first public release is `v0.1.0-rc.1`, a prerelease. Final `v0.1.0` promotion requires a separate explicit decision
+and fresh exact-source checks; release-candidate artifacts are never renamed as final artifacts.
+[Release notes](docs/releases/v0.1.0.md) are the single source for support boundaries and known limitations.
+
+[The release workflow](.github/workflows/release.yaml) runs on pushed `v*` tags. Public tags must be
+`vMAJOR.MINOR.PATCH` or `vMAJOR.MINOR.PATCH-rc.N`, with nonnegative decimal version components, positive `N`,
+no leading zeros and no build metadata. Accepted tags are at most 64 ASCII bytes. Valid `v0.0.0-test.*` proof tags
+build and verify artifacts but never publish a GitHub Release. Public tags publish only after artifact verification;
+release candidates are marked as prereleases.
 
 The matrix produces **18 binaries in six archives**: Linux, macOS and Windows × amd64 and arm64. Each
 `mitmproxy-go_<tag>_<goos>_<goarch>.tar.gz` contains one same-named directory with LICENSE and the three commands
 (`.exe` on Windows). Its matching `.provenance.json` records tag, commit, source tree, toolchain, build flags, module
-versions, per-binary hashes and `go version -m` output. `SHA256SUMS` covers exactly the six archives and six provenance
-files, not itself. Checksums establish integrity, not publisher signing or notarization.
+versions, binary hashes and build information. `SHA256SUMS` covers exactly the six archives and six provenance files,
+not itself.
 
-[Artifact verification](docs/runbooks/release-artifact-verification.md) explains the required independent
-`--go-version` expectation and optional trusted `--source-root`. The verifier checks six provenance documents
-and 18 embedded executable toolchain versions; it proves consistency, not publisher authenticity.
+Every one of these 13 core files, including `SHA256SUMS`, has a keyless Sigstore signature bundle and GitHub
+build-provenance attestation under the GPG-signed source tag. Keep the core files and their 13 signature sidecars in
+separate directories. [Verify the complete family and expected workflow identity](docs/runbooks/release-artifact-verification.md)
+before extracting; checksums alone are not publisher authentication. There is no Apple code signing or notarization,
+and consistency verification is not a reproducible-build guarantee.
 
-Release builds inject the tag into `--version`; ordinary source builds retain `0.1.0-dev`. Archives do not include
-native local-mode redirectors or establish native platform evidence; follow the runbooks above.
+Release builds inject the actual tag into `--version`; ordinary source builds retain `0.1.0-dev`. Archives do not include
+native local-mode redirectors or establish native platform acceptance. Install updates into a newly verified versioned
+directory and retain old verified directories for rollback. A withdrawn public version keeps its immutable tag and
+assets and is superseded by a fixed patch version; it is not overwritten or silently deleted.
 
 ## Fuzzing and benchmarks
 
@@ -152,10 +181,10 @@ across eight shards, with at most two shards running concurrently, retaining rec
 The required CI fuzz-smoke jobs remain separate.
 
 The landed [proxy benchmark harness](docs/bench/README.md) covers HTTP/1, HTTP/2, HTTP/3 and WebSocket scenarios.
-A telemetry-enabled benchmark series remains pending. [PR #270](https://github.com/zchee/mitmproxy-go/pull/270)
-remains an open draft at retained head `f663154` and has not landed. The HTTP/1 diagnosis ended
-**INCONCLUSIVE/BLOCKER** after two bounded probes; no product or harness repair was authored.
-No telemetry-on/off performance comparison is claimed.
+The telemetry benchmark comparison is not part of this release, and no telemetry-on/off measurement series exists.
+[PR #270](https://github.com/zchee/mitmproxy-go/pull/270) remains an open draft at retained head `883d09b` and has not landed.
+The HTTP/1 diagnosis remains **INCONCLUSIVE**; the HTTP/3 high-concurrency limitation remains documented.
+No product or harness repair or telemetry-on/off performance comparison is claimed.
 
 ## Development
 

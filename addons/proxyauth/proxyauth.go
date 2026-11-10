@@ -244,12 +244,6 @@ func (p *ProxyAuth) authenticate(ctx context.Context, f *flow.HTTPFlow) (bool, e
 	return false, err
 }
 
-// MakeAuth returns upstream's base64 basic-auth value, including its trailing LF.
-// The caller supplies the scheme, conventionally "basic".
-func MakeAuth(username, password, scheme string) string {
-	return scheme + " " + base64.StdEncoding.EncodeToString([]byte(username+":"+password)) + "\n"
-}
-
 // ParseHTTPBasicAuth returns the scheme and UTF-8 credentials in a basic header.
 // Malformed headers and headers larger than 64 KiB return an error. As upstream
 // does, it ignores non-alphabet base64 bytes and replaces invalid UTF-8.

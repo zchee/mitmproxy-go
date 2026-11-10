@@ -243,7 +243,7 @@ func TestFromFilesMissingDHParam(t *testing.T) {
 	if err := os.Remove(dhparamFile); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := FromFiles(filepath.Join(dir, "mitmproxy-ca.pem"), dhparamFile, nil); err != nil {
+	if _, err := fromFiles(filepath.Join(dir, "mitmproxy-ca.pem"), dhparamFile, nil); err != nil {
 		t.Fatal(err)
 	}
 	dhparam, err := os.ReadFile(dhparamFile)
@@ -268,7 +268,7 @@ func TestFromFilesPathErrors(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			store, err := FromFiles(tt.ca, tt.dh, nil)
+			store, err := fromFiles(tt.ca, tt.dh, nil)
 			if _, ok := errors.AsType[*os.PathError](err); !ok || store != nil {
 				t.Fatalf("FromFiles returned store=%t, error=%v; want nil store and filesystem error", store != nil, err)
 			}
@@ -436,11 +436,11 @@ func TestFromFilesEncrypted(t *testing.T) {
 	caFile := testutil.FixturePath(t, "mitmproxy/mitmproxy.pem")
 	dhparamFile := filepath.Join(t.TempDir(), "dhparam.pem")
 
-	if _, err := FromFiles(caFile, dhparamFile, nil); !errors.Is(err, ErrPassphraseRequired) {
+	if _, err := fromFiles(caFile, dhparamFile, nil); !errors.Is(err, ErrPassphraseRequired) {
 		t.Fatalf("error = %v, want ErrPassphraseRequired", err)
 	}
 
-	store, err := FromFiles(caFile, dhparamFile, []byte("password"))
+	store, err := fromFiles(caFile, dhparamFile, []byte("password"))
 	if err != nil {
 		t.Fatal(err)
 	}

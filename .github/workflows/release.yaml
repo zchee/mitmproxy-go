@@ -16,7 +16,22 @@ env:
   GOWORK: "off"
 
 jobs:
+  signed-tag:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the approved release tag signer
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bash hack/release-policy.sh verify-tag "$GITHUB_WORKSPACE" "$RELEASE_TAG" "$GITHUB_WORKSPACE/release/signing-policy.asc"
+
   build:
+    needs: signed-tag
     name: release build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-26.04
     timeout-minutes: 60
@@ -79,7 +94,7 @@ jobs:
       - name: Upload platform release artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: release-platform-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ env.artifacts }}
           retention-days: 14
           if-no-files-found: error
@@ -88,6 +103,10 @@ jobs:
     needs: build
     runs-on: ubuntu-26.04
     timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -110,7 +129,7 @@ jobs:
         run: bash hack/release-policy.sh verify-toolchain "$GITHUB_WORKSPACE" "go${EXPECTED_GO_VERSION}"
       - uses: actions/download-artifact@v8
         with:
-          pattern: release-*
+          pattern: release-platform-*
           merge-multiple: true
           path: ${{ runner.temp }}/release-gather
       - name: Verify exact archives, provenance and checksums
@@ -127,11 +146,42 @@ jobs:
           go run ./internal/releasecheck/cmd/releasecheck checksums "$OUT" "$VERSION" >| "$RUNNER_TEMP/release-SHA256SUMS"
           mv "$RUNNER_TEMP/release-SHA256SUMS" "$OUT/SHA256SUMS"
           go run ./internal/releasecheck/cmd/releasecheck verify "$OUT" "$VERSION" --go-version "go${EXPECTED_GO_VERSION}"
+      - uses: sigstore/cosign-installer@v4
+      - name: Sign the verified core files
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          CORE="$RUNNER_TEMP/release-gather"
+          SIDECARS="$RUNNER_TEMP/release-signatures"
+          mkdir "$SIDECARS"
+          bash hack/release-policy.sh core-members "$CORE" "$RELEASE_TAG" >/dev/null
+          for file in "$CORE/"*; do
+            cosign sign-blob --yes --bundle "$SIDECARS/${file##*/}.sigstore.json" "$file"
+          done
+          bash hack/release-policy.sh sidecar-members "$CORE" "$SIDECARS" "$RELEASE_TAG" >/dev/null
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ${{ runner.temp }}/release-gather/*
+      - name: Verify signatures and build attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          EXPECTED_GO_VERSION: ${{ steps.go.outputs.version }}
+          EVENT_SHA: ${{ github.sha }}
+        run: bash hack/release-policy.sh verify-publication "$GITHUB_WORKSPACE" "$RUNNER_TEMP/release-gather" "$RUNNER_TEMP/release-signatures" "$RELEASE_TAG" "go${EXPECTED_GO_VERSION}" "$EVENT_SHA"
       - name: Upload the verified complete release set
         uses: actions/upload-artifact@v7
         with:
           name: release-verified-${{ github.sha }}
           path: ${{ runner.temp }}/release-gather
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload the verified signature bundles
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-signatures-${{ github.sha }}
+          path: ${{ runner.temp }}/release-signatures
           retention-days: 14
           if-no-files-found: error
 
@@ -166,9 +216,15 @@ jobs:
         with:
           name: release-verified-${{ github.sha }}
           path: ${{ runner.temp }}/release-publish
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-signatures-${{ github.sha }}
+          path: ${{ runner.temp }}/release-publish-signatures
+      - uses: sigstore/cosign-installer@v4
       - name: Verify the complete publication set
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
           EVENT_SHA: ${{ github.sha }}
           EXPECTED_GO_VERSION: ${{ steps.go.outputs.version }}
@@ -177,8 +233,9 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EVENT_SHA"
           VERSION="$(go run ./internal/releasecheck/cmd/releasecheck publish-tag "$RELEASE_TAG")"
           case "$VERSION" in v0.0.0-test.*) exit 1 ;; esac
-          go run ./internal/releasecheck/cmd/releasecheck verify "$RUNNER_TEMP/release-publish" "$VERSION" --go-version "go${EXPECTED_GO_VERSION}"
+          bash hack/release-policy.sh verify-publication "$GITHUB_WORKSPACE" "$RUNNER_TEMP/release-publish" "$RUNNER_TEMP/release-publish-signatures" "$VERSION" "go${EXPECTED_GO_VERSION}" "$EVENT_SHA"
           printf 'version=%s\n' "$VERSION" >> "$GITHUB_ENV"
+      # Keep both verified artifact directories unchanged until gh release create reads them.
       - name: Publish verified non-test release artifacts
         shell: bash
         env:
@@ -187,6 +244,6 @@ jobs:
         run: |
           set -euo pipefail
           case "$VERSION" in v0.0.0-test.*) exit 1 ;; esac
-          files=("$RUNNER_TEMP/release-publish/"*)
-          test "${#files[@]}" -eq 13
+          files=("$RUNNER_TEMP/release-publish/"* "$RUNNER_TEMP/release-publish-signatures/"*)
+          test "${#files[@]}" -eq 26
           gh release create "$VERSION" "${files[@]}" --verify-tag --title "$VERSION" --notes 'Cross-built command binaries with source and build provenance. Cross-builds do not establish native platform runtime support.'

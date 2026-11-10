@@ -97,9 +97,45 @@ verify_publication() {
   done <<< "$names"
 }
 
+verify_source() {
+  local root="$1" tag="$2" expected="$3" policy="$4" actual
+  [[ "$expected" =~ ^[a-f0-9]{40}$ ]] || fail 'approved source commit must be 40 hexadecimal characters'
+  verify_tag "$root" "$tag" "$policy"
+  actual="$(git -C "$root" rev-parse --verify "refs/tags/$tag^{commit}")" || fail 'cannot peel release tag to commit'
+  [[ "$actual" = "$expected" ]] || fail 'tag target differs from approved commit'
+  actual="$(git -C "$root" rev-parse --verify HEAD)" || fail 'cannot read checked-out commit'
+  [[ "$actual" = "$expected" ]] || fail 'checkout differs from approved commit'
+}
+
+release_channel() {
+  local tag="$1"
+  [[ "${#tag}" -le 64 ]] || fail 'release tag exceeds 64 bytes'
+  git check-ref-format "refs/tags/$tag" >/dev/null 2>&1 || fail 'invalid release tag'
+  if [[ "$tag" =~ ^v0\.0\.0-test\.[A-Za-z0-9][A-Za-z0-9.-]*$ ]]; then
+    printf 'proof\n'
+  elif [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.([1-9][0-9]*))?$ ]]; then
+    if [[ -n "${BASH_REMATCH[4]}" ]]; then printf 'prerelease\n'; else printf 'release\n'; fi
+  else
+    fail 'public tag must be vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rc.N with positive N and no leading zeros'
+  fi
+}
+
+publication_options() {
+  local root="$1" tag="$2" channel notes
+  channel="$(release_channel "$tag")" || exit 1
+  [[ "$channel" != proof ]] || fail 'proof tags cannot publish'
+  notes="$root/docs/releases/v0.1.0.md"
+  [[ -s "$notes" && -f "$notes" && ! -L "$notes" ]] || fail 'reviewed release notes are missing or non-regular'
+  printf '%s\n' --verify-tag --notes-file "$notes"
+  if [[ "$channel" = prerelease ]]; then printf '%s\n' --prerelease; fi
+}
+
 command="${1:-}"
 case "$command:$#" in
   verify-signature-status:3) verify_signature_status "$2" "$3"; exit ;;
+  verify-source:5) verify_source "$2" "$3" "$4" "$5"; exit ;;
+  release-channel:2) release_channel "$2"; exit ;;
+  publication-options:3) publication_options "$2" "$3"; exit ;;
   verify-tag:4) verify_tag "$2" "$3" "$4"; exit ;;
   core-members:3) core_members "$2" "$3"; exit ;;
   sidecar-members:4) sidecar_members "$2" "$3" "$4"; exit ;;

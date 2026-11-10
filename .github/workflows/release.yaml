@@ -25,10 +25,14 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify the approved release tag signer
+      - name: Verify the approved release tag and source
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: bash hack/release-policy.sh verify-tag "$GITHUB_WORKSPACE" "$RELEASE_TAG" "$GITHUB_WORKSPACE/release/signing-policy.asc"
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          bash hack/release-policy.sh verify-source "$GITHUB_WORKSPACE" "$RELEASE_TAG" "$EVENT_SHA" "$GITHUB_WORKSPACE/release/signing-policy.asc"
+          bash hack/release-policy.sh release-channel "$RELEASE_TAG"
 
   build:
     needs: signed-tag
@@ -246,4 +250,6 @@ jobs:
           case "$VERSION" in v0.0.0-test.*) exit 1 ;; esac
           files=("$RUNNER_TEMP/release-publish/"* "$RUNNER_TEMP/release-publish-signatures/"*)
           test "${#files[@]}" -eq 26
-          gh release create "$VERSION" "${files[@]}" --verify-tag --title "$VERSION" --notes 'Cross-built command binaries with source and build provenance. Cross-builds do not establish native platform runtime support.'
+          options="$(bash hack/release-policy.sh publication-options "$GITHUB_WORKSPACE" "$VERSION")"
+          mapfile -t publication_options <<< "$options"
+          gh release create "$VERSION" "${files[@]}" --title "$VERSION" "${publication_options[@]}"

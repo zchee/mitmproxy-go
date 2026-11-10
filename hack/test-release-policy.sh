@@ -139,3 +139,54 @@ printf 'PASS sidecars_missing_refused\n'
 rejected 'release target metadata mismatch|source checkout must be clean' bash "$POLICY" verify-publication "$ROOT" "$CORE" "$SIDECARS" "$TAG" go1.27.3 "$(git -C "$ROOT" rev-parse HEAD)"
 [[ ! -s "$WORK/rejected.stdout" ]] || fail 'unverified artifacts produced publication output'
 printf 'PASS publish_requires_verified\n'
+
+source_commit="$(git -C "$REPO" rev-parse HEAD)"
+bash "$POLICY" verify-source "$REPO" v0.0.0-test.A "$source_commit" "$WORK/policy-A.asc"
+rejected 'tag signature verification failed' bash "$POLICY" verify-source "$REPO" v0.0.0-test.unsigned "$source_commit" "$WORK/policy-A.asc"
+rejected 'release tag must be annotated and signed' bash "$POLICY" verify-source "$REPO" v0.0.0-test.lightweight "$source_commit" "$WORK/policy-A.asc"
+rejected 'tag signature verification failed' bash "$POLICY" verify-source "$REPO" v0.0.0-test.B "$source_commit" "$WORK/policy-A.asc"
+rejected 'tag signature verification failed' bash "$POLICY" verify-source "$REPO" v0.0.0-test.A "$source_commit" "$ROOT/release/signing-policy.asc"
+printf 'PASS tag_source_matches\n'
+rejected 'tag target differs from approved commit' bash "$POLICY" verify-source "$REPO" v0.0.0-test.A 0000000000000000000000000000000000000000 "$WORK/policy-A.asc"
+printf 'PASS tag_source_mismatch_refused\n'
+git -C "$REPO" -c user.name='Release fixture' -c user.email=fixture@example.invalid -c commit.gpgsign=false commit --allow-empty --quiet -m 'fixture: different checked-out source'
+rejected 'checkout differs from approved commit' bash "$POLICY" verify-source "$REPO" v0.0.0-test.A "$source_commit" "$WORK/policy-A.asc"
+printf 'PASS checkout_mismatch_refused\n'
+
+[[ "$(bash "$POLICY" release-channel v0.1.0)" = release ]] || fail 'stable tag was misclassified'
+printf 'PASS public_stable\n'
+[[ "$(bash "$POLICY" release-channel v0.1.0-rc.1)" = prerelease ]] || fail 'release candidate was misclassified'
+printf 'PASS public_rc\n'
+[[ "$(bash "$POLICY" release-channel v0.0.0-test.fixture)" = proof ]] || fail 'proof tag was misclassified'
+printf 'PASS proof_classification\n'
+rejected 'public tag must be' bash "$POLICY" release-channel v0.1.0-beta.1
+printf 'PASS other_prerelease_refused\n'
+rejected 'public tag must be' bash "$POLICY" release-channel v0.1.0+build
+printf 'PASS build_metadata_refused\n'
+for tag in 0.1.0 v0.1 v00.1.0 v0.01.0 v0.1.00 v0.1.0-rc v0.1.0-rc.0 v0.1.0-rc.01 'v0.1.0 ' $'v0.1.0\n'; do
+  rejected 'invalid release tag|public tag must be' bash "$POLICY" release-channel "$tag"
+done
+printf 'PASS malformed_version_refused\n'
+rejected 'proof tags cannot publish' bash "$POLICY" publication-options "$WORK/notes-source" v0.0.0-test.fixture
+printf 'PASS proof_publication_refused\n'
+rejected 'reviewed release notes are missing' bash "$POLICY" publication-options "$WORK/notes-source" v0.1.0
+mkdir -p "$WORK/notes-source/docs/releases"
+notes="$WORK/notes-source/docs/releases/v0.1.0.md"
+: > "$notes"
+rejected 'reviewed release notes are missing' bash "$POLICY" publication-options "$WORK/notes-source" v0.1.0
+rm "$notes"
+mkdir "$notes"
+rejected 'reviewed release notes are missing' bash "$POLICY" publication-options "$WORK/notes-source" v0.1.0
+rmdir "$notes"
+printf 'Reviewed fixture release notes.\n' > "$WORK/valid-notes"
+ln -s "$WORK/valid-notes" "$notes"
+rejected 'reviewed release notes are missing' bash "$POLICY" publication-options "$WORK/notes-source" v0.1.0
+rm "$notes"
+mv "$WORK/valid-notes" "$notes"
+printf 'PASS notes_missing_refused\n'
+expected="$(printf '%s\n' --verify-tag --notes-file "$WORK/notes-source/docs/releases/v0.1.0.md")"
+[[ "$(bash "$POLICY" publication-options "$WORK/notes-source" v0.1.0)" = "$expected" ]] || fail 'stable publication options differ'
+printf 'PASS stable_publication_options\n'
+expected="$(printf '%s\n' --verify-tag --notes-file "$WORK/notes-source/docs/releases/v0.1.0.md" --prerelease)"
+[[ "$(bash "$POLICY" publication-options "$WORK/notes-source" v0.1.0-rc.1)" = "$expected" ]] || fail 'release candidate publication options differ'
+printf 'PASS rc_publication_options\n'

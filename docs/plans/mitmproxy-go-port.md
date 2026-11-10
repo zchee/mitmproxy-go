@@ -206,7 +206,7 @@ internal/proxy/modeserver/ per-mode listeners (py:mitmproxy/proxy/mode_servers.p
 internal/http1/            read.go, assemble.go (py:mitmproxy/net/http/http1/{read,assemble}.py)
 internal/h2/               endpoint, HEADERS assembly, windows (py:mitmproxy/proxy/layers/http/_http2.py, _http_h2.py)
 internal/h3/               frame codec over quic.Stream, qpack glue (py:.../_http3.py, _http_h3.py)
-internal/netutil/{check,encoding,freeport,localip,serverspec}   (py:mitmproxy/net/{check,encoding,free_port,local_ip,server_spec}.py)
+internal/netutil/{check,encoding,freeport,serverspec}   (py:mitmproxy/net/{check,encoding,free_port,server_spec}.py)
 internal/platform/         original_addr per OS (py:mitmproxy/platform/*)
 internal/netstack/         gVisor glue (rs:src/network/*)
 internal/wireguard/        wireguard-go device over netstack (rs:src/packet_sources/wireguard.rs); one configured peer on main (R46-16), multi-peer routing is a unit of the revision 11 round
@@ -4731,7 +4731,7 @@ The default whole-tree race1 skip baseline remains the 40 package-qualified iden
 
 | Source / item | IN / OUT | Owner and reason |
 |---|---|---|
-|Deferred row 1: mitmweb column/splitter assets, mitmproxy/mitmproxy#8358 and mitmproxy/mitmproxy#8492|OUT, USER fixed|A binary-asset replacement needs supply-chain verification and a browser-acceptance rerun, separate from Go behavioural catch-up; retain assets.tsv and copied web build at their actual production revision.|
+|Deferred row 1: mitmweb column/splitter assets, mitmproxy/mitmproxy#8358 and mitmproxy/mitmproxy#8492|DONE at #295 / `91c5f7b` (previously `OUT, USER fixed`)|The v12.3.1 assets and provenance have landed; retain their recorded hashes and production attribution rather than replacing them again.|
 |Deferred row 2: empty SAN, mitmproxy/mitmproxy#8473|IN U1|Omit only the empty extension, preserving nonempty SAN order/criticality and consumers.|
 |Deferred row 3: Expires comma, mitmproxy/mitmproxy#8489|IN U2|Port the weekday AND encountered-delimiter condition, preserving the permissive parser.|
 |Deferred row 4: empty-value refresh, mitmproxy/mitmproxy#8520|IN U2|Distinguish a present empty value from a missing value and prove Response.Refresh behaviour.|

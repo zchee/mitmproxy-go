@@ -67,25 +67,54 @@ public key. The signing key expires on 2027-01-22 at 06:06:56 UTC; maintainers m
 refresh this committed public policy when extending the key. Do not substitute a
 key or fingerprint supplied alongside an untrusted download.
 
-Run the same signed-tag check as the release workflow:
+Run the same signed-tag and source check as the release workflow:
 
 ```sh
-/usr/bin/env GOENV=off GOEXPERIMENT= GOFLAGS= GOTOOLCHAIN=local GOWORK=off bash "$SOURCE/hack/release-policy.sh" verify-tag "$SOURCE" "$TAG" "$SOURCE/release/signing-policy.asc"
+/usr/bin/env GOENV=off GOEXPERIMENT= GOFLAGS= GOTOOLCHAIN=local GOWORK=off bash "$SOURCE/hack/release-policy.sh" verify-source "$SOURCE" "$TAG" "$FINAL_SHA" "$SOURCE/release/signing-policy.asc"
 ```
 
 This requires an annotated tag, its signed name matching the requested ref, a
 valid signature by the approved primary key, and no expired or revoked signing
 key or signature. Lightweight, unsigned and wrong-signer tags are refused.
 A signing subkey is accepted only when it is part of the committed public signing policy.
-Compare the peeled tag and source checkout with the independently approved commit:
-
-```sh
-test "$(git -C "$SOURCE" rev-parse "$TAG^{commit}")" = "$FINAL_SHA" && test "$(git -C "$SOURCE" rev-parse HEAD)" = "$FINAL_SHA"
-```
+Verification uses an isolated keyring containing only that policy. Tag names
+contain only ASCII letters, digits, dots, plus signs and hyphens. The helper also
+requires both the tag's peeled commit and the checked-out `HEAD` to equal
+`FINAL_SHA`; a valid signature over another source commit does not pass.
 
 Tag signature checking is a publication gate, not a claim of server-side signed-tag
 enforcement. Production-signer acceptance and hosted identity checks require the
 actual signed proof tag; local throwaway-key tests do not establish those results.
+
+## Classify the tag and publication inputs
+
+Classify the independently selected tag before treating it as a public release:
+
+```sh
+/usr/bin/env GOENV=off GOEXPERIMENT= GOFLAGS= GOTOOLCHAIN=local GOWORK=off bash "$SOURCE/hack/release-policy.sh" release-channel "$TAG"
+```
+
+The result is `release` for `vMAJOR.MINOR.PATCH`, `prerelease` for
+`vMAJOR.MINOR.PATCH-rc.N`, or `proof` for a valid `v0.0.0-test.*` tag. Public
+numeric components have no leading zeros, except a component that is exactly
+zero; `N` is positive and has no leading zeros. Build metadata and other public
+prerelease forms are refused. All accepted tags are at most 64 bytes and must be
+valid Git refs.
+
+A proof tag exercises the build, signing and verification jobs without publishing
+a GitHub Release. Its tag-specific artifacts cannot be renamed or reused for a
+public version. Public release options can be inspected without publishing:
+
+```sh
+/usr/bin/env GOENV=off GOEXPERIMENT= GOFLAGS= GOTOOLCHAIN=local GOWORK=off bash "$SOURCE/hack/release-policy.sh" publication-options "$SOURCE" "$TAG"
+```
+
+This refuses proof tags. For public tags it requires a non-empty regular file
+`docs/releases/v0.1.0.md` in the selected source, not a symbolic link. It returns
+`--verify-tag` and `--notes-file` with that path, adding `--prerelease` only for
+release-candidate tags. The workflow consumes these options; it does not replace
+missing notes with inline text. An absent, empty or non-regular notes file blocks
+publication. This command only prints options and does not create a release.
 
 ## Authenticate every core file
 
@@ -127,8 +156,10 @@ provided.
 Transfer the same 13 core files and 13 bundles without changing their basenames.
 Compare transfer hashes before and after, and independently obtain the approved
 source checkout, signer policy, tag and commit on the second host. Repeat the
-compiler preflight, signed-tag/peeled-commit checks and complete publication
-verifier above, then both per-file commands for every core basename. Use the same
+compiler preflight and `verify-source` there, requiring both the peeled tag and
+checked-out `HEAD` to match the independently approved commit. Repeat tag
+classification and the complete publication verifier above, then both per-file
+commands for every core basename. Use the same
 independent artifact compiler expectation, even if the second host's standalone
 reader uses another compiler. Record source/tree, reader/compiler identities,
 command exit statuses and raw outputs. A repeated check on the first host is not
@@ -142,6 +173,13 @@ local-mode redirectors are separate installations, and cross-building is not
 native platform acceptance.
 
 ## Release approval boundary
+
+Three tag-ruleset documents are **prepared, not applied**: creation restriction
+for `refs/tags/v*`, immutable public tags, and administrator-only mutation of
+disposable proof tags. Their bypass actor is the repository administrator role,
+which includes all current and future repository administrators, not the owner
+alone. Prepared documents do not establish server-side protection. Applying each
+ruleset requires separate approval and a readback of the effective configuration.
 
 This verification procedure authorizes no tag push, release publication or
 deletion. The production-signer positive proof and hosted OIDC/signature/attestation

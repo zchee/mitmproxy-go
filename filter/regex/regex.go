@@ -503,12 +503,3 @@ func (m *backtrackMatcher) Pattern() string { return m.pattern }
 
 // Flags returns the flags used to compile the expression.
 func (m *backtrackMatcher) Flags() Flags { return m.flags }
-
-// IsBacktracking reports whether m runs on the regexp2 fallback engine.
-func IsBacktracking(m Matcher) bool {
-	if p, ok := m.(*Pattern); ok {
-		return p.bt != nil
-	}
-	_, ok := m.(*backtrackMatcher)
-	return ok
-}

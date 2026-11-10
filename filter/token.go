@@ -120,15 +120,6 @@ var tokenByCode = func() map[string]Token {
 	return m
 }()
 
-// Tokens returns every filter operator in upstream declaration order.
-func Tokens() []Token {
-	ts := make([]Token, 0, tokenEnd-1)
-	for t := TokenAsset; t < tokenEnd; t++ {
-		ts = append(ts, t)
-	}
-	return ts
-}
-
 func (t Token) valid() bool { return t >= TokenAsset && t < tokenEnd }
 
 // Code returns the operator's name without the leading ~, such as "hq".

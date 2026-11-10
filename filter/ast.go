@@ -223,13 +223,6 @@ func quote(s string) string {
 	return b.String()
 }
 
-// Dump writes the expression tree the way upstream's dump method does: one
-// line per node, indented by tabs, holding the upstream class name followed
-// by the pattern for operators that have one.
-func Dump(w io.Writer, e Expr) error {
-	return dump(w, e, 0)
-}
-
 func dump(w io.Writer, e Expr, indent int) error {
 	var name, arg string
 	var children []Expr

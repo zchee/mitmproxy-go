@@ -152,11 +152,6 @@ func (m *Message) SetState(v any) error {
 	return nil
 }
 
-// MessageFromState returns a new Message built from a state tuple.
-func MessageFromState(v any) (*Message, error) {
-	return messageFromState(v)
-}
-
 func messageFromState(v any) (*Message, error) {
 	t, err := state.Tuple(v, 6)
 	if err != nil {

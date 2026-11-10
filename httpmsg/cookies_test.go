@@ -506,7 +506,7 @@ func TestGroupCookies(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			if diff := gocmp.Diff(tt.want, GroupCookies(ParseCookieHeader(tt.in))); diff != "" {
+			if diff := gocmp.Diff(tt.want, groupCookies(ParseCookieHeader(tt.in))); diff != "" {
 				t.Errorf("GroupCookies(%q) mismatch (-want +got):\n%s", tt.in, diff)
 			}
 		})

@@ -21,7 +21,7 @@ import (
 // `<basename>-ca-cert.cer`, `<basename>-ca-cert.p12`, and
 // `<basename>-dhparam.pem` holding [DefaultDHParam]. Loading an existing
 // directory preserves the CA identity; passphrase decrypts an encrypted
-// CA file as [FromFiles] describes.
+// CA file.
 func FromStore(path, basename string, keySize int, passphrase []byte) (result *Store, err error) {
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func FromStore(path, basename string, keySize int, passphrase []byte) (result *S
 	return store, nil
 }
 
-// FromFiles loads a store whose CA file holds the private key and the CA
+// fromFiles loads a store whose CA file holds the private key and the CA
 // certificate, with any further certificates serving as the default
 // chain: the store's ChainFile is caFile only when it holds more than
 // one certificate. A missing DH parameter file is recreated with
@@ -69,7 +69,7 @@ func FromStore(path, basename string, keySize int, passphrase []byte) (result *S
 // older than its 0.11 layout. An encrypted private key without a
 // passphrase returns [ErrPassphraseRequired]. The CA file is limited to
 // 8 MiB.
-func FromFiles(caFile, dhparamFile string, passphrase []byte) (result *Store, err error) {
+func fromFiles(caFile, dhparamFile string, passphrase []byte) (result *Store, err error) {
 	raw, err := readPEMFile(caFile)
 	if err != nil {
 		return nil, err

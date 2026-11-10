@@ -65,10 +65,6 @@ type Result struct {
 
 var logger atomic.Pointer[slog.Logger]
 
-// SetLogger replaces the package logger and returns the previous one.
-// A nil logger uses slog.Default. Restore the returned value after temporary use.
-func SetLogger(l *slog.Logger) *slog.Logger { return logger.Swap(l) }
-
 func logSink() *slog.Logger {
 	if l := logger.Load(); l != nil {
 		return l

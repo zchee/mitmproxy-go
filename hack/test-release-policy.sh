@@ -142,6 +142,10 @@ printf 'PASS publish_requires_verified\n'
 
 source_commit="$(git -C "$REPO" rev-parse HEAD)"
 bash "$POLICY" verify-source "$REPO" v0.0.0-test.A "$source_commit" "$WORK/policy-A.asc"
+rejected 'tag signature verification failed' bash "$POLICY" verify-source "$REPO" v0.0.0-test.unsigned "$source_commit" "$WORK/policy-A.asc"
+rejected 'release tag must be annotated and signed' bash "$POLICY" verify-source "$REPO" v0.0.0-test.lightweight "$source_commit" "$WORK/policy-A.asc"
+rejected 'tag signature verification failed' bash "$POLICY" verify-source "$REPO" v0.0.0-test.B "$source_commit" "$WORK/policy-A.asc"
+rejected 'tag signature verification failed' bash "$POLICY" verify-source "$REPO" v0.0.0-test.A "$source_commit" "$ROOT/release/signing-policy.asc"
 printf 'PASS tag_source_matches\n'
 rejected 'tag target differs from approved commit' bash "$POLICY" verify-source "$REPO" v0.0.0-test.A 0000000000000000000000000000000000000000 "$WORK/policy-A.asc"
 printf 'PASS tag_source_mismatch_refused\n'
@@ -166,9 +170,20 @@ printf 'PASS malformed_version_refused\n'
 rejected 'proof tags cannot publish' bash "$POLICY" publication-options "$WORK/notes-source" v0.0.0-test.fixture
 printf 'PASS proof_publication_refused\n'
 rejected 'reviewed release notes are missing' bash "$POLICY" publication-options "$WORK/notes-source" v0.1.0
-printf 'PASS notes_missing_refused\n'
 mkdir -p "$WORK/notes-source/docs/releases"
-printf 'Reviewed fixture release notes.\n' > "$WORK/notes-source/docs/releases/v0.1.0.md"
+notes="$WORK/notes-source/docs/releases/v0.1.0.md"
+: > "$notes"
+rejected 'reviewed release notes are missing' bash "$POLICY" publication-options "$WORK/notes-source" v0.1.0
+rm "$notes"
+mkdir "$notes"
+rejected 'reviewed release notes are missing' bash "$POLICY" publication-options "$WORK/notes-source" v0.1.0
+rmdir "$notes"
+printf 'Reviewed fixture release notes.\n' > "$WORK/valid-notes"
+ln -s "$WORK/valid-notes" "$notes"
+rejected 'reviewed release notes are missing' bash "$POLICY" publication-options "$WORK/notes-source" v0.1.0
+rm "$notes"
+mv "$WORK/valid-notes" "$notes"
+printf 'PASS notes_missing_refused\n'
 expected="$(printf '%s\n' --verify-tag --notes-file "$WORK/notes-source/docs/releases/v0.1.0.md")"
 [[ "$(bash "$POLICY" publication-options "$WORK/notes-source" v0.1.0)" = "$expected" ]] || fail 'stable publication options differ'
 printf 'PASS stable_publication_options\n'

@@ -428,8 +428,8 @@ func (c *Client) SetState(m *state.Map) error {
 	return nil
 }
 
-// ClientFromState returns a new Client built from m, consuming m.
-func ClientFromState(m *state.Map) (*Client, error) {
+// clientFromState returns a new Client built from m, consuming m.
+func clientFromState(m *state.Map) (*Client, error) {
 	c := &Client{}
 	if err := c.SetState(m); err != nil {
 		return nil, err
@@ -542,8 +542,8 @@ func (s *Server) SetState(m *state.Map) error {
 	return nil
 }
 
-// ServerFromState returns a new Server built from m, consuming m.
-func ServerFromState(m *state.Map) (*Server, error) {
+// serverFromState returns a new Server built from m, consuming m.
+func serverFromState(m *state.Map) (*Server, error) {
 	s := &Server{}
 	if err := s.SetState(m); err != nil {
 		return nil, err

@@ -147,13 +147,13 @@ func TestFixtureRoundTrip(t *testing.T) {
 		"success: client": {
 			state: fixtureClientState,
 			load: func(m *state.Map) (interface{ GetState() *state.Map }, error) {
-				return ClientFromState(m)
+				return clientFromState(m)
 			},
 		},
 		"success: server": {
 			state: fixtureServerState,
 			load: func(m *state.Map) (interface{ GetState() *state.Map }, error) {
-				return ServerFromState(m)
+				return serverFromState(m)
 			},
 		},
 	}
@@ -180,7 +180,7 @@ func TestClientState(t *testing.T) {
 
 	// Ports test_connection.py::TestClient::test_state.
 	c := tClient()
-	c2, err := ClientFromState(c.GetState())
+	c2, err := clientFromState(c.GetState())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestServerState(t *testing.T) {
 	if v, _ := got.Get("peername"); !gocmp.Equal(v, []any{"::1", int64(443), int64(0), int64(3)}) {
 		t.Errorf("4-tuple peername state = %v", v)
 	}
-	s2, err := ServerFromState(got.Clone())
+	s2, err := serverFromState(got.Clone())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestNoneVersusEmpty(t *testing.T) {
 	// A decoder may produce a typed nil []byte for an empty bytes value; it
 	// must still read back as present-but-empty, not as None.
 	m.Set("alpn", []byte(nil))
-	c, err := ClientFromState(m)
+	c, err := clientFromState(m)
 	if err != nil {
 		t.Fatal(err)
 	}

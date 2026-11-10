@@ -379,14 +379,14 @@ func CookieExpired(attrs CookieAttrs) bool {
 	return ok && ts <= stateutil.Now()
 }
 
-// cookieParams are the attribute names GroupCookies keeps with the
+// cookieParams are the attribute names groupCookies keeps with the
 // preceding cookie.
 var cookieParams = []string{"expires", "path", "comment", "max-age", "secure", "httponly", "version"}
 
-// GroupCookies groups Cookie header pairs into cookies: a pair whose name
+// groupCookies groups Cookie header pairs into cookies: a pair whose name
 // is a cookie attribute (Path, Max-Age, ...) attaches to the cookie before
 // it, and any other pair starts a new cookie.
-func GroupCookies(pairs []CookiePair) []SetCookie {
+func groupCookies(pairs []CookiePair) []SetCookie {
 	if len(pairs) == 0 {
 		return nil
 	}

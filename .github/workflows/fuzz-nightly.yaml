@@ -1,5 +1,6 @@
-name: Fuzz nightly
+name: Fuzz (manual only)
 
+# Long fuzz campaigns are operator-triggered; no scheduled runs are enabled.
 on:
   workflow_dispatch:
   # schedule:

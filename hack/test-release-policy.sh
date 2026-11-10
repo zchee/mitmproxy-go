@@ -4,6 +4,7 @@ export LC_ALL=C
 
 ROOT="$(git rev-parse --show-toplevel)"
 POLICY="${1:-$ROOT/hack/release-policy.sh}"
+STATUS_OUTPUT="${2:-}"
 for tool in git gpg gpgconf go; do
   command -v "$tool" >/dev/null || { printf 'required tool is missing: %s\n' "$tool" >&2; exit 1; }
 done
@@ -50,17 +51,49 @@ git -C "$REPO" -c user.name='Release fixture' -c user.email=fixture@example.inva
 git -C "$REPO" -c tag.gpgsign=false tag v0.0.0-test.lightweight
 printf '[GNUPG:] VALIDSIG %s %s %s 0 4 0 22 8 00 %s\n' "$signer_a" "$(date -u +%Y-%m-%d)" "$(date +%s)" "$signer_a" > "$WORK/forged-status-message"
 git -C "$REPO" -c user.name='Release fixture' -c user.email=fixture@example.invalid -c gpg.format=openpgp -c gpg.program=gpg tag --sign --local-user="$signer_b!" --file="$WORK/forged-status-message" v0.0.0-test.forged
+printf 'Quoted armor:\n-----BEGIN PGP SIGNATURE-----\nNot a signature.\n' > "$WORK/quoted-armor-message"
+for identity in A B; do
+  if [[ "$identity" = A ]]; then signer="$signer_a"; else signer="$signer_b"; fi
+  git -C "$REPO" -c user.name='Release fixture' -c user.email=fixture@example.invalid -c gpg.format=openpgp -c gpg.program=gpg tag --sign --local-user="$signer!" --file="$WORK/quoted-armor-message" "v0.0.0-test.quoted-$identity"
+done
+git -C "$REPO" -c gpg.format=openpgp -c gpg.program=gpg verify-tag --raw v0.0.0-test.A > "$WORK/verified-tag-output" 2> "$WORK/status.recorded"
+awk '$1 == "[GNUPG:]" && ($2 == "GOODSIG" || $2 == "VALIDSIG")' "$WORK/status.recorded" > "$WORK/pair.status"
+awk '{ if ($2 == "VALIDSIG") { $11 = $12; NF = 11 } print }' "$WORK/pair.status" > "$WORK/short.status"
+cp "$WORK/pair.status" "$WORK/double.status"
+awk '$2 == "VALIDSIG"' "$WORK/pair.status" >> "$WORK/double.status"
+awk '$2 == "VALIDSIG"' "$WORK/pair.status" > "$WORK/no-good.status"
+for state in expired revoked; do
+  cp "$WORK/pair.status" "$WORK/$state.status"
+  if [[ "$state" = expired ]]; then keyword=EXPKEYSIG; else keyword=REVKEYSIG; fi
+  awk -v keyword="$keyword" '$2 == "GOODSIG" { $2 = keyword; print }' "$WORK/pair.status" >> "$WORK/$state.status"
+done
+awk '{ if ($2 == "VALIDSIG") $12 = "0000000000000000000000000000000000000000"; print }' "$WORK/pair.status" > "$WORK/wrong-primary.status"
+if [[ -n "$STATUS_OUTPUT" ]]; then
+  [[ "$STATUS_OUTPUT" = /* ]] || fail 'status output directory must be absolute'
+  mkdir -p "$STATUS_OUTPUT"
+  cp "$WORK/"*.status "$WORK/status.recorded" "$STATUS_OUTPUT/"
+  printf '%s\n' "$signer_a" > "$STATUS_OUTPUT/expected-fingerprint"
+fi
 
 bash "$POLICY" verify-tag "$REPO" v0.0.0-test.A "$WORK/policy-A.asc"
+bash "$POLICY" verify-tag "$REPO" v0.0.0-test.quoted-A "$WORK/policy-A.asc"
+bash "$POLICY" verify-signature-status "$WORK/pair.status" "$signer_a"
+rejected 'tag signer or signature status is not approved' bash "$POLICY" verify-signature-status "$WORK/short.status" "$signer_a"
+rejected 'tag signer or signature status is not approved' bash "$POLICY" verify-signature-status "$WORK/double.status" "$signer_a"
 git -C "$REPO" update-ref refs/tags/v0.0.0-test.alias refs/tags/v0.0.0-test.A
 rejected 'signed tag name differs from ref' bash "$POLICY" verify-tag "$REPO" v0.0.0-test.alias "$WORK/policy-A.asc"
 printf 'PASS tag_signed\n'
 rejected 'tag signature verification failed' bash "$POLICY" verify-tag "$REPO" v0.0.0-test.unsigned "$WORK/policy-A.asc"
 rejected 'release tag must be annotated and signed' bash "$POLICY" verify-tag "$REPO" v0.0.0-test.lightweight "$WORK/policy-A.asc"
 rejected 'invalid artifact tag' bash "$POLICY" verify-tag "$REPO" v0.0.0-test/outside "$WORK/policy-A.asc"
+for status in no-good expired revoked; do
+  rejected 'tag signer or signature status is not approved' bash "$POLICY" verify-signature-status "$WORK/$status.status" "$signer_a"
+done
 printf 'PASS tag_unsigned_refused\n'
 rejected 'tag signature verification failed' bash "$POLICY" verify-tag "$REPO" v0.0.0-test.forged "$WORK/policy-A.asc"
 rejected 'tag signature verification failed' bash "$POLICY" verify-tag "$REPO" v0.0.0-test.B "$WORK/policy-A.asc"
+rejected 'tag signature verification failed' bash "$POLICY" verify-tag "$REPO" v0.0.0-test.quoted-B "$WORK/policy-A.asc"
+rejected 'tag signer or signature status is not approved' bash "$POLICY" verify-signature-status "$WORK/wrong-primary.status" "$signer_a"
 rejected 'tag signature verification failed' bash "$POLICY" verify-tag "$REPO" v0.0.0-test.A "$ROOT/release/signing-policy.asc"
 printf 'PASS tag_wrong_signer_refused\n'
 

@@ -8,6 +8,19 @@ fail() {
   exit 1
 }
 
+verify_signature_status() {
+  local status_file="$1" expected="$2"
+  awk -v expected="$expected" '
+    $1 == "[GNUPG:]" && $2 == "VALIDSIG" {
+      valid++
+      if (NF != 12 || $12 != expected) invalid = 1
+    }
+    $1 == "[GNUPG:]" && $2 == "GOODSIG" { good++ }
+    $1 == "[GNUPG:]" && $2 ~ /^(EXPKEYSIG|EXPSIG|REVKEYSIG|KEYEXPIRED|SIGEXPIRED)$/ { invalid = 1 }
+    END { if (valid != 1 || good != 1 || invalid) exit 1 }
+  ' "$status_file" || fail 'tag signer or signature status is not approved'
+}
+
 verify_tag() {
   local root="$1" tag="$2" policy="$3" object expected actual home
   command -v git >/dev/null || fail 'git is required'
@@ -30,20 +43,13 @@ verify_tag() {
   actual="$(gpg --homedir "$home" --no-options --batch --with-colons --list-keys | awk -F: '$1=="pub"{primary=1;next} primary && $1=="fpr"{print $10;primary=0}')"
   [[ "$actual" = "$expected" ]] || fail 'public key differs from approved signer fingerprint'
   awk -v body="$home/payload" -v signature="$home/signature" '
-    /^-----BEGIN PGP SIGNATURE-----$/ { signing = 1 }
-    { if (signing) print > signature; else print > body }
-    END { if (!signing) exit 1 }
-  ' "$home/tag" || fail 'tag signature verification failed'
+    NR == FNR { if ($0 == "-----BEGIN PGP SIGNATURE-----") boundary = FNR; next }
+    FNR < boundary { print > body; next }
+    { print > signature }
+    END { if (!boundary) exit 1 }
+  ' "$home/tag" "$home/tag" || fail 'tag signature verification failed'
   gpg --homedir "$home" --no-options --no-autostart --batch --status-fd 3 --verify "$home/signature" "$home/payload" 3> "$home/status" > /dev/null 2> "$home/diagnostic" || fail 'tag signature verification failed'
-  awk -v expected="$expected" '
-    $1 == "[GNUPG:]" && $2 == "VALIDSIG" {
-      valid++
-      if (NF != 12 || $12 != expected) invalid = 1
-    }
-    $1 == "[GNUPG:]" && $2 == "GOODSIG" { good++ }
-    $1 == "[GNUPG:]" && $2 ~ /^(EXPKEYSIG|EXPSIG|REVKEYSIG|KEYEXPIRED|SIGEXPIRED)$/ { invalid = 1 }
-    END { if (valid != 1 || good != 1 || invalid) exit 1 }
-  ' "$home/status" || fail 'tag signer or signature status is not approved'
+  verify_signature_status "$home/status" "$expected"
 }
 
 core_members() {
@@ -93,6 +99,7 @@ verify_publication() {
 
 command="${1:-}"
 case "$command:$#" in
+  verify-signature-status:3) verify_signature_status "$2" "$3"; exit ;;
   verify-tag:4) verify_tag "$2" "$3" "$4"; exit ;;
   core-members:3) core_members "$2" "$3"; exit ;;
   sidecar-members:4) sidecar_members "$2" "$3" "$4"; exit ;;

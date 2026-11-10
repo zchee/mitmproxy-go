@@ -3,7 +3,7 @@ set -euo pipefail
 export LC_ALL=C
 
 ROOT="$(git rev-parse --show-toplevel)"
-POLICY="$ROOT/hack/release-policy.sh"
+POLICY="${1:-$ROOT/hack/release-policy.sh}"
 for tool in git gpg gpgconf go; do
   command -v "$tool" >/dev/null || { printf 'required tool is missing: %s\n' "$tool" >&2; exit 1; }
 done
@@ -48,6 +48,8 @@ for identity in A B; do
 done
 git -C "$REPO" -c user.name='Release fixture' -c user.email=fixture@example.invalid -c tag.gpgsign=false tag -a -m 'Unsigned fixture' v0.0.0-test.unsigned
 git -C "$REPO" -c tag.gpgsign=false tag v0.0.0-test.lightweight
+printf '[GNUPG:] VALIDSIG %s %s %s 0 4 0 22 8 00 %s\n' "$signer_a" "$(date -u +%Y-%m-%d)" "$(date +%s)" "$signer_a" > "$WORK/forged-status-message"
+git -C "$REPO" -c user.name='Release fixture' -c user.email=fixture@example.invalid -c gpg.format=openpgp -c gpg.program=gpg tag --sign --local-user="$signer_b!" --file="$WORK/forged-status-message" v0.0.0-test.forged
 
 bash "$POLICY" verify-tag "$REPO" v0.0.0-test.A "$WORK/policy-A.asc"
 git -C "$REPO" update-ref refs/tags/v0.0.0-test.alias refs/tags/v0.0.0-test.A
@@ -55,7 +57,9 @@ rejected 'signed tag name differs from ref' bash "$POLICY" verify-tag "$REPO" v0
 printf 'PASS tag_signed\n'
 rejected 'tag signature verification failed' bash "$POLICY" verify-tag "$REPO" v0.0.0-test.unsigned "$WORK/policy-A.asc"
 rejected 'release tag must be annotated and signed' bash "$POLICY" verify-tag "$REPO" v0.0.0-test.lightweight "$WORK/policy-A.asc"
+rejected 'invalid artifact tag' bash "$POLICY" verify-tag "$REPO" v0.0.0-test/outside "$WORK/policy-A.asc"
 printf 'PASS tag_unsigned_refused\n'
+rejected 'tag signature verification failed' bash "$POLICY" verify-tag "$REPO" v0.0.0-test.forged "$WORK/policy-A.asc"
 rejected 'tag signature verification failed' bash "$POLICY" verify-tag "$REPO" v0.0.0-test.B "$WORK/policy-A.asc"
 rejected 'tag signature verification failed' bash "$POLICY" verify-tag "$REPO" v0.0.0-test.A "$ROOT/release/signing-policy.asc"
 printf 'PASS tag_wrong_signer_refused\n'
@@ -99,7 +103,6 @@ rm "$SIDECARS/.extra"
 printf 'PASS sidecars_missing_refused\n'
 
 # The real core verifier must reject these deliberately invalid artifact bytes before any external verification.
-go -C "$ROOT" build -o "$WORK/releasecheck" ./internal/releasecheck/cmd/releasecheck
 rejected 'release target metadata mismatch|source checkout must be clean' bash "$POLICY" verify-publication "$ROOT" "$CORE" "$SIDECARS" "$TAG" go1.27.3 "$(git -C "$ROOT" rev-parse HEAD)"
 [[ ! -s "$WORK/rejected.stdout" ]] || fail 'unverified artifacts produced publication output'
 printf 'PASS publish_requires_verified\n'

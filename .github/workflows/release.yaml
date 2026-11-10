@@ -235,6 +235,7 @@ jobs:
           case "$VERSION" in v0.0.0-test.*) exit 1 ;; esac
           bash hack/release-policy.sh verify-publication "$GITHUB_WORKSPACE" "$RUNNER_TEMP/release-publish" "$RUNNER_TEMP/release-publish-signatures" "$VERSION" "go${EXPECTED_GO_VERSION}" "$EVENT_SHA"
           printf 'version=%s\n' "$VERSION" >> "$GITHUB_ENV"
+      # Keep both verified artifact directories unchanged until gh release create reads them.
       - name: Publish verified non-test release artifacts
         shell: bash
         env:

@@ -9,15 +9,13 @@ fail() {
 }
 
 verify_tag() {
-  local root="$1" tag="$2" policy="$3" object payload expected actual status home
+  local root="$1" tag="$2" policy="$3" object expected actual home
   command -v git >/dev/null || fail 'git is required'
   command -v gpg >/dev/null || fail 'gpg is required'
+  [[ "$tag" =~ ^[A-Za-z0-9.+-]+$ ]] || fail 'invalid artifact tag'
   git check-ref-format "refs/tags/$tag" || fail 'invalid tag ref'
   object="$(git -C "$root" rev-parse --verify "refs/tags/$tag")" || fail 'tag ref is missing'
   [[ "$(git -C "$root" cat-file -t "$object")" = tag ]] || fail 'release tag must be annotated and signed'
-  payload="$(git -C "$root" cat-file tag "$object")" || fail 'cannot read tag object'
-  actual="$(printf '%s\n' "$payload" | awk '/^$/{exit} /^tag /{print substr($0,5)}')"
-  [[ "$actual" = "$tag" ]] || fail 'signed tag name differs from ref'
   IFS= read -r expected < "$policy" || fail 'cannot read signing policy'
   expected="${expected#\# Primary fingerprint: }"
   [[ "$expected" =~ ^[A-F0-9]{40}$ ]] || fail 'invalid approved signer fingerprint'
@@ -25,15 +23,27 @@ verify_tag() {
   verification_home="$home"
   trap 'rm -rf -- "$verification_home"' EXIT
   chmod 700 "$home"
+  git -C "$root" cat-file tag "$object" > "$home/tag" || fail 'cannot read tag object'
+  actual="$(awk '/^$/{exit} /^tag /{print substr($0,5)}' "$home/tag")"
+  [[ "$actual" = "$tag" ]] || fail 'signed tag name differs from ref'
   gpg --homedir "$home" --no-options --no-autostart --batch --import "$policy" >/dev/null 2>&1 || fail 'cannot import public signing policy'
   actual="$(gpg --homedir "$home" --no-options --batch --with-colons --list-keys | awk -F: '$1=="pub"{primary=1;next} primary && $1=="fpr"{print $10;primary=0}')"
   [[ "$actual" = "$expected" ]] || fail 'public key differs from approved signer fingerprint'
-  status="$(GNUPGHOME="$home" git -C "$root" -c gpg.format=openpgp -c gpg.program=gpg verify-tag --raw "$object" 2>&1)" || fail 'tag signature verification failed'
-  actual="$(printf '%s\n' "$status" | awk '$1=="[GNUPG:]" && $2=="VALIDSIG"{print $NF}')"
-  [[ "$actual" = "$expected" ]] || fail 'tag signer is not approved'
-  if grep -Eq '\[GNUPG:\] (EXPKEYSIG|EXPSIG|REVKEYSIG|KEYEXPIRED|SIGEXPIRED) ' <<< "$status"; then
-    fail 'tag signing key or signature is expired or revoked'
-  fi
+  awk -v body="$home/payload" -v signature="$home/signature" '
+    /^-----BEGIN PGP SIGNATURE-----$/ { signing = 1 }
+    { if (signing) print > signature; else print > body }
+    END { if (!signing) exit 1 }
+  ' "$home/tag" || fail 'tag signature verification failed'
+  gpg --homedir "$home" --no-options --no-autostart --batch --status-fd 3 --verify "$home/signature" "$home/payload" 3> "$home/status" > /dev/null 2> "$home/diagnostic" || fail 'tag signature verification failed'
+  awk -v expected="$expected" '
+    $1 == "[GNUPG:]" && $2 == "VALIDSIG" {
+      valid++
+      if (NF != 12 || $12 != expected) invalid = 1
+    }
+    $1 == "[GNUPG:]" && $2 == "GOODSIG" { good++ }
+    $1 == "[GNUPG:]" && $2 ~ /^(EXPKEYSIG|EXPSIG|REVKEYSIG|KEYEXPIRED|SIGEXPIRED)$/ { invalid = 1 }
+    END { if (valid != 1 || good != 1 || invalid) exit 1 }
+  ' "$home/status" || fail 'tag signer or signature status is not approved'
 }
 
 core_members() {

@@ -76,6 +76,7 @@ Run the same signed-tag check as the release workflow:
 This requires an annotated tag, its signed name matching the requested ref, a
 valid signature by the approved primary key, and no expired or revoked signing
 key or signature. Lightweight, unsigned and wrong-signer tags are refused.
+A signing subkey is accepted only when it is part of the committed public signing policy.
 Compare the peeled tag and source checkout with the independently approved commit:
 
 ```sh

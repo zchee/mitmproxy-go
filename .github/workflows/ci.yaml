@@ -44,6 +44,8 @@ jobs:
           cache-key-prefix: release-policy
       - name: Verify local publication contracts
         run: bash hack/test-release-policy.sh
+      - name: Verify manual fuzz triggers
+        run: bash hack/test-fuzz-policy.sh
 
   test:
     name: test (${{ matrix.os }}, go ${{ matrix.go }})

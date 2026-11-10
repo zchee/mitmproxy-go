@@ -4,9 +4,8 @@
 // Upstream test/mitmproxy/tools/test_main.py maps onto this file as
 // follows:
 //
-//	test_mitmweb                        -> not applicable: the web frontend
-//	                                       is a different binary, not built
-//	                                       yet.
+//	test_mitmweb                        -> cmd/mitmweb tests; the web frontend
+//	                                       is the separate mitmweb binary.
 //	test_mitmdump                       -> TestScriptCLI plus the signal
 //	                                       shutdown tests.
 //	test_options_includes_addon_options -> TestScriptCLI custom metadata.

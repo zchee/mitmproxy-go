@@ -35,7 +35,7 @@ and why, is listed in [docs/compat.md](docs/compat.md).
 
 ## Requirements
 
-Go 1.27.3 or newer. `mitmproxy` requires an interactive terminal.
+Go 1.27.4 or newer. `mitmproxy` requires an interactive terminal.
 
 Native local-mode installation and manual acceptance: [macOS](docs/runbooks/local-mode-macos.md) and
 [Windows](docs/runbooks/local-mode-windows.md). Cross-compilation is not evidence of native redirector, driver,
@@ -88,19 +88,19 @@ For installed commands, use a verified release archive or an independently pinne
 that checkout, with `GOBIN` set to an absolute directory outside the tree, install each command separately:
 
 ```sh
-/usr/bin/env GOTOOLCHAIN=go1.27.3 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go install ./cmd/mitmdump
+/usr/bin/env GOTOOLCHAIN=go1.27.4 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go install ./cmd/mitmdump
 ```
 
 ```sh
-/usr/bin/env GOTOOLCHAIN=go1.27.3 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go install ./cmd/mitmproxy
+/usr/bin/env GOTOOLCHAIN=go1.27.4 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go install ./cmd/mitmproxy
 ```
 
 ```sh
-/usr/bin/env GOTOOLCHAIN=go1.27.3 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go install ./cmd/mitmweb
+/usr/bin/env GOTOOLCHAIN=go1.27.4 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go install ./cmd/mitmweb
 ```
 
 These source builds report `0.1.0-dev`; they do not run release linker injection. To reproduce the plain compiler
-string, source installs require `GOTOOLCHAIN=go1.27.3` and an empty `GOEXPERIMENT`. Version-suffixed `go install`
+string, source installs require `GOTOOLCHAIN=go1.27.4` and an empty `GOEXPERIMENT`. Version-suffixed `go install`
 is unsupported while the YAML replacement remains in `go.mod`. See the
 [source installation checks](docs/runbooks/release-artifact-verification.md#install-from-source).
 Homebrew, apt, container images and automatic updates are not promised distribution channels.

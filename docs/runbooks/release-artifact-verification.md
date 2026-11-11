@@ -48,7 +48,7 @@ For a standalone consistency check, a named compiler can build the verifier
 without relying on the operator's launcher:
 
 ```sh
-/usr/bin/env GOENV=off GOEXPERIMENT= GOFLAGS= GOTOOLCHAIN=go1.27.3 GOWORK=off go -C "$SOURCE" run ./internal/releasecheck/cmd/releasecheck verify "$CORE" "$TAG" --go-version "$EXPECTED_GO_VERSION" --source-root "$SOURCE"
+/usr/bin/env GOENV=off GOEXPERIMENT= GOFLAGS= GOTOOLCHAIN=go1.27.4 GOWORK=off go -C "$SOURCE" run ./internal/releasecheck/cmd/releasecheck verify "$CORE" "$TAG" --go-version "$EXPECTED_GO_VERSION" --source-root "$SOURCE"
 ```
 
 `--source-root` selects an absolute, existing, clean trusted checkout. Without it,
@@ -177,18 +177,18 @@ native platform acceptance.
 Use an independently pinned clean checkout at the approved tag's commit, after
 verifying the source tag as above. Set `GOBIN` to an absolute directory outside
 the checkout. To reproduce the plain compiler string, source installs require
-`GOTOOLCHAIN=go1.27.3` and an empty `GOEXPERIMENT`. Run one command for each tool:
+`GOTOOLCHAIN=go1.27.4` and an empty `GOEXPERIMENT`. Run one command for each tool:
 
 ```sh
-/usr/bin/env GOTOOLCHAIN=go1.27.3 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go -C "$SOURCE" install ./cmd/mitmdump
+/usr/bin/env GOTOOLCHAIN=go1.27.4 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go -C "$SOURCE" install ./cmd/mitmdump
 ```
 
 ```sh
-/usr/bin/env GOTOOLCHAIN=go1.27.3 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go -C "$SOURCE" install ./cmd/mitmproxy
+/usr/bin/env GOTOOLCHAIN=go1.27.4 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go -C "$SOURCE" install ./cmd/mitmproxy
 ```
 
 ```sh
-/usr/bin/env GOTOOLCHAIN=go1.27.3 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go -C "$SOURCE" install ./cmd/mitmweb
+/usr/bin/env GOTOOLCHAIN=go1.27.4 GOEXPERIMENT= GOFLAGS= GOENV=off GOWORK=off GOBIN="$GOBIN" go -C "$SOURCE" install ./cmd/mitmweb
 ```
 
 Unlike the workflow's preinstalled compiler selected with `GOTOOLCHAIN=local`,

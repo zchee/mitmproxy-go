@@ -241,9 +241,11 @@ bypass actor; disposable proof tags under `refs/tags/v0.0.0-test.*` can be
 updated or deleted only by bypass actors. The bypass actor for creation and
 proof-tag mutation is the repository administrator role, which includes all
 current and future repository administrators, not the owner alone. Rulesets are
-repository settings, not part of the source tree; before relying on them, read
-the effective configuration back with
-`gh api repos/zchee/mitmproxy-go/rulesets`. No ruleset requires a signed tag;
+repository settings, not part of the source tree; before relying on them,
+list them with `gh api repos/zchee/mitmproxy-go/rulesets` and read each
+listed ruleset's conditions, rules and bypass actors with
+`gh api repos/zchee/mitmproxy-go/rulesets/<id>`.
+No ruleset requires a signed tag;
 the release workflow checks the tag signature.
 
 This verification procedure authorizes no tag push, release publication or

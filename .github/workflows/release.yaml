@@ -150,7 +150,9 @@ jobs:
           go run ./internal/releasecheck/cmd/releasecheck checksums "$OUT" "$VERSION" >| "$RUNNER_TEMP/release-SHA256SUMS"
           mv "$RUNNER_TEMP/release-SHA256SUMS" "$OUT/SHA256SUMS"
           go run ./internal/releasecheck/cmd/releasecheck verify "$OUT" "$VERSION" --go-version "go${EXPECTED_GO_VERSION}"
-      - uses: sigstore/cosign-installer@v4
+      # cosign-installer publishes no floating major tag for v4, so this pins
+      # the full version. Switch to "@v4" if upstream publishes one.
+      - uses: sigstore/cosign-installer@v4.1.3
       - name: Sign the verified core files
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -224,7 +226,9 @@ jobs:
         with:
           name: release-signatures-${{ github.sha }}
           path: ${{ runner.temp }}/release-publish-signatures
-      - uses: sigstore/cosign-installer@v4
+      # cosign-installer publishes no floating major tag for v4, so this pins
+      # the full version. Switch to "@v4" if upstream publishes one.
+      - uses: sigstore/cosign-installer@v4.1.3
       - name: Verify the complete publication set
         shell: bash
         env:

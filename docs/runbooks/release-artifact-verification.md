@@ -234,12 +234,19 @@ its reason in release notes.
 
 ## Release approval boundary
 
-Three tag-ruleset documents are **prepared, not applied**: creation restriction
-for `refs/tags/v*`, immutable public tags, and administrator-only mutation of
-disposable proof tags. Their bypass actor is the repository administrator role,
-which includes all current and future repository administrators, not the owner
-alone. Prepared documents do not establish server-side protection. Applying each
-ruleset requires separate approval and a readback of the effective configuration.
+The repository applies three tag rulesets: creation of `refs/tags/v*` is
+restricted to bypass actors; published tags under `refs/tags/v*`, excluding
+`refs/tags/v0.0.0-test.*`, cannot be updated or deleted and that ruleset has no
+bypass actor; disposable proof tags under `refs/tags/v0.0.0-test.*` can be
+updated or deleted only by bypass actors. The bypass actor for creation and
+proof-tag mutation is the repository administrator role, which includes all
+current and future repository administrators, not the owner alone. Rulesets are
+repository settings, not part of the source tree; before relying on them,
+list them with `gh api repos/zchee/mitmproxy-go/rulesets` and read each
+listed ruleset's conditions, rules and bypass actors with
+`gh api repos/zchee/mitmproxy-go/rulesets/<id>`.
+No ruleset requires a signed tag;
+the release workflow checks the tag signature.
 
 This verification procedure authorizes no tag push, release publication or
 deletion. The production-signer positive proof and hosted OIDC/signature/attestation

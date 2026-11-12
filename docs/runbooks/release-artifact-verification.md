@@ -135,13 +135,13 @@ cosign verify-blob --bundle "$SIDECARS/$name.sigstore.json" --certificate-identi
 ```
 
 ```sh
-gh attestation verify "$CORE/$name" --repo zchee/mitmproxy-go --signer-workflow zchee/mitmproxy-go/.github/workflows/release.yaml --cert-identity "https://github.com/zchee/mitmproxy-go/.github/workflows/release.yaml@refs/tags/$TAG" --cert-oidc-issuer https://token.actions.githubusercontent.com --source-ref "refs/tags/$TAG" --source-digest "$FINAL_SHA" --deny-self-hosted-runners
+gh attestation verify "$CORE/$name" --repo zchee/mitmproxy-go --cert-identity "https://github.com/zchee/mitmproxy-go/.github/workflows/release.yaml@refs/tags/$TAG" --cert-oidc-issuer https://token.actions.githubusercontent.com --source-ref "refs/tags/$TAG" --source-digest "$FINAL_SHA" --deny-self-hosted-runners
 ```
 
 The expected certificate identity includes the actual tag and the release
 workflow; the OIDC issuer is `https://token.actions.githubusercontent.com`.
-Attestation verification also binds the source ref, source commit and signer
-workflow. Proof-tag bundles cannot authenticate a differently named public tag.
+Attestation verification also binds the source ref and the source commit.
+Proof-tag bundles cannot authenticate a differently named public tag.
 Any wrong identity, missing member, invalid signature or failed verification
 stops installation. GitHub or Sigstore unavailability does not authorize a
 fallback to unauthenticated archives.

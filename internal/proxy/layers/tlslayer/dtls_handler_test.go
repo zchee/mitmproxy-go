@@ -127,7 +127,8 @@ func TestDTLSReverseHandlerAcceptance(t *testing.T) {
 			if tt.noSNI {
 				serverName = ""
 			}
-			session, err := dtls.Client(socket, peer, &dtls.Config{ //nolint:staticcheck // Verify the actual interception constructor's wire protocol.
+			packets := &dtlsReuseSocket{PacketConn: socket}
+			session, err := dtls.Client(packets, peer, &dtls.Config{ //nolint:staticcheck // Verify the actual interception constructor's wire protocol.
 				RootCAs:            p.CAPool,
 				ServerName:         serverName,
 				CipherSuites:       []dtls.CipherSuiteID{dtls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
@@ -218,6 +219,10 @@ func TestDTLSReverseHandlerAcceptance(t *testing.T) {
 				case <-observer.disconnected:
 				case <-ctx.Done():
 					t.Fatal("original tuple did not close:", ctx.Err())
+				}
+				packets.awaitCloseAlert(t, ctx, peer)
+				if err := socket.Close(); err != nil {
+					t.Fatal(err)
 				}
 				lateSocket, err := net.ListenPacket("udp4", socket.LocalAddr().String())
 				if err != nil {

@@ -70,7 +70,7 @@ func (s *dtlsReuseSocket) awaitCloseAlert(t *testing.T, ctx context.Context, pee
 		if !ok {
 			t.Fatal("DTLS close requires a receive deadline")
 		}
-		if err := s.PacketConn.SetReadDeadline(deadline); err != nil {
+		if err := s.SetReadDeadline(deadline); err != nil {
 			t.Fatal(err)
 		}
 		buf := make([]byte, 256)

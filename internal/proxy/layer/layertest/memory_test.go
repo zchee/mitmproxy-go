@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	gocmp "github.com/google/go-cmp/cmp"
@@ -130,20 +131,29 @@ func TestMemoryPipeDeadlines(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			a, _ := layertest.MemoryPipe(t)
-			done := make(chan error, 1)
-			go func() { done <- tt.operate(a) }()
-			if err := tt.deadline(a, time.Now()); err != nil {
-				t.Fatal(err)
-			}
-			select {
-			case err := <-done:
-				if !errors.Is(err, os.ErrDeadlineExceeded) {
-					t.Fatalf("operation: %v, want deadline exceeded", err)
+			synctest.Test(t, func(t *testing.T) {
+				a, _ := layertest.MemoryPipe(t)
+				done := make(chan error, 1)
+				go func() { done <- tt.operate(a) }()
+				synctest.Wait()
+				select {
+				case err := <-done:
+					t.Fatalf("operation completed before deadline: %v", err)
+				default:
 				}
-			case <-t.Context().Done():
-				t.Fatal(t.Context().Err())
-			}
+				if err := tt.deadline(a, time.Now()); err != nil {
+					t.Fatal(err)
+				}
+				synctest.Wait()
+				select {
+				case err := <-done:
+					if !errors.Is(err, os.ErrDeadlineExceeded) {
+						t.Fatalf("operation: %v, want deadline exceeded", err)
+					}
+				default:
+					t.Fatal("deadline did not interrupt the outstanding operation")
+				}
+			})
 		})
 	}
 }
@@ -161,18 +171,32 @@ func TestMemoryPipeClose(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			a, _ := layertest.MemoryPipe(t)
-			done := make(chan error, 1)
-			go func() { done <- tt.operate(a) }()
-			if err := a.Close(); err != nil {
-				t.Fatal(err)
-			}
-			if err := <-done; !errors.Is(err, io.ErrClosedPipe) {
-				t.Fatalf("operation after close: %v", err)
-			}
-			if err := a.Close(); err != nil {
-				t.Fatalf("repeated close: %v", err)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				a, _ := layertest.MemoryPipe(t)
+				done := make(chan error, 1)
+				go func() { done <- tt.operate(a) }()
+				synctest.Wait()
+				select {
+				case err := <-done:
+					t.Fatalf("operation completed before close: %v", err)
+				default:
+				}
+				if err := a.Close(); err != nil {
+					t.Fatal(err)
+				}
+				synctest.Wait()
+				select {
+				case err := <-done:
+					if !errors.Is(err, io.ErrClosedPipe) {
+						t.Fatalf("operation after close: %v", err)
+					}
+				default:
+					t.Fatal("close did not interrupt the outstanding operation")
+				}
+				if err := a.Close(); err != nil {
+					t.Fatalf("repeated close: %v", err)
+				}
+			})
 		})
 	}
 }

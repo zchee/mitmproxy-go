@@ -361,7 +361,28 @@ func TestLoadDirectTerminalSidecar(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("NETWORK_GATE_OUTPUT", root)
-			tt.options.wait = 50 * time.Millisecond
+			if tt.outcome == "measured-transfer-timeout" {
+				tt.options.expire = func(client, origin *loadHTTP2Peer) <-chan time.Time {
+					expired := make(chan time.Time)
+					client.mu.Lock()
+					client.noticeID = 3
+					client.mu.Unlock()
+					go func() {
+						defer close(expired)
+						if tt.actual > 0 {
+							// DATA accounting precedes the reader's progress notification.
+							await(t, client.notices)
+							return
+						}
+						for _, want := range []uint32{1, 3} {
+							if got := await(t, origin.finished); got != want {
+								t.Errorf("origin request stream = %d, want %d", got, want)
+							}
+						}
+					}()
+					return expired
+				}
+			}
 			checked := false
 			tt.options.beforeClose = func(s *loadDirectTerminal) {
 				checked = true
@@ -531,7 +552,7 @@ func TestLoadDirectConstructionFailure(t *testing.T) {
 	if mode := os.Getenv(childEnv); mode != "" {
 		root := os.Getenv("NETWORK_GATE_OUTPUT")
 		var count *loadCountedConn
-		options := loadDirectOptions{wait: time.Second}
+		options := loadDirectOptions{}
 		switch mode {
 		case "preface-write":
 			options.clientConn = func(c net.Conn) net.Conn {
@@ -819,15 +840,17 @@ func TestLoadPeerLifecyclePreservation(t *testing.T) {
 		defer func() { _ = d.Close() }()
 		origin := makeLoadHTTP2Peer(t.Context(), c, nil, nil, false)
 		defer origin.close()
+		expired := make(chan time.Time)
+		close(expired)
 		client.finished <- 3
-		id, ok, err := awaitLoadDirect(t.Context(), client, origin, time.Nanosecond)
+		id, ok, err := awaitLoadDirect(t.Context(), client, origin, expired)
 		if err != nil || !ok || id != 3 {
 			t.Fatalf("queued completion=%d/%v/%v", id, ok, err)
 		}
 		failure := &net.OpError{Op: "read", Net: "tcp", Err: io.ErrUnexpectedEOF}
 		client.recordFailure(failure)
 		client.finished <- 3
-		_, _, err = awaitLoadDirect(t.Context(), client, origin, time.Nanosecond)
+		_, _, err = awaitLoadDirect(t.Context(), client, origin, expired)
 		if !errors.Is(err, failure) {
 			t.Fatalf("protocol precedence=%v", err)
 		}

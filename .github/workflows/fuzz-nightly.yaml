@@ -87,7 +87,25 @@ jobs:
           GOCACHE="$(mktemp -d "$RUNNER_TEMP/fuzz-gocache.XXXXXXXX")"
           export GOCACHE
           printf 'gocache=%s\nfuzzcache=%s\nGOMAXPROCS=2\nparallel=1\n' "$GOCACHE" "$GOCACHE/fuzz" >> "$OUT/run.receipt"
+          printf 'module_command=go mod download all\n' >> "$OUT/run.receipt"
+          go mod download all >| "$OUT/module-download.log" 2>| "$OUT/module-download.stderr"
+          export GOFLAGS=-mod=readonly GOPROXY=off GOTOOLCHAIN=local
+          printf 'GOFLAGS=%s\nGOPROXY=%s\nGOTOOLCHAIN=%s\n' "$GOFLAGS" "$GOPROXY" "$GOTOOLCHAIN" >> "$OUT/run.receipt"
           module="$(go list -m)"
+          socket_state() {
+            date -u '+%Y-%m-%dT%H:%M:%SZ'
+            ss -s
+            nstat -az
+            for name in nf_conntrack_count nf_conntrack_max; do
+              path="/proc/sys/net/netfilter/$name"
+              if test -r "$path"; then
+                printf '%s=' "$name"
+                cat "$path"
+              else
+                printf '%s=unavailable\n' "$name"
+              fi
+            done
+          }
           index=0
           count=0
           status=0
@@ -98,6 +116,7 @@ jobs:
               printf 'package=%s\ntarget=%s\nindex=%s\nstart=%s\ncommand:' "$pkg" "$target" "$index" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >| "$dir/target.receipt"
               printf ' %q' timeout --signal=QUIT --kill-after=15s 12m go test -run '^$' -timeout=11m -fuzz "^${target}$" -fuzztime=10m -parallel=1 "./$pkg" >> "$dir/target.receipt"
               printf '\n' >> "$dir/target.receipt"
+              socket_state >| "$dir/sockets-before.txt" 2>&1
               discovery=0
               timeout --signal=QUIT --kill-after=15s 12m go test -timeout=11m -list "^${target}$" "./$pkg" >| "$dir/discovery.log" 2>| "$dir/discovery.stderr" || discovery=$?
               reader=0
@@ -108,6 +127,7 @@ jobs:
               else
                 producer=1
               fi
+              socket_state >| "$dir/sockets-after.txt" 2>&1
               printf 'end=%s\ndiscovery_exit=%s\nreader_exit=%s\nproducer_exit=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$discovery" "$reader" "$producer" >> "$dir/target.receipt"
               if test "$producer" -ne 0; then status=1; fi
               for source in "$pkg/testdata/fuzz/$target" "$GOCACHE/fuzz/$module/$pkg/$target"; do

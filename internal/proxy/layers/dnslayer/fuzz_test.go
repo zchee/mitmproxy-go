@@ -14,8 +14,7 @@ import (
 )
 
 // Upstream test_fuzz_unpack_tcp_message exercises length-prefixed input.
-// Run this real-socket target with -fuzztime=200x -parallel=1 to avoid exhausting
-// ephemeral ports through TIME_WAIT during an unbounded high-rate fuzz run.
+// In-memory half-closes avoid filling kernel socket tables during long runs.
 func FuzzTCPMessages(f *testing.F) {
 	f.Add([]byte{0, 0})
 	f.Add([]byte{0, 12, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0})
@@ -24,7 +23,7 @@ func FuzzTCPMessages(f *testing.F) {
 		if len(data) > layer.MaxRecordBytes {
 			return
 		}
-		peer, input := layertest.Pipe(t)
+		peer, input := layertest.MemoryPipe(t)
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		o := &owner{ctx: ctx, events: make(chan messageEvent, 2)}
@@ -39,7 +38,24 @@ func FuzzTCPMessages(f *testing.F) {
 			}
 		}()
 		written := make(chan error, 1)
-		go func() { _, err := peer.Write(data); _ = peer.CloseWrite(); written <- err }()
+		go func() {
+			// Split the unchanged wire bytes once, including inside length fields,
+			// without a synchronous goroutine hand-off for every input byte.
+			var err error
+			if len(data) != 0 {
+				boundary := len(data)
+				if len(data) > 1 {
+					selector := int(data[len(data)-2])<<8 | int(data[len(data)-1])
+					boundary = 1 + selector%(len(data)-1)
+				}
+				_, err = peer.Write(data[:boundary])
+				if err == nil && boundary < len(data) {
+					_, err = peer.Write(data[boundary:])
+				}
+			}
+			_ = peer.CloseWrite()
+			written <- err
+		}()
 		for {
 			event := await(t, o.events)
 			if event.err != nil {

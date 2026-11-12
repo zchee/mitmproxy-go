@@ -52,6 +52,18 @@ jobs:
           cache-key-prefix: network-gates
       - name: Test incomplete gate configurations
         run: bash hack/network-gate_test.sh
+      - name: Run load-harness contract tests
+        env:
+          MITMPROXY_GO_HTTP2_LOAD: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p "${NETWORK_GATE_OUTPUT}"
+          go test -race -tags "${HTTP_LOAD_TAG}" -list '^TestLoad' "${HTTP_LOAD_PACKAGE}" | tee "${NETWORK_GATE_OUTPUT}/load-contract-inventory.txt"
+          if ! grep -q '^TestLoad' "${NETWORK_GATE_OUTPUT}/load-contract-inventory.txt"; then
+            echo 'no load-harness contract tests selected' >&2
+            exit 1
+          fi
+          go test -race -tags "${HTTP_LOAD_TAG}" -run '^TestLoad' -count=1 -timeout=5m -v "${HTTP_LOAD_PACKAGE}" | tee "${NETWORK_GATE_OUTPUT}/load-contract-tests.log"
       - name: Install network tools
         run: |
           set -euo pipefail

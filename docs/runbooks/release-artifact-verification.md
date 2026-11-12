@@ -207,8 +207,11 @@ For each tool retain the install exit status, executable hash, complete
 `Platform: <expected native goos>/<expected native goarch>`. Require the
 corresponding `github.com/zchee/mitmproxy-go/cmd/<tool>` main-package path, VCS
 revision equal to the approved commit, `vcs.modified=false` and the pinned YAML
-replacement in build information. Main-module `(devel)` or a pseudo-version
-derived from the approved commit is valid for this installation method. Keep
+replacement in build information. Go derives the main-module version from the
+version tags in the checkout: it is the version tag itself when one points at
+the approved commit, otherwise a pseudo-version ending in the approved commit's
+UTC timestamp and the first twelve hexadecimal digits of its hash, or `(devel)`
+when no version-control information is stamped. Keep
 the checkout clean before and after; put installed binaries and receipts outside
 it.
 

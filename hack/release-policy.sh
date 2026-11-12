@@ -93,7 +93,7 @@ verify_publication() {
   identity="https://github.com/zchee/mitmproxy-go/.github/workflows/release.yaml@refs/tags/$tag"
   while IFS= read -r name; do
     cosign verify-blob --bundle "$sidecars/$name.sigstore.json" --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$core/$name"
-    gh attestation verify "$core/$name" --repo zchee/mitmproxy-go --signer-workflow zchee/mitmproxy-go/.github/workflows/release.yaml --cert-identity "$identity" --cert-oidc-issuer https://token.actions.githubusercontent.com --source-ref "refs/tags/$tag" --source-digest "$commit" --deny-self-hosted-runners
+    gh attestation verify "$core/$name" --repo zchee/mitmproxy-go --cert-identity "$identity" --cert-oidc-issuer https://token.actions.githubusercontent.com --source-ref "refs/tags/$tag" --source-digest "$commit" --deny-self-hosted-runners
   done <<< "$names"
 }
 

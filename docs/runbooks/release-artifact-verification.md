@@ -135,7 +135,7 @@ cosign verify-blob --bundle "$SIDECARS/$name.sigstore.json" --certificate-identi
 ```
 
 ```sh
-gh attestation verify "$CORE/$name" --repo zchee/mitmproxy-go --signer-workflow zchee/mitmproxy-go/.github/workflows/release.yaml --cert-identity "https://github.com/zchee/mitmproxy-go/.github/workflows/release.yaml@refs/tags/$TAG" --cert-oidc-issuer https://token.actions.githubusercontent.com --source-ref "refs/tags/$TAG" --source-digest "$FINAL_SHA" --deny-self-hosted-runners
+gh attestation verify "$CORE/$name" --repo zchee/mitmproxy-go --cert-identity "https://github.com/zchee/mitmproxy-go/.github/workflows/release.yaml@refs/tags/$TAG" --cert-oidc-issuer https://token.actions.githubusercontent.com --source-ref "refs/tags/$TAG" --source-digest "$FINAL_SHA" --deny-self-hosted-runners
 ```
 
 The expected certificate identity includes the actual tag and the release

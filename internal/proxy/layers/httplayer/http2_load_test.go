@@ -126,16 +126,18 @@ func (p *loadHTTP2Peer) setup(client bool, windows ...int64) (err error) {
 	if len(windows) == 2 {
 		initialWindow, connectionWindow = windows[0], windows[1]
 	}
-	p.mu.Lock()
-	p.readerStarted = true
-	p.mu.Unlock()
-	go p.read()
 	if err := p.write(func(f *http2.Framer) error {
-		return f.WriteSettings(http2.Setting{ID: http2.SettingInitialWindowSize, Val: uint32(initialWindow)}, http2.Setting{ID: http2.SettingMaxConcurrentStreams, Val: 100}, http2.Setting{ID: http2.SettingMaxFrameSize, Val: 128 << 10})
+		// Reserve the initial frames before the reader can acknowledge SETTINGS.
+		// Keep reads concurrent so synchronous transports can exchange prefaces.
+		p.mu.Lock()
+		p.readerStarted = true
+		p.mu.Unlock()
+		go p.read()
+		if err := f.WriteSettings(http2.Setting{ID: http2.SettingInitialWindowSize, Val: uint32(initialWindow)}, http2.Setting{ID: http2.SettingMaxConcurrentStreams, Val: 100}, http2.Setting{ID: http2.SettingMaxFrameSize, Val: 128 << 10}); err != nil {
+			return err
+		}
+		return f.WriteWindowUpdate(0, uint32(connectionWindow-65535))
 	}); err != nil {
-		return err
-	}
-	if err := p.write(func(f *http2.Framer) error { return f.WriteWindowUpdate(0, uint32(connectionWindow-65535)) }); err != nil {
 		return err
 	}
 	select {

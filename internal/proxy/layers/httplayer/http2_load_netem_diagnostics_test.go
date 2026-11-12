@@ -16,6 +16,8 @@ import (
 
 	gocmp "github.com/google/go-cmp/cmp"
 	"golang.org/x/net/http2"
+
+	"github.com/zchee/mitmproxy-go/internal/proxy/layer/layertest"
 )
 
 func TestLoadNetemTimeoutDiagnostics(t *testing.T) {
@@ -134,7 +136,7 @@ func TestLoadNetemPeerDiagnostics(t *testing.T) {
 			}
 			select {
 			case <-client.failed:
-			case <-time.After(5 * time.Second):
+			case <-time.After(layertest.Timeout):
 				t.Fatal("peer failure diagnostic was not published")
 			}
 			client.mu.Lock()

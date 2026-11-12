@@ -15,9 +15,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"golang.org/x/net/http2"
+
+	"github.com/zchee/mitmproxy-go/internal/proxy/layer/layertest"
 )
 
 func TestLoadHTTP2SetupPrefaceOrder(t *testing.T) {
@@ -27,7 +28,7 @@ func TestLoadHTTP2SetupPrefaceOrder(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), layertest.Timeout)
 			defer cancel()
 			conn, remote := net.Pipe()
 			defer func() { _ = remote.Close() }()

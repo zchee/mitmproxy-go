@@ -693,6 +693,12 @@ jobs:
           version: v2.14
           args: --build-tags difftest
           skip-save-cache: true
+      - name: golangci-lint (h2load build tag)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14
+          args: --build-tags h2load
+          skip-save-cache: true
       - name: Skip-report shell contracts
         run: bash hack/test-skips_test.sh
 

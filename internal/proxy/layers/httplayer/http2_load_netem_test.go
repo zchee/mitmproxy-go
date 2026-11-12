@@ -286,11 +286,7 @@ func runLoadDirectDownload(t *testing.T, size, window int64, options loadDirectO
 	if err := request(1, "/warm"); err != nil {
 		return 0, err
 	}
-	wait := layertest.Timeout
-	if options.wait > 0 {
-		wait = options.wait
-	}
-	got, ok, err := awaitLoadDirect(ctx, client, origin, wait)
+	got, ok, err := awaitLoadDirect(ctx, client, origin, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -303,6 +299,10 @@ func runLoadDirectDownload(t *testing.T, size, window int64, options loadDirectO
 	terminal.receipt.Phase = "direct-transfer"
 	terminal.receipt.ExpectedBytes = size
 	terminal.receipt.Stream = new(uint32(3))
+	var expired <-chan time.Time
+	if options.expire != nil {
+		expired = options.expire(client, origin)
+	}
 	started := time.Now()
 	if err := request(3, "/netem"); err != nil {
 		elapsed = time.Since(started)
@@ -312,7 +312,7 @@ func runLoadDirectDownload(t *testing.T, size, window int64, options loadDirectO
 	if netem {
 		t.Logf(`NETEM {"phase":"direct-transfer","leg":"direct","stream":3,"expected_bytes":%d,"window":%d}`, size, window)
 	}
-	completed, ok, err := awaitLoadDirect(ctx, client, origin, wait)
+	completed, ok, err := awaitLoadDirect(ctx, client, origin, expired)
 	elapsed = time.Since(started)
 	terminal.receipt.ElapsedNS = new(elapsed.Nanoseconds())
 	if err != nil {

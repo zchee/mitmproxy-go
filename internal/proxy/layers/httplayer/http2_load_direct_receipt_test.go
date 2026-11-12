@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"golang.org/x/net/http2"
+
+	"github.com/zchee/mitmproxy-go/internal/proxy/layer/layertest"
 )
 
 // Accounting observes transport bytes only; the existing framer remains the validator.
@@ -291,11 +293,11 @@ type loadDirectOptions struct {
 	clientConn  func(net.Conn) net.Conn
 	originConn  func(net.Conn) net.Conn
 	response    func(*loadHTTP2Peer, uint32, int64) error
-	wait        time.Duration
+	expire      func(*loadHTTP2Peer, *loadHTTP2Peer) <-chan time.Time
 	beforeClose func(*loadDirectTerminal)
 }
 
-func awaitLoadDirect(ctx context.Context, client, origin *loadHTTP2Peer, duration time.Duration) (uint32, bool, error) {
+func awaitLoadDirect(ctx context.Context, client, origin *loadHTTP2Peer, expired <-chan time.Time) (uint32, bool, error) {
 	check := func() error {
 		for _, peer := range []*loadHTTP2Peer{client, origin} {
 			peer.mu.Lock()
@@ -314,8 +316,11 @@ func awaitLoadDirect(ctx context.Context, client, origin *loadHTTP2Peer, duratio
 		}
 		return nil
 	}
-	timer := time.NewTimer(duration)
+	timer := time.NewTimer(layertest.Timeout)
 	defer timer.Stop()
+	if expired == nil {
+		expired = timer.C
+	}
 	select {
 	case id := <-client.finished:
 		return id, true, check()
@@ -326,7 +331,7 @@ func awaitLoadDirect(ctx context.Context, client, origin *loadHTTP2Peer, duratio
 	case <-client.ctx.Done():
 	case <-origin.ctx.Done():
 	case <-ctx.Done():
-	case <-timer.C:
+	case <-expired:
 		select {
 		case id := <-client.finished:
 			return id, true, check()

@@ -27,6 +27,8 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
+
+	"github.com/zchee/mitmproxy-go/internal/proxy/layer/layertest"
 )
 
 type loadRead struct{ requested, returned int }
@@ -137,7 +139,7 @@ func TestLoadPeerQueuedDataReads(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), layertest.Timeout)
 			clientWire, originWire := net.Pipe()
 			counted := &loadCountedConn{Conn: clientWire}
 			requested := make(chan uint32, 1)
@@ -361,7 +363,28 @@ func TestLoadDirectTerminalSidecar(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("NETWORK_GATE_OUTPUT", root)
-			tt.options.wait = 50 * time.Millisecond
+			if tt.outcome == "measured-transfer-timeout" {
+				tt.options.expire = func(client, origin *loadHTTP2Peer) <-chan time.Time {
+					expired := make(chan time.Time)
+					client.mu.Lock()
+					client.noticeID = 3
+					client.mu.Unlock()
+					go func() {
+						defer close(expired)
+						if tt.actual > 0 {
+							// DATA accounting precedes the reader's progress notification.
+							await(t, client.notices)
+							return
+						}
+						for _, want := range []uint32{1, 3} {
+							if got := await(t, origin.finished); got != want {
+								t.Errorf("origin request stream = %d, want %d", got, want)
+							}
+						}
+					}()
+					return expired
+				}
+			}
 			checked := false
 			tt.options.beforeClose = func(s *loadDirectTerminal) {
 				checked = true
@@ -460,7 +483,7 @@ func TestLoadDirectTerminalSidecar(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				root := t.TempDir()
 				for _, phase := range []string{"publish", "collect"} {
-					ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+					ctx, cancel := context.WithTimeout(t.Context(), layertest.Timeout)
 					mask := tt.umask
 					if phase == "collect" {
 						mask = "077"
@@ -531,7 +554,7 @@ func TestLoadDirectConstructionFailure(t *testing.T) {
 	if mode := os.Getenv(childEnv); mode != "" {
 		root := os.Getenv("NETWORK_GATE_OUTPUT")
 		var count *loadCountedConn
-		options := loadDirectOptions{wait: time.Second}
+		options := loadDirectOptions{}
 		switch mode {
 		case "preface-write":
 			options.clientConn = func(c net.Conn) net.Conn {
@@ -631,7 +654,7 @@ func TestLoadDirectConstructionFailure(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
-			ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), layertest.Timeout)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, executable, "-test.run=^TestLoadDirectConstructionFailure$", "-test.v")
 			cmd.Env = append(os.Environ(), childEnv+"="+tt.mode, "NETWORK_GATE_OUTPUT="+root)
@@ -741,7 +764,7 @@ func TestLoadDirectSnapshotRace(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), layertest.Timeout)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, executable, "-test.run=^TestLoadDirectSnapshotRace$", "-test.v")
 		cmd.Env = append(os.Environ(), childEnv+"=1")
@@ -780,7 +803,7 @@ func TestLoadDirectSnapshotRace(t *testing.T) {
 	go func() { workers.Wait(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(5 * time.Second):
+	case <-time.After(layertest.Timeout):
 		t.Fatal("snapshot recursively locked a peer")
 	}
 	results := make(chan error, 8)
@@ -819,15 +842,17 @@ func TestLoadPeerLifecyclePreservation(t *testing.T) {
 		defer func() { _ = d.Close() }()
 		origin := makeLoadHTTP2Peer(t.Context(), c, nil, nil, false)
 		defer origin.close()
+		expired := make(chan time.Time)
+		close(expired)
 		client.finished <- 3
-		id, ok, err := awaitLoadDirect(t.Context(), client, origin, time.Nanosecond)
+		id, ok, err := awaitLoadDirect(t.Context(), client, origin, expired)
 		if err != nil || !ok || id != 3 {
 			t.Fatalf("queued completion=%d/%v/%v", id, ok, err)
 		}
 		failure := &net.OpError{Op: "read", Net: "tcp", Err: io.ErrUnexpectedEOF}
 		client.recordFailure(failure)
 		client.finished <- 3
-		_, _, err = awaitLoadDirect(t.Context(), client, origin, time.Nanosecond)
+		_, _, err = awaitLoadDirect(t.Context(), client, origin, expired)
 		if !errors.Is(err, failure) {
 			t.Fatalf("protocol precedence=%v", err)
 		}

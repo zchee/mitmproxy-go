@@ -10,12 +10,14 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,14 +29,18 @@ import (
 	"golang.org/x/net/http2/hpack"
 )
 
+type loadRead struct{ requested, returned int }
+
 type loadCountedConn struct {
 	net.Conn
-	closes        atomic.Int64
-	firstReadSize atomic.Int64
-	writeErr      error
-	readErr       error
-	prefix        []byte
-	requestError  bool
+	closes       atomic.Int64
+	dataPhase    atomic.Bool
+	readMu       sync.Mutex
+	dataReads    []loadRead
+	writeErr     error
+	readErr      error
+	prefix       []byte
+	requestError bool
 }
 
 func (c *loadCountedConn) Close() error {
@@ -53,7 +59,6 @@ func (c *loadCountedConn) Write(p []byte) (int, error) {
 }
 
 func (c *loadCountedConn) Read(p []byte) (int, error) {
-	c.firstReadSize.CompareAndSwap(0, int64(len(p)))
 	if c.prefix != nil {
 		n := copy(p, c.prefix)
 		c.prefix = c.prefix[n:]
@@ -62,7 +67,13 @@ func (c *loadCountedConn) Read(p []byte) (int, error) {
 		}
 		return n, nil
 	}
-	return c.Conn.Read(p)
+	n, err := c.Conn.Read(p)
+	if c.dataPhase.Load() {
+		c.readMu.Lock()
+		c.dataReads = append(c.dataReads, loadRead{requested: len(p), returned: n})
+		c.readMu.Unlock()
+	}
+	return n, err
 }
 
 type loadPartialConn struct {
@@ -105,24 +116,156 @@ func loadResponse(peer *loadHTTP2Peer, id uint32, size int64) error {
 	return peer.body(id, make([]byte, 128<<10), size)
 }
 
-func TestLoadDirectBufferedRead(t *testing.T) {
+func TestLoadDirectBufferedTransfer(t *testing.T) {
 	tests := map[string]struct{ size int64 }{
 		"success: payload smaller than read-ahead buffer": {size: 4096},
 		"success: payload spans read-ahead buffers":       {size: 512 << 10},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			var client *loadCountedConn
-			_, err := runLoadDirectDownload(t, tt.size, 1<<20, loadDirectOptions{clientConn: func(conn net.Conn) net.Conn {
-				client = &loadCountedConn{Conn: conn}
-				return client
-			}})
-			if err != nil {
+			if _, err := runLoadDirectDownload(t, tt.size, 1<<20, loadDirectOptions{}); err != nil {
 				t.Fatal(err)
 			}
-			if diff := gocmp.Diff(int64(256<<10), client.firstReadSize.Load()); diff != "" {
-				t.Fatalf("initial socket read request (-want +got):\n%s", diff)
+		})
+	}
+}
+
+func TestLoadPeerQueuedDataReads(t *testing.T) {
+	tests := map[string]struct{ diagnostic bool }{
+		"success: regular peer drains queued DATA across frames":   {},
+		"success: diagnostic peer counts DATA delivered to framer": {diagnostic: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			clientWire, originWire := net.Pipe()
+			counted := &loadCountedConn{Conn: clientWire}
+			requested := make(chan uint32, 1)
+			client := makeLoadHTTP2Peer(ctx, counted, nil, nil, tt.diagnostic)
+			origin := makeLoadHTTP2Peer(ctx, originWire, nil, nil, false)
+			var workers sync.WaitGroup
+			t.Cleanup(func() {
+				cancel()
+				_ = clientWire.Close()
+				_ = originWire.Close()
+				workers.Wait()
+				client.close()
+				origin.close()
+			})
+			deadline, _ := ctx.Deadline()
+			for _, conn := range []net.Conn{clientWire, originWire} {
+				if err := conn.SetDeadline(deadline); err != nil {
+					t.Fatal(err)
+				}
 			}
+			remoteDone := make(chan error, 1)
+			workers.Go(func() {
+				remoteDone <- func() error {
+					prefix := make([]byte, len(http2.ClientPreface))
+					if _, err := io.ReadFull(originWire, prefix); err != nil {
+						return err
+					}
+					if string(prefix) != http2.ClientPreface {
+						return errors.New("wrong client preface")
+					}
+					remote := http2.NewFramer(originWire, originWire)
+					if err := remote.WriteSettings(); err != nil {
+						return err
+					}
+					for i, want := range []http2.FrameType{http2.FrameSettings, http2.FrameWindowUpdate, http2.FrameSettings} {
+						frame, err := remote.ReadFrame()
+						if err != nil {
+							return err
+						}
+						if frame.Header().Type != want {
+							return fmt.Errorf("preface frame %d = %s, want %s", i, frame.Header().Type, want)
+						}
+					}
+					if err := remote.WriteSettingsAck(); err != nil {
+						return err
+					}
+					head, err := remote.ReadFrame()
+					if err != nil {
+						return err
+					}
+					if head.Header().Type != http2.FrameHeaders {
+						return fmt.Errorf("request frame = %s, want HEADERS", head.Header().Type)
+					}
+					requested <- head.Header().StreamID
+					for range 4 {
+						frame, err := remote.ReadFrame()
+						if err != nil {
+							return err
+						}
+						if frame.Header().Type != http2.FrameWindowUpdate {
+							return fmt.Errorf("DATA refund frame = %s, want WINDOW_UPDATE", frame.Header().Type)
+						}
+					}
+					return nil
+				}()
+			})
+			if err := client.setup(true); err != nil {
+				t.Fatal(err)
+			}
+			if err := client.headers(3, []hpack.HeaderField{{Name: ":method", Value: "GET"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: "queued.test"}, {Name: ":path", Value: "/queued"}}, true); err != nil {
+				t.Fatal(err)
+			}
+			if id := await(t, requested); id != 3 {
+				t.Fatalf("requested stream = %d, want 3", id)
+			}
+			if err := origin.headers(3, []hpack.HeaderField{{Name: ":status", Value: "200"}}, false); err != nil {
+				t.Fatal(err)
+			}
+			var queued bytes.Buffer
+			framer := http2.NewFramer(&queued, nil)
+			payload := make([]byte, 96<<10)
+			for i := range 2 {
+				if err := framer.WriteData(3, i == 1, payload); err != nil {
+					t.Fatal(err)
+				}
+			}
+			counted.dataPhase.Store(true)
+			written := make(chan error, 1)
+			// One queued write makes the DATA read shape deterministic without a sleep.
+			workers.Go(func() {
+				written <- origin.write(func(_ *http2.Framer) error {
+					n, err := origin.conn.Write(queued.Bytes())
+					if err == nil && n != queued.Len() {
+						return io.ErrShortWrite
+					}
+					return err
+				})
+			})
+			stream := await(t, client.finished)
+			if err := await(t, written); err != nil {
+				t.Fatal(err)
+			}
+			if err := await(t, remoteDone); err != nil {
+				t.Fatal(err)
+			}
+			counted.readMu.Lock()
+			reads := slices.Clone(counted.dataReads)
+			counted.readMu.Unlock()
+			// A single maximum DATA frame plus its header is not burst-draining evidence.
+			const initialFlight = (128 << 10) + 9
+			spanned := slices.ContainsFunc(reads, func(read loadRead) bool { return read.requested > initialFlight && read.returned > initialFlight })
+			actual := client.bytes(3)
+			if tt.diagnostic {
+				client.mu.Lock()
+				actual = client.payload.actual[3]
+				client.mu.Unlock()
+			}
+			type result struct {
+				Stream  uint32
+				Bytes   int64
+				Spanned bool
+			}
+			want := result{Stream: 3, Bytes: int64(2 * len(payload)), Spanned: true}
+			got := result{Stream: stream, Bytes: actual, Spanned: spanned}
+			if diff := gocmp.Diff(want, got); diff != "" {
+				t.Fatalf("queued DATA result (-want +got):\n%s\nunderlying DATA reads: %+v", diff, reads)
+			}
+			t.Logf("underlying DATA reads: %+v", reads)
 		})
 	}
 }

@@ -6,6 +6,7 @@
 package httplayer
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -35,8 +36,8 @@ import (
 
 const loadBodySize = 64 << 20
 
-// The peers retain one framing buffer, not response bodies, so the heap row
-// measures the proxy's buffered DATA instead of a client's receive history.
+// The peers retain bounded framing and read-ahead buffers, not response bodies,
+// so the heap row measures the proxy's buffered DATA, not client receive history.
 type loadHTTP2Peer struct {
 	conn           net.Conn
 	ctx            context.Context
@@ -84,9 +85,10 @@ func makeLoadHTTP2Peer(ctx context.Context, conn net.Conn, onHead func(uint32, [
 	ctx, cancel := context.WithCancel(ctx)
 	p := &loadHTTP2Peer{conn: conn, ctx: ctx, cancel: cancel, writer: http2.NewFramer(conn, nil), connCredit: 65535, initialCredit: 65535, frameSize: 16384, creditChanged: make(chan struct{}), streamCredit: make(map[uint32]int64), received: make(map[uint32]int64), stopped: make(chan struct{}), notices: make(chan time.Time, 2), firstData: make(chan time.Time, 1), finished: make(chan uint32, 256), ready: make(chan struct{}), done: make(chan struct{}), failed: make(chan struct{}), onHead: onHead, onEnd: onEnd}
 	p.closeConn = sync.OnceFunc(func() { _ = conn.Close() })
-	var reader io.Reader = conn
+	// Read across frame boundaries rather than limiting socket reads to a tiny header.
+	var reader io.Reader = bufio.NewReaderSize(conn, 256<<10)
 	if diagnostic {
-		p.payload = &loadPayloadReader{peer: p, source: conn, actual: make(map[uint32]int64), progress: make(map[uint32]int64)}
+		p.payload = &loadPayloadReader{peer: p, source: reader, actual: make(map[uint32]int64), progress: make(map[uint32]int64)}
 		reader = p.payload
 	}
 	p.reader = http2.NewFramer(nil, reader)

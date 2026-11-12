@@ -140,8 +140,8 @@ gh attestation verify "$CORE/$name" --repo zchee/mitmproxy-go --cert-identity "h
 
 The expected certificate identity includes the actual tag and the release
 workflow; the OIDC issuer is `https://token.actions.githubusercontent.com`.
-Attestation verification also binds the source ref, source commit and signer
-workflow. Proof-tag bundles cannot authenticate a differently named public tag.
+Attestation verification also binds the source ref and the source commit.
+Proof-tag bundles cannot authenticate a differently named public tag.
 Any wrong identity, missing member, invalid signature or failed verification
 stops installation. GitHub or Sigstore unavailability does not authorize a
 fallback to unauthenticated archives.

@@ -30,7 +30,7 @@ func TestLoadHTTP2SetupPrefaceOrder(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 			conn, remote := net.Pipe()
-			defer remote.Close()
+			defer func() { _ = remote.Close() }()
 			deadline, _ := ctx.Deadline()
 			if err := conn.SetDeadline(deadline); err != nil {
 				t.Fatal(err)

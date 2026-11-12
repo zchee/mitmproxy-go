@@ -29,11 +29,12 @@ import (
 
 type loadCountedConn struct {
 	net.Conn
-	closes       atomic.Int64
-	writeErr     error
-	readErr      error
-	prefix       []byte
-	requestError bool
+	closes        atomic.Int64
+	firstReadSize atomic.Int64
+	writeErr      error
+	readErr       error
+	prefix        []byte
+	requestError  bool
 }
 
 func (c *loadCountedConn) Close() error {
@@ -52,6 +53,7 @@ func (c *loadCountedConn) Write(p []byte) (int, error) {
 }
 
 func (c *loadCountedConn) Read(p []byte) (int, error) {
+	c.firstReadSize.CompareAndSwap(0, int64(len(p)))
 	if c.prefix != nil {
 		n := copy(p, c.prefix)
 		c.prefix = c.prefix[n:]
@@ -101,6 +103,28 @@ func loadResponse(peer *loadHTTP2Peer, id uint32, size int64) error {
 		return err
 	}
 	return peer.body(id, make([]byte, 128<<10), size)
+}
+
+func TestLoadDirectBufferedRead(t *testing.T) {
+	tests := map[string]struct{ size int64 }{
+		"success: payload smaller than read-ahead buffer": {size: 4096},
+		"success: payload spans read-ahead buffers":       {size: 512 << 10},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var client *loadCountedConn
+			_, err := runLoadDirectDownload(t, tt.size, 1<<20, loadDirectOptions{clientConn: func(conn net.Conn) net.Conn {
+				client = &loadCountedConn{Conn: conn}
+				return client
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := gocmp.Diff(int64(256<<10), client.firstReadSize.Load()); diff != "" {
+				t.Fatalf("initial socket read request (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
 
 func TestLoadDirectTerminalSidecar(t *testing.T) {

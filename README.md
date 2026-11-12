@@ -178,6 +178,9 @@ assets and is superseded by a fixed patch version; it is not overwritten or sile
 [The long fuzz carrier](.github/workflows/fuzz-nightly.yaml) is **manual-dispatch only**; its schedule is commented out,
 so it is not an active nightly job. It runs the [57 package-qualified targets](hack/fuzz-targets.txt) for ten minutes each
 across eight shards, with at most two shards running concurrently, retaining receipts and selected corpus artifacts.
+It downloads the module graph before target discovery, then disables module downloads for the discovery/search loop.
+Each target retains before/after socket-table snapshots. DNS-over-TCP framing uses in-memory half-closed connections
+with fuzz-controlled read segmentation, rather than opening kernel sockets per execution.
 The required CI fuzz-smoke jobs remain separate.
 
 The landed [proxy benchmark harness](docs/bench/README.md) covers HTTP/1, HTTP/2, HTTP/3 and WebSocket scenarios.

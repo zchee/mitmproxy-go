@@ -16,7 +16,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/charmbracelet/x/exp/teatest/v2 v2.0.0-20261101151554-27ecf3e4d454
 	github.com/charmbracelet/x/term v0.2.2
-	github.com/chromedp/cdproto v0.159.3
+	github.com/chromedp/cdproto v0.160.0
 	github.com/chromedp/chromedp v0.23.0
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/ebitengine/purego v0.11.3
@@ -46,7 +46,7 @@ require (
 	go.uber.org/goleak v1.3.0
 	go.yaml.in/yaml/v4 v4.0.0
 	golang.design/x/clipboard v0.11.0
-	golang.org/x/crypto v0.58.1-0.20261109165751-4e10f38b063d
+	golang.org/x/crypto v0.59.0
 	golang.org/x/image v0.48.0
 	golang.org/x/net v0.62.0
 	golang.org/x/sys v0.50.0
